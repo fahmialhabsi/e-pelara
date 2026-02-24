@@ -1,0 +1,15 @@
+/* Tambahkan di styles.css atau file global CSS */
+body.dark-mode {
+  background-color: #121212;
+  color: #ffffff;
+}
+
+.dark-mode .card {
+  background-color: #1c1c1c;
+  color: #ffffff;
+}
+
+.dark-mode .table {
+  background-color: #1c1c1c;
+  color: #ffffff;
+}

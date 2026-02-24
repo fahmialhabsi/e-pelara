@@ -1,0 +1,106 @@
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+.highlight-mark {
+  background-color: limegreen;
+  color: white;
+  padding: 0 2px;
+  border-radius: 3px;
+}
+
+body.dark-mode .highlight-mark {
+  background-color: #90ee90;
+  color: black;
+}
+
+@media print {
+  .highlight-mark {
+    background-color: #c1f0c1 !important;
+    color: black !important;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+@media print {
+  .hide-on-export {
+    display: none !important;
+  }
+}
+
+@media print {
+  /* Sembunyikan seluruh komponen interaktif saat print */
+  .hide-on-print,
+  .hide-on-export,
+  button,
+  input,
+  select,
+  label,
+  .form-control,
+  .form-group {
+    display: none !important;
+  }
+
+  /* Optional: atur margin dan tata letak dokumen cetak */
+  body {
+    margin: 0;
+    padding: 0;
+  }
+}
+
+@media print {
+  .card,
+  .card-body,
+  .shadow-sm,
+  .bg-light {
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  .print-area {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  body * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+.text-warning {
+  color: #e6a400 !important;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

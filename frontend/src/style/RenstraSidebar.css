@@ -1,0 +1,15 @@
+/* src/style/RenstraSidebar.css */
+
+.sticky-sidebar {
+  position: sticky;
+  top: 24px; /* Jarak dari atas, bisa disesuaikan */
+  height: fit-content;
+  z-index: 10;
+}
+
+@media (max-width: 991px) {
+  .sticky-sidebar {
+    position: static;
+    top: unset;
+  }
+}
