@@ -4,54 +4,60 @@ const router = express.Router();
 const verifyToken = require("../middlewares/verifyToken");
 const allowRoles = require("../middlewares/allowRoles");
 const arahKebijakanController = require("../controllers/arahKebijakanController");
+const {
+  validateArahKebijakan,
+  handleValidationErrors,
+} = require("../utils/entityValidator");
 
 router.post(
   "/",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  arahKebijakanController.create
+  validateArahKebijakan,
+  handleValidationErrors,
+  arahKebijakanController.create,
 );
 
 router.get(
   "/",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  arahKebijakanController.getAll
+  arahKebijakanController.getAll,
 );
 
 router.get(
   "/next-kode",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  arahKebijakanController.nextKode
+  arahKebijakanController.nextKode,
 );
 
 router.get(
   "/by-program/:programId",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  arahKebijakanController.byProgram
+  arahKebijakanController.byProgram,
 );
 
 router.get(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  arahKebijakanController.getById
+  arahKebijakanController.getById,
 );
 
 router.put(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  arahKebijakanController.update
+  arahKebijakanController.update,
 );
 
 router.delete(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  arahKebijakanController.delete
+  arahKebijakanController.delete,
 );
 
 module.exports = router;

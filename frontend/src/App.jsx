@@ -41,20 +41,20 @@ import ClonedDataTable from "./admin/ClonedDataTable";
 
 const Login = React.lazy(() => import("./features/auth/pages/Login"));
 const Register = React.lazy(() => import("./features/auth/pages/Register"));
-const DashboardLayoutGlobal = React.lazy(() =>
-  import("./layouts/DashboardLayoutGolbal")
+const DashboardLayoutGlobal = React.lazy(
+  () => import("./layouts/DashboardLayoutGolbal"),
 );
-const DashboardHome = React.lazy(() =>
-  import("./features/rpjmd/pages/DashboardHome")
+const DashboardHome = React.lazy(
+  () => import("./features/rpjmd/pages/DashboardHome"),
 );
-const DashboardUtamaRpjmd = React.lazy(() =>
-  import("./features/rpjmd/pages/DashboardUtamaRpjmd")
+const DashboardUtamaRpjmd = React.lazy(
+  () => import("./features/rpjmd/pages/DashboardUtamaRpjmd"),
 );
-const DashboardLayout = React.lazy(() =>
-  import("./features/renstra/pages/DashboardLayout")
+const DashboardLayout = React.lazy(
+  () => import("./features/renstra/pages/DashboardLayout"),
 );
-const RenstraDashboard = React.lazy(() =>
-  import("./features/renstra/pages/RenstraDashboard")
+const RenstraDashboard = React.lazy(
+  () => import("./features/renstra/pages/RenstraDashboard"),
 );
 
 const NotFoundPage = React.lazy(() => import("./pages/NotFoundPage"));
@@ -105,7 +105,8 @@ function InnerApp() {
     );
   }
 
-  if (!periode_id) {
+  // Hanya blokir jika dokumen+tahun sudah dipilih tapi periode tidak ditemukan
+  if (dokumen && tahun && !periode_id) {
     return (
       <div className="text-center mt-5 text-danger">
         <p>Gagal memuat periode aktif.</p>
@@ -319,7 +320,7 @@ function InnerApp() {
                     </DokumenTahunGuard>
                   }
                 />
-              )
+              ),
             )}
             <Route path="*" element={<NotFoundPage />} />
           </Route>

@@ -18,6 +18,7 @@ const {
   recalcProgramTotalByKode,
 } = require("../utils/paguHelper");
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
+const { logActivity } = require("../services/auditService");
 
 const MAX_PAGE_LIMIT = 100;
 const includeRelations = [
@@ -89,7 +90,7 @@ const programController = {
         return errorResponse(
           res,
           404,
-          `OPD '${opd_penanggung_jawab}' tidak ditemukan.`
+          `OPD '${opd_penanggung_jawab}' tidak ditemukan.`,
         );
       }
 
@@ -105,7 +106,7 @@ const programController = {
         return errorResponse(
           res,
           400,
-          "Sasaran tidak valid atau tidak sesuai periode/tahun."
+          "Sasaran tidak valid atau tidak sesuai periode/tahun.",
         );
       }
 
@@ -122,7 +123,7 @@ const programController = {
         return errorResponse(
           res,
           409,
-          `${conflictField} sudah digunakan di periode yang sama.`
+          `${conflictField} sudah digunakan di periode yang sama.`,
         );
       }
 
@@ -155,6 +156,7 @@ const programController = {
       const result = await Program.findByPk(program.id, {
         include: includeRelations,
       });
+      logActivity(req, "CREATE", "Program", program.id, null, result.toJSON());
       return successResponse(res, 201, "Program berhasil ditambahkan", result);
     } catch (err) {
       return handleServerError(res, err, "menambah program");
@@ -167,7 +169,7 @@ const programController = {
       return errorResponse(
         res,
         400,
-        "Data harus array dan tidak boleh kosong."
+        "Data harus array dan tidak boleh kosong.",
       );
     }
 
@@ -185,7 +187,7 @@ const programController = {
           periode_id,
           jenis_dokumen: data[0]?.jenis_dokumen,
           kode_program: data.map((p) =>
-            ensureTrailingDot(normalize(p.kode_program))
+            ensureTrailingDot(normalize(p.kode_program)),
           ),
         },
         attributes: ["kode_program"],
@@ -231,7 +233,7 @@ const programController = {
         res,
         201,
         `Berhasil menambahkan ${createdPrograms.length} program.`,
-        createdPrograms
+        createdPrograms,
       );
     } catch (err) {
       return handleServerError(res, err, "bulk create program");
@@ -302,7 +304,7 @@ const programController = {
         res,
         200,
         "Semua program berhasil dimuat",
-        programs
+        programs,
       );
     } catch (err) {
       return handleServerError(res, err, "memuat semua program");
@@ -356,7 +358,7 @@ const programController = {
       if (!opd) return errorResponse(res, 404, "OPD tidak ditemukan.");
 
       const finalKode = ensureTrailingDot(
-        normalize(kode_program || program.kode_program)
+        normalize(kode_program || program.kode_program),
       );
       const finalNama = normalize(nama_program || program.nama_program);
 
@@ -369,7 +371,7 @@ const programController = {
         return errorResponse(
           res,
           400,
-          "Sasaran tidak valid atau tidak sesuai periode/tahun."
+          "Sasaran tidak valid atau tidak sesuai periode/tahun.",
         );
       }
 
@@ -387,7 +389,7 @@ const programController = {
         return errorResponse(
           res,
           409,
-          `${conflictField} sudah digunakan di periode yang sama.`
+          `${conflictField} sudah digunakan di periode yang sama.`,
         );
       }
 
@@ -423,6 +425,7 @@ const programController = {
       const result = await Program.findByPk(program.id, {
         include: includeRelations,
       });
+      logActivity(req, "UPDATE", "Program", program.id, null, result.toJSON());
       return successResponse(res, 200, "Program berhasil diperbarui", result);
     } catch (err) {
       return handleServerError(res, err, "memperbarui program");
@@ -454,7 +457,7 @@ function ensureTrailingDot(str) {
 function parseIds(raw) {
   return Array.isArray(raw)
     ? raw
-        .map((r) => (typeof r === "object" ? r.id ?? r.value ?? null : r))
+        .map((r) => (typeof r === "object" ? (r.id ?? r.value ?? null) : r))
         .filter(Boolean)
     : [];
 }
@@ -475,7 +478,7 @@ function handleServerError(res, err, context) {
     res,
     500,
     `Gagal ${context}`,
-    err.message || "Unexpected error"
+    err.message || "Unexpected error",
   );
 }
 

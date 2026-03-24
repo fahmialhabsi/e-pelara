@@ -1,8 +1,9 @@
 const express = require("express");
 const app = express();
 const cors = require("cors");
-require("dotenv").config();
 const path = require("path");
+// Eksplisit path agar dotenv selalu baca dari direktori server.js, bukan process.cwd()
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 const morgan = require("morgan");
 const fs = require("fs");
 const cookieParser = require("cookie-parser");
@@ -13,19 +14,25 @@ const connectRedis = require("./utils/redisClient"); // versi retry otomatis
 (async () => {
   try {
     const redisClient = await connectRedis(); // Redis siap pakai, otomatis retry
-    app.set("redisClient", redisClient); // Bisa dipakai di route lain
+    if (redisClient) {
+      app.set("redisClient", redisClient); // Bisa dipakai di route lain
+    } else {
+      console.warn(
+        "⚠️  Mode development: fitur yang memerlukan Redis akan dinonaktifkan.",
+      );
+    }
   } catch (err) {
     console.error("❌ Redis gagal connect:", err.message);
-    process.exit(1); // Hentikan server kalau Redis tidak bisa connect
+    if (process.env.NODE_ENV === "production") {
+      process.exit(1); // Hentikan server di production kalau Redis tidak bisa connect
+    }
   }
 })();
 
 // === SETUP MIDDLEWARE ===
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:3001",
-  "http://192.168.1.63:3001",
-];
+const allowedOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim())
+  : ["http://localhost:5173", "http://localhost:3001"];
 
 app.use(
   cors({
@@ -82,6 +89,8 @@ const userRoutes = require("./routes/userRoutes");
 const divisionRoutes = require("./routes/divisionRoutes");
 const roleRoutes = require("./routes/roleRoutes");
 const authRoutes = require("./routes/authRoutes");
+const activityLogRoutes = require("./routes/activityLogRoutes");
+const dokumenRoutes = require("./routes/dokumenRoutes");
 
 // RPJMD ROUTES
 const indikatorDetailRoutes = require("./routes/indikatorDetailRoutes");
@@ -175,21 +184,6 @@ const lakipRoutes = require("./routes/lakipRoutes");
 const clonePeriodeRoutes = require("./routes/clonePeriodeRoutes");
 
 app.use(cookieParser());
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      // izinkan request tanpa origin (seperti dari Postman atau aplikasi mobile)
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.indexOf(origin) === -1) {
-        const msg =
-          "The CORS policy for this site does not allow access from the specified Origin.";
-        return callback(new Error(msg), false);
-      }
-      return callback(null, true);
-    },
-    credentials: true,
-  }),
-);
 app.use(express.json());
 
 // === STATIC FILES ===
@@ -205,6 +199,8 @@ app.use("/api", userRoutes);
 app.use("/api/divisions", divisionRoutes);
 app.use("/api/roles", roleRoutes);
 app.use("/api/clone-periode", clonePeriodeRoutes);
+app.use("/api/activity-logs", activityLogRoutes);
+app.use("/api/dokumen", dokumenRoutes);
 
 // USE RPJMD ROUTES
 app.use("/api/indikators", indikatorDetailRoutes);
@@ -333,4 +329,7 @@ io.on("connection", (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  console.log(
+    `[SSO] SSO_SHARED_SECRET configured: ${!!process.env.SSO_SHARED_SECRET}`,
+  );
 });

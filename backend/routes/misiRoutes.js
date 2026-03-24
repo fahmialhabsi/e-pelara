@@ -3,40 +3,46 @@ const router = express.Router();
 const misiController = require("../controllers/misiController");
 const verifyToken = require("../middlewares/verifyToken");
 const allowRoles = require("../middlewares/allowRoles");
+const {
+  validateMisi,
+  handleValidationErrors,
+} = require("../utils/entityValidator");
 
 router.post(
   "/",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  misiController.createMisi
+  validateMisi,
+  handleValidationErrors,
+  misiController.createMisi,
 );
 
 router.get(
   "/",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  misiController.getMisis
+  misiController.getMisis,
 );
 
 router.get(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  misiController.getMisiById
+  misiController.getMisiById,
 );
 
 router.put(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  misiController.updateMisi
+  misiController.updateMisi,
 );
 
 router.delete(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  misiController.deleteMisi
+  misiController.deleteMisi,
 );
 
 module.exports = router;

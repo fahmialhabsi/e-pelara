@@ -1,0 +1,6 @@
+# Ignore backend log file
+backend/combined.log
+node_modules/
+backend/node_modules/
+frontend/rkpd-admin/
+frontend/rkpd-dashboard/

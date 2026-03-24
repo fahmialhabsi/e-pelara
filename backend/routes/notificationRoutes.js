@@ -1,27 +1,20 @@
 // routes/notificationRoutes.js
 const express = require("express");
-const router = express.Router(); // <-- ini Express Router
-const authenticate = require("../middlewares/authenticate");
-const {
-  getNotifications,
-  markRead,
-} = require("../controllers/notificationCtrl");
+const router = express.Router();
 const verifyToken = require("../middlewares/verifyToken");
 const allowRoles = require("../middlewares/allowRoles");
+const {
+  getNotifications,
+  getUnreadCount,
+  markRead,
+  deleteNotification,
+} = require("../controllers/notificationCtrl");
 
-router.use(authenticate);
+const allRoles = ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"];
 
-router.get(
-  "/",
-  verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  getNotifications
-);
-router.post(
-  "/mark-read",
-  verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  markRead
-);
+router.get("/", verifyToken, allowRoles(allRoles), getNotifications);
+router.get("/count", verifyToken, allowRoles(allRoles), getUnreadCount);
+router.patch("/mark-read", verifyToken, allowRoles(allRoles), markRead);
+router.delete("/:id", verifyToken, allowRoles(allRoles), deleteNotification);
 
 module.exports = router;

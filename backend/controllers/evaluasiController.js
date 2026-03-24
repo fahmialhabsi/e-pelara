@@ -1,5 +1,5 @@
 // controllers/evaluasiController.js
-const { Evaluasi, Indikator, RealisasiIndikator } = require("../models");
+const { Evaluasi, Indikator, RealisasiIndikator, RPJMD } = require("../models");
 
 const defaultDokumen = {
   jenis_dokumen: "RPJMD",
@@ -42,7 +42,9 @@ exports.createEvaluasi = async (req, res) => {
         .json({ message: "Data realisasi indikator tidak ditemukan" });
     }
 
-    const indikator = await Indikator.findByPk(indikator_id);
+    const indikator = await Indikator.findByPk(indikator_id, {
+      include: [{ model: RPJMD, as: "rpjmd" }],
+    });
     if (!indikator) {
       return res
         .status(404)
@@ -50,7 +52,9 @@ exports.createEvaluasi = async (req, res) => {
     }
 
     const tahunEvaluasi = new Date(tanggal_evaluasi).getFullYear();
-    const tahunAwalRPJMD = 2025;
+    const tahunAwalRPJMD = indikator.rpjmd
+      ? indikator.rpjmd.periode_awal
+      : new Date().getFullYear();
     const selisihTahun = tahunEvaluasi - tahunAwalRPJMD + 1;
 
     let target = null;

@@ -1,5 +1,6 @@
 // controllers/misiController.js
 const { Misi, Visi } = require("../models");
+const { logActivity } = require("../services/auditService");
 
 // Create new Misi
 const createMisi = async (req, res) => {
@@ -44,6 +45,14 @@ const createMisi = async (req, res) => {
       include: [{ model: Visi, as: "visi", attributes: ["id", "isi_visi"] }],
     });
 
+    logActivity(
+      req,
+      "CREATE",
+      "Misi",
+      newMisi.id,
+      null,
+      createdWithVisi.toJSON(),
+    );
     return res.status(201).json(createdWithVisi);
   } catch (error) {
     console.error("Error creating Misi:", error);
@@ -100,7 +109,9 @@ const updateMisi = async (req, res) => {
     if (!misi) {
       return res.status(404).json({ message: "Misi not found" });
     }
+    const oldData = misi.toJSON();
     await misi.update({ visi_id, no_misi, isi_misi, deskripsi, rpjmd_id });
+    logActivity(req, "UPDATE", "Misi", misi.id, oldData, misi.toJSON());
     return res.status(200).json(misi);
   } catch (error) {
     console.error("Error updating Misi:", error);
@@ -117,7 +128,9 @@ const deleteMisi = async (req, res) => {
     if (!misi) {
       return res.status(404).json({ message: "Misi not found" });
     }
+    const oldData = misi.toJSON();
     await misi.destroy();
+    logActivity(req, "DELETE", "Misi", parseInt(req.params.id), oldData, null);
     return res.status(200).json({ message: "Misi deleted" });
   } catch (error) {
     console.error("Error deleting Misi:", error);

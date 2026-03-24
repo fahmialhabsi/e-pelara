@@ -18,6 +18,7 @@ const {
   recalcProgramTotal,
 } = require("../utils/paguHelper");
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
+const { logActivity } = require("../services/auditService");
 
 const MAX_PAGE_LIMIT = 100;
 
@@ -53,7 +54,7 @@ const kegiatanController = {
         return errorResponse(
           res,
           400,
-          "Program tidak sesuai dengan tahun dan periode."
+          "Program tidak sesuai dengan tahun dan periode.",
         );
       }
 
@@ -62,7 +63,7 @@ const kegiatanController = {
         dupeConditions.push({
           kode_kegiatan: sequelize.where(
             sequelize.fn("lower", sequelize.col("kode_kegiatan")),
-            kode_kegiatan.trim().toLowerCase()
+            kode_kegiatan.trim().toLowerCase(),
           ),
         });
       }
@@ -70,7 +71,7 @@ const kegiatanController = {
         dupeConditions.push({
           nama_kegiatan: sequelize.where(
             sequelize.fn("lower", sequelize.col("nama_kegiatan")),
-            nama_kegiatan.trim().toLowerCase()
+            nama_kegiatan.trim().toLowerCase(),
           ),
         });
       }
@@ -89,7 +90,7 @@ const kegiatanController = {
           return errorResponse(
             res,
             409,
-            "Kode atau nama kegiatan sudah digunakan di periode ini."
+            "Kode atau nama kegiatan sudah digunakan di periode ini.",
           );
         }
       }
@@ -109,6 +110,14 @@ const kegiatanController = {
       await recalcKegiatanTotal(kegiatan.id);
       await recalcProgramTotal(program.id);
 
+      logActivity(
+        req,
+        "CREATE",
+        "Kegiatan",
+        kegiatan.id,
+        null,
+        kegiatan.toJSON(),
+      );
       return successResponse(res, 201, "Kegiatan berhasil dibuat", kegiatan);
     } catch (err) {
       console.error("Error createKegiatan:", err);
@@ -130,7 +139,7 @@ const kegiatanController = {
         return errorResponse(
           res,
           400,
-          "Parameter 'tahun' dan 'jenis_dokumen' wajib diisi."
+          "Parameter 'tahun' dan 'jenis_dokumen' wajib diisi.",
         );
       }
 
@@ -300,7 +309,7 @@ const kegiatanController = {
         return errorResponse(
           res,
           400,
-          "Program tidak sesuai dengan tahun dan periode."
+          "Program tidak sesuai dengan tahun dan periode.",
         );
       }
 
@@ -309,7 +318,7 @@ const kegiatanController = {
         orConditions.push({
           kode_kegiatan: sequelize.where(
             sequelize.fn("lower", sequelize.col("kode_kegiatan")),
-            kode_kegiatan.trim().toLowerCase()
+            kode_kegiatan.trim().toLowerCase(),
           ),
         });
       }
@@ -317,7 +326,7 @@ const kegiatanController = {
         orConditions.push({
           nama_kegiatan: sequelize.where(
             sequelize.fn("lower", sequelize.col("nama_kegiatan")),
-            nama_kegiatan.trim().toLowerCase()
+            nama_kegiatan.trim().toLowerCase(),
           ),
         });
       }
@@ -337,7 +346,7 @@ const kegiatanController = {
           return errorResponse(
             res,
             409,
-            "Kode atau nama kegiatan sudah digunakan di periode ini."
+            "Kode atau nama kegiatan sudah digunakan di periode ini.",
           );
         }
       }
@@ -360,11 +369,19 @@ const kegiatanController = {
       await recalcKegiatanTotal(kegiatan.id);
       await recalcProgramTotal(program.id);
 
+      logActivity(
+        req,
+        "UPDATE",
+        "Kegiatan",
+        kegiatan.id,
+        null,
+        kegiatan.toJSON(),
+      );
       return successResponse(
         res,
         200,
         "Kegiatan berhasil diperbarui",
-        kegiatan
+        kegiatan,
       );
     } catch (err) {
       console.error("Error updateKegiatan:", err);
@@ -381,6 +398,7 @@ const kegiatanController = {
       const kodeKegiatan = kegiatan.kode_kegiatan;
       const kodeProgram = kodeKegiatan?.split(".").slice(0, 3).join(".");
 
+      const oldData = kegiatan.toJSON();
       await kegiatan.destroy();
 
       if (kodeKegiatan) {
@@ -390,6 +408,14 @@ const kegiatanController = {
         await recalcProgramTotal(kodeProgram);
       }
 
+      logActivity(
+        req,
+        "DELETE",
+        "Kegiatan",
+        parseInt(req.params.id),
+        oldData,
+        null,
+      );
       return successResponse(res, 200, "Kegiatan berhasil dihapus");
     } catch (err) {
       console.error("Error deleteKegiatan:", err);

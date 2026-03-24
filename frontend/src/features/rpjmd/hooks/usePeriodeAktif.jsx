@@ -24,7 +24,8 @@ export const PeriodeAktifProvider = ({ children }) => {
   useEffect(() => {
     const fetchPeriode = async () => {
       if (!dokumen || !tahun) {
-        setLoadingPeriode(true);
+        // Jangan blokir loading — biarkan DokumenTahunGuard yang handle
+        setLoadingPeriode(false);
         return;
       }
 
@@ -73,7 +74,7 @@ export const PeriodeAktifProvider = ({ children }) => {
 
       if (!fallbackId) {
         console.warn(
-          `Tidak ada periode cocok untuk tahun ${tahun}, dan periode_id user juga tidak tersedia.`
+          `Tidak ada periode cocok untuk tahun ${tahun}, dan periode_id user juga tidak tersedia.`,
         );
         toast.warn(`Tidak dapat menemukan periode aktif untuk tahun ${tahun}.`);
       }
@@ -100,7 +101,7 @@ export const usePeriodeAktif = () => {
   const context = useContext(PeriodeAktifContext);
   if (!context) {
     throw new Error(
-      "usePeriodeAktif must be used within a PeriodeAktifProvider"
+      "usePeriodeAktif must be used within a PeriodeAktifProvider",
     );
   }
   return context;

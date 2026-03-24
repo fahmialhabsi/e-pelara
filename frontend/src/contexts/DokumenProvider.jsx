@@ -2,12 +2,20 @@ import React, { useState, useEffect } from "react";
 import { DokumenContext } from "./DokumenContext";
 
 export function DokumenProvider({ children }) {
-  const initialDokumen =
-    sessionStorage.getItem("dokumenTujuan") ||
-    localStorage.getItem("dokumen") ||
-    "";
-  const initialTahun =
-    sessionStorage.getItem("tahun") || localStorage.getItem("tahun") || "";
+  // Jika ada ?token= di URL → ini sesi SSO baru → jangan restore dokumen/tahun lama.
+  // (AuthProvider akan clear URL setelah menyimpan token, state ini sudah di-set)
+  const isFreshSsoSession = !!new URLSearchParams(window.location.search).get(
+    "token",
+  );
+
+  const initialDokumen = isFreshSsoSession
+    ? ""
+    : sessionStorage.getItem("dokumenTujuan") ||
+      localStorage.getItem("dokumen") ||
+      "";
+  const initialTahun = isFreshSsoSession
+    ? ""
+    : sessionStorage.getItem("tahun") || localStorage.getItem("tahun") || "";
 
   const [dokumen, setDokumen] = useState(initialDokumen);
   const [tahun, setTahun] = useState(initialTahun);

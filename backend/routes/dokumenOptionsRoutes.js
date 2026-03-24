@@ -21,19 +21,47 @@ const dokumenOptions = [
 const normalize = (val) =>
   typeof val === "string" ? val.trim().toUpperCase().replace(/\s+/g, "_") : "";
 
+// Mapping role SIGAP → role e-Pelara (harus sinkron dengan allowRoles.js)
+const SIGAP_TO_EPELARA = {
+  SUPER_ADMIN: "SUPER_ADMIN",
+  ADMIN: "ADMINISTRATOR",
+  ADMINISTRATOR: "ADMINISTRATOR",
+  KEPALA_DINAS: "ADMINISTRATOR",
+  SEKRETARIS: "ADMINISTRATOR",
+  KEPALA_BIDANG: "PENGAWAS",
+  KEPALA_BIDANG_KETERSEDIAAN: "PENGAWAS",
+  KEPALA_BIDANG_DISTRIBUSI: "PENGAWAS",
+  KEPALA_BIDANG_KONSUMSI: "PENGAWAS",
+  KEPALA_UPTD: "PENGAWAS",
+  GUBERNUR: "PENGAWAS",
+  FUNGSIONAL: "PELAKSANA",
+  FUNGSIONAL_PERENCANA: "PELAKSANA",
+  FUNGSIONAL_ANALIS: "PELAKSANA",
+  PELAKSANA: "PELAKSANA",
+  KASUBBAG: "PELAKSANA",
+  KASI_UPTD: "PELAKSANA",
+  VIEWER: "PELAKSANA",
+  STAF_PELAKSANA: "PELAKSANA",
+  BENDAHARA: "PELAKSANA",
+  PEJABAT_FUNGSIONAL: "PELAKSANA",
+  KASUBAG_UMUM_KEPEGAWAIAN: "PELAKSANA",
+};
+
 router.get(
   "/",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
   (req, res) => {
-    const userRole = normalize(req.user.role); // 🔍 Normalize role
+    const rawRole = normalize(req.user.role);
+    // Terjemahkan role SIGAP ke role e-Pelara sebelum apply filter
+    const userRole = SIGAP_TO_EPELARA[rawRole] || rawRole;
 
     let filtered = dokumenOptions;
 
     // 🔒 Khusus pelaksana hanya tampilkan Renja & DPA
     if (userRole === "PELAKSANA") {
       filtered = dokumenOptions.filter((opt) =>
-        ["Renja", "DPA"].includes(opt.value)
+        ["Renja", "DPA"].includes(opt.value),
       );
     }
 
@@ -43,7 +71,7 @@ router.get(
     }
 
     res.json(filtered);
-  }
+  },
 );
 
 module.exports = router;

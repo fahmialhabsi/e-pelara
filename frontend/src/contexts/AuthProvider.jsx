@@ -31,6 +31,21 @@ const AuthProvider = ({
   const [userReady, setUserReady] = useState(false);
   const { setDokumen, setTahun } = useDokumen();
 
+  // --- Proses token SSO dari URL secara SINKRON (sebelum render pertama) ---
+  // Menggunakan sessionStorage sebagai flag SSO agar bertahan saat React StrictMode
+  // melakukan double-mount (isSSOSession ref akan reset, sessionStorage tidak)
+  const [,] = useState(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get("token");
+    if (urlToken) {
+      sessionStorage.setItem("_epelara_sso", "1");
+      localStorage.setItem("token", urlToken);
+      api.defaults.headers.common["Authorization"] = `Bearer ${urlToken}`;
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    return null;
+  });
+
   const login = (userData) => {
     return new Promise((resolve) => {
       if (onLoginResetDokumen) onLoginResetDokumen();
@@ -74,6 +89,7 @@ const AuthProvider = ({
     sessionStorage.removeItem("dokumenTujuan");
     sessionStorage.removeItem("tahun");
     sessionStorage.removeItem("periode_id");
+    sessionStorage.removeItem("_epelara_sso"); // bersihkan flag SSO saat logout
 
     delete api.defaults.headers.common["Authorization"];
 
@@ -81,6 +97,29 @@ const AuthProvider = ({
     setUserReady(false);
 
     if (onLogoutResetDokumen) onLogoutResetDokumen();
+  };
+
+  // Mapping role SIGAP → role e-Pelara (P23/P24 SSO)
+  const SIGAP_TO_EPELARA_ROLE = {
+    super_admin: "superadmin",
+    kepala_dinas: "admin",
+    gubernur: "admin",
+    sekretaris: "admin",
+    kepala_bidang: "admin",
+    kepala_uptd: "admin",
+    kasubbag: "editor",
+    kasubbag_umum: "editor",
+    kasubbag_kepegawaian: "editor",
+    kasubbag_perencanaan: "editor",
+    kasi_uptd: "editor",
+    kasubbag_tu_uptd: "editor",
+    kasi_mutu_uptd: "editor",
+    kasi_teknis_uptd: "editor",
+    fungsional: "editor",
+    fungsional_perencana: "editor",
+    fungsional_analis: "editor",
+    pelaksana: "viewer",
+    guest: "viewer",
   };
 
   useEffect(() => {
@@ -93,8 +132,11 @@ const AuthProvider = ({
           const now = Date.now() / 1000;
 
           if (decoded.exp && decoded.exp > now) {
-            // token valid
-            const normalizedRole = normalizeRole(decoded.role);
+            // P24: Terjemahkan role SIGAP ke role e-Pelara jika perlu
+            const rawRole = decoded.role || decoded.roleName || "";
+            const normalizedRole =
+              SIGAP_TO_EPELARA_ROLE[rawRole] || normalizeRole(rawRole);
+
             const jenis_dokumen =
               decoded.jenis_dokumen || sessionStorage.getItem("dokumenTujuan");
             const tahun = decoded.tahun || sessionStorage.getItem("tahun");
@@ -106,24 +148,30 @@ const AuthProvider = ({
               ...decoded,
               token,
               role: normalizedRole,
+              role_original: rawRole,
               jenis_dokumen,
               tahun,
               periode_id,
             });
             setUserReady(true);
 
-            try {
-              await refreshToken(); // refresh untuk extend sesi
-            } catch {
-              console.warn("Refresh token gagal, logout otomatis...");
-              logout(); // refresh gagal, logout lembut
+            // Skip refreshToken untuk sesi SSO — token SIGAP tidak bisa di-refresh di e-Pelara
+            // Gunakan sessionStorage sebagai flag agar tahan React StrictMode double-mount
+            const isSSO = !!sessionStorage.getItem("_epelara_sso");
+            if (!isSSO) {
+              try {
+                await refreshToken();
+              } catch {
+                console.warn("Refresh token gagal, logout otomatis...");
+                logout();
+              }
             }
           } else {
             console.warn("Token expired, logout otomatis...");
             logout();
           }
         } catch (e) {
-          console.error("Gagal decode token, logout...");
+          console.error("Gagal decode token, logout...", e);
           logout();
         }
       }
@@ -138,15 +186,20 @@ const AuthProvider = ({
     let interval;
 
     const startAutoRefresh = () => {
-      interval = setInterval(async () => {
-        try {
-          await refreshToken();
-          console.log("[Auto Refresh] Token berhasil diperbarui");
-        } catch (err) {
-          console.warn("[Auto Refresh] Gagal refresh, logout...");
-          logout();
-        }
-      }, 55 * 60 * 1000); // 55 menit
+      interval = setInterval(
+        async () => {
+          // Skip auto-refresh untuk sesi SSO
+          if (sessionStorage.getItem("_epelara_sso")) return;
+          try {
+            await refreshToken();
+            console.log("[Auto Refresh] Token berhasil diperbarui");
+          } catch (err) {
+            console.warn("[Auto Refresh] Gagal refresh, logout...");
+            logout();
+          }
+        },
+        55 * 60 * 1000,
+      ); // 55 menit
     };
 
     if (user) {

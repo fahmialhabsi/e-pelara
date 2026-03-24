@@ -3,13 +3,17 @@ const router = express.Router();
 const tujuanController = require("../controllers/tujuanController");
 const verifyToken = require("../middlewares/verifyToken");
 const allowRoles = require("../middlewares/allowRoles");
+const {
+  validateTujuan,
+  handleValidationErrors,
+} = require("../utils/entityValidator");
 
 // Rute utama GET (dengan filter opsional)
 router.get(
   "/",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  tujuanController.getAll
+  tujuanController.getAll,
 );
 
 // Ekspor Excel
@@ -17,7 +21,7 @@ router.get(
   "/export/excel",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  tujuanController.exportTujuan
+  tujuanController.exportTujuan,
 );
 
 // Ekspor PDF
@@ -25,7 +29,7 @@ router.get(
   "/export/pdf",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  tujuanController.exportTujuanPdf
+  tujuanController.exportTujuanPdf,
 );
 
 // Dapatkan nomor tujuan berikutnya
@@ -33,7 +37,7 @@ router.get(
   "/next-no",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  tujuanController.getNextNo
+  tujuanController.getNextNo,
 );
 
 // Get by Periode
@@ -41,7 +45,7 @@ router.get(
   "/by-periode",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  tujuanController.getByPeriode
+  tujuanController.getByPeriode,
 );
 
 // Get by ID
@@ -49,7 +53,7 @@ router.get(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  tujuanController.getById
+  tujuanController.getById,
 );
 
 // Tambah data
@@ -57,7 +61,9 @@ router.post(
   "/",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  tujuanController.create
+  validateTujuan,
+  handleValidationErrors,
+  tujuanController.create,
 );
 
 // Perbarui data
@@ -65,7 +71,7 @@ router.put(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  tujuanController.update
+  tujuanController.update,
 );
 
 // Hapus data
@@ -73,7 +79,7 @@ router.delete(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  tujuanController.delete
+  tujuanController.delete,
 );
 
 // Get berdasarkan Misi
@@ -81,13 +87,13 @@ router.get(
   "/by-misi/:misi_id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  tujuanController.getByMisi
+  tujuanController.getByMisi,
 );
 router.get(
   "/misi/:misi_id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  tujuanController.getByMisi
+  tujuanController.getByMisi,
 );
 
 module.exports = router;

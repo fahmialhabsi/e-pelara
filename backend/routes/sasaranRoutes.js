@@ -4,54 +4,60 @@ const router = express.Router();
 const sasaranController = require("../controllers/sasaranController");
 const verifyToken = require("../middlewares/verifyToken");
 const allowRoles = require("../middlewares/allowRoles");
+const {
+  validateSasaran,
+  handleValidationErrors,
+} = require("../utils/entityValidator");
 
 router.get(
   "/next-number",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  sasaranController.getNextNomor
+  sasaranController.getNextNomor,
 );
 
 router.get(
   "/",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  sasaranController.getAll
+  sasaranController.getAll,
 );
 
 router.get(
   "/by-tujuan/:tujuan_id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  sasaranController.getByTujuan
+  sasaranController.getByTujuan,
 );
 
 router.get(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  sasaranController.getById
+  sasaranController.getById,
 );
 
 router.post(
   "/",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  sasaranController.create
+  validateSasaran,
+  handleValidationErrors,
+  sasaranController.create,
 );
 
 router.put(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  sasaranController.update
+  sasaranController.update,
 );
 
 router.delete(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  sasaranController.delete
+  sasaranController.delete,
 );
 
 module.exports = router;

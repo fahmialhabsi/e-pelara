@@ -13,11 +13,12 @@ const verifyToken = require("../middlewares/verifyToken");
 const allowRoles = require("../middlewares/allowRoles");
 const { validatePeriode } = require("../utils/entityValidator");
 
-// GET /api/periode-rpjmd
+// GET /api/periode-rpjmd — semua role yang authenticated boleh baca daftar periode
 router.get(
   "/",
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
+  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
+  // Note: SSO path: SEKRETARIS→ADMINISTRATOR, KEPALA_BIDANG→PENGAWAS, dst (per allowRoles.js mapping)
   async (req, res) => {
     try {
       const data = await PeriodeRpjmd.findAll({

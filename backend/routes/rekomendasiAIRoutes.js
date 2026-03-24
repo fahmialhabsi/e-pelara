@@ -23,7 +23,7 @@ router.post(
     }
 
     console.log(
-      `✳️ Rekomendasi AI diminta oleh user: ${req.user?.email || "UNKNOWN"}`
+      `✳️ Rekomendasi AI diminta oleh user: ${req.user?.email || "UNKNOWN"}`,
     );
 
     const indikatorText = indikatorList
@@ -57,7 +57,7 @@ Gunakan nada profesional dan berbobot.
 
     try {
       const completion = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
+        model: process.env.OPENAI_MODEL || "gpt-4o",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.7,
         max_tokens: 1000,
@@ -74,7 +74,7 @@ Gunakan nada profesional dan berbobot.
         detail,
       });
     }
-  }
+  },
 );
 
 module.exports = router;

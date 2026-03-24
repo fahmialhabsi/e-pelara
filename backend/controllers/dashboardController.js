@@ -1,5 +1,5 @@
 // controllers/dashboardController.js
-const { Indikator } = require("../models");
+const { Indikator, RealisasiIndikator } = require("../models");
 
 exports.getDashboardMonitoring = async (req, res) => {
   const { jenis_dokumen, tahun } = req.query;
@@ -20,23 +20,33 @@ exports.getDashboardMonitoring = async (req, res) => {
       ],
     });
 
-    // Dummy realisasi_terbaru untuk contoh
-    const dataMonitoring = indikatorList.map((indikator) => {
-      const target = parseFloat(indikator.target_tahun_1) || 0;
-      const realisasi_terbaru = Math.random() * target; // misal random data untuk testing
-      const persentase_capaian =
-        target > 0 ? ((realisasi_terbaru / target) * 100).toFixed(2) : 0;
+    // Ambil realisasi terbaru dari tabel realisasi_indikator untuk setiap indikator
+    const dataMonitoring = await Promise.all(
+      indikatorList.map(async (indikator) => {
+        const target = parseFloat(indikator.target_tahun_1) || 0;
 
-      return {
-        id: indikator.id,
-        kode_indikator: indikator.kode_indikator,
-        nama_indikator: indikator.nama_indikator,
-        satuan: indikator.satuan,
-        target: target,
-        realisasi_terbaru: realisasi_terbaru.toFixed(2),
-        persentase_capaian: persentase_capaian,
-      };
-    });
+        const realisasiRecord = await RealisasiIndikator.findOne({
+          where: { indikator_id: indikator.id },
+          order: [["created_at", "DESC"]],
+        });
+        const realisasi_terbaru = realisasiRecord
+          ? parseFloat(realisasiRecord.nilai_realisasi)
+          : 0;
+
+        const persentase_capaian =
+          target > 0 ? ((realisasi_terbaru / target) * 100).toFixed(2) : 0;
+
+        return {
+          id: indikator.id,
+          kode_indikator: indikator.kode_indikator,
+          nama_indikator: indikator.nama_indikator,
+          satuan: indikator.satuan,
+          target: target,
+          realisasi_terbaru: realisasi_terbaru.toFixed(2),
+          persentase_capaian: persentase_capaian,
+        };
+      })
+    );
 
     res.status(200).json({
       success: true,

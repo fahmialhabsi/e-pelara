@@ -3,10 +3,12 @@
 const jwt = require("jsonwebtoken");
 
 const verifyToken = (req, res, next) => {
-  const token =
-    req.cookies?.token || // JWT via cookie (HttpOnly) -- best practice
-    (req.header("Authorization") &&
-      req.header("Authorization").replace("Bearer ", ""));
+  // Prioritaskan Authorization header agar SSO token tidak tertimpa cookie lama.
+  // Cookie dipakai sebagai fallback jika tidak ada Authorization header.
+  const authHeader = req.header("Authorization");
+  const token = authHeader
+    ? authHeader.replace("Bearer ", "")
+    : req.cookies?.token;
 
   if (!token) {
     return res
@@ -15,7 +17,28 @@ const verifyToken = (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Decode tanpa verifikasi untuk cek apakah ini SSO token (type: "sso")
+    const unverified = jwt.decode(token);
+    const isSsoToken = unverified && unverified.type === "sso";
+
+    console.log(`[verifyToken] type=${unverified?.type || 'local'} isSso=${isSsoToken} ssoConfigured=${!!process.env.SSO_SHARED_SECRET} role=${unverified?.role || 'N/A'}`);
+
+    let decoded;
+    if (isSsoToken) {
+      // SSO token dari SIGAP — verifikasi dengan SSO_SHARED_SECRET
+      const ssoSecret = process.env.SSO_SHARED_SECRET;
+      if (!ssoSecret) {
+        console.error("[verifyToken] SSO_SHARED_SECRET tidak dikonfigurasi");
+        return res
+          .status(500)
+          .json({ message: "Konfigurasi SSO tidak lengkap" });
+      }
+      decoded = jwt.verify(token, ssoSecret);
+      console.log(`[verifyToken] SSO verified OK. role=${decoded.role}`);
+    } else {
+      // Token lokal e-Pelara — verifikasi dengan JWT_SECRET biasa
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    }
 
     req.user = {
       id: decoded.id,
