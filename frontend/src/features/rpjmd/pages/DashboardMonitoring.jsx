@@ -1,6 +1,14 @@
 import React, { useEffect, useState, useCallback } from "react";
 import api from "../../../services/api";
-import { Table, Form, Pagination, Spinner, Row, Col } from "react-bootstrap";
+import {
+  Table,
+  Form,
+  Pagination,
+  Spinner,
+  Row,
+  Col,
+  Alert,
+} from "react-bootstrap";
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -14,6 +22,7 @@ import {
   Filler,
 } from "chart.js";
 import { useAuth } from "../../../hooks/useAuth";
+import { normalizeListItems } from "@/utils/apiResponse";
 
 ChartJS.register(
   CategoryScale,
@@ -92,14 +101,14 @@ export default function DashboardMonitoring() {
           api.get("/indikator-kegiatan"),
         ]);
 
-        setMisiList(misi.data.data || misi.data);
-        setPrionasList(prionas.data.data || prionas.data);
-        setPriodaList(prioda.data.data || prioda.data);
-        setPriogubList(priogub.data.data || priogub.data);
-        setTujuanList(tujuan.data.data || tujuan.data);
-        setSasaranList(sasaran.data.data || sasaran.data);
-        setProgramList(program.data.data || program.data);
-        setKegiatanList(kegiatan.data.data || kegiatan.data);
+        setMisiList(normalizeListItems(misi.data));
+        setPrionasList(normalizeListItems(prionas.data));
+        setPriodaList(normalizeListItems(prioda.data));
+        setPriogubList(normalizeListItems(priogub.data));
+        setTujuanList(normalizeListItems(tujuan.data));
+        setSasaranList(normalizeListItems(sasaran.data));
+        setProgramList(normalizeListItems(program.data));
+        setKegiatanList(normalizeListItems(kegiatan.data));
       } catch (err) {
         console.error("Error fetching master data:", err);
       } finally {
@@ -119,7 +128,7 @@ export default function DashboardMonitoring() {
         const res = await api.get("/activities", {
           params: { role: roleFilter, periodType: timeType, period: timeValue },
         });
-        const acts = res.data.data || res.data;
+        const acts = normalizeListItems(res.data);
         setActivities(acts);
         setFilteredData(acts);
         buildChart(acts);

@@ -1,11 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { Button, Card, Typography, App, Select, Form } from "antd";
 import { useNavigate } from "react-router-dom";
-import { useKegiatanRenstraForm } from "@/hooks/templatesUseRenstra/useKegiatanRenstraForm";
+import {
+  useKegiatanRenstraForm,
+  EMPTY_KEGIATAN_INITIAL_DATA,
+} from "@/hooks/templatesUseRenstra/useKegiatanRenstraForm";
 
 const { Text } = Typography;
 
-const KegiatanRenstraForm = ({ initialData = {}, renstraAktif, onSuccess }) => {
+const KegiatanRenstraForm = ({
+  initialData = EMPTY_KEGIATAN_INITIAL_DATA,
+  renstraAktif,
+  onSuccess,
+}) => {
   const navigate = useNavigate();
   const { message } = App.useApp();
   const [previewProgram, setPreviewProgram] = useState("");
@@ -22,18 +29,21 @@ const KegiatanRenstraForm = ({ initialData = {}, renstraAktif, onSuccess }) => {
   const {
     control,
     setValue,
+    watch,
     handleSubmit,
     formState: { errors },
   } = form;
 
+  const programRenstraId = watch("program_renstra_id");
+  const kodeKegiatan = watch("kode_kegiatan");
+
   useEffect(() => {
-    if (programOptions.length && !previewProgram) {
-      const program =
-        programOptions.find((p) => p.id === initialData?.program_renstra_id) ||
-        programOptions[0];
-      setPreviewProgram(program?.nama_program || "");
-    }
-  }, [programOptions, initialData, previewProgram]);
+    if (!programOptions.length || programRenstraId == null) return;
+    const program = programOptions.find(
+      (p) => Number(p.id) === Number(programRenstraId)
+    );
+    setPreviewProgram(program?.nama_program || "");
+  }, [programOptions, programRenstraId]);
 
   if (isLoading) return <div>Loading form...</div>;
 
@@ -67,13 +77,20 @@ const KegiatanRenstraForm = ({ initialData = {}, renstraAktif, onSuccess }) => {
           help={errors.program_renstra_id?.message}
         >
           <Select
-            value={form.getValues("program_renstra_id")}
-            onChange={(val) => setValue("program_renstra_id", val)}
+            value={
+              programRenstraId != null ? Number(programRenstraId) : undefined
+            }
+            onChange={(val) =>
+              setValue(
+                "program_renstra_id",
+                val === undefined ? undefined : Number(val)
+              )
+            }
             loading={isLoading}
             placeholder="Pilih Program Renstra"
           >
             {programOptions.map((item) => (
-              <Select.Option key={item.id} value={item.id}>
+              <Select.Option key={item.id} value={Number(item.id)}>
                 {item.kode_program} - {item.nama_program}
               </Select.Option>
             ))}
@@ -94,7 +111,7 @@ const KegiatanRenstraForm = ({ initialData = {}, renstraAktif, onSuccess }) => {
           help={errors.kode_kegiatan?.message}
         >
           <Select
-            value={form.getValues("kode_kegiatan")}
+            value={kodeKegiatan || undefined}
             onChange={(val, option) => {
               setValue("kode_kegiatan", val);
               setValue("nama_kegiatan", option?.nama_kegiatan || val);

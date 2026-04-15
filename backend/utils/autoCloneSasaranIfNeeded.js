@@ -49,47 +49,55 @@ async function cloneStrategiAndArah(
   if (!rpjmdIds.length) return { strategiCount, arahCount };
 
   const strategiAsal = await Strategi.findAll({
-    where: { sasaran_id: rpjmdIds, jenis_dokumen: "rpjmd", periode_id },
+    where: { sasaran_id: rpjmdIds, jenis_dokumen: "rpjmd", tahun },
     raw: true,
+    order: [["kode_strategi", "ASC"]],
   });
   if (!strategiAsal.length) return { strategiCount, arahCount };
 
   const sasaranIdMap = new Map(insertedSasaran.map((s) => [s.rpjmd_id, s.id]));
 
-  const strategiToClone = strategiAsal
+  const strategiPairs = strategiAsal
     .map((st) => {
       const targetSasaranId = sasaranIdMap.get(st.sasaran_id);
       if (!targetSasaranId) return null;
       return {
-        sasaran_id: targetSasaranId,
-        kode_strategi: st.kode_strategi,
-        deskripsi: st.deskripsi,
-        periode_id,
-        jenis_dokumen,
-        tahun,
-        created_at: new Date(),
-        updated_at: new Date(),
+        sourceId: st.id,
+        payload: {
+          sasaran_id: targetSasaranId,
+          kode_strategi: st.kode_strategi,
+          deskripsi: st.deskripsi,
+          periode_id,
+          jenis_dokumen,
+          tahun,
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
       };
     })
     .filter(Boolean);
 
-  const strategiBaru = await Strategi.bulkCreate(strategiToClone, {
-    returning: true,
-  });
+  const strategiBaru = await Strategi.bulkCreate(
+    strategiPairs.map((item) => item.payload),
+    {
+      returning: true,
+    }
+  );
   strategiCount = strategiBaru.length;
 
   const strategiIdMap = new Map();
   strategiBaru.forEach((stBaru, idx) => {
-    strategiIdMap.set(strategiAsal[idx].id, stBaru.id);
+    strategiIdMap.set(strategiPairs[idx].sourceId, stBaru.id);
   });
 
   const arahAsal = await ArahKebijakan.findAll({
     where: {
       strategi_id: Array.from(strategiIdMap.keys()),
       jenis_dokumen: "rpjmd",
-      periode_id,
+      tahun,
     },
     raw: true,
+    order: [["kode_arah", "ASC"]],
   });
 
   if (arahAsal.length) {
@@ -172,7 +180,7 @@ async function autoCloneSasaranIfNeeded({ jenis_dokumen, tahun }) {
     }
 
     const tujuanRpjmd = await Tujuan.findAll({
-      where: { jenis_dokumen: "rpjmd", periode_id },
+      where: { jenis_dokumen: "rpjmd", tahun },
       attributes: ["id", "no_tujuan"],
       raw: true,
     });
@@ -188,7 +196,7 @@ async function autoCloneSasaranIfNeeded({ jenis_dokumen, tahun }) {
         where: {
           tujuan_id: rpjmdTujuan.id,
           jenis_dokumen: "rpjmd",
-          periode_id,
+          tahun,
         },
         attributes: ["id", "nomor", "isi_sasaran"],
         raw: true,

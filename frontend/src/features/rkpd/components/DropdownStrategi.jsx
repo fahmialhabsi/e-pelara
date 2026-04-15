@@ -1,59 +1,56 @@
 import React, { useEffect, useState } from "react";
+import api from "../../../services/api";
 import Dropdown from "../components/Dropdown";
 import { useDokumen } from "../../../hooks/useDokumen";
-import fetchWithLog from "../../../utils/fetchWithLog"; // ⬅️ sesuaikan path-nya
+import { normalizeListItems } from "../../../utils/apiResponse";
 
 const DropdownStrategi = ({ sasaranId, value, onChange, onOptionsChange }) => {
-  console.log("📢 Komponen DropdownStrategi dimount");
-
-  const { tahun, dokumen: jenis_dokumen } = useDokumen();
+  const { tahun, dokumen } = useDokumen();
+  const jenis_dokumen = String(dokumen || "rkpd").toLowerCase();
   const [strategiList, setStrategiList] = useState([]);
 
   useEffect(() => {
-    console.log("🔍 [useEffect] sasaranId:", sasaranId);
-    console.log("🔍 [useEffect] tahun:", tahun);
-    console.log("🔍 [useEffect] jenis_dokumen:", jenis_dokumen);
-
-    // validasi awal
-    if (!sasaranId || !tahun || !jenis_dokumen) {
-      console.warn("⚠️ Parameter tidak lengkap, strategi dikosongkan.");
+    if (!sasaranId || !tahun) {
       setStrategiList([]);
       onOptionsChange?.([]);
+      if (value) onChange?.("");
       return;
     }
 
-    console.log("📤 Params dikirim:", { sasaranId, tahun, jenis_dokumen });
-
-    fetchWithLog(
-      "/strategi",
-      { sasaran_id: sasaranId, tahun: String(tahun), jenis_dokumen },
-      (data) => {
-        console.log("📦 Data strategi mentah dari fetchWithLog:", data);
-
-        const mapped = data.map((item) => ({
-          id: item.id,
-          label: `${item?.kode_strategi || "–"} – ${
+    api
+      .get("/strategi", {
+        params: {
+          sasaran_id: sasaranId,
+          tahun: String(tahun),
+          jenis_dokumen,
+        },
+      })
+      .then((res) => {
+        const items = normalizeListItems(res.data);
+        const mapped = items.map((item) => ({
+          id: String(item.id),
+          label: `${item?.kode_strategi || "-"} - ${
             item?.deskripsi || "Tanpa deskripsi"
           }`,
         }));
 
-        console.log("🧾 [Mapping Result] mapped:", mapped);
-        console.log(
-          "🧮 Jumlah ID unik:",
-          new Set(mapped.map((m) => m.id)).size
-        );
-
         setStrategiList(mapped);
         onOptionsChange?.(mapped);
 
-        // reset value jika tidak valid
-        const isValid = mapped.some((item) => item.id === value);
-        console.log("✅ Value valid:", isValid, "| value:", value);
-        if (!isValid) onChange?.("");
-      },
-      "Strategi"
-    );
-  }, [sasaranId, tahun, jenis_dokumen]);
+        if (
+          value &&
+          !mapped.some((item) => String(item.id) === String(value))
+        ) {
+          onChange?.("");
+        }
+      })
+      .catch((err) => {
+        console.error("Gagal mengambil data strategi:", err);
+        setStrategiList([]);
+        onOptionsChange?.([]);
+        if (value) onChange?.("");
+      });
+  }, [sasaranId, tahun, jenis_dokumen, value, onChange, onOptionsChange]);
 
   return (
     <Dropdown

@@ -51,6 +51,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: true,
       },
+      kode_akun: {
+        type: DataTypes.STRING(30),
+        allowNull: true,
+        comment: "Referensi kode_akun_bas.kode (LK OPD)",
+      },
     },
     {
       sequelize,

@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Table } from "react-bootstrap";
-import api from "@/services/api";
+import { Button, Spinner, Table } from "react-bootstrap";
+import {
+  deleteIndikatorRpjmd,
+  fetchIndikatorRpjmdList,
+} from "@/features/rpjmd/services/indikatorRpjmdApi";
 import { useDokumen } from "@/hooks/useDokumen";
 
 const IndikatorSasaranNestedView = () => {
@@ -15,22 +18,12 @@ const IndikatorSasaranNestedView = () => {
     if (!dokumen || !tahun) return;
 
     setLoading(true);
-    api
-      .get("/indikator-sasaran", {
-        params: {
-          jenis_dokumen: dokumen.toUpperCase(),
-          tahun,
-        },
-      })
-      .then((res) => {
-        console.log("✅ Response indikator sasaran:", res.data); // Untuk debug
-        const data = res.data?.data;
-        if (Array.isArray(data)) {
-          setItems(data);
-        } else {
-          console.warn("❗ Response tidak dalam format array:", res.data);
-          setItems([]);
-        }
+    fetchIndikatorRpjmdList("indikator-sasaran", {
+      jenis_dokumen: dokumen.toUpperCase(),
+      tahun,
+    })
+      .then(({ data }) => {
+        setItems(data);
       })
       .finally(() => setLoading(false));
   };
@@ -40,12 +33,16 @@ const IndikatorSasaranNestedView = () => {
   };
 
   const handleDelete = (id) => {
-    api.delete(`/indikator-sasaran/${id}`).then(fetchData);
+    deleteIndikatorRpjmd("indikator-sasaran", id).then(fetchData);
   };
 
   useEffect(() => {
     fetchData();
   }, [dokumen, tahun]);
+
+  if (loading) {
+    return <Spinner animation="border" />;
+  }
 
   return (
     <div>
@@ -53,7 +50,7 @@ const IndikatorSasaranNestedView = () => {
         <h5>Daftar Indikator Sasaran</h5>
         <Button
           variant="primary"
-          onClick={() => navigate("/rpjmd/indikator-sasaran/create")}
+          onClick={() => navigate("/dashboard-rpjmd?menu=indikator")}
         >
           Tambah
         </Button>
@@ -96,12 +93,12 @@ const IndikatorSasaranNestedView = () => {
                 </td>
                 <td>{item.target_kinerja}</td>
                 <td>{item.satuan}</td>
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <td key={`capaian_${i}`}>{item[`capaian_tahun_${i}`]}</td>
+                {[1, 2, 3, 4, 5].map((index) => (
+                  <td key={`capaian_${index}`}>{item[`capaian_tahun_${index}`]}</td>
                 ))}
                 <td>{item.baseline}</td>
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <td key={`target_${i}`}>{item[`target_tahun_${i}`]}</td>
+                {[1, 2, 3, 4, 5].map((index) => (
+                  <td key={`target_${index}`}>{item[`target_tahun_${index}`]}</td>
                 ))}
                 <td>
                   <div className="d-flex gap-2">

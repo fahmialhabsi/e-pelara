@@ -1,0 +1,192 @@
+import { useEffect, useRef, useCallback } from "react";
+import {
+  fetchNextKodeIndikatorKegiatan,
+  fetchNextKodeIndikatorProgram,
+  fetchNextKodeIndikatorSasaran,
+  fetchNextKodeIndikatorTujuan,
+} from "@/features/rpjmd/services/indikatorRpjmdApi";
+import { listLooksPersistedFromServer } from "@/shared/components/steps/wizardIndikatorStepUtils";
+
+/**
+ * Efek sinkronisasi StepTemplate: konteks tujuan, next-kode, baseline dari capaian_5,
+ * sync sasaran dari options, fokus error pertama, log debug kegiatan.
+ */
+export default function useIndikatorStepEffects({
+  stepKey,
+  values,
+  errors,
+  setFieldValue,
+  dokumen,
+  tahun,
+  debouncedCapaian5,
+  sasaranOptions,
+  handleSasaranChange,
+  fetchContext,
+  formRef,
+  kegiatanOptions,
+}) {
+  const fetchedOnceRef = useRef({});
+  const latestValuesRef = useRef(values);
+  latestValuesRef.current = values;
+
+  const fetchNextKode = useCallback(
+    async (tujuanId) => {
+      if (!tujuanId || !dokumen || !tahun) return;
+
+      if (fetchedOnceRef.current[tujuanId]) {
+        return;
+      }
+
+      fetchedOnceRef.current[tujuanId] = true;
+
+      try {
+        const response = await fetchNextKodeIndikatorTujuan(tujuanId, {
+          tahun,
+          jenis_dokumen: dokumen,
+        });
+        const { kode } = response.data;
+
+        if (kode) {
+          setFieldValue("kode_indikator", kode);
+        }
+      } catch (error) {
+        console.error("Gagal fetch next kode tujuan:", error);
+      }
+    },
+    [setFieldValue, dokumen, tahun]
+  );
+
+  const fetchNextKodeSasaran = useCallback(
+    async (sasaranId) => {
+      if (!sasaranId) return;
+
+      try {
+        const response = await fetchNextKodeIndikatorSasaran(sasaranId);
+        const { next_kode } = response.data;
+        if (next_kode) {
+          setFieldValue("kode_indikator", next_kode);
+        }
+      } catch (error) {
+        console.error("Gagal fetch next kode sasaran:", error);
+      }
+    },
+    [setFieldValue]
+  );
+
+  const fetchNextKodeProgram = useCallback(
+    async (programId) => {
+      if (!programId || !dokumen || !tahun) return;
+
+      try {
+        const response = await fetchNextKodeIndikatorProgram(programId, {
+          jenis_dokumen: dokumen,
+          tahun,
+        });
+        const { next_kode } = response.data;
+        const list = Array.isArray(latestValuesRef.current.program)
+          ? latestValuesRef.current.program
+          : [];
+        if (listLooksPersistedFromServer(list)) return;
+        if (next_kode) {
+          setFieldValue("kode_indikator", next_kode);
+        }
+      } catch (error) {
+        console.error("Gagal fetch next kode program:", error);
+      }
+    },
+    [setFieldValue, dokumen, tahun]
+  );
+
+  const fetchNextKodeKegiatan = useCallback(
+    async (kegiatanId) => {
+      if (!kegiatanId || !dokumen || !tahun) return;
+
+      try {
+        const response = await fetchNextKodeIndikatorKegiatan(kegiatanId, {
+          jenis_dokumen: dokumen,
+          tahun,
+        });
+        const { next_kode } = response.data;
+        const list = Array.isArray(latestValuesRef.current.kegiatan)
+          ? latestValuesRef.current.kegiatan
+          : [];
+        if (listLooksPersistedFromServer(list)) return;
+        if (next_kode) {
+          setFieldValue("kode_indikator", next_kode);
+        }
+      } catch (error) {
+        console.error("Gagal fetch next kode kegiatan:", error);
+      }
+    },
+    [setFieldValue, dokumen, tahun]
+  );
+
+  useEffect(() => {
+    if (values.no_tujuan) {
+      fetchContext(values.no_tujuan);
+    }
+  }, [values.no_tujuan, fetchContext]);
+
+  useEffect(() => {
+    if (stepKey === "sasaran" && values.nomor) {
+      fetchNextKodeSasaran(values.nomor);
+    }
+  }, [values.nomor, stepKey, fetchNextKodeSasaran]);
+
+  useEffect(() => {
+    if (stepKey !== "program" || !values.program_id) return;
+    const list = Array.isArray(values.program) ? values.program : [];
+    if (listLooksPersistedFromServer(list)) return;
+    fetchNextKodeProgram(values.program_id);
+  }, [values.program_id, values.program, stepKey, fetchNextKodeProgram]);
+
+  useEffect(() => {
+    if (stepKey !== "kegiatan" || !values.kegiatan_id) return;
+    const list = Array.isArray(values.kegiatan) ? values.kegiatan : [];
+    if (listLooksPersistedFromServer(list)) return;
+    fetchNextKodeKegiatan(values.kegiatan_id);
+  }, [values.kegiatan_id, values.kegiatan, stepKey, fetchNextKodeKegiatan]);
+
+  useEffect(() => {
+    const { no_tujuan } = values;
+
+    if (!no_tujuan) return;
+
+    if (fetchedOnceRef.current[`kode_${no_tujuan}`]) return;
+    fetchedOnceRef.current[`kode_${no_tujuan}`] = true;
+
+    fetchNextKode(no_tujuan);
+  }, [values.no_tujuan, fetchNextKode]);
+
+  useEffect(() => {
+    if (!Object.keys(errors).length) return;
+    const timer = setTimeout(() => {
+      const el = formRef.current?.querySelector(
+        ".is-invalid, [aria-invalid='true']"
+      );
+      if (el) el.focus({ preventScroll: true });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [errors, formRef]);
+
+  useEffect(() => {
+    if (debouncedCapaian5 && debouncedCapaian5 !== values.baseline) {
+      setFieldValue("baseline", debouncedCapaian5);
+    }
+  }, [debouncedCapaian5, values.baseline, setFieldValue]);
+
+  useEffect(() => {
+    if (!sasaranOptions.length || !values.sasaran_id) return;
+
+    const selected = sasaranOptions.find(
+      (opt) => Number(opt.value) === Number(values.sasaran_id)
+    );
+
+    if (selected) {
+      handleSasaranChange(selected);
+    } else {
+      console.warn("❗ Sasaran tidak ditemukan di options.");
+    }
+  }, [sasaranOptions, values.sasaran_id, handleSasaranChange]);
+
+}

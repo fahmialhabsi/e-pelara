@@ -75,31 +75,48 @@ const RenstraSidebar = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedKeys));
   };
 
-  // Ambil daftar bidang dari API
+  // Ambil daftar bidang dari API, difilter sesuai OPD pada Renstra aktif
   useEffect(() => {
     let isMounted = true;
 
-    api
-      .get("/opd-penanggung-jawab")
-      .then((res) => {
+    const loadBidang = async () => {
+      try {
+        // Ambil Renstra aktif untuk mendapatkan nama_opd sebagai filter
+        const renstraRes = await api.get("/renstra-opd/aktif");
+        const namaOpd = renstraRes.data?.data?.nama_opd || null;
+
+        // Ambil daftar OPD / bidang lalu filter hanya milik OPD ini
+        const opdRes = await api.get("/opd-penanggung-jawab");
         if (!isMounted) return;
-        const data = res.data?.data || [];
+
+        const allData = opdRes.data?.data || [];
+        const filtered = namaOpd
+          ? allData.filter(
+              (item) =>
+                item.nama_opd === namaOpd ||
+                (item.nama_opd || "").toLowerCase().includes(
+                  (namaOpd || "").toLowerCase()
+                )
+            )
+          : allData;
+
         const uniqueBidang = [
-          ...new Set(data.map((item) => item.nama_bidang_opd).filter(Boolean)),
+          ...new Set(filtered.map((item) => item.nama_bidang_opd).filter(Boolean)),
         ];
+
         if (uniqueBidang.length > 0) {
           setBidangList(uniqueBidang);
         }
-      })
-      .catch((err) => {
+        // jika kosong setelah filter, defaultBidangList tetap dipakai
+      } catch (err) {
         console.error("Gagal memuat bidang OPD:", err);
-        if (isMounted) {
-          setErrorBidang("Gagal memuat daftar bidang dari server.");
-        }
-      })
-      .finally(() => {
+        if (isMounted) setErrorBidang("Gagal memuat daftar bidang dari server.");
+      } finally {
         if (isMounted) setLoadingBidang(false);
-      });
+      }
+    };
+
+    loadBidang();
 
     return () => {
       isMounted = false;
@@ -132,9 +149,12 @@ const RenstraSidebar = () => {
             {/* Aksi Input */}
             <Accordion.Item eventKey="1">
               <Accordion.Header onClick={() => handleToggle("1")}>
-                Aksi Input Data Renstra
+                ✏️ Aksi Input Data Renstra
               </Accordion.Header>
               <Accordion.Body>
+                <small className="text-muted d-block mb-2">
+                  Input entitas: Tujuan, Sasaran, Strategi, Kebijakan, Program, Kegiatan, Sub Kegiatan
+                </small>
                 <div className="d-flex flex-wrap gap-2">
                   {inputActions.map((act, idx) => (
                     <Link
@@ -152,9 +172,12 @@ const RenstraSidebar = () => {
             {/* Input Tabel Renstra */}
             <Accordion.Item eventKey="5">
               <Accordion.Header onClick={() => handleToggle("5")}>
-                Input Tabel Renstra
+                📊 Input Tabel Renstra
               </Accordion.Header>
               <Accordion.Body>
+                <small className="text-muted d-block mb-2">
+                  Isi tabel dokumen Renstra per entitas
+                </small>
                 <div className="d-flex flex-column gap-2">
                   <Link
                     to="/renstra/tabel/tujuan"
@@ -186,6 +209,31 @@ const RenstraSidebar = () => {
                   >
                     📝 Tabel Sub Kegiatan
                   </Link>
+                  <Link
+                    to="/renstra/tabel/strategi-kebijakan"
+                    className="btn btn-outline-dark btn-sm"
+                  >
+                    🔗 Tabel Strategi & Kebijakan
+                  </Link>
+                  <Link
+                    to="/renstra/tabel/prioritas/nasional"
+                    className="btn btn-outline-danger btn-sm"
+                  >
+                    🇮🇩 Prioritas Nasional
+                  </Link>
+                  <Link
+                    to="/renstra/tabel/prioritas/daerah"
+                    className="btn btn-outline-warning btn-sm"
+                  >
+                    🏛️ Prioritas Daerah
+                  </Link>
+                  <Link
+                    to="/renstra/tabel/prioritas/gubernur"
+                    className="btn btn-outline-purple btn-sm"
+                    style={{ borderColor: "#6f42c1", color: "#6f42c1" }}
+                  >
+                    👤 Prioritas Gubernur
+                  </Link>
                 </div>
               </Accordion.Body>
             </Accordion.Item>
@@ -213,10 +261,10 @@ const RenstraSidebar = () => {
               </Accordion.Body>
             </Accordion.Item>
 
-            {/* Manajemen Renstra OPD */}
+            {/* Manajemen Dokumen Renstra */}
             <Accordion.Item eventKey="2">
               <Accordion.Header onClick={() => handleToggle("2")}>
-                Manajemen Renstra OPD
+                Manajemen Dokumen Renstra
               </Accordion.Header>
               <Accordion.Body>
                 <div className="d-flex flex-column gap-2">
@@ -224,13 +272,13 @@ const RenstraSidebar = () => {
                     to="/renstra-opd"
                     className="btn btn-outline-primary btn-sm"
                   >
-                    📋 Lihat Daftar Renstra OPD
+                    📋 M027 - Daftar Renstra
                   </Link>
                   <Link
                     to="/renstra-opd/new"
                     className="btn btn-outline-success btn-sm"
                   >
-                    ➕ Tambah Renstra OPD
+                    ⚙️ Setup / Aktifkan Renstra OPD
                   </Link>
                 </div>
               </Accordion.Body>

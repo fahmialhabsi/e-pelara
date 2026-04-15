@@ -15,6 +15,10 @@ import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
 import { toast } from "react-toastify";
+import {
+  extractListData,
+  normalizeListItems,
+} from "../../utils/apiResponse";
 
 function SasaranForm({ existingData, onSubmitSuccess, onCancel }) {
   const { user, loading: authLoading } = useAuth();
@@ -74,8 +78,8 @@ function SasaranForm({ existingData, onSubmitSuccess, onCancel }) {
           }),
         ]);
 
-        const rpjmdData = rpjmdRes.data || [];
-        const tujuanData = tujuanRes.data || [];
+        const rpjmdData = extractListData(rpjmdRes.data);
+        const tujuanData = normalizeListItems(tujuanRes.data);
 
         setRpjmdList(rpjmdData);
         setTujuanList(tujuanData);
@@ -161,7 +165,16 @@ function SasaranForm({ existingData, onSubmitSuccess, onCancel }) {
     }
 
     try {
-      const res = await api.get("/sasaran", {
+      const selectedTujuan = tujuanList.find(
+        (item) => String(item.id) === String(selectedId)
+      );
+
+      if (!selectedTujuan) {
+        setIsLoadingData(false);
+        return;
+      }
+
+      const res = await api.get("/sasaran/next-number", {
         params: {
           tujuan_id: selectedId,
           jenis_dokumen: dokumenFromForm,
@@ -169,13 +182,10 @@ function SasaranForm({ existingData, onSubmitSuccess, onCancel }) {
         },
       });
 
-      const sasaranList = Array.isArray(res.data) ? res.data : res.data.data;
-      const noUrut = sasaranList.length + 1;
-      const selectedTujuan = tujuanList.find(
-        (m) => m.id === Number(selectedId)
-      );
       const prefix = `S${selectedTujuan.no_tujuan}`;
-      const formattedNo = `${prefix}-${String(noUrut).padStart(2, "0")}`;
+      const formattedNo = `${prefix}-${String(
+        res.data?.nextNomor || 1
+      ).padStart(2, "0")}`;
 
       setIsiTujuanPreview(selectedTujuan.isi_tujuan);
       setFormData((prev) => ({

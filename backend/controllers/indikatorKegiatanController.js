@@ -11,8 +11,15 @@ const {
   getPeriodeFromTahun,
   getPeriodeAktif,
 } = require("../utils/periodeHelper");
+const {
+  sendValidationErrors,
+  fromSequelizeValidationError,
+} = require("../utils/validationErrorResponse");
 
 const allowedFields = [
+  "misi_id",
+  "tujuan_id",
+  "sasaran_id",
   "kegiatan_id",
   "program_id",
   "indikator_program_id",
@@ -54,6 +61,39 @@ function filterAllowedFields(row, allowed) {
   return Object.fromEntries(
     Object.entries(row).filter(([key]) => allowed.includes(key))
   );
+}
+
+function buildMeta(count, limit, page) {
+  return {
+    totalItems: count,
+    totalPages: Math.ceil(count / limit),
+    currentPage: Number(page),
+  };
+}
+
+async function findIndikatorKegiatan(where, safeLimit, offset) {
+  return IndikatorKegiatan.findAndCountAll({
+    where,
+    include: [
+      {
+        model: Program,
+        as: "program",
+        attributes: { exclude: ["createdAt", "updatedAt"] },
+      },
+      {
+        model: OpdPenanggungJawab,
+        as: "opdPenanggungJawab",
+        attributes: ["nama_bidang_opd"],
+      },
+    ],
+    attributes: {
+      exclude: ["createdAt", "updatedAt"],
+    },
+    limit: safeLimit,
+    offset,
+    order: [["id", "ASC"]],
+    distinct: true,
+  });
 }
 
 async function sanitizeAndFill(row, overrides = {}) {
@@ -99,7 +139,15 @@ async function sanitizeAndFill(row, overrides = {}) {
 
 exports.getAll = async (req, res) => {
   try {
-    const { jenis_dokumen, tahun, page = 1, limit = 50 } = req.query;
+    const {
+      jenis_dokumen,
+      tahun,
+      program_id,
+      kegiatan_id,
+      indikator_program_id,
+      page = 1,
+      limit = 50,
+    } = req.query;
 
     if (!jenis_dokumen || !tahun) {
       return res.status(400).json({
@@ -113,38 +161,66 @@ exports.getAll = async (req, res) => {
     const offset = (Number(page) - 1) * safeLimit;
 
     const where = { jenis_dokumen, tahun };
+    let selectedKegiatan = null;
 
-    const { count, rows } = await IndikatorKegiatan.findAndCountAll({
-      where,
-      include: [
-        {
-          model: Program,
-          as: "program",
-          // separate: true,
-          attributes: { exclude: ["createdAt", "updatedAt"] },
-        },
-        {
-          model: OpdPenanggungJawab,
-          as: "opdPenanggungJawab",
-          attributes: ["nama_bidang_opd"],
-        },
-      ],
-      attributes: {
-        exclude: ["createdAt", "updatedAt"],
-      },
-      limit: safeLimit,
-      offset,
-      order: [["id", "ASC"]],
-      distinct: true,
-    });
+    if (indikator_program_id != null && String(indikator_program_id).trim() !== "") {
+      const ipNum = Number(indikator_program_id);
+      if (Number.isFinite(ipNum)) where.indikator_program_id = ipNum;
+    }
+
+    if (program_id) {
+      where.program_id = program_id;
+    } else if (kegiatan_id) {
+      selectedKegiatan = await Kegiatan.findByPk(kegiatan_id, {
+        attributes: ["id", "program_id", "kode_kegiatan", "jenis_dokumen"],
+      });
+
+      if (!selectedKegiatan?.program_id) {
+        return res.status(200).json({
+          data: [],
+          meta: buildMeta(0, safeLimit, page),
+        });
+      }
+
+      // Tabel indikatorkegiatans tidak punya kolom kegiatan_id.
+      // Filter diarahkan ke program induk dari kegiatan yang dipilih.
+      where.program_id = selectedKegiatan.program_id;
+    }
+
+    let { count, rows } = await findIndikatorKegiatan(where, safeLimit, offset);
+
+    if (count === 0 && kegiatan_id && jenis_dokumen !== "rpjmd") {
+      const sourceKegiatan =
+        selectedKegiatan?.jenis_dokumen === "rpjmd"
+          ? selectedKegiatan
+          : await Kegiatan.findOne({
+              where: {
+                kode_kegiatan: selectedKegiatan?.kode_kegiatan,
+                jenis_dokumen: "rpjmd",
+                tahun,
+              },
+              attributes: ["id", "program_id"],
+            });
+
+      if (sourceKegiatan?.program_id) {
+        const fallback = await findIndikatorKegiatan(
+          {
+            jenis_dokumen: "rpjmd",
+            tahun,
+            program_id: sourceKegiatan.program_id,
+          },
+          safeLimit,
+          offset
+        );
+
+        count = fallback.count;
+        rows = fallback.rows;
+      }
+    }
 
     return res.status(200).json({
       data: rows,
-      meta: {
-        totalItems: count,
-        totalPages: Math.ceil(count / safeLimit),
-        currentPage: Number(page),
-      },
+      meta: buildMeta(count, safeLimit, page),
     });
   } catch (err) {
     console.error("❌ getAll indikatorKegiatan error:", err);
@@ -199,10 +275,23 @@ exports.create = async (req, res) => {
   } catch (err) {
     console.error("❌ create error:", err);
     if (err.name === "SequelizeUniqueConstraintError") {
-      return res.status(409).json({
-        message:
-          "Data dengan kombinasi kode_indikator, jenis_dokumen, dan tahun sudah ada.",
-        fields: err.fields,
+      return sendValidationErrors(
+        res,
+        409,
+        {
+          kode_indikator: [
+            "Data dengan kombinasi kode_indikator, jenis_dokumen, dan tahun sudah ada.",
+          ],
+        },
+        {
+          message:
+            "Data dengan kombinasi kode_indikator, jenis_dokumen, dan tahun sudah ada.",
+        }
+      );
+    }
+    if (err.name === "SequelizeValidationError") {
+      return sendValidationErrors(res, 400, fromSequelizeValidationError(err), {
+        message: err.message,
       });
     }
     return res.status(500).json({ message: err.message });
@@ -213,9 +302,12 @@ exports.bulkCreateDetail = async (req, res) => {
   try {
     const parentId = req.params.id;
     if (!parentId) {
-      return res
-        .status(400)
-        .json({ message: "Parent indikator ID wajib diisi." });
+      return sendValidationErrors(
+        res,
+        400,
+        { indikator_program_id: ["Parent indikator ID wajib diisi."] },
+        { message: "Parent indikator ID wajib diisi." }
+      );
     }
 
     const rows = Array.isArray(req.body) ? req.body : [req.body];
@@ -230,10 +322,23 @@ exports.bulkCreateDetail = async (req, res) => {
       return res.status(201).json(created);
     } catch (err) {
       if (err.name === "SequelizeUniqueConstraintError") {
-        return res.status(409).json({
-          message:
-            "Terdapat data duplikat berdasarkan kode_indikator, jenis_dokumen, dan tahun.",
-          fields: err.fields,
+        return sendValidationErrors(
+          res,
+          409,
+          {
+            kode_indikator: [
+              "Terdapat data duplikat berdasarkan kode_indikator, jenis_dokumen, dan tahun.",
+            ],
+          },
+          {
+            message:
+              "Terdapat data duplikat berdasarkan kode_indikator, jenis_dokumen, dan tahun.",
+          }
+        );
+      }
+      if (err.name === "SequelizeValidationError") {
+        return sendValidationErrors(res, 400, fromSequelizeValidationError(err), {
+          message: err.message,
         });
       }
       return res.status(500).json({ message: err.message });
@@ -296,6 +401,19 @@ exports.update = async (req, res) => {
     return res.status(200).json(kegiatan);
   } catch (err) {
     console.error("❌ update error:", err);
+    if (err.name === "SequelizeValidationError") {
+      return sendValidationErrors(res, 400, fromSequelizeValidationError(err), {
+        message: err.message,
+      });
+    }
+    if (err.name === "SequelizeUniqueConstraintError") {
+      return sendValidationErrors(
+        res,
+        409,
+        { kode_indikator: ["Kode indikator bentrok dengan data lain."] },
+        { message: err.message }
+      );
+    }
     return res.status(500).json({ message: err.message });
   }
 };

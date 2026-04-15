@@ -1,9 +1,13 @@
 const { Strategi, Sasaran, Tujuan, Misi, ArahKebijakan } = require("../models");
 const { Op, Sequelize } = require("sequelize");
-const { getPeriodeFromTahun } = require("../utils/periodeHelper");
+const {
+  getPeriodeFromTahun,
+  getPeriodeIdFromTahun,
+} = require("../utils/periodeHelper");
 const {
   autoCloneStrategiIfNeeded,
 } = require("../utils/autoCloneStrategiIfNeeded");
+const { listResponse } = require("../utils/responseHelper");
 
 const redisClient = require("../utils/redisClient");
 
@@ -109,14 +113,134 @@ const strategiController = {
         order: [["kode_strategi", "ASC"]],
       });
 
-      return res.status(200).json({
-        data: rows,
-        meta: {
-          totalItems: count,
-          totalPages: Math.ceil(count / limit),
+      let finalRows = rows;
+      let finalCount = count;
+
+      if (sasaran_id) {
+        const currentSasaran = await Sasaran.findByPk(sasaran_id, {
+          attributes: ["id", "nomor", "rpjmd_id", "jenis_dokumen"],
+        });
+        const expectedPrefix = currentSasaran?.nomor?.replace(/^ST/, "SST");
+
+        if (expectedPrefix) {
+          finalRows = rows.filter((item) =>
+            String(item.kode_strategi || "").startsWith(expectedPrefix)
+          );
+          finalCount = finalRows.length;
+        }
+
+        if (
+          finalCount === 0 &&
+          jenis_dokumen !== "rpjmd" &&
+          currentSasaran
+        ) {
+          let fallbackSasaranId = null;
+          if (currentSasaran.jenis_dokumen === "rpjmd") {
+            fallbackSasaranId = currentSasaran.id;
+          } else if (currentSasaran.rpjmd_id) {
+            fallbackSasaranId = currentSasaran.rpjmd_id;
+          } else if (currentSasaran.nomor) {
+            const mappedSasaran = await Sasaran.findOne({
+              where: {
+                nomor: currentSasaran.nomor,
+                jenis_dokumen: "rpjmd",
+                tahun: String(tahun),
+              },
+              attributes: ["id"],
+            });
+            fallbackSasaranId = mappedSasaran?.id || null;
+          }
+
+          if (!fallbackSasaranId) {
+            return listResponse(
+              res,
+              200,
+              "Daftar strategi berhasil diambil",
+              finalRows,
+              {
+                totalItems: finalCount,
+                totalPages: Math.ceil(finalCount / limit),
+                currentPage: page,
+              }
+            );
+          }
+
+          const fallbackWhere = {
+            sasaran_id: fallbackSasaranId,
+            jenis_dokumen: "rpjmd",
+            tahun: String(tahun),
+          };
+
+          if (search) {
+            const esc = search
+              .toLowerCase()
+              .replace(/[%_\\]/g, (char) => `\\${char}`);
+            fallbackWhere[Op.or] = [
+              Sequelize.where(
+                Sequelize.fn("LOWER", Sequelize.col("Strategi.kode_strategi")),
+                { [Op.like]: `%${esc}%` }
+              ),
+              Sequelize.where(
+                Sequelize.fn("LOWER", Sequelize.col("Strategi.deskripsi")),
+                { [Op.like]: `%${esc}%` }
+              ),
+            ];
+          }
+
+          const fallback = await Strategi.findAndCountAll({
+            where: fallbackWhere,
+            limit,
+            offset,
+            distinct: true,
+            attributes: [
+              "id",
+              "kode_strategi",
+              "deskripsi",
+              "sasaran_id",
+              "periode_id",
+              "jenis_dokumen",
+              "tahun",
+            ],
+            include: [
+              {
+                model: Sasaran,
+                as: "Sasaran",
+                attributes: ["id", "nomor", "isi_sasaran"],
+                include: [
+                  {
+                    model: Tujuan,
+                    as: "Tujuan",
+                    attributes: ["id", "no_tujuan", "isi_tujuan", "misi_id"],
+                    include: [
+                      {
+                        model: Misi,
+                        as: "Misi",
+                        attributes: ["id", "no_misi", "isi_misi"],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+            order: [["kode_strategi", "ASC"]],
+          });
+
+          finalRows = fallback.rows;
+          finalCount = fallback.count;
+        }
+      }
+
+      return listResponse(
+        res,
+        200,
+        "Daftar strategi berhasil diambil",
+        finalRows,
+        {
+          totalItems: finalCount,
+          totalPages: Math.ceil(finalCount / limit),
           currentPage: page,
-        },
-      });
+        }
+      );
     } catch (err) {
       console.error("\x1b[41m%s\x1b[0m", "❌ Error getAll Strategi:", err);
       return res.status(500).json({
@@ -195,7 +319,7 @@ const strategiController = {
           .json({ message: "jenis_dokumen dan tahun wajib diisi." });
       }
 
-      const periode_id = await getPeriodeFromTahun(tahun);
+      const periode_id = await getPeriodeIdFromTahun(tahun);
       if (!periode_id)
         return res.status(400).json({ message: "Periode tidak ditemukan." });
 
@@ -210,7 +334,12 @@ const strategiController = {
         order: [["kode_strategi", "ASC"]],
       });
 
-      res.json(strategiList);
+      return listResponse(
+        res,
+        200,
+        "Daftar strategi berdasarkan sasaran berhasil diambil",
+        strategiList
+      );
     } catch (err) {
       console.error("Error bySasaran:", err);
       res.status(500).json({
@@ -263,7 +392,12 @@ const strategiController = {
         order: [["kode_strategi", "ASC"]],
       });
 
-      return res.json(strategiList);
+      return listResponse(
+        res,
+        200,
+        "Daftar strategi berdasarkan prefix berhasil diambil",
+        strategiList
+      );
     } catch (err) {
       console.error("Error byKodePrefix:", err);
       return res.status(500).json({
@@ -423,7 +557,7 @@ const strategiController = {
           .json({ message: "Parameter tahun dan jenis_dokumen wajib diisi." });
       }
 
-      const periode_id = await getPeriodeFromTahun(tahun);
+      const periode_id = await getPeriodeIdFromTahun(tahun);
       if (!periode_id) {
         return res.status(400).json({ message: "Periode tidak ditemukan." });
       }
@@ -441,7 +575,12 @@ const strategiController = {
         order: [["no_tujuan", "ASC"]],
       });
 
-      res.json(tujuanList);
+      return listResponse(
+        res,
+        200,
+        "Daftar tujuan untuk strategi berhasil diambil",
+        tujuanList
+      );
     } catch (err) {
       console.error("Error tujuanList:", err);
       res.status(500).json({

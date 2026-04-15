@@ -43,7 +43,7 @@ import AktivitasPengguna from "../pages/aktivitas/Modul3_AktivitasPengguna";
 import Users from "../features/users/Users";
 import KegiatanList from "@/shared/components/KegiatanList";
 import SubKegiatanList from "@/shared/components/SubKegiatanList";
-import { OpdPenanggungJawabForm, TujuanList } from "@/shared/components/Forms";
+import { OpdPenanggungJawabForm, TujuanList, IndikatorRPJMD } from "@/shared/components/Forms";
 import SasaranList from "@/shared/components/SasaranList";
 import StrategiList from "@/shared/components/StrategiList";
 import ArahKebijakanList from "@/shared/components/ArahKebijakanList";
@@ -332,6 +332,11 @@ const routes = [
     role: ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"],
   },
   {
+    path: "/dashboard-rpjmd/wizard",
+    element: <IndikatorRPJMD />,
+    role: ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"],
+  },
+  {
     path: "/dashboard-rpjmd/indikator-tujuan-edit/:id",
     element: <IndikatorTujuanEditPage />,
     role: ["SUPER_ADMIN"],
@@ -339,7 +344,7 @@ const routes = [
 
   {
     path: "/dashboard-rpjmd/indikator-tujuan-list",
-    element: <IndikatorList />,
+    element: <IndikatorList defaultType="tujuan" />,
     role: ["SUPER_ADMIN"],
   },
 
@@ -351,7 +356,7 @@ const routes = [
 
   {
     path: "/dashboard-rpjmd/indikator-sasaran-list",
-    element: <IndikatorList />,
+    element: <IndikatorList defaultType="sasaran" />,
     role: ["SUPER_ADMIN"],
   },
 
@@ -363,7 +368,7 @@ const routes = [
 
   {
     path: "/dashboard-rpjmd/indikator-program-list",
-    element: <IndikatorList />,
+    element: <IndikatorList defaultType="program" />,
     role: ["SUPER_ADMIN"],
   },
 
@@ -375,7 +380,25 @@ const routes = [
 
   {
     path: "/dashboard-rpjmd/indikator-kegiatan-list",
-    element: <IndikatorList />,
+    element: <IndikatorList defaultType="kegiatan" />,
+    role: ["SUPER_ADMIN"],
+  },
+
+  {
+    path: "/dashboard-rpjmd/indikator-strategi-list",
+    element: <IndikatorList defaultType="strategi" />,
+    role: ["SUPER_ADMIN"],
+  },
+
+  {
+    path: "/dashboard-rpjmd/indikator-arah-kebijakan-list",
+    element: <IndikatorList defaultType="arah_kebijakan" />,
+    role: ["SUPER_ADMIN"],
+  },
+
+  {
+    path: "/dashboard-rpjmd/indikator-sub-kegiatan-list",
+    element: <IndikatorList defaultType="sub_kegiatan_indikator" />,
     role: ["SUPER_ADMIN"],
   },
 

@@ -16,6 +16,9 @@ import { useDokumen } from "../../hooks/useDokumen";
 
 const drawerWidth = 220;
 
+const SIGAP_MALUT_URL =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_SIGAP_MALUT_URL) || "";
+
 const menuItems = [
   { label: "RPJMD", icon: <MenuBookIcon />, path: "/dashboard-rpjmd" },
   { label: "Renstra", icon: <AssignmentIcon />, path: "/dashboard-renstra" },
@@ -42,6 +45,22 @@ const menuItems = [
     path: "/dashboard-lk-dispang",
   },
   { label: "LAKIP", icon: <DashboardIcon />, path: "/dashboard-lakip" },
+  { label: "LK — Dashboard", icon: <DashboardIcon />, path: "/lk/dashboard" },
+  { label: "LK — LAK", icon: <DashboardIcon />, path: "/lk/lak" },
+  { label: "LK — CALK", icon: <DashboardIcon />, path: "/lk/calk" },
+  { label: "LK — Generator PDF", icon: <DashboardIcon />, path: "/lk/generator" },
+  { label: "LK — Kode Akun BAS", icon: <DashboardIcon />, path: "/lk/kode-akun" },
+  { label: "LK — Jurnal", icon: <DashboardIcon />, path: "/lk/jurnal" },
+  { label: "LK — Saldo Akun", icon: <DashboardIcon />, path: "/lk/saldo-akun" },
+  { label: "LK — BKU", icon: <DashboardIcon />, path: "/lk/bku" },
+  { label: "LK — LRA", icon: <DashboardIcon />, path: "/lk/lra" },
+  { label: "LK — Neraca", icon: <DashboardIcon />, path: "/lk/neraca" },
+  { label: "LK — Aset Tetap", icon: <DashboardIcon />, path: "/lk/aset-tetap" },
+  { label: "LK — Kewajiban", icon: <DashboardIcon />, path: "/lk/kewajiban" },
+  { label: "LK — Persediaan", icon: <DashboardIcon />, path: "/lk/persediaan" },
+  { label: "LK — Penyusutan", icon: <DashboardIcon />, path: "/lk/penyusutan" },
+  { label: "LK — LO", icon: <DashboardIcon />, path: "/lk/lo" },
+  { label: "LK — LPE", icon: <DashboardIcon />, path: "/lk/lpe" },
   {
     label: "Cloning Data",
     icon: <DashboardIcon />,
@@ -110,6 +129,32 @@ export default function MuiSidebarGlobal() {
           )
         )}
       </List>
+      {!locked && (
+        <>
+          <Divider sx={{ borderColor: "rgba(255,255,255,0.12)" }} />
+          <List>
+            <ListItemButton
+              component="a"
+              href={SIGAP_MALUT_URL || undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              disabled={!SIGAP_MALUT_URL}
+              sx={{ opacity: SIGAP_MALUT_URL ? 1 : 0.5 }}
+            >
+              <ListItemIcon sx={{ color: "inherit" }}>
+                <DashboardIcon />
+              </ListItemIcon>
+              <ListItemText primary="Buka SIGAP-MALUT" />
+            </ListItemButton>
+            <ListItemButton component={NavLink} to="/lk/dashboard">
+              <ListItemIcon sx={{ color: "inherit" }}>
+                <DashboardIcon />
+              </ListItemIcon>
+              <ListItemText primary="Sinkronisasi SIGAP (LK)" />
+            </ListItemButton>
+          </List>
+        </>
+      )}
     </Drawer>
   );
 }

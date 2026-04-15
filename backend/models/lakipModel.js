@@ -58,6 +58,11 @@ module.exports = (sequelize, DataTypes) => {
       rkpd_id: DataTypes.INTEGER,
       renja_id: DataTypes.INTEGER,
       lk_dispang_id: DataTypes.INTEGER,
+      approval_status: {
+        type: DataTypes.ENUM("DRAFT", "SUBMITTED", "APPROVED", "REJECTED"),
+        allowNull: false,
+        defaultValue: "DRAFT",
+      },
     },
     {
       sequelize,

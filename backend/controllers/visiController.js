@@ -1,18 +1,54 @@
+const { Op } = require("sequelize");
 const { Visi, Misi } = require("../models");
+const { autoCloneMisiIfNeeded } = require("../utils/autoCloneMisiIfNeeded");
+const { listResponse } = require("../utils/responseHelper");
+
+const buildMisiInclude = (query = {}) => {
+  const where = {};
+
+  if (query.jenis_dokumen) where.jenis_dokumen = query.jenis_dokumen;
+  if (query.tahun) where.tahun = String(query.tahun);
+
+  return {
+    model: Misi,
+    as: "misiFromVisi",
+    attributes: ["id", "isi_misi", "no_misi"],
+    ...(Object.keys(where).length > 0 ? { where, required: false } : {}),
+  };
+};
+
+const buildVisiWhere = (query = {}) => {
+  const where = {};
+  const parsedTahun = parseInt(query.tahun, 10);
+
+  if (!Number.isNaN(parsedTahun)) {
+    where.tahun_awal = { [Op.lte]: parsedTahun };
+    where.tahun_akhir = { [Op.gte]: parsedTahun };
+  }
+
+  return where;
+};
 
 const getAllVisi = async (req, res) => {
   try {
+    if (req.query.jenis_dokumen && req.query.tahun) {
+      await autoCloneMisiIfNeeded({
+        jenis_dokumen: req.query.jenis_dokumen,
+        tahun: req.query.tahun,
+      });
+    }
+
     const visiList = await Visi.findAll({
-      include: [
-        {
-          model: Misi,
-          as: "misiFromVisi", // harus sama persis dengan as di model
-          attributes: ["id", "isi_misi", "no_misi"],
-        },
-      ],
+      where: buildVisiWhere(req.query),
+      include: [buildMisiInclude(req.query)],
       order: [["tahun_awal", "ASC"]],
     });
-    res.status(200).json(visiList);
+    return listResponse(
+      res,
+      200,
+      "Daftar visi berhasil diambil",
+      visiList,
+    );
   } catch (error) {
     console.error("Error fetching Visi:", error);
     res
@@ -23,14 +59,15 @@ const getAllVisi = async (req, res) => {
 
 const getVisiById = async (req, res) => {
   try {
+    if (req.query.jenis_dokumen && req.query.tahun) {
+      await autoCloneMisiIfNeeded({
+        jenis_dokumen: req.query.jenis_dokumen,
+        tahun: req.query.tahun,
+      });
+    }
+
     const visi = await Visi.findByPk(req.params.id, {
-      include: [
-        {
-          model: Misi,
-          as: "misiFromVisi",
-          attributes: ["id", "isi_misi", "no_misi"],
-        },
-      ],
+      include: [buildMisiInclude(req.query)],
     });
     if (!visi) return res.status(404).json({ message: "Visi not found" });
     res.status(200).json(visi);

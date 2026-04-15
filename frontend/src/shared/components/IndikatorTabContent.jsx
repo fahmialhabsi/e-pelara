@@ -1,8 +1,9 @@
 // src/components/IndikatorTabContent.jsx
 
-import React, { useMemo } from "react";
+import React from "react";
 import { Col, Form } from "react-bootstrap";
 import Select from "react-select";
+import { formatOpdPenanggungLabel } from "@/utils/opdDisplayLabel";
 
 export default function IndikatorTabContent({
   tabKey,
@@ -81,20 +82,21 @@ export default function IndikatorTabContent({
           );
         }
 
-        // Dropdown OPD
+        // Dropdown OPD — value string konsisten dengan normalizeListItems + Yup penanggung_jawab string
         if (field.type === "opd") {
-          const opdList = useMemo(
-            () =>
-              opdOptions.map((opd) => ({
-                value: Number(opd.value || opd.id), // pastikan value-nya number
-                label: `${opd.nama_opd} - ${opd.nama_bidang_opd}`,
-              })),
-            [opdOptions]
-          );
+          const opdList = opdOptions.map((opd) => ({
+            value: String(opd.value ?? opd.id ?? ""),
+            label: formatOpdPenanggungLabel(opd),
+          }));
 
-          const selectedValue = Number(values[field.name]);
-          const selectedOption =
-            opdList.find((opt) => opt.value === selectedValue) || null;
+          const raw = values[field.name];
+          const hasId =
+            raw !== null &&
+            raw !== undefined &&
+            String(raw).trim() !== "";
+          const selectedOption = hasId
+            ? opdList.find((opt) => String(opt.value) === String(raw)) ?? null
+            : null;
 
           return (
             <Form.Group as={Col} md={6} key={field.name}>
@@ -104,7 +106,12 @@ export default function IndikatorTabContent({
                 options={opdList}
                 value={selectedOption}
                 onChange={(opt) =>
-                  setFieldValue(field.name, opt?.value || null)
+                  setFieldValue(
+                    field.name,
+                    opt != null && opt.value !== "" && opt.value != null
+                      ? String(opt.value)
+                      : "",
+                  )
                 }
                 placeholder={field.placeholder || "Pilih OPD"}
                 isClearable

@@ -13,6 +13,7 @@ import {
   BsClipboard,
   BsLayers,
   BsBuildings,
+  BsListUl,
 } from "react-icons/bs";
 
 import {
@@ -73,6 +74,12 @@ import { checkAuthStatus } from "../../../contexts/AuthProvider";
 import { useNavigate } from "react-router-dom";
 import { usePeriodeAktif } from "@/features/rpjmd/hooks/usePeriodeAktif";
 import CascadingNestedView from "@/shared/components/CascadingNestedView";
+import IndikatorList from "@/shared/components/IndikatorList";
+import {
+  extractListData,
+  extractListMeta,
+  normalizeListItems,
+} from "@/utils/apiResponse";
 
 const groupedMenuList = [
   {
@@ -144,6 +151,11 @@ const groupedMenuList = [
         icon: <BsLayers size={18} />,
         label: "Indikator Spesifik RPJMD",
       },
+      {
+        key: "indikator_daftar_rpjmd",
+        icon: <BsListUl size={18} />,
+        label: "Daftar Indikator RPJMD",
+      },
       { key: "cascading", icon: <BsLayers size={18} />, label: "Cascading" },
     ],
   },
@@ -211,6 +223,16 @@ const groupedMenuList = [
         label: "Daftar Indikator Sasaran",
       },
       {
+        key: "indikator_strategi_list",
+        icon: <BsFlag size={18} />,
+        label: "Daftar Indikator Strategi",
+      },
+      {
+        key: "indikator_arah_kebijakan_list",
+        icon: <BsFlag size={18} />,
+        label: "Daftar Indikator Arah Kebijakan",
+      },
+      {
         key: "indikator_program_list",
         icon: <BsFlag size={18} />,
         label: "Daftar Indikator Program",
@@ -219,6 +241,11 @@ const groupedMenuList = [
         key: "indikator_kegiatan_list",
         icon: <BsFlag size={18} />,
         label: "Daftar Indikator Kegiatan",
+      },
+      {
+        key: "indikator_sub_kegiatan_list",
+        icon: <BsFlag size={18} />,
+        label: "Daftar Indikator Sub Kegiatan",
       },
       {
         key: "indikator_khusus_list",
@@ -337,11 +364,9 @@ export default function DashboardUtamaRpjmd() {
                 periode_id,
               },
             });
-            let count = 0;
-            if (res.data?.meta?.total) count = res.data.meta.total;
-            else if (Array.isArray(res.data?.data))
-              count = res.data.data.length;
-            else if (Array.isArray(res.data)) count = res.data.length;
+            const meta = extractListMeta(res.data);
+            const items = extractListData(res.data);
+            const count = Number(meta.totalItems ?? meta.total ?? items.length ?? 0);
             result[key] = count;
           } catch {
             result[key] = 0;
@@ -374,11 +399,9 @@ export default function DashboardUtamaRpjmd() {
           const res = await api.get(indikatorSummaryApiMap[key], {
             params: { jenis_dokumen: dokumen, tahun },
           });
-          if (res.data?.meta?.total) result[key] = res.data.meta.total;
-          else if (Array.isArray(res.data?.data))
-            result[key] = res.data.data.length;
-          else if (Array.isArray(res.data)) result[key] = res.data.length;
-          else result[key] = 0;
+          const meta = extractListMeta(res.data);
+          const items = extractListData(res.data);
+          result[key] = Number(meta.totalItems ?? meta.total ?? items.length ?? 0);
         } catch {
           result[key] = 0;
         }
@@ -388,8 +411,9 @@ export default function DashboardUtamaRpjmd() {
         const res = await api.get(indikatorSummaryApiMap.sub_kegiatan_output, {
           params: { jenis_dokumen: dokumen, tahun },
         });
-        result.sub_kegiatan_output =
-          res.data?.data?.filter((x) => !!x.output)?.length || 0;
+        result.sub_kegiatan_output = extractListData(res.data).filter(
+          (item) => Boolean(item?.output)
+        ).length;
       } catch {
         result.sub_kegiatan_output = 0;
       }
@@ -401,17 +425,6 @@ export default function DashboardUtamaRpjmd() {
     fetchIndikatorSummary();
     return () => (mounted = false);
   }, [dokumen, tahun]);
-
-  if (userLoading) {
-    return (
-      <div
-        className="d-flex justify-content-center align-items-center"
-        style={{ minHeight: 200 }}
-      >
-        <Spinner animation="border" />
-      </div>
-    );
-  }
 
   useEffect(() => {
     if (openedGroup !== null) {
@@ -427,9 +440,6 @@ export default function DashboardUtamaRpjmd() {
     }
   }, [navigate]);
 
-  if (!user) return <Navigate to="/login" replace />;
-  if (!dokumen || !tahun) return <Navigate to="/" replace />;
-
   useEffect(() => {
     const fetchCascadingData = async () => {
       try {
@@ -441,7 +451,7 @@ export default function DashboardUtamaRpjmd() {
             periode_id,
           },
         });
-        setDataCascading(res.data?.data || []);
+        setDataCascading(normalizeListItems(res.data));
       } catch (err) {
         console.error("Gagal memuat data cascading:", err);
         setDataCascading([]);
@@ -454,6 +464,20 @@ export default function DashboardUtamaRpjmd() {
       fetchCascadingData();
     }
   }, [dokumen, tahun, periode_id]);
+
+  if (userLoading) {
+    return (
+      <div
+        className="d-flex justify-content-center align-items-center"
+        style={{ minHeight: 200 }}
+      >
+        <Spinner animation="border" />
+      </div>
+    );
+  }
+
+  if (!user) return <Navigate to="/login" replace />;
+  if (!dokumen || !tahun) return <Navigate to="/" replace />;
 
   const renderMenuContent = () => {
     switch (selectedMenu) {
@@ -509,6 +533,12 @@ export default function DashboardUtamaRpjmd() {
         return <KegiatanList />;
       case "indikator_kegiatan_list":
         return <IndikatorKegiatanList />;
+      case "indikator_strategi_list":
+        return <IndikatorList defaultType="strategi" />;
+      case "indikator_arah_kebijakan_list":
+        return <IndikatorList defaultType="arah_kebijakan" />;
+      case "indikator_sub_kegiatan_list":
+        return <IndikatorList defaultType="sub_kegiatan_indikator" />;
       case "sub_kegiatan":
         return <SubKegiatanForm />;
       case "sub_kegiatan_list":
@@ -521,6 +551,8 @@ export default function DashboardUtamaRpjmd() {
         return <OpdPenanggungJawabForm onSave={() => setSelectedMenu(null)} />;
       case "indikator_rpjmd":
         return <IndikatorRPJMD />;
+      case "indikator_daftar_rpjmd":
+        return <IndikatorList defaultType="tujuan" />;
       case "cascading":
         return <CascadingForm />;
       case "cascading_nested":

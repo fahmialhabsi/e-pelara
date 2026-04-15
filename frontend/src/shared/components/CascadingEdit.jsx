@@ -4,6 +4,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Spinner, Alert, Container, Breadcrumb } from "react-bootstrap";
 import api from "../../services/api";
 import CascadingForm from "../../shared/components/CascadingForm";
+import { extractSingleData } from "@/utils/apiResponse";
 
 function CascadingEdit() {
   const { id } = useParams();
@@ -17,7 +18,7 @@ function CascadingEdit() {
       setLoading(true);
       try {
         const res = await api.get(`/cascading/${id}`);
-        setData(res.data);
+        setData(extractSingleData(res.data));
       } catch (err) {
         setError("Gagal mengambil data cascading.");
       } finally {

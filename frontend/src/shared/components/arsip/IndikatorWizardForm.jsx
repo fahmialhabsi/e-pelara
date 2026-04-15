@@ -16,6 +16,7 @@ import api from "../../../services/api";
 import { useAuth } from "../../../hooks/useAuth";
 import { Formik, Form } from "formik";
 import { wizardSchemas } from "../../../utils/wizardSchemas";
+import { normalizeListItems } from "../../../utils/apiResponse";
 
 const steps = ["Misi", "Tujuan", "Sasaran", "Program", "Kegiatan"];
 
@@ -83,7 +84,7 @@ export default function IndikatorWizardForm({ onSubmit }) {
     (async () => {
       try {
         const r1 = await api.get("/opd-penanggung-jawab?page=1");
-        let list = r1.data.data;
+        let list = normalizeListItems(r1.data);
         const total = r1.data.meta?.totalPages || 1;
 
         if (total > 1) {
@@ -92,7 +93,7 @@ export default function IndikatorWizardForm({ onSubmit }) {
               api.get(`/opd-penanggung-jawab?page=${i + 2}`)
             )
           );
-          list = list.concat(...rest.map((r) => r.data.data));
+          list = list.concat(...rest.map((r) => normalizeListItems(r.data)));
         }
 
         setOptions((prev) => ({ ...prev, penanggungJawab: list }));
@@ -112,7 +113,7 @@ export default function IndikatorWizardForm({ onSubmit }) {
           api.get("/kegiatan?page=1"),
         ]);
 
-        let keg = rKpage1.data.data;
+        let keg = normalizeListItems(rKpage1.data);
         const totalPages = rKpage1.data.meta?.totalPages || 1;
         if (totalPages > 1) {
           const rest = await Promise.all(
@@ -120,14 +121,14 @@ export default function IndikatorWizardForm({ onSubmit }) {
               api.get(`/kegiatan?page=${i + 2}`)
             )
           );
-          keg = keg.concat(...rest.map((r) => r.data.data));
+          keg = keg.concat(...rest.map((r) => normalizeListItems(r.data)));
         }
 
         setOptions((prev) => ({
           ...prev,
-          misi: Array.isArray(rM.data) ? rM.data : rM.data.data,
-          sasaran: rS.data,
-          program: Array.isArray(rP.data.data) ? rP.data.data : rP.data,
+          misi: normalizeListItems(rM.data),
+          sasaran: normalizeListItems(rS.data),
+          program: normalizeListItems(rP.data),
           kegiatan: keg,
         }));
       } catch (e) {
@@ -173,9 +174,7 @@ export default function IndikatorWizardForm({ onSubmit }) {
         });
         setOptions((prev) => ({
           ...prev,
-          tujuan: Array.isArray(rTujuan.data)
-            ? rTujuan.data
-            : rTujuan.data.data,
+          tujuan: normalizeListItems(rTujuan.data),
         }));
         setSuccess("Misi berhasil disimpan.");
       } else {

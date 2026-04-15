@@ -3,9 +3,9 @@ const {
   Program,
   IndikatorProgram,
   IndikatorKegiatan,
-  OpdPenanggungJawab,
+  IndikatorSasaran,
 } = require("../models");
-const { Op } = require("sequelize");
+const { Op, fn, col, where: sqlWhere } = require("sequelize");
 const { generateKodeIndikator } = require("../helpers/generateKodeIndikator");
 const { normalizeDecimalFields } = require("../utils/normalizeDecimal");
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
@@ -13,6 +13,10 @@ const {
   getPeriodeFromTahun,
   getPeriodeAktif,
 } = require("../utils/periodeHelper");
+const {
+  sendValidationErrors,
+  fromSequelizeValidationError,
+} = require("../utils/validationErrorResponse");
 
 const allowedFields = [
   "kode_indikator",
@@ -48,6 +52,7 @@ const allowedFields = [
   "rekomendasi_ai",
   "sasaran_id",
   "indikator_id",
+  "program_id",
 ];
 
 const MAX_LIMIT = 200;
@@ -97,10 +102,23 @@ exports.create = async (req, res) => {
     return res.status(201).json(created);
   } catch (err) {
     if (err.name === "SequelizeUniqueConstraintError") {
-      return res.status(409).json({
-        message:
-          "Data dengan kombinasi kode_indikator, jenis_dokumen, dan tahun sudah ada.",
-        fields: err.fields,
+      return sendValidationErrors(
+        res,
+        409,
+        {
+          kode_indikator: [
+            "Data dengan kombinasi kode_indikator, jenis_dokumen, dan tahun sudah ada.",
+          ],
+        },
+        {
+          message:
+            "Data dengan kombinasi kode_indikator, jenis_dokumen, dan tahun sudah ada.",
+        }
+      );
+    }
+    if (err.name === "SequelizeValidationError") {
+      return sendValidationErrors(res, 400, fromSequelizeValidationError(err), {
+        message: err.message,
       });
     }
     console.error("❌ CREATE ERROR:", err);
@@ -114,13 +132,21 @@ exports.bulkCreateDetail = async (req, res) => {
     const rows = req.body?.rows || [];
 
     if (!indikatorId) {
-      return res.status(400).json({ message: "indikatorId diperlukan." });
+      return sendValidationErrors(
+        res,
+        400,
+        { indikator_id: ["indikatorId diperlukan."] },
+        { message: "indikatorId diperlukan." }
+      );
     }
 
     if (!Array.isArray(rows) || rows.length === 0) {
-      return res
-        .status(400)
-        .json({ message: "rows harus berupa array dan tidak boleh kosong." });
+      return sendValidationErrors(
+        res,
+        400,
+        { rows: ["rows harus berupa array dan tidak boleh kosong."] },
+        { message: "rows harus berupa array dan tidak boleh kosong." }
+      );
     }
 
     const sanitized = [];
@@ -149,10 +175,23 @@ exports.bulkCreateDetail = async (req, res) => {
     return res.status(201).json(created);
   } catch (err) {
     if (err.name === "SequelizeUniqueConstraintError") {
-      return res.status(409).json({
-        message:
-          "Terdapat data duplikat berdasarkan kode_indikator, jenis_dokumen, dan tahun.",
-        fields: err.fields,
+      return sendValidationErrors(
+        res,
+        409,
+        {
+          kode_indikator: [
+            "Terdapat data duplikat berdasarkan kode_indikator, jenis_dokumen, dan tahun.",
+          ],
+        },
+        {
+          message:
+            "Terdapat data duplikat berdasarkan kode_indikator, jenis_dokumen, dan tahun.",
+        }
+      );
+    }
+    if (err.name === "SequelizeValidationError") {
+      return sendValidationErrors(res, 400, fromSequelizeValidationError(err), {
+        message: err.message,
       });
     }
     console.error("❌ BULK CREATE DETAIL ERROR:", err);
@@ -162,7 +201,8 @@ exports.bulkCreateDetail = async (req, res) => {
 
 exports.findAll = async (req, res) => {
   try {
-    const { jenis_dokumen, tahun, page = 1, perPage = 50 } = req.query;
+    const { jenis_dokumen, tahun, page = 1, perPage = 50, program_id } =
+      req.query;
 
     if (!jenis_dokumen || !tahun) {
       return res
@@ -175,8 +215,64 @@ exports.findAll = async (req, res) => {
     const limit = Math.min(parseInt(perPage, 10) || 50, MAX_LIMIT);
     const offset = (parseInt(page, 10) - 1) * limit;
 
+    const jenisLc = String(jenis_dokumen).trim().toLowerCase();
+    const tahunStr = String(tahun);
+    const andParts = [
+      { tahun: tahunStr },
+      sqlWhere(fn("LOWER", col("jenis_dokumen")), jenisLc),
+    ];
+
+    let pid = null;
+    if (program_id != null && String(program_id).trim() !== "") {
+      pid = Number.parseInt(String(program_id), 10);
+      if (!Number.isNaN(pid)) {
+        const prog = await Program.findByPk(pid, {
+          attributes: ["id", "sasaran_id"],
+        });
+        const sasaranKeys = [];
+        if (prog?.sasaran_id != null) {
+          const indikSasaran = await IndikatorSasaran.findOne({
+            where: {
+              sasaran_id: prog.sasaran_id,
+              tahun: tahunStr,
+              [Op.and]: [
+                sqlWhere(fn("LOWER", col("jenis_dokumen")), jenisLc),
+              ],
+            },
+            attributes: ["id", "sasaran_id"],
+          });
+          if (indikSasaran?.id != null) sasaranKeys.push(Number(indikSasaran.id));
+          sasaranKeys.push(Number(prog.sasaran_id));
+        }
+        const uniqSasaran = [...new Set(sasaranKeys.filter((n) => Number.isFinite(n)))];
+        /**
+         * Hook duplicate (beforeCreate) hanya cek kode_indikator + jenis_dokumen + tahun,
+         * tanpa program_id — data lama sering program_id NULL.
+         * GET harus mengembalikan baris yang sama konteks program:
+         *   (program_id = :pid) OR (program_id IS NULL AND sasaran_id ∈ {FK indikator sasaran, sasaran RPJMD}).
+         */
+        if (uniqSasaran.length > 0) {
+          andParts.push({
+            [Op.or]: [
+              { program_id: pid },
+              {
+                [Op.and]: [
+                  { program_id: { [Op.is]: null } },
+                  { sasaran_id: { [Op.in]: uniqSasaran } },
+                ],
+              },
+            ],
+          });
+        } else {
+          andParts.push({ program_id: pid });
+        }
+      }
+    }
+
+    const where = { [Op.and]: andParts };
+
     const { count, rows } = await IndikatorProgram.findAndCountAll({
-      where: { jenis_dokumen, tahun },
+      where,
       include: [
         {
           model: IndikatorKegiatan,
@@ -196,11 +292,6 @@ exports.findAll = async (req, res) => {
             "tahun",
             "jenis_dokumen",
           ],
-        },
-        {
-          model: OpdPenanggungJawab,
-          as: "opdPenanggungJawab",
-          attributes: ["nama_opd"],
         },
       ],
       attributes: { exclude: ["createdAt", "updatedAt"] },
@@ -321,6 +412,19 @@ exports.update = async (req, res) => {
     return res.status(200).json(indikatorProgram);
   } catch (err) {
     console.error("❌ UPDATE ERROR:", err);
+    if (err.name === "SequelizeValidationError") {
+      return sendValidationErrors(res, 400, fromSequelizeValidationError(err), {
+        message: err.message,
+      });
+    }
+    if (err.name === "SequelizeUniqueConstraintError") {
+      return sendValidationErrors(
+        res,
+        409,
+        { kode_indikator: ["Kode indikator bentrok dengan data lain."] },
+        { message: err.message }
+      );
+    }
     return res.status(500).json({ message: err.message });
   }
 };

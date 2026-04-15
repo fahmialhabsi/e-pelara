@@ -6,10 +6,12 @@ export default function useKodeGenerator(
   kegiatanData,
   setKegiatanData,
   isEdit,
-  programs
+  programs,
+  options = {}
 ) {
+  const skipAutoKode = Boolean(options.skipAutoKode);
   useEffect(() => {
-    if (isEdit || !kegiatanData.program_id) return;
+    if (skipAutoKode || isEdit || !kegiatanData.program_id) return;
 
     const selectedProgram = programs.find(
       (p) => String(p.id) === String(kegiatanData.program_id)
@@ -35,5 +37,11 @@ export default function useKodeGenerator(
     };
 
     fetchKode();
-  }, [kegiatanData.program_id, isEdit, programs, setKegiatanData]);
+  }, [
+    kegiatanData.program_id,
+    isEdit,
+    programs,
+    setKegiatanData,
+    skipAutoKode,
+  ]);
 }

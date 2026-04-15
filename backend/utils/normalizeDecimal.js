@@ -1,5 +1,13 @@
 // utils/normalizeDecimal.js
 
+/** Kolom DECIMAL di MySQL tidak boleh diisi string kosong `''` — harus NULL atau angka valid. */
+function coerceEmptyToNull(v) {
+  if (v === "" || v === undefined) return null;
+  if (v === null) return null;
+  if (typeof v === "string" && v.trim() === "") return null;
+  return v;
+}
+
 function normalizeDecimalFields(data, fieldNames = null) {
   const defaultFields = [
     "baseline",
@@ -15,6 +23,8 @@ function normalizeDecimalFields(data, fieldNames = null) {
     "capaian_tahun_3",
     "capaian_tahun_4",
     "capaian_tahun_5",
+    "realisasi",
+    "anggaran",
   ];
 
   // ✅ Validasi eksplisit: pastikan selalu array
@@ -24,8 +34,14 @@ function normalizeDecimalFields(data, fieldNames = null) {
 
   const normalize = (entry) => {
     fieldsToNormalize.forEach((field) => {
-      if (typeof entry[field] === "string") {
-        entry[field] = entry[field].replace(",", ".");
+      if (!Object.prototype.hasOwnProperty.call(entry, field)) return;
+      const coerced = coerceEmptyToNull(entry[field]);
+      if (coerced === null) {
+        entry[field] = null;
+        return;
+      }
+      if (typeof coerced === "string") {
+        entry[field] = coerced.trim().replace(",", ".");
       }
     });
   };

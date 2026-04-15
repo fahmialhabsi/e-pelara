@@ -2,9 +2,10 @@
 import axios from "axios";
 import { refreshToken } from "./authService";
 import { toast } from "react-toastify";
+import { API_BASE_URL } from "../config/runtimeConfig";
 
 const api = axios.create({
-  baseURL: "http://localhost:3000/api",
+  baseURL: API_BASE_URL,
   withCredentials: true,
 });
 
@@ -14,6 +15,13 @@ api.interceptors.request.use(
     const token = localStorage.getItem("token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    const method = String(config.method || "get").toLowerCase();
+    if (method === "get" && config.params !== false) {
+      const cur = config.params;
+      const base =
+        cur != null && typeof cur === "object" && !Array.isArray(cur) ? cur : {};
+      config.params = { ...base, _nf: Date.now() };
     }
     return config;
   },

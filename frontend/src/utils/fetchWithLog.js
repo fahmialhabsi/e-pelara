@@ -1,30 +1,34 @@
 import api from "../services/api";
+import { extractListResponse } from "./apiResponse";
 
 const fetchWithLog = async (endpoint, params = {}, setter, label = "") => {
   const labelInfo = label || endpoint;
-  const requestParams = { ...params, _ts: Date.now() }; // cegah cache 304
+  const requestParams = { ...params, _ts: Date.now() };
+  const timerLabel = `Request Time: ${labelInfo}#${requestParams._ts}-${Math.random()
+    .toString(36)
+    .slice(2, 7)}`;
 
-  console.group(`🔍 [fetchWithLog] ${labelInfo}`);
-  console.log("🛠 Endpoint:", endpoint);
-  console.log("📨 Params:", requestParams);
+  console.group(`[fetchWithLog] ${labelInfo}`);
+  console.log("Endpoint:", endpoint);
+  console.log("Params:", requestParams);
   console.groupEnd();
 
   try {
-    console.time(`⏱ Request Time: ${labelInfo}`);
+    console.time(timerLabel);
     const res = await api.get(endpoint, { params: requestParams });
-    console.timeEnd(`⏱ Request Time: ${labelInfo}`);
+    console.timeEnd(timerLabel);
 
-    console.group(`📦 [Response] ${labelInfo}`);
+    const { data, meta } = extractListResponse(res.data);
+
+    console.group(`[Response] ${labelInfo}`);
     console.log("Full response object:", res);
-    console.log("Tipe data:", typeof res.data);
-    console.log("Apakah array?", Array.isArray(res.data));
-    console.log("Payload:", res.data?.data ?? res.data);
+    console.log("Payload:", data);
+    console.log("Meta:", meta);
     console.groupEnd();
 
-    const payload = res.data?.data ?? res.data;
-    setter(Array.isArray(payload) ? payload : []);
+    setter(data);
   } catch (err) {
-    console.error(`❌ [Error] Gagal ambil ${labelInfo}:`, err);
+    console.error(`[Error] Gagal ambil ${labelInfo}:`, err);
     setter([]);
   }
 };

@@ -13,6 +13,10 @@ const {
   getPeriodeFromTahun,
   getPeriodeAktif,
 } = require("../utils/periodeHelper");
+const {
+  sendValidationErrors,
+  fromSequelizeValidationError,
+} = require("../utils/validationErrorResponse");
 
 const allowedFields = [
   "misi_id",
@@ -153,12 +157,22 @@ async function create(req, res) {
       // Pastikan tujuan ada
       const tujuan = await Tujuan.findByPk(entry.tujuan_id);
       if (!tujuan) {
-        return res.status(404).json({ message: "Tujuan tidak ditemukan" });
+        return sendValidationErrors(
+          res,
+          404,
+          { tujuan_id: ["Tujuan tidak ditemukan"] },
+          { message: "Tujuan tidak ditemukan" }
+        );
       }
 
       // Pastikan no_tujuan tidak kosong
       if (!tujuan.no_tujuan) {
-        return res.status(400).json({ message: "No tujuan tidak valid" });
+        return sendValidationErrors(
+          res,
+          400,
+          { tujuan_id: ["No tujuan tidak valid"] },
+          { message: "No tujuan tidak valid" }
+        );
       }
 
       // Sanitasi + lengkapi data
@@ -192,9 +206,17 @@ async function create(req, res) {
   } catch (error) {
     console.error("❌ Error create indikator tujuan:", error);
     if (error.name === "SequelizeUniqueConstraintError") {
-      return res
-        .status(400)
-        .json({ message: "Kode indikator sudah digunakan" });
+      return sendValidationErrors(
+        res,
+        400,
+        { kode_indikator: ["Kode indikator sudah digunakan"] },
+        { message: "Kode indikator sudah digunakan" }
+      );
+    }
+    if (error.name === "SequelizeValidationError") {
+      return sendValidationErrors(res, 400, fromSequelizeValidationError(error), {
+        message: error.message,
+      });
     }
     res.status(500).json({ message: "Gagal membuat indikator tujuan" });
   }
@@ -216,6 +238,19 @@ async function update(req, res) {
     return res.status(200).json(indikator);
   } catch (err) {
     console.error(err);
+    if (err.name === "SequelizeValidationError") {
+      return sendValidationErrors(res, 400, fromSequelizeValidationError(err), {
+        message: err.message,
+      });
+    }
+    if (err.name === "SequelizeUniqueConstraintError") {
+      return sendValidationErrors(
+        res,
+        400,
+        { kode_indikator: ["Kode indikator sudah digunakan"] },
+        { message: "Kode indikator sudah digunakan" }
+      );
+    }
     return res.status(500).json({ message: err.message });
   }
 }
@@ -226,9 +261,12 @@ async function bulkCreateDetail(req, res) {
     const rows = req.body.rows;
 
     if (!Array.isArray(rows) || rows.length === 0) {
-      return res
-        .status(400)
-        .json({ message: "rows harus berupa array tidak kosong" });
+      return sendValidationErrors(
+        res,
+        400,
+        { rows: ["rows harus berupa array tidak kosong"] },
+        { message: "rows harus berupa array tidak kosong" }
+      );
     }
 
     const data = await Promise.all(
@@ -248,10 +286,23 @@ async function bulkCreateDetail(req, res) {
       return res.status(201).json(created);
     } catch (err) {
       if (err.name === "SequelizeUniqueConstraintError") {
-        return res.status(409).json({
-          message:
-            "Terdapat data duplikat berdasarkan kode_indikator, jenis_dokumen, dan tahun.",
-          fields: err.fields,
+        return sendValidationErrors(
+          res,
+          409,
+          {
+            kode_indikator: [
+              "Terdapat data duplikat berdasarkan kode_indikator, jenis_dokumen, dan tahun.",
+            ],
+          },
+          {
+            message:
+              "Terdapat data duplikat berdasarkan kode_indikator, jenis_dokumen, dan tahun.",
+          }
+        );
+      }
+      if (err.name === "SequelizeValidationError") {
+        return sendValidationErrors(res, 400, fromSequelizeValidationError(err), {
+          message: err.message,
         });
       }
       return res.status(500).json({ message: err.message });

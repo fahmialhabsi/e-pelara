@@ -16,6 +16,10 @@ import api from "../../services/api";
 import { useDokumen } from "../../hooks/useDokumen";
 import usePostDokThnWithContext from "../../hooks/usePostDokThnWithContext";
 import { getPeriodeIdFromTahun } from "./utils/periodeUtils";
+import {
+  extractListData,
+  normalizeListItems,
+} from "../../utils/apiResponse";
 
 export default function ArahKebijakanForm({
   existingData,
@@ -50,7 +54,10 @@ export default function ArahKebijakanForm({
     const res = await api.get("/tujuan", {
       params: { jenis_dokumen: dokumen, tahun },
     });
-    setOptions((prev) => ({ ...prev, tujuan: res.data }));
+    setOptions((prev) => ({
+      ...prev,
+      tujuan: normalizeListItems(res.data),
+    }));
   }, [dokumen, tahun]);
 
   const fetchSasaran = useCallback(
@@ -58,11 +65,7 @@ export default function ArahKebijakanForm({
       const res = await api.get("/sasaran", {
         params: { jenis_dokumen: dokumen, tahun, tujuan_id },
       });
-      const list = Array.isArray(res.data)
-        ? res.data
-        : Array.isArray(res.data.data)
-        ? res.data.data
-        : [];
+      const list = normalizeListItems(res.data);
 
       setOptions((prev) => ({ ...prev, sasaran: list }));
     },
@@ -74,7 +77,7 @@ export default function ArahKebijakanForm({
       const res = await api.get("/strategi", {
         params: { jenis_dokumen: dokumen, tahun, sasaran_id },
       });
-      const list = res.data.data || res.data;
+      const list = normalizeListItems(res.data);
       setOptions((prev) => ({ ...prev, strategi: list }));
     },
     [dokumen, tahun]
@@ -206,8 +209,8 @@ export default function ArahKebijakanForm({
 
         setOptions((prev) => ({
           ...prev,
-          sasaran: sasaranRes.data,
-          strategi: strategiRes.data.data || strategiRes.data,
+          sasaran: normalizeListItems(sasaranRes.data),
+          strategi: normalizeListItems(strategiRes.data),
         }));
       }
 
@@ -245,7 +248,9 @@ export default function ArahKebijakanForm({
   }, [isEdit, existingData, options.sasaran, options.strategi]);
 
   useEffect(() => {
-    api.get("/periode-rpjmd").then((res) => setDaftarPeriode(res.data));
+    api
+      .get("/periode-rpjmd")
+      .then((res) => setDaftarPeriode(extractListData(res.data)));
   }, []);
 
   if (loading) return <Spinner className="my-5" animation="border" />;

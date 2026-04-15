@@ -12,6 +12,7 @@ import { useAuth } from "../../../hooks/useAuth";
 import { useRequireDokumenTahun } from "../../../hooks/useRequireDokumenTahun.jsx";
 import TrendChart from "../components/TrendChart";
 import api from "../../../services/api";
+import { extractSingleData } from "@/utils/apiResponse";
 
 const DashboardHome = () => {
   const { user, logout } = useAuth();
@@ -25,7 +26,7 @@ const DashboardHome = () => {
     const fetchKinerja = async () => {
       try {
         const res = await api.get("/kinerja-rpjmd");
-        setChartData(res.data);
+        setChartData(extractSingleData(res.data));
       } catch (e) {
         console.error("Gagal memuat tren kinerja", e);
         setError("Gagal memuat tren kinerja RPJMD");

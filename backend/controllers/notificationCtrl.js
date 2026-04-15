@@ -10,7 +10,8 @@ exports.getNotifications = async (req, res) => {
 
     const notifications = await Notification.findAll({
       where: { user_id: userId },
-      order: [["created_at", "DESC"]],
+      // Kolom di DB: createdAt (camelCase), bukan created_at
+      order: [["createdAt", "DESC"]],
       limit: 50,
     });
 

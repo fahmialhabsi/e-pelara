@@ -3,12 +3,19 @@ import { useParams, useNavigate } from "react-router-dom";
 import { usePeriode } from "@/contexts/PeriodeContext";
 import { useAuth } from "../../../hooks/useAuth";
 import useFetchProgramDetail from "./subhooks/useFetchProgramDetail";
-import useReferenceData from "./subhooks/useReferenceData";
+import useReferenceData, {
+  resolveStoredOpdToRepresentativeId,
+} from "./subhooks/useReferenceData";
 import useProgramValidation from "./subhooks/useProgramValidation";
 import useProgramHandlers from "./subhooks/useProgramHandlers";
 import useProgramFilters from "./subhooks/useProgramFilters";
 import api from "@/services/api";
 import { useDokumen } from "@/hooks/useDokumen";
+import {
+  fetchMasterPrograms,
+  getMasterApiErrorMessage,
+} from "@/services/masterService";
+import { normalizeProgramKodeForDisplay } from "@/utils/programDisplayLabel";
 
 const initialState = {
   kode_program: "",
@@ -51,6 +58,21 @@ export default function useProgramFormLogic(
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [initCompleted, setInitCompleted] = useState(false);
+  const [masterPrograms, setMasterPrograms] = useState([]);
+  const [masterProgramsLoading, setMasterProgramsLoading] = useState(false);
+  /** true jika daftar terisi lewat mode lintas dataset_key (fallback) */
+  const [masterProgramsAllDatasets, setMasterProgramsAllDatasets] =
+    useState(false);
+  const [masterProgramsError, setMasterProgramsError] = useState("");
+
+  const masterDatasetKey = useMemo(() => {
+    try {
+      const v = import.meta.env?.VITE_MASTER_DATASET_KEY;
+      return v != null && String(v).trim() !== "" ? String(v).trim() : undefined;
+    } catch {
+      return undefined;
+    }
+  }, []);
 
   // Refs untuk kontrol efek satu kali
   const initializedRef = useRef(false);
@@ -77,8 +99,10 @@ export default function useProgramFormLogic(
         strategi_id: a?.ProgramArahKebijakan?.strategi_id ?? null,
       }));
 
+      const kNorm = normalizeProgramKodeForDisplay(detail.kode_program || "");
       setProgramData({
         ...detail,
+        kode_program: kNorm || detail.kode_program || "",
         strategi_ids: strategiOpts,
         arah_ids: arahOpts,
       });
@@ -109,6 +133,42 @@ export default function useProgramFormLogic(
     }
   }, [dokumen]);
 
+  useEffect(() => {
+    if (!initCompleted) return;
+    let cancelled = false;
+    setMasterProgramsLoading(true);
+    setMasterProgramsError("");
+    setMasterProgramsAllDatasets(false);
+    (async () => {
+      try {
+        let { data } = await fetchMasterPrograms(masterDatasetKey);
+        let rows = Array.isArray(data) ? data : [];
+        if (!cancelled && rows.length === 0) {
+          const r2 = await fetchMasterPrograms(undefined, {
+            allDatasets: true,
+            bypassCache: true,
+          });
+          rows = Array.isArray(r2.data) ? r2.data : [];
+          if (!cancelled && rows.length > 0) {
+            setMasterProgramsAllDatasets(true);
+          }
+        }
+        if (!cancelled) setMasterPrograms(rows);
+      } catch (err) {
+        console.error("[useProgramFormLogic] master program:", err);
+        if (!cancelled) {
+          setMasterPrograms([]);
+          setMasterProgramsError(getMasterApiErrorMessage(err));
+        }
+      } finally {
+        if (!cancelled) setMasterProgramsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initCompleted, masterDatasetKey]);
+
   const referenceParams = useMemo(() => {
     if (!periode_id || !tahun || (isEdit && !initCompleted)) return null;
     return {
@@ -131,10 +191,26 @@ export default function useProgramFormLogic(
     strategis = [],
     aras = [],
     opdEntries = [],
+    opdSelectOptions = [],
     bidangOptions = [],
     allPrograms = [],
     refsLoading = false,
   } = reference || {};
+
+  // Samakan ID OPD tersimpan ke ID perwakilan grup (satu baris per nama OPD di UI).
+  useEffect(() => {
+    if (!isEdit || !opdEntries.length || !programData.opd_penanggung_jawab) {
+      return;
+    }
+    const rep = resolveStoredOpdToRepresentativeId(
+      opdEntries,
+      programData.opd_penanggung_jawab,
+    );
+    if (rep == null || String(rep) === String(programData.opd_penanggung_jawab)) {
+      return;
+    }
+    setProgramData((p) => ({ ...p, opd_penanggung_jawab: rep }));
+  }, [isEdit, opdEntries, programData.opd_penanggung_jawab]);
 
   // Gabungan efek: set misi & tujuan + auto-isi strategi sekali saja
   useEffect(() => {
@@ -265,12 +341,12 @@ export default function useProgramFormLogic(
       })
       .filter((a) => a.id);
 
-    const selectedOpd = opdEntries.find(
-      (o) => String(o.id) === String(programData.opd_penanggung_jawab)
-    );
-    const opdValue = selectedOpd
-      ? `${selectedOpd.nama_opd}||${selectedOpd.nama_bidang_opd}`
-      : programData.opd_penanggung_jawab;
+    const opdRaw = programData.opd_penanggung_jawab;
+    const opdNum = Number(opdRaw);
+    const opd_penanggung_jawab =
+      opdRaw !== "" && opdRaw != null && Number.isFinite(opdNum)
+        ? opdNum
+        : opdRaw;
 
     const payload = {
       ...validationResult.payload,
@@ -281,7 +357,7 @@ export default function useProgramFormLogic(
           programData.pagu_anggaran ??
           0
       ),
-      opd_penanggung_jawab: normalize(opdValue),
+      opd_penanggung_jawab,
       bidang_opd_penanggung_jawab: (programData.bidang_opd || [])
         .map((b) => b.value)
         .join(", "),
@@ -327,7 +403,8 @@ export default function useProgramFormLogic(
   };
 
   const handleClose = () => navigate("/program-list");
-  const loading = periodeLoading || loadingDetail || refsLoading;
+  const loading =
+    periodeLoading || loadingDetail || refsLoading || masterProgramsLoading;
 
   return {
     isEdit,
@@ -346,6 +423,7 @@ export default function useProgramFormLogic(
     filteredAras,
     bidangOptions,
     opdEntries,
+    opdSelectOptions,
     handleChange,
     handleMultiChange,
     handleBidangChange,
@@ -358,5 +436,10 @@ export default function useProgramFormLogic(
     handleClose,
     errorMsg,
     initCompleted,
+    masterPrograms,
+    masterProgramsLoading,
+    masterDatasetKey,
+    masterProgramsAllDatasets,
+    masterProgramsError,
   };
 }

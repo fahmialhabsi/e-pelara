@@ -8,9 +8,24 @@ import api from "@/services/api";
  */
 export const createAsyncSchema = (excludeId = null) => {
   return Yup.object().shape({
-    program_id: Yup.string().required("Program wajib dipilih"),
-    kegiatan_id: Yup.string().required("Kegiatan wajib dipilih"),
-    indikator_id: Yup.string().required("Indikator wajib dipilih"),
+    /** Baris renstra_tabel_program (PK); dipakai jika sudah ada Input Tabel Program */
+    tabel_program_id: Yup.mixed()
+      .nullable()
+      .optional()
+      .test("is-number", "Program tidak valid", (v) => {
+        if (v === null || v === undefined || v === "") return true;
+        return !Number.isNaN(Number(v));
+      }),
+    /** FK renstra_program.id — wajib (otomatis dari tabel atau pilih langsung) */
+    program_id: Yup.mixed()
+      .required("Program wajib dipilih")
+      .test(
+        "is-number",
+        "Program tidak valid",
+        (v) => v != null && v !== "" && !Number.isNaN(Number(v))
+      ),
+    kegiatan_id: Yup.mixed().required("Kegiatan wajib dipilih"),
+    indikator_id: Yup.mixed().required("Indikator wajib dipilih"),
     baseline: Yup.number().typeError("Harus angka").required(),
     satuan_target: Yup.string().required(),
     lokasi: Yup.string().required(),
@@ -30,15 +45,15 @@ export const createAsyncSchema = (excludeId = null) => {
           `max-available-tahun-${i}`,
           `❌ Pagu Tahun ${i} melebihi sisa pagu program`,
           async function (value) {
-            const { program_id } = this.parent;
-            if (!program_id) return true;
+            const { tabel_program_id } = this.parent;
+            if (tabel_program_id == null || tabel_program_id === "") return true;
 
             try {
               const res = await api.get(
                 "/renstra-tabel-kegiatan/available-pagu",
                 {
                   params: {
-                    program_id,
+                    program_id: Number(tabel_program_id),
                     exclude_id: excludeId || this.parent.id || null,
                   },
                 }

@@ -33,6 +33,11 @@ async function getPeriodeFromTahun(tahun) {
   return data;
 }
 
+async function getPeriodeIdFromTahun(tahun) {
+  const periode = await getPeriodeFromTahun(tahun);
+  return periode?.id ?? null;
+}
+
 async function getPeriodeAktif() {
   if (aktifPeriodeCache && Date.now() - lastAktifCacheTime < CACHE_TTL) {
     return aktifPeriodeCache;
@@ -54,6 +59,7 @@ function clearPeriodeCache(tahun = null) {
 
 module.exports = {
   getPeriodeFromTahun,
+  getPeriodeIdFromTahun,
   getPeriodeAktif,
   clearPeriodeCache,
 };

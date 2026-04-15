@@ -6,12 +6,14 @@ import {
   Spinner,
   Button,
   Form,
+  Alert,
   OverlayTrigger,
   Tooltip,
 } from "react-bootstrap";
 import Select from "react-select";
 import { ErrorMessage } from "formik";
 import { FaInfoCircle } from "react-icons/fa";
+import toast from "react-hot-toast";
 import { LEVEL_DOKUMEN_OPTIONS, JENIS_IKU_OPTIONS } from "@/utils/constants";
 
 export default function MisiStep({
@@ -49,15 +51,13 @@ export default function MisiStep({
 
   const handleSaveMisi = () => {
     if (!values.misi_id) {
-      alert("Silakan pilih Misi terlebih dahulu");
+      toast.error("Silakan pilih Misi terlebih dahulu.");
       return;
     }
     if (!values.level_dokumen || !values.jenis_iku) {
-      alert("Level Dokumen dan Jenis IKU wajib diisi");
+      toast.error("Level dokumen dan jenis IKU wajib diisi.");
       return;
     }
-
-    console.log("✅ Misi, level dokumen, dan jenis IKU valid. Lanjut...");
 
     if (typeof onNext === "function") {
       onNext();
@@ -75,12 +75,16 @@ export default function MisiStep({
           <Form.Label>Misi</Form.Label>
           <Form.Select
             name="misi_id"
-            value={values.misi_id || ""}
+            value={
+              values.misi_id != null && values.misi_id !== ""
+                ? String(values.misi_id)
+                : ""
+            }
             onChange={handleMisiChange}
           >
             <option value="">-- Pilih Misi --</option>
             {stepOptions.map((m) => (
-              <option key={m.id} value={m.id}>
+              <option key={m.id} value={String(m.id)}>
                 {m.no_misi} – {m.isi_misi}
               </option>
             ))}
@@ -170,6 +174,11 @@ export default function MisiStep({
         </Card>
       )}
 
+      <Alert variant="light" className="border small py-2 mb-3">
+        Langkah ini hanya menyiapkan konteks (misi, level dokumen, jenis IKU).
+        Penyimpanan indikator per level (tujuan → sasaran → program → kegiatan)
+        dilakukan di langkah berikutnya masing-masing.
+      </Alert>
       <div className="d-flex justify-content-end">
         <Button variant="primary" onClick={handleSaveMisi}>
           Simpan & Lanjut

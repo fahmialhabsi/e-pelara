@@ -32,6 +32,10 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "kegiatan_id",
         as: "kegiatan",
       });
+      Cascading.belongsTo(models.SubKegiatan, {
+        foreignKey: "sub_kegiatan_id",
+        as: "subKegiatan",
+      });
 
       // New many-to-many relations
       Cascading.belongsToMany(models.Strategi, {
@@ -61,6 +65,7 @@ module.exports = (sequelize, DataTypes) => {
       sasaran_id: DataTypes.INTEGER,
       program_id: DataTypes.INTEGER,
       kegiatan_id: DataTypes.INTEGER,
+      sub_kegiatan_id: DataTypes.INTEGER,
       jenis_dokumen: DataTypes.STRING,
       tahun: DataTypes.STRING,
       periode_id: DataTypes.INTEGER,

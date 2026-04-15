@@ -7,9 +7,12 @@ const {
   PrioritasNasional,
   PrioritasDaerah,
   PrioritasGubernur,
-  Realisasi,
-  Capaian,
+  // Realisasi & Capaian tidak ada di models — gunakan RealisasiIndikator
+  RealisasiIndikator: Realisasi,
 } = require("../models");
+
+// Alias agar tidak perlu ubah kode di bawah
+const Capaian = Realisasi;
 
 module.exports = {
   async getIndikatorPerencanaan(req, res) {

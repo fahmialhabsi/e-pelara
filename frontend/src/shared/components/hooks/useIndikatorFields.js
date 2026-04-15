@@ -6,7 +6,7 @@ export default function useIndikatorFields(
   setFieldValue,
   errors,
   touched,
-  opdOptions = [],
+  _opdOptions = [], // OPD lewat IndikatorTabContent; hook tidak memakai list ini (debt dokumentasi)
   stepOptions = [],
   stepKey
 ) {
@@ -34,8 +34,12 @@ export default function useIndikatorFields(
   const tipeIndikatorOptions = {
     tujuan: [{ value: "Impact", label: "Impact" }],
     sasaran: [{ value: "Outcome", label: "Outcome" }],
+    strategi: [{ value: "Outcome", label: "Outcome" }],
+    arah_kebijakan: [{ value: "Outcome", label: "Outcome" }],
     program: [{ value: "Output", label: "Output" }],
     kegiatan: [{ value: "Proses", label: "Proses" }],
+    /* Sub kegiatan: DB indikatorsubkegiatans memakai ENUM Inggris (Process), bukan Proses seperti indikator kegiatan */
+    sub_kegiatan: [{ value: "Process", label: "Proses" }],
   };
 
   const fieldsPerTab = {

@@ -4,9 +4,14 @@ const {
   IndikatorSasaran,
   IndikatorProgram,
   IndikatorKegiatan,
+  IndikatorStrategi,
+  IndikatorArahKebijakan,
+  IndikatorSubKegiatan,
   RenstraOPD,
   SubKegiatan,
 } = require("../models");
+const { Op } = require("sequelize");
+const { programWhereForRenstraOpdQuery } = require("../helpers/renstraOpdProgramFilter");
 
 // ✅ Helper untuk validasi renstra_id
 const validateRenstraId = (req, res) => {
@@ -37,10 +42,37 @@ exports.create = async (req, res) => {
 // READ ALL
 exports.findAll = async (req, res) => {
   try {
-    const { renstra_id, tahun_mulai } = req.query;
+    const { renstra_id, tahun_mulai, stage, ref_id, sasaran_id } = req.query;
 
     const whereClause = {};
-    if (renstra_id) whereClause.renstra_id = renstra_id;
+    if (renstra_id) {
+      Object.assign(whereClause, await programWhereForRenstraOpdQuery(renstra_id));
+    }
+    if (stage) whereClause.stage = stage;
+    if (ref_id) {
+      whereClause.ref_id = Number(ref_id);
+    } else if (
+      String(stage || "").toLowerCase() === "sasaran" &&
+      sasaran_id != null
+    ) {
+      /**
+       * Import RPJMD: `ref_id` = PK `indikatorsasarans` untuk sasaran tersebut
+       * (bukan `sasaran.id` dari dropdown).
+       */
+      const sid = Number(sasaran_id);
+      if (Number.isFinite(sid)) {
+        const rpjmdRows = await IndikatorSasaran.findAll({
+          where: { sasaran_id: sid },
+          attributes: ["id"],
+          raw: true,
+        });
+        const refIds = rpjmdRows.map((r) => r.id).filter((id) => id != null);
+        if (!refIds.length) {
+          return res.json([]);
+        }
+        whereClause.ref_id = { [Op.in]: refIds };
+      }
+    }
 
     const data = await IndikatorRenstra.findAll({
       where: whereClause,
@@ -115,6 +147,16 @@ exports.delete = async (req, res) => {
   }
 };
 
+/** ENUM `indikator_renstra.tipe_indikator` memakai "Proses"; sumber RPJMD sering "Process". */
+function mapTipeIndikatorToRenstra(tipe) {
+  if (tipe == null || tipe === "") return null;
+  const u = String(tipe).trim();
+  if (u === "Process") return "Proses";
+  if (["Impact", "Outcome", "Output", "Proses"].includes(u)) return u;
+  if (u === "Input") return "Output";
+  return "Output";
+}
+
 // IMPORT from RPJMD
 exports.importFromRPJMD = async (req, res) => {
   try {
@@ -131,18 +173,29 @@ exports.importFromRPJMD = async (req, res) => {
       case "sasaran":
         sourceModel = IndikatorSasaran;
         break;
+      case "strategi":
+        sourceModel = IndikatorStrategi;
+        break;
+      case "kebijakan":
+        sourceModel = IndikatorArahKebijakan;
+        break;
       case "program":
         sourceModel = IndikatorProgram;
         break;
       case "kegiatan":
         sourceModel = IndikatorKegiatan;
         break;
+      case "sub_kegiatan":
+        sourceModel = IndikatorSubKegiatan;
+        break;
       default:
         return res.status(400).json({ error: "Stage tidak valid" });
     }
 
+    const doc = String(source_doc || "rpjmd").trim();
+    const docVariants = [...new Set([doc, doc.toLowerCase(), doc.toUpperCase()])];
     const indikatorList = await sourceModel.findAll({
-      where: { jenis_dokumen: source_doc },
+      where: { jenis_dokumen: { [Op.in]: docVariants } },
     });
 
     if (!indikatorList.length) {
@@ -160,17 +213,33 @@ exports.importFromRPJMD = async (req, res) => {
       definisi_operasional: item.definisi_operasional,
       metode_penghitungan: item.metode_penghitungan,
       baseline: item.baseline,
+      lokasi: (() => {
+        const raw = item.lokasi ?? item.sumber_data ?? item.keterangan ?? null;
+        if (raw == null || String(raw).trim() === "") return null;
+        return String(raw).trim().slice(0, 255);
+      })(),
       target_tahun_1: item.target_tahun_1,
       target_tahun_2: item.target_tahun_2,
       target_tahun_3: item.target_tahun_3,
       target_tahun_4: item.target_tahun_4,
       target_tahun_5: item.target_tahun_5,
+      target_tahun_6: item.target_tahun_6 ?? null,
+      pagu_tahun_1:
+        stage === "sub_kegiatan"
+          ? item.pagu_tahun_1 ?? item.anggaran ?? null
+          : item.pagu_tahun_1 ?? null,
+      pagu_tahun_2: item.pagu_tahun_2 ?? null,
+      pagu_tahun_3: item.pagu_tahun_3 ?? null,
+      pagu_tahun_4: item.pagu_tahun_4 ?? null,
+      pagu_tahun_5: item.pagu_tahun_5 ?? null,
+      pagu_tahun_6: item.pagu_tahun_6 ?? null,
       jenis_indikator: item.jenis_indikator,
-      tipe_indikator: item.tipe_indikator,
+      tipe_indikator: mapTipeIndikatorToRenstra(item.tipe_indikator),
       kriteria_kuantitatif: item.kriteria_kuantitatif,
       kriteria_kualitatif: item.kriteria_kualitatif,
       sumber_data: item.sumber_data,
-      penanggung_jawab: item.penanggung_jawab,
+      penanggung_jawab:
+        item.penanggung_jawab != null ? String(item.penanggung_jawab) : null,
       keterangan: item.keterangan,
       tahun: item.tahun,
       jenis_dokumen: "renstra", // hasil import ditandai "renstra"

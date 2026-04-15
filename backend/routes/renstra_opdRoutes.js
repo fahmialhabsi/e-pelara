@@ -2,8 +2,11 @@
 const express = require("express");
 const router = express.Router();
 const renstraOpdController = require("../controllers/renstra_opdController");
+const renstraGenerateController = require("../controllers/renstraGenerateController");
 const verifyToken = require("../middlewares/verifyToken");
 const allowRoles = require("../middlewares/allowRoles");
+
+const READ_ROLES = ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"];
 
 // Buat data baru
 router.post(
@@ -59,6 +62,31 @@ router.delete(
   verifyToken,
   allowRoles(["SUPER_ADMIN"]),
   renstraOpdController.delete
+);
+
+// ── Auto-generate Renstra Document ──────────────────────────────────────────
+// GET /api/renstra-opd/:id/generate-docx  → download file .docx
+router.get(
+  "/:id/generate-docx",
+  verifyToken,
+  allowRoles(READ_ROLES),
+  renstraGenerateController.generateDocx
+);
+
+// GET /api/renstra-opd/:id/generate-pdf  → download file .pdf
+router.get(
+  "/:id/generate-pdf",
+  verifyToken,
+  allowRoles(READ_ROLES),
+  renstraGenerateController.generatePdf
+);
+
+// GET /api/renstra-opd/:id/preview-html  → preview di browser (dev only)
+router.get(
+  "/:id/preview-html",
+  verifyToken,
+  allowRoles(READ_ROLES),
+  renstraGenerateController.previewHtml
 );
 
 module.exports = router;

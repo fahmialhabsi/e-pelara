@@ -2,10 +2,37 @@
 // Workflow persetujuan bertahap: DRAFT → SUBMITTED → APPROVED / REJECTED
 // User biasa bisa SUBMIT; Admin (SUPER_ADMIN, ADMINISTRATOR) bisa APPROVE/REJECT/REVISE
 
-const { ApprovalLog } = require("../models");
+const { ApprovalLog, sequelize: db } = require("../models");
 const { sendNotification, broadcastToRole } = require("../services/notificationService");
 
+// Mapping entity_type → nama tabel DB (tabel yang punya kolom approval_status)
+const ENTITY_TABLE_MAP = {
+  dpa:   "dpa",
+  rka:   "rka",
+  lakip: "lakip",
+  renja: "renja",
+  rkpd:  "rkpd",
+  renstra: "renstra",
+};
+
+// Sync approval_status kolom di tabel dokumen yang bersangkutan
+async function syncStatusToTable(entity_type, entity_id, new_status) {
+  const table = ENTITY_TABLE_MAP[entity_type];
+  if (!table) return; // entity tidak punya kolom approval_status
+  try {
+    await ApprovalLog.sequelize.query(
+      `UPDATE \`${table}\` SET approval_status = :status WHERE id = :id`,
+      { replacements: { status: new_status, id: parseInt(entity_id) } }
+    );
+  } catch (e) {
+    console.warn(`[approval] Gagal sync status ke ${table}:`, e.message);
+  }
+}
+
 const ADMIN_ROLES = ["SUPER_ADMIN", "ADMINISTRATOR"];
+
+// Tipe entitas yang valid
+const VALID_ENTITY_TYPES = ["dpa", "rka", "lakip", "renja", "rkpd", "rpjmd", "renstra"];
 
 // Transisi status yang diizinkan per aksi
 const TRANSITIONS = {
@@ -14,6 +41,18 @@ const TRANSITIONS = {
   REJECT:  { from: ["SUBMITTED"],         to: "REJECTED"  },
   REVISE:  { from: ["APPROVED", "REJECTED", "SUBMITTED"], to: "DRAFT" },
 };
+
+// Helper: validasi entity_type + entity_id
+function validateEntity(entity_type, entity_id) {
+  if (!entity_type || !VALID_ENTITY_TYPES.includes(String(entity_type).toLowerCase())) {
+    return { ok: false, msg: `entity_type tidak valid. Gunakan: ${VALID_ENTITY_TYPES.join(", ")}` };
+  }
+  const id = parseInt(entity_id);
+  if (!id || isNaN(id) || id <= 0) {
+    return { ok: false, msg: "entity_id harus berupa angka positif" };
+  }
+  return { ok: true, id };
+}
 
 // ────────────────────────────────────────────────
 // Helper: ambil status terkini entitas
@@ -31,23 +70,27 @@ async function getCurrentStatus(entity_type, entity_id) {
 // ────────────────────────────────────────────────
 const getStatus = async (req, res) => {
   const { entity_type, entity_id } = req.query;
-  if (!entity_type || !entity_id)
-    return res.status(400).json({ message: "entity_type dan entity_id wajib diisi" });
+  const v = validateEntity(entity_type, entity_id);
+  if (!v.ok) return res.status(400).json({ success: false, message: v.msg });
+
   try {
     const latest = await ApprovalLog.findOne({
-      where: { entity_type, entity_id: parseInt(entity_id) },
+      where: { entity_type: String(entity_type).toLowerCase(), entity_id: v.id },
       order: [["created_at", "DESC"]],
     });
     return res.json({
-      entity_type,
-      entity_id: parseInt(entity_id),
-      status: latest ? latest.to_status : "DRAFT",
-      updated_by: latest ? latest.username : null,
-      updated_at: latest ? latest.created_at : null,
+      success: true,
+      data: {
+        entity_type: entity_type.toLowerCase(),
+        entity_id: v.id,
+        status: latest ? latest.to_status : "DRAFT",
+        updated_by: latest?.username || null,
+        updated_at: latest?.created_at || null,
+      },
     });
   } catch (err) {
     console.error("approvalController.getStatus:", err);
-    return res.status(500).json({ message: "Gagal mengambil status persetujuan" });
+    return res.status(500).json({ success: false, message: "Gagal mengambil status persetujuan" });
   }
 };
 
@@ -56,17 +99,18 @@ const getStatus = async (req, res) => {
 // ────────────────────────────────────────────────
 const getHistory = async (req, res) => {
   const { entity_type, entity_id } = req.query;
-  if (!entity_type || !entity_id)
-    return res.status(400).json({ message: "entity_type dan entity_id wajib diisi" });
+  const v = validateEntity(entity_type, entity_id);
+  if (!v.ok) return res.status(400).json({ success: false, message: v.msg });
+
   try {
     const logs = await ApprovalLog.findAll({
-      where: { entity_type, entity_id: parseInt(entity_id) },
+      where: { entity_type: String(entity_type).toLowerCase(), entity_id: v.id },
       order: [["created_at", "ASC"]],
     });
-    return res.json(logs);
+    return res.json({ success: true, data: logs });
   } catch (err) {
     console.error("approvalController.getHistory:", err);
-    return res.status(500).json({ message: "Gagal mengambil riwayat persetujuan" });
+    return res.status(500).json({ success: false, message: "Gagal mengambil riwayat persetujuan" });
   }
 };
 
@@ -76,8 +120,8 @@ const getHistory = async (req, res) => {
 // ────────────────────────────────────────────────
 const submit = async (req, res) => {
   const { entity_type, entity_id, catatan } = req.body;
-  if (!entity_type || !entity_id)
-    return res.status(400).json({ message: "entity_type dan entity_id wajib diisi" });
+  const v = validateEntity(entity_type, entity_id);
+  if (!v.ok) return res.status(400).json({ success: false, message: v.msg });
 
   try {
     const currentStatus = await getCurrentStatus(entity_type, entity_id);
@@ -100,6 +144,8 @@ const submit = async (req, res) => {
       catatan: catatan || null,
     });
 
+    await syncStatusToTable(entity_type, entity_id, transition.to);
+
     // Notifikasi real-time ke semua admin
     broadcastToRole(req.app, "SUPER_ADMIN", "approval_submitted", {
       entity_type, entity_id, submitted_by: req.user?.username,
@@ -121,8 +167,8 @@ const submit = async (req, res) => {
 // ────────────────────────────────────────────────
 const approve = async (req, res) => {
   const { entity_type, entity_id, catatan } = req.body;
-  if (!entity_type || !entity_id)
-    return res.status(400).json({ message: "entity_type dan entity_id wajib diisi" });
+  const v = validateEntity(entity_type, entity_id);
+  if (!v.ok) return res.status(400).json({ success: false, message: v.msg });
 
   try {
     const currentStatus = await getCurrentStatus(entity_type, entity_id);
@@ -150,6 +196,8 @@ const approve = async (req, res) => {
       where: { entity_type, entity_id: parseInt(entity_id), action: "SUBMIT" },
       order: [["created_at", "DESC"]],
     });
+    await syncStatusToTable(entity_type, entity_id, transition.to);
+
     if (submitLog?.user_id) {
       await sendNotification(
         req.app,
@@ -176,10 +224,10 @@ const approve = async (req, res) => {
 // ────────────────────────────────────────────────
 const reject = async (req, res) => {
   const { entity_type, entity_id, catatan } = req.body;
-  if (!entity_type || !entity_id)
-    return res.status(400).json({ message: "entity_type dan entity_id wajib diisi" });
-  if (!catatan || catatan.trim() === "")
-    return res.status(400).json({ message: "Alasan penolakan (catatan) wajib diisi" });
+  const v = validateEntity(entity_type, entity_id);
+  if (!v.ok) return res.status(400).json({ success: false, message: v.msg });
+  if (!catatan || String(catatan).trim() === "")
+    return res.status(400).json({ success: false, message: "Alasan penolakan (catatan) wajib diisi" });
 
   try {
     const currentStatus = await getCurrentStatus(entity_type, entity_id);
@@ -207,6 +255,8 @@ const reject = async (req, res) => {
       where: { entity_type, entity_id: parseInt(entity_id), action: "SUBMIT" },
       order: [["created_at", "DESC"]],
     });
+    await syncStatusToTable(entity_type, entity_id, transition.to);
+
     if (submitLog?.user_id) {
       await sendNotification(
         req.app,
@@ -234,8 +284,8 @@ const reject = async (req, res) => {
 // ────────────────────────────────────────────────
 const revise = async (req, res) => {
   const { entity_type, entity_id, catatan } = req.body;
-  if (!entity_type || !entity_id)
-    return res.status(400).json({ message: "entity_type dan entity_id wajib diisi" });
+  const v = validateEntity(entity_type, entity_id);
+  if (!v.ok) return res.status(400).json({ success: false, message: v.msg });
 
   try {
     const currentStatus = await getCurrentStatus(entity_type, entity_id);
@@ -263,6 +313,8 @@ const revise = async (req, res) => {
       where: { entity_type, entity_id: parseInt(entity_id), action: "SUBMIT" },
       order: [["created_at", "DESC"]],
     });
+    await syncStatusToTable(entity_type, entity_id, transition.to);
+
     if (submitLog?.user_id) {
       await sendNotification(
         req.app,

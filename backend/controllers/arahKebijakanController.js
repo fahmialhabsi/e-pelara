@@ -10,16 +10,29 @@ const {
 const { Op } = require("sequelize");
 const { getPeriodeFromTahun } = require("../utils/periodeHelper");
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
+const { listResponse } = require("../utils/responseHelper");
 
 module.exports = {
   async create(req, res) {
     try {
-      const { strategi_id, deskripsi, jenis_dokumen, tahun } = req.body;
+      const {
+        strategi_id: sidRaw,
+        deskripsi,
+        jenis_dokumen,
+        tahun,
+      } = req.body;
+      const strategi_id = parseInt(String(sidRaw), 10);
 
-      if (!strategi_id || !deskripsi || !jenis_dokumen || !tahun) {
+      if (
+        !Number.isFinite(strategi_id) ||
+        strategi_id < 1 ||
+        !deskripsi ||
+        !jenis_dokumen ||
+        !tahun
+      ) {
         return res.status(400).json({
           message:
-            "Field strategi_id, deskripsi, jenis_dokumen, dan tahun wajib diisi.",
+            "Field strategi_id (angka valid), deskripsi, jenis_dokumen, dan tahun wajib diisi.",
         });
       }
 
@@ -183,23 +196,100 @@ module.exports = {
         order: [["kode_arah", "ASC"]],
       });
 
-      const totalPages = Math.ceil(count / limit);
+      let finalRows = rows;
+      let finalCount = count;
 
-      return res.status(200).json({
-        data: rows.map((arah) => ({
+      if (finalCount === 0 && strategi_id && jenis_dokumen !== "rpjmd") {
+        const selectedIds = strategi_id
+          .split(",")
+          .map((id) => parseInt(id, 10))
+          .filter(Boolean);
+
+        const selectedStrategi = selectedIds.length
+          ? await Strategi.findByPk(selectedIds[0], {
+              attributes: ["id", "kode_strategi", "jenis_dokumen"],
+            })
+          : null;
+
+        let fallbackStrategiId = null;
+        if (selectedStrategi?.jenis_dokumen === "rpjmd") {
+          fallbackStrategiId = selectedStrategi.id;
+        } else if (selectedStrategi?.kode_strategi) {
+          const sourceStrategi = await Strategi.findOne({
+            where: {
+              kode_strategi: selectedStrategi.kode_strategi,
+              jenis_dokumen: "rpjmd",
+              tahun,
+            },
+            attributes: ["id"],
+          });
+          fallbackStrategiId = sourceStrategi?.id || null;
+        }
+
+        if (fallbackStrategiId) {
+          const fallbackWhere = { jenis_dokumen: "rpjmd", tahun, strategi_id: fallbackStrategiId };
+          if (search) {
+            fallbackWhere.deskripsi = { [Op.like]: `%${search}%` };
+          }
+
+          const fallback = await ArahKebijakan.findAndCountAll({
+            where: fallbackWhere,
+            limit,
+            offset,
+            distinct: true,
+            include: [
+              {
+                model: Strategi,
+                as: "Strategi",
+                attributes: [
+                  "id",
+                  "kode_strategi",
+                  "deskripsi",
+                  "periode_id",
+                  "tahun",
+                ],
+                include: [
+                  {
+                    model: Sasaran,
+                    as: "Sasaran",
+                    attributes: ["id", "nomor", "isi_sasaran", "tujuan_id"],
+                    include: [
+                      {
+                        model: Tujuan,
+                        as: "Tujuan",
+                        attributes: ["id", "no_tujuan", "isi_tujuan"],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+            order: [["kode_arah", "ASC"]],
+          });
+
+          finalRows = fallback.rows;
+          finalCount = fallback.count;
+        }
+      }
+
+      return listResponse(
+        res,
+        200,
+        "Daftar arah kebijakan berhasil diambil",
+        finalRows.map((arah) => ({
           ...arah.toJSON(),
           strategi_id: Number(arah.strategi_id),
           id: Number(arah.id),
         })),
-        meta: {
-          totalItems: count,
-          totalPages,
+        {
+          totalItems: finalCount,
+          totalPages: Math.ceil(finalCount / limit),
           currentPage: page,
-          ...(count === 0 && search
+          ...(finalCount === 0 && search
             ? { message: "Tidak ada yang cocok dengan pencarian." }
             : {}),
-        },
-      });
+        }
+      );
     } catch (err) {
       console.error("Gagal mengambil data arah kebijakan:", err);
       return res.status(500).json({
@@ -325,7 +415,12 @@ module.exports = {
         group: ["ArahKebijakan.id"],
       });
 
-      return res.status(200).json(list);
+      return listResponse(
+        res,
+        200,
+        "Daftar arah kebijakan berdasarkan program berhasil diambil",
+        list
+      );
     } catch (err) {
       console.error("Gagal memuat arah kebijakan:", err);
       return res.status(500).json({ message: "Gagal memuat arah kebijakan." });

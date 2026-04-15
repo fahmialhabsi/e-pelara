@@ -17,54 +17,62 @@ async function updateKegiatanPagu(kegiatanId, transaction = null) {
     const kegiatanIdInt = parseInt(kegiatanId, 10);
     if (isNaN(kegiatanIdInt)) throw new Error("Invalid kegiatan id");
 
-    // 1️⃣ SUM dari semua Subkegiatan
-    const sumsSubkeg = await RenstraTabelSubkegiatan.findOne({
+    const subCount = await RenstraTabelSubkegiatan.count({
       where: { kegiatan_id: kegiatanIdInt },
-      attributes: [
-        ...[1, 2, 3, 4, 5, 6].map((i) => [
-          Sequelize.fn(
-            "COALESCE",
-            Sequelize.fn("SUM", Sequelize.col(`target_tahun_${i}`)),
-            0
-          ),
-          `target_tahun_${i}`,
-        ]),
-        ...[1, 2, 3, 4, 5, 6].map((i) => [
-          Sequelize.fn(
-            "COALESCE",
-            Sequelize.fn("SUM", Sequelize.col(`pagu_tahun_${i}`)),
-            0
-          ),
-          `pagu_tahun_${i}`,
-        ]),
-      ],
-      raw: true,
       transaction,
     });
-    if (!sumsSubkeg) return;
 
-    // Hitung total & rata-rata
-    const totalPagu = [1, 2, 3, 4, 5, 6].reduce(
-      (acc, i) => acc + parseFloat(sumsSubkeg[`pagu_tahun_${i}`] || 0),
-      0
-    );
-    const totalTarget = [1, 2, 3, 4, 5, 6].reduce(
-      (acc, i) => acc + parseFloat(sumsSubkeg[`target_tahun_${i}`] || 0),
-      0
-    );
-    const avgTarget = totalTarget / 6;
+    // Jika belum ada baris subkegiatan, target/pagu per tahun diisi langsung di
+    // renstra_tabel_kegiatan. SUM kosong akan 0 dan menimpa nilai form — jangan lakukan itu.
+    if (subCount > 0) {
+      // 1️⃣ SUM dari semua Subkegiatan
+      const sumsSubkeg = await RenstraTabelSubkegiatan.findOne({
+        where: { kegiatan_id: kegiatanIdInt },
+        attributes: [
+          ...[1, 2, 3, 4, 5, 6].map((i) => [
+            Sequelize.fn(
+              "COALESCE",
+              Sequelize.fn("SUM", Sequelize.col(`target_tahun_${i}`)),
+              0
+            ),
+            `target_tahun_${i}`,
+          ]),
+          ...[1, 2, 3, 4, 5, 6].map((i) => [
+            Sequelize.fn(
+              "COALESCE",
+              Sequelize.fn("SUM", Sequelize.col(`pagu_tahun_${i}`)),
+              0
+            ),
+            `pagu_tahun_${i}`,
+          ]),
+        ],
+        raw: true,
+        transaction,
+      });
+      if (!sumsSubkeg) return;
 
-    // 2️⃣ Update Kegiatan
-    const [updatedRows] = await RenstraTabelKegiatan.update(
-      {
-        ...sumsSubkeg,
-        pagu_akhir_renstra: totalPagu,
-        target_akhir_renstra: avgTarget,
-      },
-      { where: { id: kegiatanIdInt }, transaction }
-    );
-    if (updatedRows === 0)
-      throw new Error("Kegiatan tidak ditemukan saat update Kegiatan");
+      const totalPagu = [1, 2, 3, 4, 5, 6].reduce(
+        (acc, i) => acc + parseFloat(sumsSubkeg[`pagu_tahun_${i}`] || 0),
+        0
+      );
+      const totalTarget = [1, 2, 3, 4, 5, 6].reduce(
+        (acc, i) => acc + parseFloat(sumsSubkeg[`target_tahun_${i}`] || 0),
+        0
+      );
+      const avgTarget = totalTarget / 6;
+
+      // 2️⃣ Update Kegiatan dari agregasi subkegiatan
+      const [updatedRows] = await RenstraTabelKegiatan.update(
+        {
+          ...sumsSubkeg,
+          pagu_akhir_renstra: totalPagu,
+          target_akhir_renstra: avgTarget,
+        },
+        { where: { id: kegiatanIdInt }, transaction }
+      );
+      if (updatedRows === 0)
+        throw new Error("Kegiatan tidak ditemukan saat update Kegiatan");
+    }
 
     // 3️⃣ Ambil program_id dari Kegiatan
     const kegiatan = await RenstraTabelKegiatan.findByPk(kegiatanIdInt, {

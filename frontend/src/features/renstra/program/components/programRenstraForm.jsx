@@ -9,6 +9,7 @@ import api from "@/services/api";
 import { useRenstraFormTemplate } from "@/hooks/templatesUseRenstra/useRenstraFormTemplate";
 import SelectWithLabelValue from "@/shared/components/form/SelectWithLabelValue";
 import InputField from "@/shared/components/form/InputField";
+import { normalizeListItems } from "@/utils/apiResponse";
 
 const { Text } = Typography;
 
@@ -16,28 +17,31 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
   const navigate = useNavigate();
   const { message } = App.useApp();
 
-  // 🔄 Data program (pakai tahun & jenis_dokumen dari renstraAktif)
+  // 🔄 Data program RPJMD (filter by tahun_mulai dari renstraAktif, jenis_dokumen = "rpjmd")
   const { data: programOptions = [], isLoading: isLoadingProgram } = useQuery({
     queryKey: [
       "program-rpjmd",
-      renstraAktif?.tahun_awal,
-      renstraAktif?.jenis_dokumen,
+      renstraAktif?.tahun_mulai,   // ✅ field yang benar di model RenstraOPD
     ],
     queryFn: async () =>
-      (
-        await api.get("/programs/all", {
-          params: {
-            tahun: renstraAktif?.tahun_awal,
-            jenis_dokumen: renstraAktif?.jenis_dokumen,
-          },
-        })
-      ).data.data,
+      normalizeListItems(
+        (
+          await api.get("/programs/all", {
+            params: {
+              tahun: renstraAktif?.tahun_mulai,   // ✅ bukan tahun_awal
+              jenis_dokumen: "rpjmd",              // ✅ selalu ambil dari RPJMD
+              limit: 500,
+            },
+          })
+        ).data
+      ),
     enabled: !!renstraAktif,
   });
 
   const { data: opdOptions = [] } = useQuery({
     queryKey: ["opd-penanggung-jawab"],
-    queryFn: async () => (await api.get("/opd-penanggung-jawab")).data.data,
+    queryFn: async () =>
+      normalizeListItems((await api.get("/opd-penanggung-jawab")).data),
   });
 
   // Yup schema
@@ -55,7 +59,9 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
     });
 
   const defaultValues = {
-    program_rpjmd_id: initialData?.rpjmd_program_id
+    program_rpjmd_id: initialData?.program_rpjmd_id
+      ? String(initialData.program_rpjmd_id)
+      : initialData?.rpjmd_program_id
       ? String(initialData.rpjmd_program_id)
       : "",
     kode_program: initialData?.kode_program || "",
@@ -108,6 +114,18 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
     setValue("kode_program", selected.kode_program);
     setValue("nama_program", selected.nama_program);
   }, [programId, programOptions, setValue]);
+
+  // 🔹 Auto-fill OPD dan Bidang dari renstraAktif untuk form baru
+  useEffect(() => {
+    if (!initialData && renstraAktif) {
+      if (renstraAktif.nama_opd) {
+        setValue("opd_penanggung_jawab", renstraAktif.nama_opd);
+      }
+      if (renstraAktif.bidang_opd) {
+        setValue("bidang_opd_penanggung_jawab", renstraAktif.bidang_opd);
+      }
+    }
+  }, [renstraAktif, initialData, setValue]);
 
   // Filter bidang dari OPD yang dipilih
   const bidangOptions = opdOptions

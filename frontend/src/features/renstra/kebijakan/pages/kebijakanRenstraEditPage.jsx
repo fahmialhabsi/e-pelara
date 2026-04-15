@@ -11,16 +11,30 @@ const KebijakanRenstraEditPage = () => {
 
   // Query untuk mengambil data kebijakan yang akan diedit
   const {
-    data: initialData, // Data awal untuk form
-    isLoading,
+    data: initialData,
+    isLoading: loadingDetail,
     isError,
     error,
   } = useQuery({
-    queryKey: ["renstra-kebijakan", id], // Query key yang mencakup ID
-    queryFn: async () => (await api.get(`/renstra-kebijakan/${id}`)).data, // Mengambil data per ID
-    enabled: !!id, // Hanya jalankan query jika ID ada
-    retry: 1, // Coba lagi sekali jika gagal
+    queryKey: ["renstra-kebijakan", id],
+    queryFn: async () => {
+      const res = await api.get(`/renstra-kebijakan/${id}`);
+      const row = res.data?.data ?? res.data;
+      return row;
+    },
+    enabled: !!id,
+    retry: 1,
   });
+
+  const { data: renstraAktifFallback, isLoading: loadingRenstra } = useQuery({
+    queryKey: ["renstra-opd-aktif"],
+    queryFn: async () => {
+      const res = await api.get("/renstra-opd/aktif");
+      return res.data?.data ?? res.data;
+    },
+  });
+
+  const isLoading = loadingDetail || loadingRenstra;
 
   // Tampilan loading
   if (isLoading) {
@@ -53,8 +67,12 @@ const KebijakanRenstraEditPage = () => {
     );
   }
 
-  // Menampilkan form dengan data awal (initialData)
-  return <KebijakanRenstraForm initialData={initialData} />;
+  return (
+    <KebijakanRenstraForm
+      initialData={initialData}
+      renstraAktif={initialData?.renstra ?? renstraAktifFallback}
+    />
+  );
 };
 
 export default KebijakanRenstraEditPage;

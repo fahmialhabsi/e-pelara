@@ -12,6 +12,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import RPJMDForm from "./RPJMDForm";
+import { normalizeListItems } from "@/utils/apiResponse";
 
 export default function RPJMDList() {
   const [list, setList] = useState([]);
@@ -28,7 +29,7 @@ export default function RPJMDList() {
   const fetchList = async () => {
     try {
       const res = await api.get("/rpjmd");
-      setList(res.data);
+      setList(normalizeListItems(res.data));
     } catch (err) {
       console.error("Error fetching RPJMD list:", err);
     }

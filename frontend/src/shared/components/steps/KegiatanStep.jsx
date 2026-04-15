@@ -1,17 +1,45 @@
 import React, { useEffect, useState } from "react";
 import { useFormikContext } from "formik";
 import StepTemplate from "./StepTemplate";
-import api from "@/services/api";
+import {
+  createIndikatorKegiatanBatch,
+  fetchIndikatorKegiatanByKegiatan,
+  fetchKegiatanByProgram,
+} from "@/features/rpjmd/services/indikatorRpjmdApi";
 import useIndikatorBuilder from "../hooks/useIndikatorBuilder";
 import useSetPreviewFields from "@/hooks/useSetPreviewFields";
 import useAutoIsiTahunDanTarget from "../../components/hooks/useAutoIsiTahunDanTarget";
 import { toast } from "react-toastify";
-import { Button } from "react-bootstrap";
+import { Alert, Button } from "react-bootstrap";
 import { useNavigate } from "react-router-dom";
+import { normalizeListItems } from "@/utils/apiResponse";
+import {
+  buildKegiatanIndikatorPayload,
+  validateKegiatanWizardForSubmit,
+} from "@/features/rpjmd/services/indikatorRpjmdPayload";
+import {
+  mapBackendErrorsToFormik,
+  pickBackendErrorMessage,
+} from "@/utils/mapBackendErrorsToFormik";
+import {
+  clearIndikatorDraftScalars,
+  extractIndikatorKegiatanListFromResponseBody,
+  hydrateDraftFromIndikatorRow,
+  KEGIATAN_EXTRA_DRAFT_KEYS,
+  listLooksPersistedFromServer,
+  mapIndikatorKegiatanApiRowToWizard,
+  RPJMD_INDIKATOR_DRAFT_KEYS,
+} from "./wizardIndikatorStepUtils";
+
+const KEGIATAN_DRAFT_CLEAR_KEYS = [
+  ...RPJMD_INDIKATOR_DRAFT_KEYS,
+  ...KEGIATAN_EXTRA_DRAFT_KEYS,
+];
 
 export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
   const stepKey = "kegiatan";
-  const { values, setFieldValue, resetForm, validateForm } = useFormikContext();
+  const { values, setFieldValue, resetForm, validateForm, setErrors } =
+    useFormikContext();
   const [kegiatanOptions, setKegiatanOptions] = useState([]);
   const navigate = useNavigate();
   const [restored, setRestored] = useState(false);
@@ -24,17 +52,20 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
       localStorage.getItem("form_rpjmd") ||
       sessionStorage.getItem("form_rpjmd");
 
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      Object.entries(parsed).forEach(([key, val]) => {
-        setFieldValue(key, val, false);
-      });
-      console.log("🔍 Initial values after restore:", parsed);
-      validateForm().then(() => {
-        setRestored(true);
-      });
+    if (!saved) {
+      setRestored(true);
+      return;
     }
-  }, []);
+
+    const parsed = JSON.parse(saved);
+    Object.entries(parsed).forEach(([key, val]) => {
+      setFieldValue(key, val, false);
+    });
+
+    validateForm().finally(() => {
+      setRestored(true);
+    });
+  }, [setFieldValue, validateForm]);
 
   useEffect(() => {
     if (!restored || !values.program_id || !options?.program?.length) return;
@@ -48,43 +79,31 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
       setFieldValue("tujuan_id", selected.tujuan_id || null);
       setFieldValue("sasaran_id", selected.sasaran_id || null);
     }
-  }, [restored, options?.program, values.program_id]);
+  }, [restored, options?.program, values.program_id, setFieldValue]);
 
   useEffect(() => {
-    if (values.program_id) {
-      const stringified = JSON.stringify(values);
-      localStorage.setItem("form_rpjmd", stringified);
-      sessionStorage.setItem("form_rpjmd", stringified);
-    }
+    if (!values.program_id) return;
+
+    const stringified = JSON.stringify(values);
+    localStorage.setItem("form_rpjmd", stringified);
+    sessionStorage.setItem("form_rpjmd", stringified);
   }, [values]);
 
   useEffect(() => {
     if (!restored) return;
-    const { program_id, tahun, jenis_dokumen, misi_id, tujuan_id, sasaran_id } =
-      values;
+
+    const { program_id, tahun, jenis_dokumen } = values;
     if (!program_id || !tahun || !jenis_dokumen) return;
 
-    console.log("📥 Fetching kegiatan dengan:", {
+    const jd = String(jenis_dokumen || "").trim().toLowerCase();
+    fetchKegiatanByProgram({
       program_id,
-      misi_id,
-      tujuan_id,
-      sasaran_id,
       tahun,
-      jenis_dokumen,
-    });
-
-    api
-      .get("/kegiatan", {
-        params: {
-          program_id,
-          tahun,
-          jenis_dokumen: jenis_dokumen,
-        },
-      })
+      jenis_dokumen: jd,
+    })
       .then((res) => {
-        const list = res.data?.data || [];
-        const mapped = list.map((k) => ({
-          value: String(k.id),
+        const mapped = normalizeListItems(res.data).map((k) => ({
+          value: k.id,
           label: `${k.kode_kegiatan} - ${k.nama_kegiatan}`,
           kode_kegiatan: k.kode_kegiatan,
           nama_kegiatan: k.nama_kegiatan,
@@ -92,46 +111,85 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
           tujuan_id: k.program?.sasaran?.Tujuan?.id ?? null,
           sasaran_id: k.program?.sasaran?.id ?? null,
         }));
-        console.log("🧾 Data mentah dari API kegiatan:", list);
-        console.log("🧾 Mapped kegiatanOptions:", mapped);
-        console.log("✅ kegiatanOptions loaded:", mapped);
-        console.log("🧾 Data mentah dari API kegiatan:", list);
-        console.log("🧾 Mapped kegiatanOptions:", mapped);
+
         setKegiatanOptions(mapped);
       })
       .catch((err) => {
-        console.error("❌ Gagal memuat kegiatan:", err);
+        console.error("Gagal memuat kegiatan:", err);
         setKegiatanOptions([]);
       });
   }, [restored, values.program_id, values.tahun, values.jenis_dokumen]);
 
   useEffect(() => {
-    if (!values.kegiatan_id) return;
+    if (!restored) return;
 
-    console.log("🎯 values.kegiatan_id:", values.kegiatan_id);
+    if (!values.kegiatan_id || !values.indikator_program_id) {
+      setFieldValue("kegiatan", []);
+      clearIndikatorDraftScalars(setFieldValue, KEGIATAN_DRAFT_CLEAR_KEYS);
+      return;
+    }
 
-    const fetchNextKode = async () => {
+    if (!values.tahun || !values.jenis_dokumen) return;
+
+    let cancelled = false;
+    (async () => {
       try {
-        const response = await api.get(
-          `/indikator-kegiatan/${values.kegiatan_id}/next-kode`,
+        const jd = String(values.jenis_dokumen || "").trim().toLowerCase();
+        const res = await fetchIndikatorKegiatanByKegiatan(
+          String(values.kegiatan_id),
           {
-            params: {
-              jenis_dokumen: values.jenis_dokumen,
-              tahun: values.tahun,
-            },
+            tahun: String(values.tahun),
+            jenis_dokumen: jd,
+            indikator_program_id: values.indikator_program_id,
           }
         );
-        const { next_kode } = response.data;
-        if (next_kode) {
-          setFieldValue("kode_indikator", next_kode);
+        if (cancelled) return;
+        const rawRows = extractIndikatorKegiatanListFromResponseBody(res.data);
+        const kSel = values.kode_kegiatan || "";
+        const nSel = values.nama_kegiatan || "";
+        const mapped = rawRows.map((r) => {
+          const row = mapIndikatorKegiatanApiRowToWizard(r);
+          const rid = r?.id ?? row?.id;
+          const base =
+            rid == null || rid === ""
+              ? row
+              : { ...row, id: String(rid), indikator_id: String(rid) };
+          return {
+            ...base,
+            kode_kegiatan: base.kode_kegiatan || kSel,
+            nama_kegiatan: base.nama_kegiatan || nSel,
+          };
+        });
+        setFieldValue("kegiatan", mapped);
+        if (mapped.length > 0) {
+          hydrateDraftFromIndikatorRow(
+            mapped[0],
+            setFieldValue,
+            KEGIATAN_EXTRA_DRAFT_KEYS
+          );
+        } else {
+          clearIndikatorDraftScalars(setFieldValue, KEGIATAN_DRAFT_CLEAR_KEYS);
         }
-      } catch (err) {
-        console.error("❌ Gagal ambil next kode indikator kegiatan:", err);
+      } catch {
+        if (!cancelled) {
+          setFieldValue("kegiatan", []);
+          clearIndikatorDraftScalars(setFieldValue, KEGIATAN_DRAFT_CLEAR_KEYS);
+        }
       }
+    })();
+    return () => {
+      cancelled = true;
     };
-
-    fetchNextKode();
-  }, [values.kegiatan_id, values.jenis_dokumen, values.tahun, setFieldValue]);
+  }, [
+    restored,
+    values.kegiatan_id,
+    values.indikator_program_id,
+    values.tahun,
+    values.jenis_dokumen,
+    values.kode_kegiatan,
+    values.nama_kegiatan,
+    setFieldValue,
+  ]);
 
   const { generateKeteranganFrom } = useIndikatorBuilder({
     values,
@@ -147,58 +205,76 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
       "metode_penghitungan",
       "baseline",
     ];
-    if (requiredFields.every((f) => values[f])) {
+    if (requiredFields.every((field) => values[field])) {
       setFieldValue("keterangan", generateKeteranganFrom(values));
     }
-  }, [values, setFieldValue]);
+  }, [values, setFieldValue, generateKeteranganFrom]);
 
-  const handleSave = async () => {
+  /** Simpan batch indikator kegiatan lalu lanjut ke step Sub Kegiatan (sama pola dengan ProgramStep). */
+  const handleWizardContinue = async () => {
+    const check = validateKegiatanWizardForSubmit(values);
+    if (!check.ok) {
+      toast.error(check.message);
+      return;
+    }
+
     const list = Array.isArray(values.kegiatan) ? values.kegiatan : [];
 
-    console.log("🧪 Formik Values", values);
-
-    if (list.length === 0) {
-      toast.error("Belum ada indikator kegiatan yang ditambahkan.");
-      return;
-    }
-
-    const missing = list.some((it) => !it.indikator_id);
-    if (missing) {
-      toast.error("Beberapa indikator tidak memiliki indikator_id.");
-      return;
-    }
-
-    if (!values.misi_id || !values.tujuan_id || !values.sasaran_id) {
-      toast.error("Pastikan Misi, Tujuan, dan Sasaran telah dipilih.");
-      return;
-    }
-
-    console.log("🧪 Formik Values (save):", values);
-    console.log("📦 indikator_program_id:", values.indikator_program_id);
-
-    const payload = list.map((item) => ({
-      ...item,
-      kegiatan_id: values.kegiatan_id,
-      program_id: values.program_id,
-      indikator_program_id: values.indikator_program_id,
-      sasaran_id: values.sasaran_id,
-      tujuan_id: values.tujuan_id,
-      misi_id: values.misi_id,
-      jenis_dokumen: values.jenis_dokumen,
-      tahun: values.tahun,
-    }));
-
     try {
-      await api.post("/indikator-kegiatan", payload);
-      toast.success("Data indikator kegiatan berhasil disimpan.");
-      resetForm();
-      navigate("/rpjmd/indikator-tujuan-list");
+      setErrors({});
+      if (!listLooksPersistedFromServer(list)) {
+        const payload = buildKegiatanIndikatorPayload(values);
+        await createIndikatorKegiatanBatch(payload);
+        toast.success("Data indikator kegiatan berhasil disimpan.");
+      } else {
+        toast.success("Indikator kegiatan sudah tersimpan. Melanjutkan wizard.");
+      }
+
+      const ctx = {
+        misi_id: values.misi_id,
+        tujuan_id: values.tujuan_id,
+        sasaran_id: values.sasaran_id,
+        program_id: values.program_id,
+        kegiatan_id: values.kegiatan_id,
+        indikator_program_id: values.indikator_program_id,
+        no_misi: values.no_misi,
+        isi_misi: values.isi_misi,
+        periode_id: values.periode_id,
+        tahun: values.tahun,
+        jenis_dokumen: values.jenis_dokumen,
+        level_dokumen: values.level_dokumen,
+        jenis_iku: values.jenis_iku,
+        tujuan_label: values.tujuan_label,
+        sasaran_label: values.sasaran_label,
+        program_label: values.program_label,
+        strategi_id: values.strategi_id,
+        arah_kebijakan_id: values.arah_kebijakan_id,
+        strategi_label: values.strategi_label,
+        arah_kebijakan_label: values.arah_kebijakan_label,
+      };
+      const nextValues = { ...values, ...ctx, kegiatan: [] };
+      resetForm({ values: nextValues });
+      try {
+        const str = JSON.stringify(nextValues);
+        localStorage.setItem("form_rpjmd", str);
+        sessionStorage.setItem("form_rpjmd", str);
+      } catch {
+        /* ignore quota */
+      }
+      onNext?.();
     } catch (err) {
       console.error(
-        "❌ Gagal simpan indikator kegiatan:",
+        "Gagal simpan indikator kegiatan:",
         err.response?.data || err
       );
-      toast.error("Gagal menyimpan data indikator kegiatan.");
+      const data = err?.response?.data;
+      setErrors(mapBackendErrorsToFormik(data));
+      toast.error(
+        pickBackendErrorMessage(
+          data,
+          "Gagal menyimpan data indikator kegiatan."
+        )
+      );
     }
   };
 
@@ -210,18 +286,24 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
   };
 
   const handleGoToList = () => {
-    navigate("/rpjmd/indikator-kegiatan-list");
+    navigate("/dashboard-rpjmd/indikator-kegiatan-list");
   };
 
   return (
     <div>
+      <Alert variant="light" className="border small mb-3 py-2">
+        Di langkah ini, indikator pada tab <strong>Ringkasan</strong> disimpan ke
+        server saat Anda menekan <strong>Simpan &amp; Lanjut</strong>; setelah
+        sukses wizard melanjutkan ke langkah <strong>Sub Kegiatan</strong>. Untuk
+        membuka daftar indikator kegiatan saja, gunakan tombol di bawah.
+      </Alert>
       <StepTemplate
         stepKey={stepKey}
         options={{ ...options, kegiatan: kegiatanOptions }}
         stepOptions={kegiatanOptions}
         tabKey={tabKey}
         setTabKey={setTabKey}
-        onSave={handleSave}
+        onNext={handleWizardContinue}
       />
 
       <div className="d-flex justify-content-between mt-3">

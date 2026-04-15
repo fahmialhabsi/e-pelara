@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import api from "../../../services/api";
 import Dropdown from "../components/Dropdown";
 import { useDokumen } from "../../../hooks/useDokumen";
+import { normalizeListItems } from "../../../utils/apiResponse";
 
 const DropdownArahKebijakan = ({
   strategiId,
@@ -9,14 +10,16 @@ const DropdownArahKebijakan = ({
   onChange,
   onOptionsChange,
 }) => {
-  const { tahun, dokumen: jenis_dokumen } = useDokumen();
+  const { tahun, dokumen } = useDokumen();
+  const jenis_dokumen = String(dokumen || "rkpd").toLowerCase();
   const [options, setOptions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!strategiId || !tahun || !jenis_dokumen) {
+    if (!strategiId || !tahun) {
       setOptions([]);
       onOptionsChange?.([]);
+      if (value) onChange?.("");
       return;
     }
 
@@ -30,51 +33,49 @@ const DropdownArahKebijakan = ({
         },
       })
       .then((res) => {
-        const mapped = Array.isArray(res.data)
-          ? res.data.map((item) => ({
-              id: item.id,
-              label: item.kode_arah,
-              deskripsi: item.deskripsi || "",
-            }))
-          : [];
+        const items = normalizeListItems(res.data);
+        const mapped = items.map((item) => ({
+          id: String(item.id),
+          label: item.kode_arah,
+          deskripsi: item.deskripsi || "",
+        }));
 
         setOptions(mapped);
         onOptionsChange?.(mapped);
 
-        // ✅ Jangan reset value kalau options kosong
         if (
-          mapped.length > 0 &&
           value &&
-          !mapped.find((item) => item.id === value)
+          !mapped.find((item) => String(item.id) === String(value))
         ) {
           onChange?.("");
         }
       })
       .catch((err) => {
-        console.error("❌ Gagal fetch arah kebijakan:", err);
-        // ❗ Jangan reset value saat error
+        console.error("Gagal fetch arah kebijakan:", err);
         setOptions([]);
         onOptionsChange?.([]);
+        if (value) onChange?.("");
       })
       .finally(() => {
         setIsLoading(false);
       });
-  }, [strategiId, tahun, jenis_dokumen]);
+  }, [strategiId, tahun, jenis_dokumen, value, onChange, onOptionsChange]);
 
-  // 🔹 Buat entry sementara kalau value lama tidak ada di options
   const displayOptions =
-    value && !options.find((o) => o.id === value)
+    value && !options.find((o) => String(o.id) === String(value))
       ? [
           ...options,
           {
-            id: value,
+            id: String(value),
             label: `(Data belum tersedia - ID: ${value})`,
             deskripsi: "",
           },
         ]
       : options;
 
-  const selected = displayOptions.find((o) => o.id === value);
+  const selected = displayOptions.find(
+    (o) => String(o.id) === String(value)
+  );
 
   return (
     <>

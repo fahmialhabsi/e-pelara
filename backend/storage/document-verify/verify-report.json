@@ -1,0 +1,196 @@
+{
+  "root": "E:\\1-MyApp\\React\\ePeLARA",
+  "outDir": "E:\\1-MyApp\\React\\ePeLARA\\backend\\storage\\document-verify",
+  "renja": {
+    "id": 6,
+    "judul": "Coba buat dokumen renja"
+  },
+  "rkpd": {
+    "id": 6,
+    "judul": "RKPD 2025 (derivasi Renstra PD #3)"
+  },
+  "files": [
+    {
+      "kind": "renja-docx",
+      "path": "E:\\1-MyApp\\React\\ePeLARA\\backend\\storage\\document-verify\\verify-renja-resmi-6.docx",
+      "bytes": 10002
+    },
+    {
+      "kind": "renja-pdf",
+      "path": "E:\\1-MyApp\\React\\ePeLARA\\backend\\storage\\document-verify\\verify-renja-resmi-6.pdf",
+      "bytes": 4173
+    },
+    {
+      "kind": "rkpd-docx",
+      "path": "E:\\1-MyApp\\React\\ePeLARA\\backend\\storage\\document-verify\\verify-rkpd-resmi-6.docx",
+      "bytes": 9902
+    },
+    {
+      "kind": "rkpd-pdf",
+      "path": "E:\\1-MyApp\\React\\ePeLARA\\backend\\storage\\document-verify\\verify-rkpd-resmi-6.pdf",
+      "bytes": 3922
+    }
+  ],
+  "docxText": {
+    "renja": "DOKUMEN RESMI — RENJA OPD\nRENCANA KERJA PERANGKAT DAERAH (RENJA OPD)\nSmoke Test PD\nTAHUN 2025\nVersi dokumen aplikasi: 1 · Status: draft\nBAB I — PENDAHULUAN\nDokumen ini menyusun Rencana Kerja Perangkat Daerah (Renja OPD) untuk Smoke Test PD (SMOKE) pada tahun 2025, dalam kerangka periode RPJMD 2025–2029. Renja ini merupakan penjabaran rencana strategis perangkat daerah ke dalam kegiatan, indikator, dan alokasi pendanaan. Dokumen disusun melalui aplikasi ePelara dengan mengacu pada Renstra PD dan (jika dipilih) dokumen RKPD.\nBAB II — EVALUASI PELAKSANAAN RENJA TAHUN LALU\nTidak ditemukan dokumen Renja v2 untuk tahun 2024 pada periode dan PD yang sama. Bagian evaluasi pelaksanaan Renja tahun lalu perlu dilengkapi secara manual atau setelah data historis tersedia.\nBAB III — TUJUAN DAN SASARAN PERANGKAT DAERAH\nTujuan dan sasaran perangkat daerah diambil dari dokumen Renstra Perangkat Daerah: &quot;Smoke Renstra PD (api test)&quot;.\nDetail tujuan/sasaran pada tingkat Renstra OPD (tabel tujuan) belum terhubung atau kosong. Hubungkan Renstra PD ke Renstra OPD (kolom renstra_opd_id pada renstra_pd_dokumen) agar daftar tujuan dapat diisi otomatis.\nBAB IV — RENCANA KERJA DAN PENDANAAN\n4.1 Acuan perencanaan\nRKPD acuan: RKPD 2025 (derivasi Renstra PD #2) Renstra PD: Smoke Renstra PD (api test)\n4.2 Program, kegiatan, indikator, target, dan pagu indikatif\nNo\nProgram\nKegiatan\nSub kegiatan\nIndikator\nTarget\nPagu (Rp)\nBAB V — PENUTUP\nDemikian Renja Perangkat Daerah ini disusun sebagai pedoman pelaksanaan rencana kerja tahun 2025. Perubahan substantif mengikuti mekanisme perencanaan dan peraturan perundangan yang berlaku.\nCatatan sistem: dokumen ini dihasilkan oleh Document Engine ePelara (OOXML). Penyesuaian redaksi final dan pengesahan mengikuti peraturan daerah/pedoman setempat.",
+    "rkpd": "DOKUMEN RESMI — RKPD\nRENCANA KERJA PEMERINTAH DAERAH (RKPD)\nTAHUN 2025\nBAB I — PENDAHULUAN\nDokumen ini menyusun Rencana Kerja Pemerintah Daerah (RKPD) tahun 2025 dalam kerangka periode RPJMD 2025–2029. RKPD memuat prioritas pembangunan dan rencana program–kegiatan beserta indikator dan pagu indikatif.\nBAB II — ANALISIS KONDISI DAN KEBIJAKAN\nAnalisis singkat kondisi perencanaan: dokumen berjudul &quot;RKPD 2025 (derivasi Renstra PD #3)&quot; dengan status draft. Penjabaran analisis makro/wilayah dapat dilengkapi sesuai pedoman RKPD daerah.\nBAB III — PRIORITAS PEMBANGUNAN DAERAH\nPrioritas daerah pada baris RKPD (kolom prioritas_daerah) belum diisi. Isi prioritas pada item RKPD untuk menampilkan ringkasan otomatis.\nBAB IV — RENCANA PROGRAM, KEGIATAN, DAN PENDANAAN\nNo\nProgram\nKegiatan\nSub kegiatan\nIndikator\nTarget\nPagu (Rp)\n1\nPROGRAM PENGELOLAAN SUMBER DAYA EKONOMI UNTUK KEDAULATAN DAN KEMANDIRIAN PANGAN\nPenyediaan Infrastruktur dan Seluruh Pendukung Kemandirian Pangan pada berbagai Sektor sesuai Kewenangan Daerah Provinsi\nPenyediaan Infrastruktur Pendukung Kemandirian Pangan Lainnya\nPenyediaan Infrastruktur Pendukung Kemandirian Pangan Lainnya\n—\n150.000.000\n2\nPROGRAM PENGELOLAAN SUMBER DAYA EKONOMI UNTUK KEDAULATAN DAN KEMANDIRIAN PANGAN\nPenyediaan Infrastruktur dan Seluruh Pendukung Kemandirian Pangan pada berbagai Sektor sesuai Kewenangan Daerah Provinsi\nPenyediaan Infrastruktur Pendukung Kemandirian Pangan Lainnya\nPenyediaan Infrastruktur Pendukung Kemandirian Pangan Lainnya\n—\n150.000.000\nBAB V — PENUTUP\nDemikian RKPD ini disusun sebagai landasan perencanaan tahunan. Perubahan mengikuti ketentuan perundangan dan tahapan musrenbang.\nCatatan sistem: dokumen ini dihasilkan oleh Document Engine ePelara (OOXML). Format akhir dapat disesuaikan peraturan daerah."
+  },
+  "pdfHint": {
+    "renja": "ptQ%#³,½\u001djØ\u0014×êí8\u001f?5Î§¿\u001c¢ûï@ì\"£jÔë!\u0016òóLúëðé]þ\u0011;â\u0001\t\u001eAVüZ-\u0000áQìÁjf®'ìèñýö%·v·¦ZÆÑ\u00039½ajK­+!¾2ñíèÐgäHè¹ðËHlÜ³\u0014M¬O\u0012¨\u0010'|ã80ñ\\ýÔTóiÅ¦VÜÊ~dúÆÂg­ñ.ä¸\u0010Ì6¨Ù²V4÷é¬îhµi»-\r\u001bºpd/qå\u0015$È\u0006w\u0005¡Á=}¥ÙÅâ%¬³+#cu<\u0007M\u0006,O 9\u001b \u0015\bt¬-àçZ}oõ\u0014ù\u0002¡b¾]¬âTY®@#\u0006G\rc\u001bð·\fê®â¶È\u0019\u0011¿\u0019®à306\\! \u0019ØÄúxÜùüæ Ð\u0013C^J3COh+ø|ZuZGÔZ´^z·7Õõ«}} \u0000Cc¾K\u000fâs^ëA4Sæ¼Øc®6¸¿UKp7$\u001eçmËìòÐ\u0018oÅ¯±§\u001f\u001e\u0004ÈfzÓ¾Ò1ª¤P}\u0001ÍÖè»Uñ\u0017j^¦a3kÈÙ¦\u001aPÿï*\u000f½×¸ºné&²7C9û\u0004\u001bðFÄ0úÈÌ,óTíHË\u0002îe¿~Ý\by½\u0000®l\\Lw¾K`¤».Fã®l¾zO»e¹\bÑi]\t*Ú,ÈXwÚ`õu´qJÂT¾\u000fÆÞ¬\n{Ù@uÃÌÒ\u001e\u0019wÆ:Ï\u0005ëR±rèòÿ\u00011Ú\u0004\nendstream\nendobj\n11 0 obj\n<<\n/Type /Page\n/Parent 1 0 R\n/MediaBox [0 0 595.28 841.89]\n/Contents 9 0 R\n/Resources 10 0 R\n>>\nendobj\n10 0 obj\n<<\n/ProcSet [/PDF /Text /ImageB /ImageC /ImageI]\n/Font <<\n/F1 8 0 R\n>>\n/ColorSpace <<\n>>\n>>\nendobj\n9 0 obj\n<<\n/Length 417\n/Filter /FlateDecode\n>>\nstream\nxÏNÜ0\u0010Æï~y\u0001ÌÌxþÄÒ*\u0007( õT6·ªÍHHÝ\u0003\u0017x}d'Û]TB\u001b\u000eñçß|¶\t\u0010\u0010.\b\u0010\u001a¡ØdØ\u001fÂs¸ü6¼<í»+¸Þ\u0006\fÇ±½¾\u000f\u0004¯A\rÌ\"Á!$ÊQyúû\u001d¶áGx\u000eôìU7Ç\tÔÀÝ#»@w\b·\u0004ÄÐáçFXHQ²\u001acvFeQ\u0019$\tÉ Ä(½¨²ìZ`MH\u000bRç20*Öú³Pù¶¿ û\u001enºÿFÔ&\u001a\u001f\tó\u0004¨,½¢\b£%W#\u001bÒ®\u0005EØTØ98¡Ü:·pA\n\u001bËn-p'Ëe©\r\\J\u0011aÉÔ>SbÎ_`&2Ù_ðK;µìÑFë'MÿÁ×\u00189.¼4\\¾D06zÂ%y¥\u0005ª\u0018d\u0005bÏè\u0015ÆRñ½`@mW#RrµR¦Êã9­CCpòÝÿ ù|O\u0007\u001bWy³$¦¥«Ñ|2÷d²=®Ü>\u0001î§\u0007ajnÙÈ«/+õy±ò\u0016x­^EÞ\\Ï.[_YG_«|QûìZ9º¬\u0014OÀÙh2w}§û\u0006õ\u001d>\nendstream\nendobj\n14 0 obj\n<<\n/Type /Page\n/Parent 1 0 R\n/MediaBox [0 0 595.28 841.89]\n/Contents 12 0 R\n/Resources 13 0 R\n>>\nendobj\n13 0 obj\n<<\n/ProcSet [/PDF /Text /ImageB /ImageC /ImageI]\n/Font <<\n/F1 8 0 R\n>>\n/ColorSpace <<\n>>\n>>\nendobj\n12 0 obj\n<<\n/Length 481\n/Filter /FlateDecode\n>>\nstream\nxOk\u001b1\u0010Åïú\u0014ó\u0005²\u0019fÞ¬`ñ!é\u001fè¡Ú·ÒC¼^C¡.@ûõ´²\u001doLñA°«\u0019Iïý\u0014é.\u0012S¯±ë3pÿaúós¾}~ ñ5pmy\u001d·Çu«¬\u001f¿H.Ò!DxÚß¯°\u000eOá%Äk\u0007=lÚ|$\u0003¹{'®´9ûO¢Ðf\u001f¾\u000f*\u001aUWdLA8»°±Nf¦fÆ+â\u001f´ù\u0012>nÂÓR~'t\u001c³[¤Xî¤ÏrÒÂMÂ°CÆ\u0016\u0019\u0011Óî4Y#\u0000§Á\u0004\tÏËBS\u000fsYÝ²\u001a-¢ë¢Y\u0015ñ¢±_4 cB^N*²'·2Þ\tó\u0004 Â\u0011ß­tA±Çî¥Z\u001c\u0011±õT5ÇkM³ïÖ°\u0014¶]4ïWÐxqÛ_Ñ$qdrY8ç|[êËû$/\u0013¹FÏúâB¸r\u0014OUßä\f\bcWz¹\u0002ne¶Ím«÷ì©ü\t\u0017lTæ]¡mw~°«_\\sý(l\u0017ÖüJ97¦uN\u0018ò¦½ÅUÁýçY(\u001dÇíÏBú.`ö§W±/\u0007Îpñ\n\"\u000bKo¬ª<¿ÛÚ½®Âz\u0004:\u0015p°s2ÅÈ\u0019K±\u0003¦AXÅ\u001bð\u0002ª¶¢Ä48Ëw!ã.\\£+!Âe×FI\n¥É¸`ô\u000fRl\u0015}\nendstream\nendobj\n16 0 obj\n(PDFKit PDFKit",
+    "rkpd": "ïÃÕqQ+Å«{3_\u0016¤ãçLXìÀÞê\rö\u0013´SÕ\u000f¾H`\u001b}òf?\nÈã¨¸×\u0011ß\u00052Ê½ËOÃ>«YHö~Îö6±¡ï-#\u0007z§MÒböj¿´%e¹Ë8\u001dL6~ØKó\u001f5Ae\u0001=\u001ahØ¥Ö<X©5væ¥ËXe}°»£Sz!Ôã\u001d£Yt\ttëÈ#ËÖ ¬qéÍªYílÎöH£Wê{T FmN¬`\u0018j¾\u00184\bXQ0\u001c¬²ÈÕÅà.Ø3A%«\f> Ù\\ÍwhÁd»Â¨¢eX\frh1\u0006y\bÈÝ\u0018\u0000g5¸áEóÒZTqf\u0018S*÷fÇëD\u0004É\u0018\n\u0005Ø~òdde­}TÏëV©Ý­ Ï\u0014½\b!\u0013Ùâ&:LÎÙ+ ý\fÛq¢µfûo=\u0006Òå0\u0005¾jÇ \u0005Ý9ì<$9WTé¶Òo(ê0±.äÜî­AaÉÊÎ»÷Ay~ûøÝ\u0006m­\u0018S\u0003ÿÑzÝ¹ûyø<¿\u0018Ü\u0007Ç2*w_/cX\u0006¹läVEO\":\u0013Í\u0017keÖ}0È¶´\u0001×\nÕ(Î\u0006\u000fÒGåL[Õ\u0006A\u0019\re\u0019¶çÀ\u0005£qaY\u0017T*ÕNÝ\u0001?\u0000®1ÇÙ\nendstream\nendobj\n11 0 obj\n<<\n/Type /Page\n/Parent 1 0 R\n/MediaBox [0 0 595.28 841.89]\n/Contents 9 0 R\n/Resources 10 0 R\n>>\nendobj\n10 0 obj\n<<\n/ProcSet [/PDF /Text /ImageB /ImageC /ImageI]\n/Font <<\n/F1 8 0 R\n>>\n/ColorSpace <<\n>>\n>>\nendobj\n9 0 obj\n<<\n/Length 723\n/Filter /FlateDecode\n>>\nstream\nxÍVËÚ@\u0010¼û+æ\u0007ât·ûá\u000fCnQ¸E¹\u0000ö A4\u0002!\u0016\u001e¹cä@@h\b\u0004aÇ\u0013øó':\u0012ð#ã\u0010Ð\u0016>ñ¦'x\bü|\r\u0002\t÷ê\u001e£¿\u000f\u0001~ý×æóþm¥@0\u0016DK±s%£N\u000b±¬/`\t\u0018é¤6\u0004°3?\u0015õ´0\u0002Ó=ÌPQÓ¨h¬¨KAD¥\n:\u0013¥¥pKÙF\u001d5ê!e:ÙRèÎJÐ/´Q4RS1^Íå.À¹É¨fRÁ4Ö\fj\u0015<Ë\"ew\u000b*Ð;k£ò\rzÚ8cá#O|÷­\nbÛ\u001bÝpLOL,B×ÛîÛâz\u0010îÔÅÄÖú×<\u0014ß\u001b\u001b6òÄ'\u0004\"<\nð¡*\u0010v­ö7\\Þ®JòâÌËÝ+±«È\u0002¤x«\u0012ì-v±dB.·uø\u001a­\u0015¸¥ÈU\u0011l\u0015zÅ5ql\u0015n\u001c\u0002JØYÉ®´\u0004]ñ\u0016×\u0002fùDJ/jm±_}H±E\u000fÆ&F\u0004Êõ\u000b ¢G\u0007¿DëýÈ»t@9eàß¬2rn\u001f.§ÈÉkò¾¾$Z<ÎiUpT«/=»'\u0006ÞO\u0002%\u0015#%\u0017[E¤ÓlK*¥÷Q©&bBâÊ\u001câ\u001d¹\u0012ÈkêÑy¡ãÍ\u0010\u001e¨É¨ÜÅÕ\u0006ì\u0015NãÒß4<D{=á\r&Ù¼ì`¢Õ¸ºÿê¤\u0003\u001a;ð×óg»ë(¾ÔÚ&ÿCz»£n]w²½»\u0003ÛÆÝiÿ»Óëº»¾[ÏÝ\u0015È½»Ëò}\u0013wWØ\rÜ]v\u001f6twù=y´»ÛJ³\u0011ºJUÎ'K¡º»÷ä'PÐÔº»»²ª»+Æ»»\"ÑÖuwÙÁÔ¹»¼ÿú·»û\u000boW»Ï\nendstream\nendobj\n14 0 obj\n<<\n/Type /Page\n/Parent 1 0 R\n/MediaBox [0 0 595.28 841.89]\n/Contents 12 0 R\n/Resources 13 0 R\n>>\nendobj\n13 0 obj\n<<\n/ProcSet [/PDF /Text /ImageB /ImageC /ImageI]\n/Font <<\n/F1 8 0 R\n>>\n/ColorSpace <<\n>>\n>>\nendobj\n12 0 obj\n<<\n/Length 373\n/Filter /FlateDecode\n>>\nstream\nxRËÜ@\f¼÷Wè\u0007Æ+©¥\u001b\u000fK\u001e[\u0012ßB.3ã@&\u0010\u0016ß\u000f²=3^Ãæ h©»¤ªj\t11\u001dz®otºEèwq\u0010Ð\t] ººeßËçòqyñ\u000fàã´Õ\u001c\u0014\u0011Ñt ·Pv6·ÙÝÍÝy$þJÓòvzõ0oöMoÓxfpÑpD`\u001eé\u00001\u001a\\íèlvÍÑ0£Ý2C\u001aqÇDC!\bÈîí PDFKit PDFKit"
+  },
+  "contextRenja": {
+    "dok": {
+      "id": 6,
+      "periode_id": 2,
+      "tahun": 2025,
+      "perangkat_daerah_id": 1,
+      "renstra_pd_dokumen_id": 1,
+      "rkpd_dokumen_id": 5,
+      "judul": "Coba buat dokumen renja",
+      "versi": 1,
+      "status": "draft",
+      "is_final_active": false,
+      "tanggal_pengesahan": null,
+      "derivation_key": null,
+      "legacy_renja_id": null,
+      "text_bab1": null,
+      "text_bab2": null,
+      "text_bab5": null,
+      "created_at": "2026-04-11T16:21:18.000Z",
+      "updated_at": "2026-04-11T16:21:18.000Z",
+      "periode": {
+        "id": 2,
+        "nama": "RPJMD 2025-2029",
+        "tahun_awal": 2025,
+        "tahun_akhir": 2029
+      },
+      "perangkatDaerah": {
+        "id": 1,
+        "kode": "SMOKE",
+        "nama": "Smoke Test PD",
+        "is_test": false,
+        "aktif": true,
+        "created_at": "2026-04-10T15:41:39.000Z",
+        "updated_at": "2026-04-10T15:41:39.000Z"
+      },
+      "rkpdDokumen": {
+        "id": 5,
+        "periode_id": 2,
+        "tahun": 2025,
+        "judul": "RKPD 2025 (derivasi Renstra PD #2)",
+        "versi": 1,
+        "status": "draft",
+        "is_final_active": false,
+        "tanggal_pengesahan": null,
+        "derivation_key": null,
+        "is_test": false,
+        "created_at": "2026-04-11T11:51:33.000Z",
+        "updated_at": "2026-04-11T11:51:33.000Z"
+      },
+      "renstraPdDokumen": {
+        "id": 1,
+        "periode_id": 2,
+        "perangkat_daerah_id": 1,
+        "judul": "Smoke Renstra PD (api test)",
+        "versi": 1,
+        "status": "draft",
+        "is_final_active": false,
+        "tanggal_pengesahan": null,
+        "derivation_key": null,
+        "is_test": false,
+        "renstra_opd_id": null,
+        "created_at": "2026-04-10T15:41:39.000Z",
+        "updated_at": "2026-04-10T15:41:39.000Z"
+      }
+    },
+    "items": [],
+    "meta": {
+      "judulResmi": "RENCANA KERJA PERANGKAT DAERAH (RENJA OPD)\nSmoke Test PD\nTAHUN 2025",
+      "pdNama": "Smoke Test PD",
+      "pdKode": "SMOKE",
+      "periodeStr": "2025–2029",
+      "bab1": "Dokumen ini menyusun Rencana Kerja Perangkat Daerah (Renja OPD) untuk Smoke Test PD (SMOKE) pada tahun 2025, dalam kerangka periode RPJMD 2025–2029. Renja ini merupakan penjabaran rencana strategis perangkat daerah ke dalam kegiatan, indikator, dan alokasi pendanaan. Dokumen disusun melalui aplikasi ePelara dengan mengacu pada Renstra PD dan (jika dipilih) dokumen RKPD.",
+      "bab2": "Tidak ditemukan dokumen Renja v2 untuk tahun 2024 pada periode dan PD yang sama. Bagian evaluasi pelaksanaan Renja tahun lalu perlu dilengkapi secara manual atau setelah data historis tersedia.",
+      "bab3Title": "Tujuan dan sasaran perangkat daerah diambil dari dokumen Renstra Perangkat Daerah: \"Smoke Renstra PD (api test)\".",
+      "bab3Tujuan": "Detail tujuan/sasaran pada tingkat Renstra OPD (tabel tujuan) belum terhubung atau kosong. Hubungkan Renstra PD ke Renstra OPD (kolom renstra_opd_id pada renstra_pd_dokumen) agar daftar tujuan dapat diisi otomatis.",
+      "bab5": "Demikian Renja Perangkat Daerah ini disusun sebagai pedoman pelaksanaan rencana kerja tahun 2025. Perubahan substantif mengikuti mekanisme perencanaan dan peraturan perundangan yang berlaku.",
+      "rkpdJudul": "RKPD 2025 (derivasi Renstra PD #2)",
+      "renstraJudul": "Smoke Renstra PD (api test)"
+    }
+  },
+  "contextRkpd": {
+    "dok": {
+      "id": 6,
+      "periode_id": 2,
+      "tahun": 2025,
+      "judul": "RKPD 2025 (derivasi Renstra PD #3)",
+      "versi": 1,
+      "status": "draft",
+      "is_final_active": false,
+      "tanggal_pengesahan": null,
+      "derivation_key": null,
+      "is_test": false,
+      "created_at": "2026-04-11T11:51:57.000Z",
+      "updated_at": "2026-04-11T11:51:57.000Z",
+      "periode": {
+        "id": 2,
+        "nama": "RPJMD 2025-2029",
+        "tahun_awal": 2025,
+        "tahun_akhir": 2029
+      }
+    },
+    "items": [
+      {
+        "id": 7,
+        "rkpd_dokumen_id": 6,
+        "urutan": 1,
+        "prioritas_daerah": null,
+        "program": "PROGRAM PENGELOLAAN SUMBER DAYA EKONOMI UNTUK KEDAULATAN DAN KEMANDIRIAN PANGAN",
+        "kegiatan": "Penyediaan Infrastruktur dan Seluruh Pendukung Kemandirian Pangan pada berbagai Sektor sesuai Kewenangan Daerah Provinsi",
+        "sub_kegiatan": "Penyediaan Infrastruktur Pendukung Kemandirian Pangan Lainnya",
+        "indikator": "Penyediaan Infrastruktur Pendukung Kemandirian Pangan Lainnya",
+        "target": null,
+        "satuan": null,
+        "pagu": "150000000.00",
+        "perangkat_daerah_id": 1,
+        "status_baris": "draft",
+        "change_state": "original",
+        "current_rkpd_item_version_id": null,
+        "pagu_source": "rkpd",
+        "pagu_line_version_id": null,
+        "created_at": "2026-04-11T11:51:57.000Z",
+        "updated_at": "2026-04-11T11:51:57.000Z"
+      },
+      {
+        "id": 8,
+        "rkpd_dokumen_id": 6,
+        "urutan": 2,
+        "prioritas_daerah": null,
+        "program": "PROGRAM PENGELOLAAN SUMBER DAYA EKONOMI UNTUK KEDAULATAN DAN KEMANDIRIAN PANGAN",
+        "kegiatan": "Penyediaan Infrastruktur dan Seluruh Pendukung Kemandirian Pangan pada berbagai Sektor sesuai Kewenangan Daerah Provinsi",
+        "sub_kegiatan": "Penyediaan Infrastruktur Pendukung Kemandirian Pangan Lainnya",
+        "indikator": "Penyediaan Infrastruktur Pendukung Kemandirian Pangan Lainnya",
+        "target": null,
+        "satuan": null,
+        "pagu": "150000000.00",
+        "perangkat_daerah_id": 1,
+        "status_baris": "draft",
+        "change_state": "original",
+        "current_rkpd_item_version_id": null,
+        "pagu_source": "rkpd",
+        "pagu_line_version_id": null,
+        "created_at": "2026-04-11T11:51:57.000Z",
+        "updated_at": "2026-04-11T11:51:57.000Z"
+      }
+    ],
+    "meta": {
+      "judulResmi": "RENCANA KERJA PEMERINTAH DAERAH (RKPD)\nTAHUN 2025",
+      "periodeStr": "2025–2029",
+      "bab1": "Dokumen ini menyusun Rencana Kerja Pemerintah Daerah (RKPD) tahun 2025 dalam kerangka periode RPJMD 2025–2029. RKPD memuat prioritas pembangunan dan rencana program–kegiatan beserta indikator dan pagu indikatif.",
+      "bab2": "Analisis singkat kondisi perencanaan: dokumen berjudul \"RKPD 2025 (derivasi Renstra PD #3)\" dengan status draft. Penjabaran analisis makro/wilayah dapat dilengkapi sesuai pedoman RKPD daerah.",
+      "bab3": "Prioritas daerah pada baris RKPD (kolom prioritas_daerah) belum diisi. Isi prioritas pada item RKPD untuk menampilkan ringkasan otomatis.",
+      "bab5": "Demikian RKPD ini disusun sebagai landasan perencanaan tahunan. Perubahan mengikuti ketentuan perundangan dan tahapan musrenbang."
+    }
+  }
+}

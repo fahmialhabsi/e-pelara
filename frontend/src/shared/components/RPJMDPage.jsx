@@ -1,5 +1,4 @@
-// src/components/RPJMDList.js
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Container,
   Row,
@@ -8,18 +7,38 @@ import {
   Table,
   Button,
   Modal,
+  Alert,
+  Form,
+  Spinner,
 } from "react-bootstrap";
 import api from "../../services/api";
-import RPJMDForm from "../components/RPJMDForm";
+import RpjmdMetadataForm from "./RpjmdMetadataForm";
 import { useAuth } from "../../hooks/useAuth";
+import { normalizeListItems } from "@/utils/apiResponse";
+import { canRestorePlanningDocumentVersion } from "../../utils/roleUtils";
+import AuditTimeline from "../../features/planning-audit/components/AuditTimeline";
+import BeforeAfterDiffCard from "../../features/planning-audit/components/BeforeAfterDiffCard";
+import DocumentTracePanel from "../../features/planning-audit/components/DocumentTracePanel";
+import VersionHistoryPanel from "../../features/planning-audit/components/VersionHistoryPanel";
 
-export default function RPJMDList() {
+export default function RPJMDPage() {
   const { user } = useAuth();
   const allowedRoles = ["SUPER_ADMIN", "ADMINISTRATOR"];
+  const canDelete = user?.role === "SUPER_ADMIN";
+
   const [list, setList] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [mode, setMode] = useState("add");
   const [currentItem, setCurrentItem] = useState(null);
+
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditFor, setAuditFor] = useState(null);
+  const [auditRows, setAuditRows] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteReason, setDeleteReason] = useState("");
 
   useEffect(() => {
     fetchList();
@@ -28,10 +47,27 @@ export default function RPJMDList() {
   const fetchList = async () => {
     try {
       const res = await api.get("/rpjmd");
-      setList(res.data);
+      setList(normalizeListItems(res.data));
     } catch (err) {
       console.error("Error fetching RPJMD list:", err);
       alert("Gagal memuat daftar RPJMD.");
+    }
+  };
+
+  const openAudit = async (item) => {
+    setAuditFor(item);
+    setAuditOpen(true);
+    setAuditLoading(true);
+    setAuditRows([]);
+    try {
+      const res = await api.get(`/rpjmd/${item.id}/audit`);
+      const payload = res.data;
+      setAuditRows(Array.isArray(payload?.data) ? payload.data : []);
+    } catch (err) {
+      console.error(err);
+      alert("Gagal memuat riwayat audit.");
+    } finally {
+      setAuditLoading(false);
     }
   };
 
@@ -47,35 +83,47 @@ export default function RPJMDList() {
     setShowModal(true);
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Yakin ingin menghapus data RPJMD ini?")) return;
+  const handleDeleteClick = (item) => {
+    setDeleteTarget(item);
+    setDeleteReason("");
+    setDeleteOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget?.id) return;
+    const text = String(deleteReason || "").trim();
+    if (!text) {
+      alert("Alasan penghapusan wajib diisi.");
+      return;
+    }
     try {
-      await api.delete(`/rpjmd/${id}`);
-      alert("RPJMD berhasil dihapus.");
+      await api.delete(`/rpjmd/${deleteTarget.id}`, {
+        data: { change_reason_text: text },
+      });
+      setDeleteOpen(false);
+      setDeleteTarget(null);
       fetchList();
+      alert("RPJMD berhasil dihapus.");
     } catch (err) {
       console.error("Failed to delete:", err);
-      alert("Gagal menghapus RPJMD.");
+      alert(err?.response?.data?.message || "Gagal menghapus RPJMD.");
     }
   };
 
   const handleClose = () => setShowModal(false);
 
-  // Kirim data sebagai FormData agar file terupload
   const handleSubmit = async (data) => {
     try {
       const form = new FormData();
-      // Append teks
       Object.entries(data).forEach(([key, value]) => {
-        if (value !== null && !(value instanceof File)) {
+        if (value !== null && value !== undefined && !(value instanceof File)) {
           form.append(key, value);
         }
       });
-      // Append file jika ada
-      if (data.foto_kepala_daerah) {
+      if (data.foto_kepala_daerah instanceof File) {
         form.append("foto_kepala_daerah", data.foto_kepala_daerah);
       }
-      if (data.foto_wakil_kepala_daerah) {
+      if (data.foto_wakil_kepala_daerah instanceof File) {
         form.append("foto_wakil_kepala_daerah", data.foto_wakil_kepala_daerah);
       }
 
@@ -94,7 +142,7 @@ export default function RPJMDList() {
       setShowModal(false);
     } catch (err) {
       console.error("Save error:", err);
-      alert("Gagal menyimpan RPJMD.");
+      alert(err?.response?.data?.error || err?.response?.data?.message || "Gagal menyimpan RPJMD.");
     }
   };
 
@@ -102,17 +150,25 @@ export default function RPJMDList() {
     return (
       <Container className="p-5 d-flex justify-content-center align-items-center">
         <Alert variant="danger" className="text-center w-100 fw-bold fs-5">
-          ❌ Maaf, Anda tidak berwenang untuk membuka halaman RPJMD ini.
+          Maaf, Anda tidak berwenang untuk membuka halaman RPJMD ini.
         </Alert>
       </Container>
     );
   }
+
+  const latestDiffNormalized =
+    auditRows.find((r) => r.normalized?.changed_fields?.length)?.normalized ||
+    auditRows.find((r) => r.action_type === "UPDATE" && r.normalized)?.normalized ||
+    null;
 
   return (
     <Container className="mt-4">
       <Row className="mb-3 align-items-center">
         <Col>
           <h4>Daftar RPJMD Provinsi</h4>
+          <p className="text-muted small mb-0">
+            Setiap perubahan memerlukan alasan; riwayat audit tersedia per baris.
+          </p>
         </Col>
         <Col className="text-end">
           <Button variant="primary" onClick={handleAdd}>
@@ -128,11 +184,9 @@ export default function RPJMDList() {
               <tr>
                 <th>Tema</th>
                 <th>Kepala Daerah</th>
-                <th>Wakil Kepala</th>
-                <th>Periode Awal</th>
-                <th>Periode Akhir</th>
-                <th>Tahun Penetapan</th>
-                <th>Akronim</th>
+                <th>Wakil</th>
+                <th>Periode</th>
+                <th>Versi</th>
                 <th>Aksi</th>
               </tr>
             </thead>
@@ -142,26 +196,32 @@ export default function RPJMDList() {
                   <td>{item.nama_rpjmd}</td>
                   <td>{item.kepala_daerah}</td>
                   <td>{item.wakil_kepala_daerah}</td>
-                  <td>{item.periode_awal}</td>
-                  <td>{item.periode_akhir}</td>
-                  <td>{item.tahun_penetapan}</td>
-                  <td>{item.akronim}</td>
+                  <td>
+                    {item.periode_awal} – {item.periode_akhir}
+                  </td>
+                  <td>{item.version ?? 1}</td>
                   <td>
                     <Button
                       size="sm"
-                      variant="info"
-                      onClick={() => handleEdit(item)}
-                      className="me-2"
+                      variant="outline-secondary"
+                      className="me-1"
+                      onClick={() => openAudit(item)}
                     >
-                      Ubah
+                      Audit
                     </Button>
                     <Button
                       size="sm"
-                      variant="danger"
-                      onClick={() => handleDelete(item.id)}
+                      variant="info"
+                      className="me-1"
+                      onClick={() => handleEdit(item)}
                     >
-                      Hapus
+                      Ubah
                     </Button>
+                    {canDelete ? (
+                      <Button size="sm" variant="danger" onClick={() => handleDeleteClick(item)}>
+                        Hapus
+                      </Button>
+                    ) : null}
                   </td>
                 </tr>
               ))}
@@ -172,16 +232,85 @@ export default function RPJMDList() {
 
       <Modal show={showModal} onHide={handleClose} size="lg" centered>
         <Modal.Header closeButton>
-          <Modal.Title>
-            {mode === "edit" ? "Ubah RPJMD" : "Tambah RPJMD"}
-          </Modal.Title>
+          <Modal.Title>{mode === "edit" ? "Ubah RPJMD" : "Tambah RPJMD"}</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <RPJMDForm mode={mode} data={currentItem} onSubmit={handleSubmit} />
+          <RpjmdMetadataForm
+            mode={mode}
+            data={currentItem}
+            onSubmit={handleSubmit}
+            onCancel={handleClose}
+          />
         </Modal.Body>
         <Modal.Footer>
           <Button variant="secondary" onClick={handleClose}>
             Tutup
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      <Modal show={auditOpen} onHide={() => setAuditOpen(false)} size="lg" centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Riwayat audit — {auditFor?.nama_rpjmd || auditFor?.id}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {auditFor?.id ? (
+            <Row className="mb-3 g-2 small">
+              <Col md={6}>
+                <DocumentTracePanel documentType="rpjmd" documentId={auditFor.id} />
+              </Col>
+              <Col md={6}>
+                <VersionHistoryPanel
+                  documentType="rpjmd"
+                  documentId={auditFor.id}
+                  allowRestore={canRestorePlanningDocumentVersion(user?.role)}
+                  onRestored={fetchList}
+                />
+              </Col>
+            </Row>
+          ) : null}
+          {auditLoading ? (
+            <Spinner animation="border" size="sm" />
+          ) : (
+            <>
+              {latestDiffNormalized ? (
+                <div className="mb-3">
+                  <div className="fw-semibold small mb-2">Perbandingan field (update terakhir)</div>
+                  <div className="rounded border p-2 bg-light">
+                    <BeforeAfterDiffCard normalized={latestDiffNormalized} />
+                  </div>
+                </div>
+              ) : null}
+              <div className="small">
+                <AuditTimeline rows={auditRows} loading={false} />
+              </div>
+            </>
+          )}
+        </Modal.Body>
+      </Modal>
+
+      <Modal show={deleteOpen} onHide={() => setDeleteOpen(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Hapus RPJMD</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p className="small">Dokumen: {deleteTarget?.nama_rpjmd}</p>
+          <Form.Group>
+            <Form.Label>Alasan penghapusan (wajib)</Form.Label>
+            <Form.Control
+              as="textarea"
+              rows={3}
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+            />
+          </Form.Group>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setDeleteOpen(false)}>
+            Batal
+          </Button>
+          <Button variant="danger" onClick={confirmDelete}>
+            Hapus
           </Button>
         </Modal.Footer>
       </Modal>

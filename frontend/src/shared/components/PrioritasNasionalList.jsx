@@ -21,6 +21,10 @@ import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
 import { useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 import PrioritasNasionalForm from "./PrioritasNasionalForm";
+import {
+  extractListMeta,
+  normalizeListItems,
+} from "@/utils/apiResponse";
 
 function PrioritasNasionalList() {
   const navigate = useNavigate();
@@ -69,14 +73,10 @@ function PrioritasNasionalList() {
           tahun,
         },
       });
-      // Server might return array directly or under data.data
-      const dataList = Array.isArray(res.data)
-        ? res.data
-        : Array.isArray(res.data.data)
-        ? res.data.data
-        : [];
+      const dataList = normalizeListItems(res.data);
+      const meta = extractListMeta(res.data);
       setPrioritasNasional(dataList);
-      setTotalPages(res.data.meta?.totalPages || 1);
+      setTotalPages(meta.totalPages || 1);
       setErrorMsg("");
     } catch (err) {
       console.error("Error fetching data:", err);

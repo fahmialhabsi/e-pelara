@@ -1,27 +1,67 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useFormikContext } from "formik";
 import StepTemplate from "./StepTemplate";
-import api from "@/services/api";
+import {
+  createIndikatorTujuanBatch,
+  fetchNextKodeIndikatorTujuan,
+  fetchTujuan,
+  createTujuan,
+  fetchIndikatorTujuanByTujuan,
+  fetchTujuanNextNo,
+} from "@/features/rpjmd/services/indikatorRpjmdApi";
+import { pickBackendErrorMessage } from "@/utils/mapBackendErrorsToFormik";
 import useIndikatorBuilder from "../hooks/useIndikatorBuilder";
 import useSetPreviewFields from "@/hooks/useSetPreviewFields";
 import { Button, Spinner } from "react-bootstrap";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import toast from "react-hot-toast";
 import { sanitizeIndikator } from "@/utils/sanitizeIndikator";
 import { usePeriodeAktif } from "@/features/rpjmd/hooks/usePeriodeAktif";
 import debounce from "lodash.debounce";
+import { normalizeListItems } from "@/utils/apiResponse";
+import {
+  mapApiIndikatorToListRow,
+  hydrateDraftFromIndikatorRow,
+  clearIndikatorDraftScalars,
+} from "./wizardIndikatorStepUtils";
+
+function computeNextNoTujuanLocal(noMisi, tujuanRows) {
+  const misiNum = Number(noMisi);
+  if (!Number.isFinite(misiNum) || misiNum <= 0) return null;
+  let maxIdx = 0;
+  const re = new RegExp(`^T${misiNum}-(\\d+)`);
+  for (const item of tujuanRows || []) {
+    const m = String(item.no_tujuan || "").match(re);
+    if (m) maxIdx = Math.max(maxIdx, parseInt(m[1], 10));
+  }
+  return `T${misiNum}-${String(maxIdx + 1).padStart(2, "0")}`;
+}
+
+function syncSelectionFromTujuanItem(item, label, setFieldValue) {
+  if (!item) return;
+  const id = item.id;
+  setFieldValue("tujuan_id", id);
+  setFieldValue("no_tujuan", id);
+  setFieldValue("tujuan_label", label);
+  setFieldValue("label_tujuan", label);
+  setFieldValue("isi_tujuan", item.isi_tujuan || "");
+}
 
 export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
   const { values, setFieldValue, resetForm } = useFormikContext();
+  const tujuanIdRef = useRef(values.tujuan_id);
+  tujuanIdRef.current = values.tujuan_id;
+
   const [filteredTujuanOptions, setFilteredTujuanOptions] = useState([]);
+  const [tujuanSourceRows, setTujuanSourceRows] = useState([]);
   const [loadingTujuan, setLoadingTujuan] = useState(false);
+  const [addingTujuan, setAddingTujuan] = useState(false);
   const { user } = useAuth();
   const navigate = useNavigate();
   const { periode_id, tahun, loading: loadingPeriode } = usePeriodeAktif();
 
   useSetPreviewFields(values, setFieldValue);
-  const penanggungJawabOptions = options?.penanggungJawab || [];
 
   const { generateKeteranganFrom } = useIndikatorBuilder({
     values,
@@ -29,7 +69,6 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
     options: options?.penanggungJawab || [],
   });
 
-  // Set initial values only once
   useEffect(() => {
     if (periode_id && values.periode_id !== periode_id) {
       setFieldValue("periode_id", periode_id);
@@ -42,7 +81,6 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
     const jenis = user?.default_jenis_dokumen?.toUpperCase() || "RPJMD";
     if (!values.jenis_dokumen && jenis) {
       setFieldValue("jenis_dokumen", jenis);
-      console.info("ℹ️ jenis_dokumen diset otomatis ke:", jenis);
     }
   }, [
     periode_id,
@@ -55,48 +93,84 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
   ]);
 
   useEffect(() => {
+    const saved =
+      localStorage.getItem("form_rpjmd") ||
+      sessionStorage.getItem("form_rpjmd");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        Object.entries(parsed).forEach(([key, val]) => setFieldValue(key, val));
+      } catch {
+        // abaikan jika JSON corrupt
+      }
+    }
+  }, [setFieldValue]);
+
+  useEffect(() => {
+    if (!values.misi_id || !values.jenis_dokumen || !values.tahun) return;
+    const stringified = JSON.stringify(values);
+    localStorage.setItem("form_rpjmd", stringified);
+    sessionStorage.setItem("form_rpjmd", stringified);
+  }, [values]);
+
+  useEffect(() => {
     setFieldValue("tujuan_id", "");
-  }, [values.misi_id, values.periode_id, values.tahun]);
+    setFieldValue("no_tujuan", "");
+    setFilteredTujuanOptions([]);
+    setTujuanSourceRows([]);
+  }, [values.misi_id, values.periode_id, values.tahun, setFieldValue]);
 
   const fetchTujuanByMisi = useCallback(
-    debounce(async ({ misi_id, periode_id, tahun, jenis_dokumen }) => {
-      if (!misi_id || !periode_id || !tahun || !jenis_dokumen) return;
+    debounce(
+      async ({
+        misi_id,
+        periode_id: activePeriodeId,
+        tahun: thn,
+        jenis_dokumen,
+      }) => {
+        if (!misi_id || !activePeriodeId || !thn || !jenis_dokumen) return;
 
-      try {
-        setLoadingTujuan(true);
-        const res = await api.get("/tujuan", {
-          params: {
+        try {
+          setLoadingTujuan(true);
+          const res = await fetchTujuan({
             misi_id: Number(misi_id),
-            periode_id: Number(periode_id),
-            tahun: Number(tahun), // <-- ini penting
+            periode_id: Number(activePeriodeId),
+            tahun: Number(thn),
             jenis_dokumen: jenis_dokumen?.toUpperCase(),
-          },
-        });
-        console.log("📤 Params fetch tujuan:", {
-          misi_id: Number(misi_id),
-          periode_id: Number(periode_id),
-          tahun: Number(tahun),
-          jenis_dokumen: jenis_dokumen?.toUpperCase(),
-        });
-        console.log("🎯 Data tujuan dari API:", res.data);
-        const options = res.data.map((item) => ({
-          value: item.id,
-          label: `${item.no_tujuan} - ${item.isi_tujuan}`,
-        }));
+          });
 
-        setFilteredTujuanOptions(options);
+          const items = normalizeListItems(res.data);
+          setTujuanSourceRows(items);
 
-        if (options.length > 0 && !values.tujuan_id?.toString().trim()) {
-          console.log("✅ Menetapkan tujuan_id:", options[0].value);
-          setFieldValue("tujuan_id", options[0].value);
+          const tujuanOptions = items.map((item) => ({
+            value: item.id,
+            label: `${item.no_tujuan} - ${item.isi_tujuan}`,
+            isi_tujuan: item.isi_tujuan || "",
+          }));
+
+          setFilteredTujuanOptions(tujuanOptions);
+
+          const selectedId = tujuanIdRef.current;
+          const hasSelectedOption = tujuanOptions.some(
+            (option) => String(option.value) === String(selectedId || "")
+          );
+
+          if (tujuanOptions.length > 0 && !hasSelectedOption) {
+            const first = items[0];
+            const opt0 = tujuanOptions[0];
+            syncSelectionFromTujuanItem(first, opt0.label, setFieldValue);
+          }
+        } catch (err) {
+          console.error("Gagal fetch tujuan:", err);
+          setFilteredTujuanOptions([]);
+          setTujuanSourceRows([]);
+        } finally {
+          setLoadingTujuan(false);
         }
-      } catch (err) {
-        console.error("❌ Gagal fetch tujuan:", err);
-      } finally {
-        setLoadingTujuan(false);
-      }
-    }, 500),
-    [setFieldValue, values.tujuan_id]
+      },
+      500
+    ),
+    [setFieldValue]
   );
 
   useEffect(() => {
@@ -109,18 +183,8 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
     if (loadingPeriode) return;
 
     if (!ready) {
-      // Optional: hanya tampilkan warning kalau `misi_id` sudah dipilih
-      if (values.misi_id) {
-        console.warn(
-          "❗ fetchTujuanByMisi dilewati karena nilai belum lengkap",
-          {
-            misi_id: values.misi_id,
-            periode_id: values.periode_id,
-            tahun: values.tahun,
-            jenis_dokumen: values.jenis_dokumen,
-          }
-        );
-      }
+      setFilteredTujuanOptions([]);
+      setTujuanSourceRows([]);
       return;
     }
 
@@ -139,10 +203,6 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
     loadingPeriode,
   ]);
 
-  useEffect(() => {
-    console.log("🔍 Formik values changed:", values);
-  }, [values]);
-
   const fetchNextKode = useCallback(
     debounce(async (tujuanId) => {
       if (!tujuanId || isNaN(Number(tujuanId))) {
@@ -151,15 +211,13 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
       }
 
       try {
-        const res = await api.get(`/indikator-tujuans/${tujuanId}/next-kode`, {
-          params: {
-            tahun: values.tahun,
-            jenis_dokumen: values.jenis_dokumen,
-          },
+        const res = await fetchNextKodeIndikatorTujuan(tujuanId, {
+          tahun: values.tahun,
+          jenis_dokumen: values.jenis_dokumen,
         });
         setFieldValue("kode_indikator", res.data?.kode || "");
       } catch (err) {
-        console.error("❌ Gagal mengambil kode indikator:", err.message);
+        console.error("Gagal mengambil kode indikator:", err.message);
         setFieldValue("kode_indikator", "");
       }
     }, 500),
@@ -189,13 +247,44 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
     if (requiredFields.every((field) => values[field])) {
       setFieldValue("keterangan", generateKeteranganFrom(values));
     }
-  }, [values, setFieldValue]);
+  }, [values, setFieldValue, generateKeteranganFrom]);
 
   useEffect(() => {
     if (values.capaian_tahun_5) {
       setFieldValue("baseline", values.capaian_tahun_5);
     }
   }, [values.capaian_tahun_5, setFieldValue]);
+
+  useEffect(() => {
+    if (!values.tujuan_id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchIndikatorTujuanByTujuan(values.tujuan_id);
+        if (cancelled) return;
+        const raw = Array.isArray(res.data?.data)
+          ? res.data.data
+          : Array.isArray(res.data)
+          ? res.data
+          : [];
+        const mapped = raw.map(mapApiIndikatorToListRow);
+        setFieldValue("tujuan", mapped);
+        if (mapped.length > 0) {
+          hydrateDraftFromIndikatorRow(mapped[0], setFieldValue);
+        } else {
+          clearIndikatorDraftScalars(setFieldValue);
+        }
+      } catch {
+        if (!cancelled) {
+          setFieldValue("tujuan", []);
+          clearIndikatorDraftScalars(setFieldValue);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [values.tujuan_id, setFieldValue]);
 
   const handleNextStep = async () => {
     const tujuanList = Array.isArray(values.tujuan) ? values.tujuan : [];
@@ -219,7 +308,6 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
       const cleanedList = tujuanList.map((item) =>
         sanitizeIndikator({
           ...item,
-          // Override nilai penting di akhir agar tidak tertimpa
           misi_id: values.misi_id,
           tujuan_id: values.tujuan_id,
           kode_indikator: values.kode_indikator,
@@ -229,22 +317,29 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
         })
       );
 
-      console.log("🧹 cleanedList to submit:", cleanedList);
-      console.log("🧭 Submit values:", {
-        periode_id: values.periode_id,
+      await createIndikatorTujuanBatch(cleanedList);
+      toast.success("Indikator tujuan berhasil disimpan!");
+
+      const ctx = {
         misi_id: values.misi_id,
         tujuan_id: values.tujuan_id,
+        no_misi: values.no_misi,
+        isi_misi: values.isi_misi,
+        periode_id: values.periode_id,
         tahun: values.tahun,
-      });
-
-      await api.post("/indikator-tujuans", cleanedList);
-      toast.success("Indikator tujuan berhasil disimpan!");
-      resetForm();
+        jenis_dokumen: values.jenis_dokumen,
+        level_dokumen: values.level_dokumen,
+        jenis_iku: values.jenis_iku,
+      };
+      resetForm({ values: { ...values, ...ctx, tujuan: [] } });
       onNext?.();
     } catch (err) {
-      console.error("❌ Gagal simpan indikator:", err);
+      console.error("Gagal simpan indikator:", err);
       toast.error(
-        err?.response?.data?.message || "Gagal menyimpan indikator tujuan."
+        pickBackendErrorMessage(
+          err?.response?.data,
+          "Gagal menyimpan indikator tujuan."
+        )
       );
     }
   };
@@ -255,16 +350,85 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
       localStorage.removeItem("form_rpjmd");
       sessionStorage.removeItem("form_rpjmd");
       setFilteredTujuanOptions([]);
+      setTujuanSourceRows([]);
     }
   };
 
   const handleGoToIndikatorList = () => {
-    navigate("/rpjmd/indikator-tujuan-list");
+    navigate("/dashboard-rpjmd/indikator-tujuan-list");
   };
 
-  useEffect(() => {
-    const penanggungJawabOptions = options?.penanggungJawab || [];
-  }, [options?.penanggungJawab]);
+  /** Tambah tujuan: tetap Step + tab yang sama; buat baris tujuan di server lalu pilih & kosongkan draft indikator. */
+  const handleTambahTujuanSameStep = async () => {
+    if (!values.misi_id) {
+      toast.error("Misi belum dipilih.");
+      return;
+    }
+    if (!values.periode_id || !values.tahun || !values.jenis_dokumen) {
+      toast.error("Periode, tahun, atau jenis dokumen belum lengkap.");
+      return;
+    }
+
+    setAddingTujuan(true);
+    try {
+      let nextNo;
+      try {
+        const r = await fetchTujuanNextNo({
+          misi_id: values.misi_id,
+          jenis_dokumen: values.jenis_dokumen,
+          tahun: values.tahun,
+        });
+        nextNo = r.data?.no_tujuan;
+      } catch {
+        nextNo = null;
+      }
+      if (!nextNo) {
+        nextNo =
+          computeNextNoTujuanLocal(values.no_misi, tujuanSourceRows) ||
+          `T${Number(values.no_misi) || 1}-01`;
+      }
+
+      const res = await createTujuan({
+        rpjmd_id: values.periode_id,
+        misi_id: values.misi_id,
+        no_tujuan: nextNo,
+        isi_tujuan:
+          "[Draft] Uraian tujuan — lengkapi nanti dari menu master / pengelolaan tujuan.",
+        jenis_dokumen: values.jenis_dokumen,
+        tahun: values.tahun,
+      });
+      const newItem = res.data?.data || res.data;
+      const newId = newItem?.id;
+      if (!newId) {
+        toast.error("Respons server tidak berisi id tujuan baru.");
+        return;
+      }
+
+      const label = `${newItem.no_tujuan || nextNo} - ${newItem.isi_tujuan || ""}`;
+      const newOpt = {
+        value: newId,
+        label,
+        isi_tujuan: newItem.isi_tujuan || "",
+      };
+
+      setTujuanSourceRows((prev) => [...prev, newItem]);
+      setFilteredTujuanOptions((prev) => [...prev, newOpt]);
+      syncSelectionFromTujuanItem(
+        { id: newId, isi_tujuan: newItem.isi_tujuan, no_tujuan: newItem.no_tujuan || nextNo },
+        label,
+        setFieldValue
+      );
+      setFieldValue("tujuan", []);
+      clearIndikatorDraftScalars(setFieldValue);
+      toast.success("Tujuan baru siap; lanjutkan isi indikator di tab yang sama.");
+    } catch (err) {
+      toast.error(
+        pickBackendErrorMessage(err?.response?.data, "Gagal menambah tujuan.")
+      );
+    } finally {
+      setAddingTujuan(false);
+    }
+  };
 
   return (
     <div>
@@ -273,8 +437,15 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
           <Spinner animation="border" role="status" />
         </div>
       ) : filteredTujuanOptions.length === 0 ? (
-        <div className="text-center text-muted">
-          Belum ada tujuan untuk misi yang dipilih.
+        <div className="text-center text-muted py-2">
+          Belum ada tujuan untuk misi yang dipilih.{" "}
+          <span
+            className="text-primary"
+            style={{ cursor: "pointer", textDecoration: "underline" }}
+            onClick={() => !addingTujuan && handleTambahTujuanSameStep()}
+          >
+            Tambah sekarang
+          </span>
         </div>
       ) : (
         <StepTemplate
@@ -284,11 +455,10 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
           tabKey={tabKey}
           setTabKey={setTabKey}
           onNext={handleNextStep}
-          opdOptions={options?.penanggungJawab || []}
         />
       )}
 
-      <div className="d-flex justify-content-between mt-3">
+      <div className="d-flex justify-content-between align-items-center mt-3">
         <div className="d-flex gap-2">
           <Button variant="outline-secondary" onClick={handleReset}>
             Reset Form
@@ -297,6 +467,16 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
             Daftar Indikator Tujuan
           </Button>
         </div>
+        {values.misi_id && (
+          <Button
+            size="sm"
+            variant="outline-success"
+            onClick={() => !addingTujuan && handleTambahTujuanSameStep()}
+            disabled={addingTujuan}
+          >
+            {addingTujuan ? "Menyimpan…" : "+ Tambah Tujuan"}
+          </Button>
+        )}
       </div>
     </div>
   );

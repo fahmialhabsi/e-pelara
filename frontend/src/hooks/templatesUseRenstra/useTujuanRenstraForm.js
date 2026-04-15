@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useWatch } from "react-hook-form";
 import { message } from "antd";
 import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 // Validasi schema
 const schema = Yup.object().shape({
@@ -48,12 +49,35 @@ export const useTujuanRenstraForm = (initialData, renstraAktif) => {
     [renstraId]
   );
 
+  const tahun =
+    renstraAktif?.tahun_mulai ??
+    initialData?.renstra?.tahun_mulai ??
+    initialData?.tahun_mulai;
+
+  const { data: tujuanRpjmdList = [], isLoading: isTujuanLoading } = useQuery({
+    queryKey: ["tujuan-rpjmd-dropdown", tahun],
+    queryFn: () =>
+      api
+        .get("/tujuan", {
+          params: {
+            jenis_dokumen: "rpjmd",
+            ...(tahun != null && tahun !== ""
+              ? { tahun }
+              : {}),
+            limit: 500,
+          },
+        })
+        .then((res) => {
+          const raw = res.data;
+          return Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+        }),
+    staleTime: 5 * 60 * 1000,
+  });
+
   const {
     form,
     onSubmit,
     isSubmitting,
-    isLoading: isDropdownsLoading,
-    dropdowns,
   } = useRenstraFormTemplate({
     initialData,
     renstraAktif,
@@ -63,32 +87,15 @@ export const useTujuanRenstraForm = (initialData, renstraAktif) => {
     generatePayload,
     queryKeys: ["renstra-tujuan"],
     redirectPath: "/renstra/tujuan",
-    fetchOptions: {
-      "tujuan-rpjmd": () =>
-        api
-          .get("/tujuan", {
-            params: {
-              jenis_dokumen: "renstra",
-              tahun: renstraAktif?.tahun_mulai,
-            },
-          })
-          .then((res) => res.data),
-
-      "sasaran-rpjmd": () =>
-        api
-          .get("/sasaran", {
-            params: {
-              jenis_dokumen: "renstra",
-              tahun: renstraAktif?.tahun_mulai,
-            },
-          })
-          .then((res) => res.data),
-    },
+    fetchOptions: {},
 
     onMutationSuccess: (dataFromBackend) => {
       setMutationResultData(dataFromBackend);
     },
   });
+
+  // Susun dropdowns sesuai interface yang dipakai form dan handler
+  const dropdowns = { "tujuan-rpjmd": tujuanRpjmdList };
 
   const { control, setValue, reset } = form;
 
@@ -134,40 +141,53 @@ export const useTujuanRenstraForm = (initialData, renstraAktif) => {
     setValue,
   ]);
 
-  // Set default value
+  // Sinkron edit: normalisasi id select + field agar cocok dengan option (bukan tampil ID mentah)
   useEffect(() => {
     if (!initialData) {
       reset({ ...defaultValues, renstra_id: renstraId });
     } else {
-      reset(initialData);
+      reset({
+        ...initialData,
+        rpjmd_tujuan_id:
+          initialData.rpjmd_tujuan_id != null
+            ? Number(initialData.rpjmd_tujuan_id)
+            : null,
+        renstra_id: initialData.renstra_id ?? renstraId ?? null,
+      });
     }
-  }, [initialData, renstraId, reset]);
+  }, [initialData, renstraId, reset, defaultValues]);
 
   // Handler perubahan dropdown Tujuan RPJMD
+  // Saat user memilih Tujuan RPJMD:
+  //   - isi_tujuan_rpjmd  = teks tujuan dari RPJMD (disimpan sebagai referensi)
+  //   - isi_tujuan        = di-prefill dari RPJMD (sesuai Permendagri 86/2017: Renstra harus
+  //                         selaras/turunan dari RPJMD), tapi user tetap bisa mengubahnya
   const handleTujuanChange = useCallback(
     (id) => {
-      setValue("rpjmd_tujuan_id", id);
+      const num = id === "" || id == null ? null : Number(id);
+      setValue("rpjmd_tujuan_id", num);
       const selected = dropdowns?.["tujuan-rpjmd"]?.find(
-        (item) => item.id === id
+        (item) => Number(item.id) === Number(id)
       );
 
       if (selected) {
         setValue("misi_id", selected.misi_id);
         setValue("no_rpjmd", selected.no_tujuan);
         setValue("isi_tujuan_rpjmd", selected.isi_tujuan);
+        // Auto-prefill isi_tujuan dari RPJMD agar tidak perlu input ulang
+        // (sesuai regulasi: tujuan Renstra merupakan turunan/selaras dengan RPJMD)
+        setValue("isi_tujuan", selected.isi_tujuan || "", { shouldDirty: true });
       } else {
         setValue("misi_id", "");
         setValue("no_rpjmd", "");
         setValue("isi_tujuan_rpjmd", "");
+        setValue("isi_tujuan", "");
       }
     },
     [dropdowns?.["tujuan-rpjmd"], setValue]
   );
 
-  const totalLoading =
-    isSubmitting ||
-    !dropdowns?.["tujuan-rpjmd"] ||
-    !dropdowns?.["sasaran-rpjmd"];
+  const totalLoading = isSubmitting || isTujuanLoading;
 
   return {
     form,

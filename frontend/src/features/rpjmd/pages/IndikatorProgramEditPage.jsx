@@ -1,21 +1,22 @@
 // src/features/rpjmd/pages/IndikatorProgramEditPage.jsx
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import api from "@/services/api";
-import { Formik, Form } from "formik";
-import * as Yup from "yup";
-import StepTemplate from "@/shared/components/steps/StepTemplate";
-import { Spinner, Button, Alert } from "react-bootstrap";
-import useSetPreviewFields from "@/hooks/useSetPreviewFields";
-import useAutoIsiTahunDanTarget from "@/shared/components/hooks/useAutoIsiTahunDanTarget";
+import { Formik } from "formik";
+import { Spinner, Alert } from "react-bootstrap";
+import IndikatorSimpleEditFormBody from "@/features/rpjmd/components/IndikatorSimpleEditFormBody";
+import { extractSingleData } from "@/utils/apiResponse";
+import { editSchemaForLevel } from "@/validations/indikatorSchemas";
+import {
+  mapBackendErrorsToFormik,
+  pickBackendErrorMessage,
+} from "@/utils/mapBackendErrorsToFormik";
+import {
+  getIndikatorProgramDetail,
+  updateIndikatorProgram,
+} from "@/features/rpjmd/services/indikatorRpjmdApi";
+import { mapIndikatorProgramDetailToEditForm } from "@/features/rpjmd/services/indikatorRpjmdMapper";
 
-const validationSchema = Yup.object().shape({
-  tolok_ukur_kinerja: Yup.string().required(),
-  target_kinerja: Yup.string().required(),
-  definisi_operasional: Yup.string().required(),
-  metode_penghitungan: Yup.string().required(),
-  baseline: Yup.string().required(),
-});
+const validationSchema = editSchemaForLevel("program");
 
 export default function IndikatorProgramEditPage() {
   const { id } = useParams();
@@ -25,48 +26,10 @@ export default function IndikatorProgramEditPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api
-      .get(`/indikator-program/${id}`)
+    getIndikatorProgramDetail(id)
       .then((res) => {
-        const d = res.data;
-        setInitialValues({
-          tahun: d.tahun,
-          jenis_dokumen: d.jenis_dokumen,
-          misi_id: d.misi_id ?? "",
-          tujuan_id: d.tujuan_id ?? "",
-          sasaran_id: d.sasaran_id ?? "",
-          program_id: d.program_id ? String(d.program_id) : "",
-          program: d.program ? [d.program] : [],
-          indikator_id: d.id,
-          kode_indikator: d.kode_indikator,
-          nama_indikator: d.nama_indikator,
-          jenis: d.jenis || "",
-          tolok_ukur_kinerja: d.tolok_ukur_kinerja,
-          target_kinerja: d.target_kinerja,
-          jenis_indikator: d.jenis_indikator || "",
-          kriteria_kuantitatif: d.kriteria_kuantitatif || "",
-          kriteria_kualitatif: d.kriteria_kualitatif || "",
-          definisi_operasional: d.definisi_operasional,
-          metode_penghitungan: d.metode_penghitungan,
-          baseline: d.baseline,
-          keterangan: d.keterangan,
-          penanggung_jawab: d.penanggung_jawab,
-          tipe_indikator: d.tipe_indikator,
-          indikator_kinerja_dampak: d.indikator_kinerja_dampak,
-          kriteria_id: d.kriteria_id,
-          satuan: d.satuan,
-          sumber_data: d.sumber_data,
-          capaian_tahun_1: d.capaian_tahun_1,
-          capaian_tahun_2: d.capaian_tahun_2,
-          capaian_tahun_3: d.capaian_tahun_3,
-          capaian_tahun_4: d.capaian_tahun_4,
-          capaian_tahun_5: d.capaian_tahun_5,
-          target_tahun_1: d.target_tahun_1,
-          target_tahun_2: d.target_tahun_2,
-          target_tahun_3: d.target_tahun_3,
-          target_tahun_4: d.target_tahun_4,
-          target_tahun_5: d.target_tahun_5,
-        });
+        const d = extractSingleData(res.data);
+        setInitialValues(mapIndikatorProgramDetailToEditForm(d));
       })
       .catch((err) => {
         console.error(err);
@@ -84,44 +47,30 @@ export default function IndikatorProgramEditPage() {
       <Formik
         initialValues={initialValues}
         validationSchema={validationSchema}
-        onSubmit={async (values, { setSubmitting }) => {
+        onSubmit={async (values, { setSubmitting, setErrors }) => {
+          setError("");
+          setErrors({});
           try {
-            await api.put(`/indikator-program/${id}`, values);
-            navigate("/rpjmd/indikator-program-list");
+            await updateIndikatorProgram(id, values);
+            navigate("/dashboard-rpjmd/indikator-program-list");
           } catch (err) {
             console.error(err);
-            setError("Gagal menyimpan perubahan.");
+            const data = err?.response?.data;
+            setError(
+              pickBackendErrorMessage(data, "Gagal menyimpan perubahan.")
+            );
+            setErrors(mapBackendErrorsToFormik(data));
           } finally {
             setSubmitting(false);
           }
         }}
       >
-        {({ values, setFieldValue, isSubmitting }) => {
-          useSetPreviewFields(values, setFieldValue);
-          useAutoIsiTahunDanTarget(values, setFieldValue);
-
-          return (
-            <Form>
-              <StepTemplate
-                stepKey="program"
-                options={{ penanggungJawab: [] }}
-                stepOptions={[]}
-                tabKey={4}
-                setTabKey={() => {}}
-                onSave={() => {}}
-              />
-              {error && <Alert variant="danger">{error}</Alert>}
-              <div className="mt-3 d-flex gap-2">
-                <Button variant="secondary" onClick={() => navigate(-1)}>
-                  Batal
-                </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  Simpan Perubahan
-                </Button>
-              </div>
-            </Form>
-          );
-        }}
+        <IndikatorSimpleEditFormBody
+          stepKey="program"
+          stepTemplateOptions={{ penanggungJawab: [] }}
+          error={error}
+          navigate={navigate}
+        />
       </Formik>
     </div>
   );

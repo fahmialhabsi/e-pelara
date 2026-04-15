@@ -9,6 +9,17 @@ import * as Yup from "yup";
 import InputField from "@/shared/components/form/InputField";
 import TextAreaField from "@/shared/components/form/TextAreaField";
 
+/** `kebijakan` = stage di DB (`indikator_renstra.stage`), sumber: indikator arah kebijakan RPJMD */
+const IMPORT_DARI_RPJM_MENU = [
+  { stage: "tujuan", label: "Import Tujuan" },
+  { stage: "sasaran", label: "Import Sasaran" },
+  { stage: "strategi", label: "Import Strategi" },
+  { stage: "kebijakan", label: "Import Arah Kebijakan" },
+  { stage: "program", label: "Import Program" },
+  { stage: "kegiatan", label: "Import Kegiatan" },
+  { stage: "sub_kegiatan", label: "Import Sub Kegiatan" },
+];
+
 const IndikatorUmumRenstraForm = ({ renstraAktif, initialData = null }) => {
   const navigate = useNavigate();
   const { message, modal } = App.useApp();
@@ -76,7 +87,7 @@ const IndikatorUmumRenstraForm = ({ renstraAktif, initialData = null }) => {
         return;
       }
 
-      const validStages = ["tujuan", "sasaran", "program", "kegiatan"];
+      const validStages = IMPORT_DARI_RPJM_MENU.map((m) => m.stage);
       if (!validStages.includes(stage)) {
         message.error("Stage tidak valid");
         return;
@@ -103,16 +114,17 @@ const IndikatorUmumRenstraForm = ({ renstraAktif, initialData = null }) => {
     [renstraAktif, message]
   );
 
-  const importOptions = ["tujuan", "sasaran", "program", "kegiatan"];
   const importMenu = {
-    items: importOptions.map((opt) => ({
-      key: opt,
-      label: `Import ${opt.charAt(0).toUpperCase() + opt.slice(1)}`,
+    items: IMPORT_DARI_RPJM_MENU.map(({ stage, label }) => ({
+      key: stage,
+      label,
     })),
     onClick: ({ key }) => {
+      const label =
+        IMPORT_DARI_RPJM_MENU.find((m) => m.stage === key)?.label ?? key;
       modal.confirm({
-        title: `Yakin import ${key} dari RPJMD?`,
-        content: `Data ${key} dari RPJMD akan dimasukkan ke indikator renstra.`,
+        title: `Yakin ${label} dari RPJMD?`,
+        content: `Data indikator untuk "${key}" dari RPJMD akan dimasukkan ke indikator renstra.`,
         okText: "Ya, Import",
         cancelText: "Batal",
         onOk: () => handleImport(key),

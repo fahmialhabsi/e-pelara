@@ -24,6 +24,11 @@ import { useDarkMode } from "@/hooks/useDarkMode";
 import { useAuth } from "@/hooks/useAuth";
 import { usePeriodeAktif } from "@/features/rpjmd/hooks/usePeriodeAktif";
 import TujuanForm from "./TujuanForm";
+import {
+  extractListData,
+  extractListMeta,
+  normalizeListItems,
+} from "@/utils/apiResponse";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -80,7 +85,8 @@ export default function TujuanList() {
     const fetchPeriode = async () => {
       try {
         const res = await api.get("/periode-rpjmd");
-        const valid = res.data.some(
+        const periodeList = extractListData(res.data);
+        const valid = periodeList.some(
           (p) =>
             Number(user?.tahun) >= Number(p.tahun_awal) &&
             Number(user?.tahun) <= Number(p.tahun_akhir)
@@ -106,11 +112,8 @@ export default function TujuanList() {
           search: searchQuery,
         },
       });
-      const list = Array.isArray(res.data)
-        ? res.data
-        : Array.isArray(res.data.data)
-        ? res.data.data
-        : [];
+      const list = normalizeListItems(res.data);
+      const meta = extractListMeta(res.data);
 
       const keyword = searchQuery.toLowerCase().trim();
       const matched = [];
@@ -127,7 +130,7 @@ export default function TujuanList() {
 
       const sortedList = [...matched, ...others];
       setTujuanList(sortedList);
-      setTotalPages(res.data.meta?.totalPages || 1);
+      setTotalPages(meta.totalPages || 1);
 
       if (keyword && matched.length === 0) {
         setErrorMsg("Tidak ada yang cocok dengan pencarian.");
@@ -233,7 +236,8 @@ export default function TujuanList() {
     XLSX.writeFile(wb, "tujuan_rpjmd.xlsx");
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = (currentOnly = false) => {
+    const dataToExport = currentOnly ? tujuanList : tujuanList.slice();
     const doc = new jsPDF();
 
     doc.setFontSize(14);
@@ -244,7 +248,7 @@ export default function TujuanList() {
     const rows = [];
     const misiSeen = new Set();
 
-    tujuanList.forEach((t) => {
+    dataToExport.forEach((t) => {
       if (!misiSeen.has(t.Misi?.no_misi)) {
         rows.push([`${t.Misi.no_misi}`, t.Misi.isi_misi.toUpperCase()]);
         misiSeen.add(t.Misi.no_misi);
@@ -524,7 +528,7 @@ export default function TujuanList() {
               if (exportType === "excel") {
                 handleExportExcel(exportScope === "current");
               } else {
-                handleExportPdf(exportScope === "current");
+                handleExportPDF(exportScope === "current");
               }
             }}
           >

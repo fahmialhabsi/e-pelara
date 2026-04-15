@@ -15,6 +15,19 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "periode_id",
         as: "periode",
       });
+
+      SubKegiatan.belongsTo(models.RegulasiVersi, {
+        foreignKey: "regulasi_versi_id",
+        as: "regulasiVersi",
+      });
+      SubKegiatan.belongsTo(models.MasterSubKegiatan, {
+        foreignKey: "master_sub_kegiatan_id",
+        as: "masterSubKegiatan",
+      });
+      SubKegiatan.belongsTo(models.User, {
+        foreignKey: "migrated_by",
+        as: "migratedByUser",
+      });
     }
   }
 
@@ -71,6 +84,31 @@ module.exports = (sequelize, DataTypes) => {
       tahun: {
         type: DataTypes.INTEGER,
         allowNull: false,
+      },
+      master_sub_kegiatan_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+      regulasi_versi_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+      input_mode: {
+        type: DataTypes.ENUM("LEGACY", "MASTER"),
+        allowNull: false,
+        defaultValue: "LEGACY",
+      },
+      migration_status: {
+        type: DataTypes.STRING(32),
+        allowNull: true,
+      },
+      migrated_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      migrated_by: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
       },
     },
     {

@@ -14,6 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
 import { toast } from "react-toastify";
+import { normalizeListItems } from "../../utils/apiResponse";
 
 function StrategiForm({ existingData, onSubmitSuccess, onCancel }) {
   const isEdit = Boolean(existingData?.id);
@@ -77,10 +78,8 @@ function StrategiForm({ existingData, onSubmitSuccess, onCancel }) {
           }),
         ]);
 
-        setTujuanList(tujuanRes.data || []);
-        setSasaranList(
-          Array.isArray(sasaranRes.data.data) ? sasaranRes.data.data : []
-        );
+        setTujuanList(normalizeListItems(tujuanRes.data));
+        setSasaranList(normalizeListItems(sasaranRes.data));
 
         setFormData((prev) => ({
           ...prev,

@@ -37,6 +37,12 @@ module.exports = (sequelize, DataTypes) => {
 
   ArahKebijakan.init(
     {
+      id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        primaryKey: true,
+        autoIncrement: true,
+      },
       strategi_id: {
         type: DataTypes.INTEGER,
         allowNull: false,

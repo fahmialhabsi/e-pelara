@@ -1,31 +1,34 @@
 // src/features/renstra/subkegiatan/pages/RenstraTabelSubKegiatanListPage.jsx
 import React from "react";
-import { Table, Button, Empty, Popconfirm } from "antd";
+import { Table, Button, Empty, Popconfirm, Typography } from "antd";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import api from "@/services/api";
 import SpinnerFullscreen from "../components/RenstraTableSubKegiatanSpinnerFullscreen";
+import {
+  formatNumber,
+  formatNumberShort,
+  StandardRenstraExpandedRow,
+  renstraTabelListTableProps,
+  renstraTabelListPageShellStyle,
+} from "@/features/renstra/shared/components/RenstraTabelListCommon";
 
-// helper format angka
-const formatNumber = (num) => {
-  if (num === null || num === undefined || num === "") return "-";
-  return Number(num).toLocaleString("id-ID", { minimumFractionDigits: 2 });
-};
+const { Text } = Typography;
 
 const RenstraTabelSubKegiatanListPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  // GET data
-  const { data, isLoading } = useQuery({
+  const { data = [], isLoading } = useQuery({
     queryKey: ["renstra-tabel-subkegiatan"],
     queryFn: async () => {
       const res = await api.get("/renstra-tabel-subkegiatan");
-      return res.data.data || [];
+      if (Array.isArray(res.data)) return res.data;
+      if (Array.isArray(res.data?.data)) return res.data.data;
+      return [];
     },
   });
 
-  // DELETE data
   const deleteMutation = useMutation({
     mutationFn: async (id) => {
       await api.delete(`/renstra-tabel-subkegiatan/${id}`);
@@ -48,13 +51,13 @@ const RenstraTabelSubKegiatanListPage = () => {
         <Empty description="Belum ada data subkegiatan" />
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
           <Button onClick={() => navigate("/dashboard-renstra")}>
-            🔙 Kembali
+            Kembali
           </Button>
           <Button
             type="primary"
             onClick={() => navigate("/renstra/tabel/subkegiatan/add")}
           >
-            ➕ Tambah
+            Tambah
           </Button>
         </div>
       </div>
@@ -65,93 +68,94 @@ const RenstraTabelSubKegiatanListPage = () => {
       title: "Program",
       dataIndex: ["program", "nama_program"],
       key: "program",
+      width: 160,
+      ellipsis: true,
       fixed: "left",
     },
     {
       title: "Kegiatan",
       dataIndex: ["kegiatan", "nama_kegiatan"],
       key: "kegiatan",
-      fixed: "left",
+      width: 160,
+      ellipsis: true,
     },
     {
       title: "Subkegiatan",
       dataIndex: "nama_subkegiatan",
       key: "subkegiatan",
-      fixed: "left",
+      width: 180,
+      ellipsis: true,
     },
     {
       title: "Indikator",
       dataIndex: "indikator_manual",
       key: "indikator",
+      width: 160,
+      ellipsis: true,
     },
     {
-      title: "Baseline",
-      dataIndex: "baseline",
-      key: "baseline",
-      render: (value) => formatNumber(value),
+      title: "Lokasi",
+      dataIndex: "lokasi",
+      key: "lokasi",
+      width: 110,
+      ellipsis: true,
     },
     {
-      title: "Satuan Target",
-      dataIndex: "satuan_target",
-      key: "satuan_target",
-    },
-    { title: "Lokasi", dataIndex: "lokasi", key: "lokasi" },
-    {
-      title: "Sub Bidang Penanggung Jawab",
+      title: "Sub bidang PJ",
       dataIndex: "sub_bidang_penanggung_jawab",
       key: "sub_bidang",
+      width: 130,
+      ellipsis: true,
     },
     {
-      title: "Target per Tahun",
-      children: Array.from({ length: 6 }, (_, i) => ({
-        title: `T${i + 1}`,
-        dataIndex: `target_tahun_${i + 1}`,
-        key: `target_tahun_${i + 1}`,
-        render: (value) => formatNumber(value),
-      })),
-    },
-    {
-      title: "Pagu per Tahun",
-      children: Array.from({ length: 6 }, (_, i) => ({
-        title: `T${i + 1}`,
-        dataIndex: `pagu_tahun_${i + 1}`,
-        key: `pagu_tahun_${i + 1}`,
-        render: (value) => formatNumber(value),
-      })),
-    },
-    {
-      title: "Target Akhir",
+      title: "Target akhir",
       dataIndex: "target_akhir_renstra",
       key: "target_akhir_renstra",
-      render: (value) => formatNumber(value),
+      width: 108,
+      align: "right",
+      render: (v) => (
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>
+          {formatNumber(v)}
+        </span>
+      ),
     },
     {
-      title: "Pagu Akhir",
+      title: "Pagu akhir",
       dataIndex: "pagu_akhir_renstra",
       key: "pagu_akhir_renstra",
-      render: (value) => formatNumber(value),
+      width: 120,
+      align: "right",
+      render: (v) => (
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>
+          {formatNumberShort(v)}
+        </span>
+      ),
     },
     {
       title: "Aksi",
       key: "aksi",
+      width: 168,
       fixed: "right",
       render: (_, record) => (
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <Button
+            size="small"
             type="primary"
             onClick={() =>
               navigate(`/renstra/tabel/subkegiatan/edit/${record.id}`)
             }
           >
-            ✏️ Edit
+            Edit
           </Button>
           <Popconfirm
-            title="Apakah Anda yakin ingin menghapus data ini?"
+            title="Hapus data ini?"
             onConfirm={() => handleDelete(record.id)}
             okText="Ya"
             cancelText="Batal"
           >
-            <Button danger>🗑️ Hapus</Button>
+            <Button size="small" danger>
+              Hapus
+            </Button>
           </Popconfirm>
         </div>
       ),
@@ -159,24 +163,55 @@ const RenstraTabelSubKegiatanListPage = () => {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+    <div style={renstraTabelListPageShellStyle}>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          marginBottom: 16,
+          alignItems: "center",
+        }}
+      >
         <Button onClick={() => navigate("/dashboard-renstra")}>
-          🔙 Kembali
+          Kembali
         </Button>
         <Button
           type="primary"
           onClick={() => navigate("/renstra/tabel/subkegiatan/add")}
         >
-          ➕ Tambah
+          Tambah
         </Button>
+        <Text type="secondary" style={{ marginLeft: 8 }}>
+          Klik baris untuk melihat target &amp; pagu per tahun (1–6).
+        </Text>
       </div>
+
       <Table
         dataSource={data}
         columns={columns}
         rowKey="id"
-        bordered
-        scroll={{ x: 2000 }}
+        {...renstraTabelListTableProps}
+        scroll={{ x: 1380 }}
+        expandable={{
+          expandRowByClick: true,
+          expandedRowRender: (record) => (
+            <StandardRenstraExpandedRow
+              record={record}
+              extraMeta={[
+                {
+                  label: "Sub bidang PJ",
+                  value: record.sub_bidang_penanggung_jawab,
+                },
+                {
+                  label: "Indikator (manual)",
+                  value: record.indikator_manual,
+                },
+              ]}
+            />
+          ),
+          rowExpandable: () => true,
+        }}
       />
     </div>
   );

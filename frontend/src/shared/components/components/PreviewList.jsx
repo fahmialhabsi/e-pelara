@@ -9,7 +9,8 @@ const PreviewList = React.memo(({ data, opdOptions = [] }) => {
     .filter((item) => item && typeof item === "object")
     .map((item) => {
       const matchedOPD = opdOptions.find(
-        (opt) => Number(opt.value) === Number(item.penanggung_jawab)
+        (opt) =>
+          String(opt.value) === String(item.penanggung_jawab ?? "")
       );
 
       return {

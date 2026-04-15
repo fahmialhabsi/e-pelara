@@ -27,6 +27,11 @@ import { useDarkMode } from "../../hooks/useDarkMode";
 import { useAuth } from "../../hooks/useAuth";
 import { usePeriodeAktif } from "@/features/rpjmd/hooks/usePeriodeAktif";
 import ArahKebijakanForm from "./ArahKebijakanForm";
+import {
+  extractListData,
+  extractListMeta,
+  normalizeListItems,
+} from "@/utils/apiResponse";
 
 export default function ArahKebijakanList() {
   const navigate = useNavigate();
@@ -67,7 +72,8 @@ export default function ArahKebijakanList() {
     async function checkPeriode() {
       try {
         const res = await api.get("/periode-rpjmd");
-        const valid = res.data.some(
+        const periodeList = extractListData(res.data);
+        const valid = periodeList.some(
           (p) => user?.tahun >= p.tahun_awal && user?.tahun <= p.tahun_akhir
         );
         setPeriodeValid(valid);
@@ -91,12 +97,8 @@ export default function ArahKebijakanList() {
         },
       });
 
-      const data = res.data;
-      const list = Array.isArray(data)
-        ? data
-        : Array.isArray(data.data)
-        ? data.data
-        : [];
+      const list = normalizeListItems(res.data);
+      const meta = extractListMeta(res.data);
 
       list.sort((a, b) => {
         const aMatch =
@@ -112,7 +114,6 @@ export default function ArahKebijakanList() {
         return bMatch - aMatch;
       });
 
-      const meta = data.meta || {};
       setArahList(list);
       setTotalPages(meta.totalPages || 1);
       setErrorMsg("");

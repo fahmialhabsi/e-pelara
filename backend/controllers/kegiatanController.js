@@ -12,7 +12,11 @@ const {
 const { validationResult } = require("express-validator");
 const { Op } = require("sequelize");
 const { getPeriodeFromTahun } = require("../utils/periodeHelper");
-const { successResponse, errorResponse } = require("../utils/responseHelper");
+const {
+  successResponse,
+  errorResponse,
+  listResponse,
+} = require("../utils/responseHelper");
 const {
   recalcKegiatanTotal,
   recalcProgramTotal,
@@ -156,10 +160,11 @@ const kegiatanController = {
         where.nama_kegiatan = { [Op.like]: `%${search.trim()}%` };
       }
 
-      const safeLimit = Math.min(Number(limit), MAX_PAGE_LIMIT);
-      const offset = (Number(page) - 1) * safeLimit;
+      const currentPage = Number(page) || 1;
+      const safeLimit = Math.min(Number(limit) || 20, MAX_PAGE_LIMIT);
+      const offset = (currentPage - 1) * safeLimit;
       const count = await Kegiatan.count({ where });
-      const rows = await Kegiatan.findAll({
+      let rows = await Kegiatan.findAll({
         where,
         attributes: [
           "id",
@@ -209,15 +214,102 @@ const kegiatanController = {
         limit: safeLimit,
         offset,
       });
+      let totalCount = count;
 
-      return res.json({
-        data: rows,
-        meta: {
-          totalItems: count,
-          totalPages: Math.ceil(count / safeLimit),
-          currentPage: Number(page),
-        },
-      });
+      if (totalCount === 0 && program_id && jenis_dokumen !== "rpjmd") {
+        const selectedProgram = await Program.findByPk(program_id, {
+          attributes: ["id", "kode_program", "jenis_dokumen"],
+        });
+
+        let fallbackProgramId = null;
+        if (selectedProgram?.jenis_dokumen === "rpjmd") {
+          fallbackProgramId = selectedProgram.id;
+        } else if (selectedProgram?.kode_program) {
+          const sourceProgram = await Program.findOne({
+            where: {
+              kode_program: selectedProgram.kode_program,
+              jenis_dokumen: "rpjmd",
+              tahun,
+            },
+            attributes: ["id"],
+          });
+          fallbackProgramId = sourceProgram?.id || null;
+        }
+
+        if (fallbackProgramId) {
+          const fallbackWhere = {
+            program_id: fallbackProgramId,
+            tahun,
+            jenis_dokumen: "rpjmd",
+          };
+          if (search.trim()) {
+            fallbackWhere.nama_kegiatan = { [Op.like]: `%${search.trim()}%` };
+          }
+
+          totalCount = await Kegiatan.count({ where: fallbackWhere });
+          rows = await Kegiatan.findAll({
+            where: fallbackWhere,
+            attributes: [
+              "id",
+              "kode_kegiatan",
+              "nama_kegiatan",
+              "pagu_anggaran",
+              "total_pagu_anggaran",
+              "program_id",
+              "opd_penanggung_jawab",
+              "bidang_opd_penanggung_jawab",
+            ],
+            include: [
+              {
+                model: Program,
+                as: "program",
+                attributes: ["id", "kode_program", "nama_program"],
+                include: [
+                  {
+                    model: Sasaran,
+                    as: "sasaran",
+                    attributes: ["id", "nomor", "isi_sasaran", "tujuan_id"],
+                    include: [
+                      {
+                        model: Tujuan,
+                        as: "Tujuan",
+                        attributes: ["id", "no_tujuan", "isi_tujuan", "misi_id"],
+                        include: [
+                          {
+                            model: Misi,
+                            as: "Misi",
+                            attributes: ["id", "no_misi", "isi_misi"],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+              {
+                model: OpdPenanggungJawab,
+                as: "opd",
+                attributes: ["id", "nama_opd"],
+              },
+            ],
+            order: [["kode_kegiatan", "ASC"]],
+            limit: safeLimit,
+            offset,
+          });
+        }
+      }
+
+      return listResponse(
+        res,
+        200,
+        "Daftar kegiatan berhasil diambil",
+        rows,
+        {
+          totalItems: totalCount,
+          totalPages: Math.ceil(totalCount / safeLimit),
+          currentPage,
+        }
+      );
     } catch (err) {
       console.error("Error list kegiatan:", err);
       return errorResponse(res, 500, "Gagal mengambil kegiatan", err.message);
@@ -267,7 +359,7 @@ const kegiatanController = {
         limit: 1000,
       });
 
-      return successResponse(res, 200, "Daftar kegiatan", kegiatanList);
+      return listResponse(res, 200, "Daftar kegiatan", kegiatanList);
     } catch (err) {
       console.error("Error getByProgramId:", err);
       return errorResponse(res, 500, "Gagal mengambil kegiatan", err.message);

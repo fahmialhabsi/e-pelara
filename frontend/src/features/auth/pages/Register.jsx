@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Form, Button, Container, Card, Alert, Spinner } from "react-bootstrap";
+import PasswordInputWithToggle from "../components/PasswordInputWithToggle";
 import { register, checkSuperAdmin } from "../../../services/authService";
 import { useNavigate } from "react-router-dom";
 import { useRoles } from "../../../hooks/useRoles";
@@ -130,8 +131,7 @@ const Register = () => {
           </Form.Group>
           <Form.Group className="mb-3">
             <Form.Label>Password</Form.Label>
-            <Form.Control
-              type="password"
+            <PasswordInputWithToggle
               name="password"
               placeholder="Min. 8 karakter, huruf besar & angka"
               value={form.password}

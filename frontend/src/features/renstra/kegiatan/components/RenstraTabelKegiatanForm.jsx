@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Card, Button, Alert, InputNumber } from "antd";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -28,6 +28,10 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
 
   const defaultValues = useMemo(() => {
     const values = {
+      id: initialData?.id,
+      /** PK renstra_tabel_program — untuk dropdown & available-pagu */
+      tabel_program_id: null,
+      /** FK ke renstra_program.id — untuk filter kegiatan & payload API */
       program_id: initialData?.program_id ?? null,
       kegiatan_id: initialData?.kegiatan_id ?? null,
       indikator_id: initialData?.indikator_id ?? null,
@@ -77,52 +81,90 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
     formState: { errors },
   } = form;
 
-  const selectedProgramId = watch("program_id");
+  const selectedTabelProgramId = watch("tabel_program_id");
+  const selectedRenstraProgramId = watch("program_id");
   const selectedKegiatanId = watch("kegiatan_id");
+  const selectedIndikatorId = watch("indikator_id");
+  const prevTabelProgramId = useRef(undefined);
+  const prevProgramIdDirect = useRef(undefined);
 
-  // Fetch options
+  const renstraId = renstraAktif?.id;
+
+  // Fetch options — filter by renstra_id agar hanya data OPD ini yang muncul
   const { data: programData } = useQuery({
-    queryKey: ["program-options"],
-    queryFn: () => api.get("/renstra-tabel-program").then((res) => res.data),
-    enabled: !!renstraAktif,
+    queryKey: ["program-options", renstraId],
+    queryFn: () =>
+      api
+        .get("/renstra-tabel-program", { params: { renstra_id: renstraId } })
+        .then((res) => (Array.isArray(res.data) ? res.data : (res.data?.data ?? []))),
+    enabled: !!renstraId,
+  });
+
+  const hasTabelProgramList = useMemo(
+    () => (programData || []).length > 0,
+    [programData]
+  );
+
+  useEffect(() => {
+    if (!hasTabelProgramList) {
+      setValue("tabel_program_id", null);
+    }
+  }, [hasTabelProgramList, setValue]);
+
+  /** Fallback: master Program Renstra (scope OPD sama) bila belum ada baris Tabel Program */
+  const { data: renstraProgramData } = useQuery({
+    queryKey: ["renstra-program-options", renstraId],
+    queryFn: () =>
+      api
+        .get("/renstra-program", { params: { renstra_id: renstraId } })
+        .then((res) => (Array.isArray(res.data) ? res.data : (res.data?.data ?? []))),
+    enabled: !!renstraId,
   });
   const { data: kegiatanData } = useQuery({
-    queryKey: ["kegiatan-options"],
-    queryFn: () => api.get("/renstra-kegiatan").then((res) => res.data),
-    enabled: !!renstraAktif,
+    queryKey: ["kegiatan-options", renstraId],
+    queryFn: () =>
+      api
+        .get("/renstra-kegiatan", { params: { renstra_id: renstraId } })
+        .then((res) => (Array.isArray(res.data) ? res.data : (res.data?.data ?? []))),
+    enabled: !!renstraId,
   });
   const { data: indikatorData } = useQuery({
-    queryKey: ["indikator-options"],
-    queryFn: () => api.get("/indikator-renstra").then((res) => res.data),
-    enabled: !!renstraAktif,
+    queryKey: ["indikator-options", renstraId],
+    queryFn: () =>
+      api
+        .get("/indikator-renstra", { params: { renstra_id: renstraId } })
+        .then((res) => (Array.isArray(res.data) ? res.data : (res.data?.data ?? []))),
+    enabled: !!renstraId,
   });
 
-  // Realtime fetch available pagu
+  // Edit: sinkronkan dropdown Program (baris tabel) dari FK program_id yang tersimpan
   useEffect(() => {
-    console.log("=== useEffect availablePagu triggered ===");
-    console.log("selectedProgramId:", selectedProgramId);
-    console.log("selectedKegiatanId:", selectedKegiatanId);
-    console.log("initialData?.id:", initialData?.id);
-    console.log("inputPagu:", inputPagu);
+    if (!initialData?.id || !programData?.length || initialData?.program_id == null) {
+      return;
+    }
+    const match = programData.find(
+      (p) => Number(p.program_id) === Number(initialData.program_id)
+    );
+    if (match) setValue("tabel_program_id", Number(match.id));
+  }, [initialData?.id, initialData?.program_id, programData, setValue]);
 
-    if (!selectedProgramId) {
-      console.log("No program selected, clearing availablePagu");
+  // Realtime fetch available pagu (API mengharapkan PK renstra_tabel_program)
+  useEffect(() => {
+    if (selectedTabelProgramId == null || selectedTabelProgramId === "") {
       return setAvailablePagu({});
     }
 
     const fetchAvailablePagu = async () => {
       try {
         const params = {
-          program_id: selectedProgramId,
-          exclude_id: initialData?.id || selectedKegiatanId || null,
+          program_id: Number(selectedTabelProgramId),
+          exclude_id: initialData?.id || null,
           input_pagu: JSON.stringify(inputPagu),
         };
-        console.log("Calling API with params:", params);
 
         const res = await api.get("/renstra-tabel-kegiatan/available-pagu", {
           params,
         });
-        console.log("API response:", res.data);
 
         setAvailablePagu(res.data?.available || {});
       } catch (err) {
@@ -132,32 +174,119 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
     };
 
     fetchAvailablePagu();
-  }, [selectedProgramId, selectedKegiatanId, inputPagu, initialData?.id]);
+  }, [selectedTabelProgramId, inputPagu, initialData?.id]);
 
   const handlePaguChange = (tahun, value) => {
     setInputPagu((prev) => ({ ...prev, [tahun]: Number(value || 0) }));
     setValue(`pagu_tahun_${tahun}`, Number(value || 0));
   };
 
+  // Sinkron FK program + isi otomatis dari baris renstra_tabel_program (data RPJMD yang sudah dijadwalkan di tabel)
+  useEffect(() => {
+    if (selectedTabelProgramId == null || selectedTabelProgramId === "") {
+      if (hasTabelProgramList) {
+        setValue("program_id", null);
+      }
+      return;
+    }
+    if (!programData?.length) return;
+    const row = programData.find(
+      (p) => Number(p.id) === Number(selectedTabelProgramId)
+    );
+    if (!row) return;
+
+    setValue("program_id", Number(row.program_id));
+
+    if (initialData?.id) {
+      prevTabelProgramId.current = selectedTabelProgramId;
+      return;
+    }
+
+    if (
+      prevTabelProgramId.current !== undefined &&
+      prevTabelProgramId.current !== selectedTabelProgramId
+    ) {
+      setValue("kegiatan_id", null);
+      setValue("indikator_id", null);
+    }
+    prevTabelProgramId.current = selectedTabelProgramId;
+
+    if (row.lokasi != null && String(row.lokasi).trim() !== "") {
+      setValue("lokasi", row.lokasi);
+    }
+    if (row.baseline != null && row.baseline !== "") {
+      setValue("baseline", row.baseline);
+    }
+    if (row.satuan_target) setValue("satuan_target", row.satuan_target);
+
+    for (let i = 1; i <= 6; i++) {
+      const t = row[`target_tahun_${i}`];
+      const p = row[`pagu_tahun_${i}`];
+      if (t != null && t !== "") setValue(`target_tahun_${i}`, t);
+      if (p != null && p !== "") setValue(`pagu_tahun_${i}`, Number(p));
+    }
+    setInputPagu((prev) => {
+      const next = { ...prev };
+      for (let i = 1; i <= 6; i++) {
+        next[i] = Number(row[`pagu_tahun_${i}`] || 0);
+      }
+      return next;
+    });
+  }, [
+    selectedTabelProgramId,
+    programData,
+    setValue,
+    initialData?.id,
+    hasTabelProgramList,
+  ]);
+
+  // Mode tanpa Tabel Program: ganti program → reset kegiatan & indikator (tambah)
+  useEffect(() => {
+    if (hasTabelProgramList) return;
+    if (
+      selectedRenstraProgramId == null ||
+      selectedRenstraProgramId === ""
+    ) {
+      return;
+    }
+    if (initialData?.id) {
+      prevProgramIdDirect.current = selectedRenstraProgramId;
+      return;
+    }
+    if (
+      prevProgramIdDirect.current !== undefined &&
+      prevProgramIdDirect.current !== selectedRenstraProgramId
+    ) {
+      setValue("kegiatan_id", null);
+      setValue("indikator_id", null);
+    }
+    prevProgramIdDirect.current = selectedRenstraProgramId;
+  }, [
+    hasTabelProgramList,
+    selectedRenstraProgramId,
+    initialData?.id,
+    setValue,
+  ]);
+
   const numberFormatter = (value) =>
     `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   const numberParser = (value) => value.replace(/\./g, "");
 
-  // Auto-set bidang/kode/nama kegiatan
+  // Auto-set bidang/kode/nama dari renstra_kegiatan (selaras RPJMD lewat relasi kegiatan)
   useEffect(() => {
     const sel = kegiatanData?.find(
-      (k) => k.id === Number(watch("kegiatan_id"))
+      (k) => Number(k.id) === Number(selectedKegiatanId)
     );
     if (!sel) return;
     setValue("bidang_penanggung_jawab", sel.bidang_opd || "");
     setValue("kode_kegiatan", sel.kode_kegiatan || "");
     setValue("nama_kegiatan", sel.nama_kegiatan || "");
-  }, [watch("kegiatan_id"), setValue, kegiatanData]);
+  }, [selectedKegiatanId, setValue, kegiatanData]);
 
-  // Auto-set indikator
+  // Auto-set baseline & target dari indikator Renstra (menimpa nilai dari Program bila ada)
   useEffect(() => {
     const sel = indikatorData?.find(
-      (i) => i.id === Number(watch("indikator_id"))
+      (i) => Number(i.id) === Number(selectedIndikatorId)
     );
     if (!sel) return;
     if (sel.baseline !== undefined && sel.baseline !== null)
@@ -167,7 +296,7 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
       const val = sel[`target_tahun_${i}`];
       if (val !== undefined && val !== null) setValue(`target_tahun_${i}`, val);
     });
-  }, [watch("indikator_id"), setValue, indikatorData]);
+  }, [selectedIndikatorId, setValue, indikatorData]);
 
   // Hitung target & pagu akhir
   useEffect(() => {
@@ -208,17 +337,41 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
 
       <FormProvider {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
-          <SelectWithLabelValue
-            name="program_id"
-            label="Program"
-            control={control}
-            errors={errors}
-            required
-            options={(programData || []).map((p) => ({
-              label: `${p.kode_program} - ${p.nama_program}`,
-              value: p.id,
-            }))}
-          />
+          {hasTabelProgramList ? (
+            <SelectWithLabelValue
+              name="tabel_program_id"
+              label="Program"
+              control={control}
+              errors={errors}
+              required
+              valueAsNumber
+              options={(programData || []).map((p) => ({
+                label: `${p.kode_program} - ${p.nama_program}`,
+                value: Number(p.id),
+              }))}
+            />
+          ) : (
+            <>
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 12 }}
+                message="Belum ada baris di menu Input Tabel → Program untuk Renstra OPD ini. Pilih program dari master Program Renstra; pagu per tahun tidak dibatasi oleh Tabel Program."
+              />
+              <SelectWithLabelValue
+                name="program_id"
+                label="Program"
+                control={control}
+                errors={errors}
+                required
+                valueAsNumber
+                options={(renstraProgramData || []).map((p) => ({
+                  label: `${p.kode_program} - ${p.nama_program}`,
+                  value: Number(p.id),
+                }))}
+              />
+            </>
+          )}
 
           <SelectWithLabelValue
             name="kegiatan_id"
@@ -226,11 +379,16 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
             control={control}
             errors={errors}
             required
+            valueAsNumber
             options={(kegiatanData || [])
-              .filter((k) => k.program_id === Number(selectedProgramId))
+              .filter(
+                (k) =>
+                  selectedRenstraProgramId != null &&
+                  Number(k.program_id) === Number(selectedRenstraProgramId)
+              )
               .map((k) => ({
                 label: `${k.kode_kegiatan} - ${k.nama_kegiatan}`,
-                value: k.id,
+                value: Number(k.id),
               }))}
           />
 
@@ -240,9 +398,10 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
             control={control}
             errors={errors}
             required
+            valueAsNumber
             options={(indikatorData || []).map((i) => ({
               label: i.nama_indikator,
-              value: i.id,
+              value: Number(i.id),
             }))}
           />
 

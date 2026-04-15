@@ -50,23 +50,35 @@ export const useSasaranRenstraForm = (initialData, renstraAktif) => {
     generatePayload,
     queryKeys: ["renstra-sasaran"],
     redirectPath: "/renstra/sasaran",
+    skipInitialDataReset: true,
     fetchOptions: {
+      // Dropdown Tujuan Renstra (OPD): tujuan yang sudah dibuat di modul Renstra
       "renstra-tujuan": () => {
         if (!renstraAktif?.id) return Promise.resolve([]);
         return api
           .get("/renstra-tujuan", { params: { renstra_id: renstraAktif.id } })
-          .then((res) => res.data);
+          .then((res) => {
+            // Controller mengembalikan array langsung
+            const raw = res.data;
+            return Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+          });
       },
+      // sasaran-rpjmd di-fetch agar totalLoading tidak stuck;
+      // Form pakai endpoint /renstra-sasaran/sasaran-rpjmd?tujuan_id=X (by-tujuan) untuk dropdown
       "sasaran-rpjmd": () => {
         if (!renstraAktif?.id) return Promise.resolve([]);
         return api
           .get("/sasaran", {
             params: {
-              jenis_dokumen: "renstra",
+              jenis_dokumen: "rpjmd",
               tahun: renstraAktif?.tahun_mulai,
+              limit: 500,
             },
           })
-          .then((res) => res.data);
+          .then((res) => {
+            const raw = res.data;
+            return Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+          });
       },
     },
   });
@@ -75,31 +87,35 @@ export const useSasaranRenstraForm = (initialData, renstraAktif) => {
 
   const watchedTujuanId = watch("tujuan_id");
 
+  // Edit: isi form dari API segera — jangan tunggu dropdown tujuan (bisa [] jika filter/API beda).
+  // Tanpa ini + skipInitialDataReset, field tetap kosong selamanya.
   useEffect(() => {
-    const tujuanOptionsReady = dropdowns["renstra-tujuan"]?.length > 0;
-    const rpjmdOptionsReady = dropdowns["sasaran-rpjmd"]?.length > 0;
+    if (!initialData?.id) return;
+    const rid = initialData.renstra_id ?? renstraAktif?.id;
+    reset({
+      ...initialData,
+      tujuan_id: String(initialData.tujuan_id ?? ""),
+      rpjmd_sasaran_id: String(initialData.rpjmd_sasaran_id ?? ""),
+      renstra_id: rid != null && rid !== "" ? Number(rid) : "",
+    });
+  }, [initialData, renstraAktif?.id, reset]);
 
-    if (!tujuanOptionsReady || !rpjmdOptionsReady) return;
-
-    if (!initialData) {
-      reset({
-        ...defaultValues,
-        renstra_id: renstraAktif?.id || "",
-      });
-    } else {
-      reset({
-        ...initialData,
-        tujuan_id: String(initialData?.tujuan_id ?? ""),
-        rpjmd_sasaran_id: String(initialData?.rpjmd_sasaran_id ?? ""),
-      });
-    }
-  }, [initialData, renstraAktif?.id, reset, dropdowns]);
-
-  // Update nomor otomatis berdasarkan jumlah Sasaran Renstra saat ini
+  // Tambah: tunggu daftar Tujuan Renstra siap
   useEffect(() => {
+    if (initialData?.id) return;
+    if (!dropdowns?.["renstra-tujuan"]?.length) return;
+    reset({
+      ...defaultValues,
+      renstra_id: renstraAktif?.id != null ? Number(renstraAktif.id) : "",
+    });
+  }, [initialData?.id, renstraAktif?.id, reset, dropdowns]);
+
+  // Generate nomor otomatis hanya saat tambah — jangan timpa nomor record edit
+  useEffect(() => {
+    if (initialData?.id) return;
     if (!watchedTujuanId) return;
 
-    const tujuan = dropdowns["renstra-tujuan"]?.find(
+    const tujuan = dropdowns?.["renstra-tujuan"]?.find(
       (t) => String(t.id) === String(watchedTujuanId)
     );
     if (!tujuan) return;
@@ -107,14 +123,19 @@ export const useSasaranRenstraForm = (initialData, renstraAktif) => {
     api
       .get("/renstra-sasaran", { params: { tujuan_id: watchedTujuanId } })
       .then((res) => {
-        const count = Array.isArray(res.data) ? res.data.length : 0;
-        const noTujuan = tujuan.no_tujuan.replace(/^T/, "");
+        const list = Array.isArray(res.data?.data)
+          ? res.data.data
+          : Array.isArray(res.data)
+            ? res.data
+            : [];
+        const count = list.length;
+        const noTujuan = String(tujuan.no_tujuan || "").replace(/^T/, "");
         setValue("nomor", `STR${noTujuan}.${count + 1}`);
       });
-  }, [watchedTujuanId, dropdowns, setValue]);
+  }, [watchedTujuanId, dropdowns, setValue, initialData?.id]);
 
   const totalLoading =
-    isSubmitting || !dropdowns["renstra-tujuan"] || !dropdowns["sasaran-rpjmd"];
+    isSubmitting || !dropdowns?.["renstra-tujuan"] || !dropdowns?.["sasaran-rpjmd"];
 
   return {
     form,

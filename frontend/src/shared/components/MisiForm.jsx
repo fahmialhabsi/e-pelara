@@ -14,6 +14,10 @@ import {
 import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { useDokumen } from "../../hooks/useDokumen";
+import {
+  extractListData,
+  normalizeListItems,
+} from "../../utils/apiResponse";
 
 export default function MisiForm() {
   const { user } = useAuth();
@@ -44,7 +48,7 @@ export default function MisiForm() {
         const res = await api.get("/rpjmd", {
           params: { jenis_dokumen: dokumen, tahun },
         });
-        const first = res.data[0];
+        const first = extractListData(res.data)[0];
         if (first?.id) {
           setRpjmdId(first.id);
         }
@@ -65,8 +69,8 @@ export default function MisiForm() {
           api.get("/visi", { params: { jenis_dokumen: dokumen, tahun } }),
           api.get("/misi", { params: { jenis_dokumen: dokumen, tahun } }),
         ]);
-        setVisiList(visiRes.data);
-        setMisiList(misiRes.data);
+        setVisiList(normalizeListItems(visiRes.data));
+        setMisiList(normalizeListItems(misiRes.data));
         setErrorMsg("");
       } catch {
         setErrorMsg("Gagal memuat data, silakan refresh halaman.");
@@ -140,7 +144,7 @@ export default function MisiForm() {
       const misiRes = await api.get("/misi", {
         params: { jenis_dokumen: dokumen, tahun },
       });
-      setMisiList(misiRes.data);
+      setMisiList(normalizeListItems(misiRes.data));
       handleCancel();
       setActiveTab("daftar");
     } catch {
@@ -168,7 +172,7 @@ export default function MisiForm() {
       const misiRes = await api.get("/misi", {
         params: { jenis_dokumen: dokumen, tahun },
       });
-      setMisiList(misiRes.data);
+      setMisiList(normalizeListItems(misiRes.data));
       if (selectedId === id) handleCancel();
     } catch {
       setErrorMsg("Gagal hapus misi.");

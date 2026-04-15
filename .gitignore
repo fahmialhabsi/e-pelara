@@ -12,6 +12,7 @@ frontend/node_modules/
 .env.local
 .env.production
 backend/.env
+backend/.secrets/
 frontend/.env.development
 frontend/.env.production
 

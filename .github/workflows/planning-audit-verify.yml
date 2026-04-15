@@ -1,0 +1,43 @@
+# Regresi hardening audit perencanaan: setiap writePlanningAudit wajib berpasangan
+# dengan auditValuesFromRows; setiap controller baru yang memanggil writePlanningAudit
+# wajib terdaftar di constants/planningAuditMutationManifest.js
+name: planning-audit-snapshots
+
+on:
+  push:
+    paths:
+      - "backend/controllers/**"
+      - "backend/constants/planningAudit*.js"
+      - "backend/constants/planningAuditMutationManifest.js"
+      - "backend/scripts/verifyPlanningAuditSnapshots.js"
+      - "backend/services/planningDocumentAuditService.js"
+      - "backend/services/planningDocumentRestoreService.js"
+      - "backend/controllers/planningDocumentVersionController.js"
+      - ".github/workflows/planning-audit-verify.yml"
+  pull_request:
+    paths:
+      - "backend/controllers/**"
+      - "backend/constants/planningAudit*.js"
+      - "backend/constants/planningAuditMutationManifest.js"
+      - "backend/scripts/verifyPlanningAuditSnapshots.js"
+      - "backend/services/planningDocumentAuditService.js"
+      - "backend/services/planningDocumentRestoreService.js"
+      - "backend/controllers/planningDocumentVersionController.js"
+      - ".github/workflows/planning-audit-verify.yml"
+
+jobs:
+  verify-planning-audit-snapshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run snapshot convention check
+        working-directory: backend
+        run: node scripts/verifyPlanningAuditSnapshots.js

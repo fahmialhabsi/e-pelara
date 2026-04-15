@@ -1,29 +1,48 @@
 // src/features/renstra/strategi/pages/strategiRenstraEditPage.jsx (REFACTORED)
-import React from "react";
+import React, { useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import api from "../../../../services/api";
 import StrategiRenstraForm from "../components/StrategiRenstraForm";
-import { Spin, Alert, Empty } from "antd";
+import { Spin, Empty } from "antd";
+import { mergeRenstraAktifForEdit } from "@/features/renstra/utils/mergeRenstraAktifForEdit";
 
 const StrategiRenstraEditPage = () => {
   const { id } = useParams();
 
-  // Ambil data strategi yang akan di-edit
   const { data: initialData, isLoading: isLoadingInitial } = useQuery({
     queryKey: ["strategi-renstra", id],
-    queryFn: () => api.get(`/renstra-strategi/${id}`).then((res) => res.data),
-    enabled: !!id, // Hanya jalankan jika ada ID
+    queryFn: async () => {
+      const res = await api.get(`/renstra-strategi/${id}`);
+      const row = res.data?.data ?? res.data;
+      return row;
+    },
+    enabled: !!id,
   });
 
-  // Ambil juga data renstra aktif, untuk konsistensi
-  const { data: renstraAktif, isLoading: isLoadingAktif } = useQuery({
+  const { data: renstraAktifFallback, isLoading: isLoadingAktif } = useQuery({
     queryKey: ["renstra-opd-aktif"],
-    queryFn: () =>
-      api.get("/renstra-opd?is_aktif=true").then((res) => res.data[0] || null),
+    queryFn: async () => {
+      const res = await api.get("/renstra-opd/aktif");
+      return res.data?.data ?? res.data;
+    },
   });
 
   const isLoading = isLoadingInitial || isLoadingAktif;
+
+  const renstraAktif = useMemo(
+    () => mergeRenstraAktifForEdit(initialData?.renstra, renstraAktifFallback),
+    [initialData?.renstra, renstraAktifFallback]
+  );
+
+  const initialDataForForm = useMemo(() => {
+    if (!initialData) return null;
+    return {
+      ...initialData,
+      strategi_rpjmd_id:
+        initialData.rpjmd_strategi_id ?? initialData.strategi_rpjmd_id ?? null,
+    };
+  }, [initialData]);
 
   if (isLoading) {
     return <Spin tip="Memuat data..." size="large" fullscreen />;
@@ -40,8 +59,8 @@ const StrategiRenstraEditPage = () => {
 
   return (
     <StrategiRenstraForm
-      initialData={initialData}
-      renstraAktif={renstraAktif} // Teruskan juga renstraAktif
+      initialData={initialDataForForm}
+      renstraAktif={renstraAktif}
     />
   );
 };

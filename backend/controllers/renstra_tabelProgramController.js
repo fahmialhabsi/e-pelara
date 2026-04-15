@@ -6,6 +6,7 @@ const {
   RenstraKegiatan,
   RenstraTabelSubkegiatan,
 } = require("../models");
+const { programWhereForRenstraOpdQuery } = require("../helpers/renstraOpdProgramFilter");
 
 // 🔹 Import helper untuk hitung target & pagu akhir
 const { hitungAkhirProgram } = require("../helpers/computeFinalRenstra");
@@ -112,15 +113,26 @@ exports.update = async (req, res) => {
 // ========================= FIND ALL =========================
 exports.findAll = async (req, res) => {
   try {
+    const { renstra_id } = req.query;
+
+    let programWhere = {};
+    if (renstra_id) {
+      programWhere = await programWhereForRenstraOpdQuery(renstra_id);
+    }
+
     const data = await RenstraTabelProgram.findAll({
       include: [
-        { model: RenstraProgram, as: "program" },
+        {
+          model: RenstraProgram,
+          as: "program",
+          where: Object.keys(programWhere).length ? programWhere : undefined,
+          required: !!renstra_id, // INNER JOIN hanya jika ada filter
+        },
         { model: IndikatorRenstra, as: "indikator" },
       ],
       order: [["id", "ASC"]],
     });
 
-    // Tidak menghitung ulang target_akhir_renstra / pagu_akhir_renstra
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });

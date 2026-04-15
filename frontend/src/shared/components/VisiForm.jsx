@@ -5,6 +5,7 @@ import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { useDokumen } from "../../hooks/useDokumen";
 import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
+import { normalizeListItems } from "../../utils/apiResponse";
 
 const VisiForm = () => {
   const { user } = useAuth();
@@ -12,6 +13,7 @@ const VisiForm = () => {
   const { dokumen, tahun } = useDokumen();
   const [visiList, setVisiList] = useState([]);
   const [form, setForm] = useState({ isi_visi: "" });
+  const [editingId, setEditingId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -26,7 +28,7 @@ const VisiForm = () => {
           tahun: tahun,
         },
       });
-      setVisiList(response.data);
+      setVisiList(normalizeListItems(response.data));
     } catch (err) {
       console.error("Gagal memuat visi", err);
       setError("Gagal memuat visi");
@@ -46,6 +48,7 @@ const VisiForm = () => {
   };
 
   const handleEdit = (item) => {
+    setEditingId(String(item.id));
     setForm({ isi_visi: item.isi_visi || "" });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -54,6 +57,10 @@ const VisiForm = () => {
     if (!window.confirm("Yakin ingin menghapus visi ini?")) return;
     try {
       await api.delete(`/visi/${id}`);
+      if (String(editingId) === String(id)) {
+        setEditingId("");
+        setForm({ isi_visi: "" });
+      }
       fetchVisi();
     } catch (err) {
       console.error("Gagal hapus visi:", err);
@@ -73,17 +80,24 @@ const VisiForm = () => {
     }
 
     try {
-      await api.post("/visi", {
+      const payload = {
         ...form,
         jenis_dokumen: dokumen,
         tahun: tahun,
         periode_id,
         tahun_awal: periodeAktif?.tahun_awal,
         tahun_akhir: periodeAktif?.tahun_akhir,
-      });
+      };
 
-      setSuccess("Visi berhasil ditambahkan.");
+      if (editingId) {
+        await api.put(`/visi/${editingId}`, payload);
+      } else {
+        await api.post("/visi", payload);
+      }
+
+      setSuccess(editingId ? "Visi berhasil diperbarui." : "Visi berhasil ditambahkan.");
       setForm({ isi_visi: "" });
+      setEditingId("");
       fetchVisi();
     } catch (err) {
       setError(err.response?.data?.message || "Gagal menyimpan visi");
@@ -118,7 +132,7 @@ const VisiForm = () => {
           </Form.Group>
 
           <Button type="submit" className="mt-3">
-            Simpan Visi
+            {editingId ? "Update Visi" : "Simpan Visi"}
           </Button>
         </Form>
 

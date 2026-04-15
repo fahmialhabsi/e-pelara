@@ -3,6 +3,7 @@ const { Tujuan, Misi, Sasaran, sequelize } = require("../models");
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
 const { Op } = require("sequelize");
 const { getPeriodeFromTahun } = require("../utils/periodeHelper");
+const { listResponse } = require("../utils/responseHelper");
 const path = require("path");
 const fs = require("fs");
 const puppeteer = require("puppeteer");
@@ -19,14 +20,14 @@ const validateDokumenTahun = (jenis_dokumen, tahun, res) => {
 };
 
 const getPeriodeIdWithValidation = async (tahun, res) => {
-  const periode_id = await getPeriodeFromTahun(tahun);
-  if (!periode_id) {
+  const periode = await getPeriodeFromTahun(tahun);
+  if (!periode) {
     res
       .status(400)
       .json({ message: `Periode tidak ditemukan untuk tahun ${tahun}.` });
     return null;
   }
-  return periode_id;
+  return periode.id;
 };
 
 const getTujuansWithMisi = async (periode_id, jenis_dokumen, tahun) => {
@@ -40,6 +41,109 @@ const getTujuansWithMisi = async (periode_id, jenis_dokumen, tahun) => {
       ["no_tujuan", "ASC"],
     ],
   });
+};
+
+const parseId = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const fetchTujuanList = async ({ where, limit, offset }) => {
+  const totalItems = await Tujuan.count({ where });
+  const rows = await Tujuan.findAll({
+    where,
+    include: [
+      {
+        model: Misi,
+        as: "Misi",
+        attributes: ["id", "no_misi", "isi_misi"],
+      },
+    ],
+    order: [
+      [{ model: Misi, as: "Misi" }, "no_misi", "ASC"],
+      ["no_tujuan", "ASC"],
+    ],
+    limit,
+    offset,
+  });
+
+  return { rows, totalItems };
+};
+
+const resolveMisiIdsForDokumen = async ({
+  misiId,
+  jenisDokumen,
+  tahun,
+  periodeId,
+}) => {
+  const parsedMisiId = parseId(misiId);
+  if (!parsedMisiId) return [];
+
+  const sourceMisi = await Misi.findByPk(parsedMisiId, {
+    attributes: [
+      "id",
+      "no_misi",
+      "isi_misi",
+      "jenis_dokumen",
+      "tahun",
+      "periode_id",
+    ],
+  });
+
+  if (!sourceMisi) {
+    return [parsedMisiId];
+  }
+
+  const isSameScope =
+    String(sourceMisi.jenis_dokumen || "").toLowerCase() ===
+      String(jenisDokumen || "").toLowerCase() &&
+    String(sourceMisi.tahun || "") === String(tahun) &&
+    Number(sourceMisi.periode_id || 0) === Number(periodeId || 0);
+
+  if (isSameScope) {
+    return [sourceMisi.id];
+  }
+
+  const usePeriodeFilter = String(jenisDokumen || "").toLowerCase() !== "rpjmd";
+  const byNoMisi = await Misi.findAll({
+    where: {
+      no_misi: sourceMisi.no_misi,
+      jenis_dokumen: jenisDokumen,
+      tahun: String(tahun),
+      ...(usePeriodeFilter ? { periode_id: periodeId } : {}),
+    },
+    attributes: ["id"],
+    order: [["id", "ASC"]],
+  });
+
+  if (byNoMisi.length) {
+    return byNoMisi.map((item) => item.id);
+  }
+
+  const isiMisi = String(sourceMisi.isi_misi || "").trim();
+  if (isiMisi) {
+    const byIsiMisi = await Misi.findAll({
+      where: {
+        isi_misi: isiMisi,
+        jenis_dokumen: jenisDokumen,
+        tahun: String(tahun),
+        ...(usePeriodeFilter ? { periode_id: periodeId } : {}),
+      },
+      attributes: ["id"],
+      order: [["id", "ASC"]],
+    });
+
+    if (byIsiMisi.length) {
+      return byIsiMisi.map((item) => item.id);
+    }
+  }
+
+  return [sourceMisi.id];
+};
+
+const applyMisiFilter = (where, misiIds = []) => {
+  if (!Array.isArray(misiIds) || !misiIds.length) return;
+  where.misi_id = misiIds.length === 1 ? misiIds[0] : { [Op.in]: misiIds };
 };
 
 // === Controller ===
@@ -72,14 +176,23 @@ const tujuanController = {
 
       const periode_id = periode.id;
 
+      const normalizedDokumen = String(jenis_dokumen).toLowerCase();
       const where = {
-        periode_id,
-        jenis_dokumen,
+        jenis_dokumen: normalizedDokumen,
         tahun: String(tahun),
+        ...(normalizedDokumen === "rpjmd" ? {} : { periode_id }),
       };
 
-      if (misi_id !== undefined && misi_id !== null && misi_id !== "") {
-        where.misi_id = parseInt(misi_id, 10);
+      const hasMisiFilter =
+        misi_id !== undefined && misi_id !== null && String(misi_id).trim() !== "";
+      if (hasMisiFilter) {
+        const misiIds = await resolveMisiIdsForDokumen({
+          misiId: misi_id,
+          jenisDokumen: jenis_dokumen,
+          tahun: String(tahun),
+          periodeId: periode_id,
+        });
+        applyMisiFilter(where, misiIds);
       }
 
       console.log("🔍 Params getAll Tujuan:", {
@@ -89,26 +202,48 @@ const tujuanController = {
       });
       console.log("🔍 Where clause:", where);
 
-      const tujuans = await Tujuan.findAll({
+      let resolvedDokumen = normalizedDokumen;
+      let { rows: tujuans, totalItems } = await fetchTujuanList({
         where,
-        include: [
-          {
-            model: Misi,
-            as: "Misi",
-            attributes: ["id", "no_misi", "isi_misi"],
-          },
-        ],
-        order: [
-          [{ model: Misi, as: "Misi" }, "no_misi", "ASC"],
-          ["no_tujuan", "ASC"],
-        ],
         limit: parsedLimit,
         offset: parsedOffset,
       });
 
+      if (!tujuans.length && hasMisiFilter && resolvedDokumen !== "rpjmd") {
+        const fallbackWhere = {
+          jenis_dokumen: "rpjmd",
+          tahun: String(tahun),
+        };
+
+        const fallbackMisiIds = await resolveMisiIdsForDokumen({
+          misiId: misi_id,
+          jenisDokumen: "rpjmd",
+          tahun: String(tahun),
+          periodeId: periode_id,
+        });
+        applyMisiFilter(fallbackWhere, fallbackMisiIds);
+
+        const fallbackResult = await fetchTujuanList({
+          where: fallbackWhere,
+          limit: parsedLimit,
+          offset: parsedOffset,
+        });
+
+        if (fallbackResult.rows.length) {
+          tujuans = fallbackResult.rows;
+          totalItems = fallbackResult.totalItems;
+          resolvedDokumen = "rpjmd";
+        }
+      }
+
       console.log("✅ Tujuan count:", tujuans.length);
 
-      return res.status(200).json(tujuans);
+      return listResponse(res, 200, "Daftar tujuan berhasil diambil", tujuans, {
+        totalItems,
+        limit: parsedLimit,
+        offset: parsedOffset,
+        resolvedDokumen,
+      });
     } catch (err) {
       console.error("❌ Error getAll Tujuan:", err);
       return res.status(500).json({ message: err.message });
@@ -133,6 +268,9 @@ const tujuanController = {
       const pageSize = Math.min(parseInt(limit) || 100, 500);
       const pageOffset = parseInt(offset) || 0;
 
+      const totalItems = await Tujuan.count({
+        where: { misi_id, periode_id, jenis_dokumen, tahun },
+      });
       const tujuans = await Tujuan.findAll({
         where: { misi_id, periode_id, jenis_dokumen, tahun },
         order: [["no_tujuan", "ASC"]],
@@ -140,7 +278,17 @@ const tujuanController = {
         offset: pageOffset,
       });
 
-      res.json(tujuans);
+      return listResponse(
+        res,
+        200,
+        "Daftar tujuan berdasarkan misi berhasil diambil",
+        tujuans,
+        {
+          totalItems,
+          limit: pageSize,
+          offset: pageOffset,
+        }
+      );
     } catch (err) {
       console.error("Error getByMisi Tujuan:", err);
       res
@@ -334,7 +482,12 @@ const tujuanController = {
         order: [["no_tujuan", "ASC"]],
       });
 
-      res.json(tujuans);
+      return listResponse(
+        res,
+        200,
+        "Daftar tujuan berdasarkan periode berhasil diambil",
+        tujuans
+      );
     } catch (err) {
       console.error("Error getByPeriode Tujuan:", err);
       res

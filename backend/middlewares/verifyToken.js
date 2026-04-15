@@ -3,12 +3,12 @@
 const jwt = require("jsonwebtoken");
 
 const verifyToken = (req, res, next) => {
-  // Prioritaskan Authorization header agar SSO token tidak tertimpa cookie lama.
-  // Cookie dipakai sebagai fallback jika tidak ada Authorization header.
+  // Prioritaskan Authorization header, lalu cookie, lalu query param _token
+  // Query param _token khusus untuk endpoint preview dokumen yang dibuka di tab baru
   const authHeader = req.header("Authorization");
   const token = authHeader
     ? authHeader.replace("Bearer ", "")
-    : req.cookies?.token;
+    : (req.cookies?.token || req.query?._token || null);
 
   if (!token) {
     return res

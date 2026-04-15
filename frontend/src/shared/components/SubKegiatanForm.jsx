@@ -13,6 +13,8 @@ import {
   Form,
   Breadcrumb,
 } from "react-bootstrap";
+import Select from "react-select";
+import { formatProgramOptionLabel } from "@/utils/programDisplayLabel";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "@/services/api";
 import useSubKegiatanFormLogic from "@/features/rpjmd/hooks/useSubKegiatanFormLogic";
@@ -67,6 +69,14 @@ export default function SubKegiatanForm() {
     duplicateField,
     loading,
     onSubmit: propsOnSubmit,
+    masterSubKegiatanOptions,
+    masterSubLoading,
+    applyMasterSubSelection,
+    selectedMasterSubOption,
+    hasMasterSubList,
+    kodeSubOutsideMaster,
+    masterProgramsLoading,
+    masterKegiatanLoading,
   } = useSubKegiatanFormLogic(existingData, handleSuccessSubmit);
 
   if (initialLoading || loading) {
@@ -135,7 +145,7 @@ export default function SubKegiatanForm() {
                         <option value="">-- Pilih Program --</option>
                         {(programList || []).map((p) => (
                           <option key={p.id} value={p.id}>
-                            {p.kode_program} - {p.nama_program}
+                            {formatProgramOptionLabel(p)}
                           </option>
                         ))}
                       </Form.Select>
@@ -178,46 +188,124 @@ export default function SubKegiatanForm() {
                   </Col>
                 </Row>
 
-                <Row className="mb-3">
-                  <Col md={6}>
-                    <Form.Group>
-                      <Form.Label>Kode Sub Kegiatan</Form.Label>
-                      <Form.Control
-                        name="kode_sub_kegiatan"
-                        value={formData.kode_sub_kegiatan}
-                        onChange={handleChange}
-                        isInvalid={duplicateField === "kode_sub_kegiatan"}
-                        required
-                      />
-                    </Form.Group>
-                  </Col>
-                  <Col md={6}>
-                    <Form.Group>
-                      <Form.Label>Nama Sub Kegiatan</Form.Label>
-                      <Form.Control
-                        name="nama_sub_kegiatan"
-                        value={formData.nama_sub_kegiatan}
-                        onChange={handleChange}
-                        isInvalid={duplicateField === "nama_sub_kegiatan"}
-                        required
-                      />
-                    </Form.Group>
-                    <Form.Group className="mt-3">
-                      <Form.Label>Pagu Anggaran</Form.Label>
-                      <Form.Control
-                        type="text"
-                        name="pagu_anggaran"
-                        value={formData.pagu_anggaran}
-                        onChange={handleChange}
-                        required
-                      />
-                      <Form.Text muted>
-                        Nilai dalam rupiah. Hanya angka, titik akan ditambahkan
-                        otomatis.
-                      </Form.Text>
-                    </Form.Group>
-                  </Col>
-                </Row>
+              </Tab>
+
+              <Tab eventKey="subkegiatan" title="Sub Kegiatan">
+                {!formData.program_id || !formData.kegiatan_id ? (
+                  <Alert variant="info" className="mt-3">
+                    Pilih <strong>Program</strong> dan <strong>Kegiatan</strong>{" "}
+                    di tab Informasi Umum agar daftar sub kegiatan master bisa
+                    dimuat.
+                  </Alert>
+                ) : null}
+
+                {formData.program_id &&
+                formData.kegiatan_id &&
+                (masterProgramsLoading ||
+                  masterKegiatanLoading ||
+                  masterSubLoading) ? (
+                  <div className="text-muted small mt-3 mb-2">
+                    <Spinner animation="border" size="sm" className="me-2" />
+                    Memuat referensi sub kegiatan dari master…
+                  </div>
+                ) : null}
+
+                {hasMasterSubList ? (
+                  <Form.Group className="mb-3 mt-3">
+                    <Form.Label>Pilih sub kegiatan (master referensi)</Form.Label>
+                    <Select
+                      classNamePrefix="ep-master-sub"
+                      options={masterSubKegiatanOptions}
+                      value={selectedMasterSubOption}
+                      onChange={(opt) => applyMasterSubSelection(opt)}
+                      isClearable
+                      isSearchable
+                      placeholder="Cari kode atau nama sub kegiatan…"
+                      noOptionsMessage={() => "Tidak ada data"}
+                    />
+                    <Form.Text className="text-muted d-block mt-1">
+                      Data dari <code>/api/master/sub-kegiatan</code> mengikuti
+                      kegiatan RPJMD yang dipilih. Satu baris mengisi kode dan
+                      nama sub kegiatan.
+                    </Form.Text>
+                  </Form.Group>
+                ) : formData.program_id &&
+                  formData.kegiatan_id &&
+                  !masterProgramsLoading &&
+                  !masterKegiatanLoading &&
+                  !masterSubLoading ? (
+                  <Alert variant="light" className="mt-3 border">
+                    Tidak ada baris sub kegiatan master untuk kegiatan ini
+                    (penyesuaian kode RPJMD vs master atau data belum diimpor).
+                    Isi kode dan nama sub kegiatan manual di bawah.
+                  </Alert>
+                ) : null}
+
+                {kodeSubOutsideMaster ? (
+                  <Alert variant="warning" className="mb-3">
+                    Kode/nama sub kegiatan tidak cocok dengan baris master.
+                    Sesuaikan manual atau pilih dari daftar di atas.
+                  </Alert>
+                ) : null}
+
+                {hasMasterSubList &&
+                selectedMasterSubOption &&
+                !kodeSubOutsideMaster ? (
+                  <>
+                    <Form.Control
+                      type="hidden"
+                      name="kode_sub_kegiatan"
+                      value={formData.kode_sub_kegiatan || ""}
+                    />
+                    <Form.Control
+                      type="hidden"
+                      name="nama_sub_kegiatan"
+                      value={formData.nama_sub_kegiatan || ""}
+                    />
+                  </>
+                ) : (
+                  <Row className="mb-3">
+                    <Col md={6}>
+                      <Form.Group className="mt-3">
+                        <Form.Label>Kode Sub Kegiatan</Form.Label>
+                        <Form.Control
+                          name="kode_sub_kegiatan"
+                          value={formData.kode_sub_kegiatan}
+                          onChange={handleChange}
+                          isInvalid={duplicateField === "kode_sub_kegiatan"}
+                          required
+                        />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group className="mt-3">
+                        <Form.Label>Nama Sub Kegiatan</Form.Label>
+                        <Form.Control
+                          name="nama_sub_kegiatan"
+                          value={formData.nama_sub_kegiatan}
+                          onChange={handleChange}
+                          isInvalid={duplicateField === "nama_sub_kegiatan"}
+                          required
+                        />
+                      </Form.Group>
+                    </Col>
+                  </Row>
+                )}
+
+                <Form.Group className="mt-3">
+                  <Form.Label>Pagu Anggaran</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="pagu_anggaran"
+                    value={formData.pagu_anggaran}
+                    onChange={handleChange}
+                    required
+                  />
+                  <Form.Text muted>
+                    Nilai dalam rupiah. Hanya angka, titik akan ditambahkan
+                    otomatis.
+                  </Form.Text>
+                </Form.Group>
               </Tab>
             </Tabs>
 

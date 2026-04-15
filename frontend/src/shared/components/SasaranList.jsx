@@ -34,6 +34,11 @@ import {
 } from "@/shared/components/utils/exportHelpers";
 import { getInstansiNama } from "@/shared/components/utils/getInstansiNama";
 import ExportDropdown from "@/shared/components/ExportDropdown";
+import {
+  extractListData,
+  extractListMeta,
+  normalizeListItems,
+} from "@/utils/apiResponse";
 
 const highlightText = (text, keyword) => {
   if (!keyword) return text;
@@ -135,8 +140,9 @@ export default function SasaranList() {
     const fetchPeriode = async () => {
       try {
         const res = await api.get("/periode-rpjmd");
-        setPeriodeList(res.data);
-        const valid = res.data.some(
+        const periodeData = extractListData(res.data);
+        setPeriodeList(periodeData);
+        const valid = periodeData.some(
           (p) =>
             Number(user?.tahun) >= Number(p.tahun_awal) &&
             Number(user?.tahun) <= Number(p.tahun_akhir)
@@ -168,11 +174,8 @@ export default function SasaranList() {
 
       console.log("📄 Respons /sasaran:", res.data);
 
-      const list = Array.isArray(res.data)
-        ? res.data
-        : Array.isArray(res.data.data)
-        ? res.data.data
-        : [];
+      const list = normalizeListItems(res.data);
+      const meta = extractListMeta(res.data);
 
       const keyword = searchQuery.toLowerCase().trim();
       const matched = [];
@@ -189,7 +192,7 @@ export default function SasaranList() {
 
       const sortedList = [...matched, ...others];
       setSasaranList(sortedList);
-      setTotalPages(res.data.meta?.totalPages || 1);
+      setTotalPages(meta.totalPages || 1);
 
       if (keyword && matched.length === 0) {
         setErrorMsg("Tidak ada yang cocok dengan pencarian.");
@@ -266,9 +269,8 @@ export default function SasaranList() {
   };
 
   const handleExportExcel = () => {
-    const exportData = prepareExportData(sasaranList, extractors);
     exportToExcel({
-      data: exportData,
+      data: flatData,
       filename: `sasaran_${jenis_dokumen.toLowerCase()}_${tahunJudul}.xlsx`,
       judul,
       subjudul,
@@ -277,9 +279,8 @@ export default function SasaranList() {
   };
 
   const handleExportPDF = () => {
-    const exportData = prepareExportData(sasaranList, extractors);
     exportToPDF({
-      data: exportData,
+      data: flatData,
       filename: `sasaran_${jenis_dokumen.toLowerCase()}_${tahunJudul}.pdf`,
       judul,
       subjudul,
@@ -387,7 +388,7 @@ export default function SasaranList() {
                   </td>
                 </tr>
               ) : (
-                generateExportDataFromGroupedList(groupedData).map(
+                flatData.map(
                   (item, index) => {
                     let level = 0;
                     if (item.kode.startsWith("T")) level = 1;

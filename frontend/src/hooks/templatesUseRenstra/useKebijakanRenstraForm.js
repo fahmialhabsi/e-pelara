@@ -134,6 +134,8 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
       if (selected) {
         setValue("no_arah_rpjmd", selected.kode_arah);
         setValue("isi_arah_rpjmd", selected.deskripsi);
+        // 🔹 Auto-fill Isi Kebijakan dari deskripsi Arah Kebijakan RPJMD
+        setValue("deskripsi", selected.deskripsi || "");
         setValue("jenisDokumen", selected.jenis_dokumen);
         setValue("tahun", selected.tahun);
       } else {

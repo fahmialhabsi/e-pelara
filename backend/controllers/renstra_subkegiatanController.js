@@ -5,6 +5,10 @@ const {
   SubKegiatan,
   Kegiatan,
 } = require("../models");
+const { Op } = require("sequelize");
+const {
+  programWhereForRenstraOpdQuery,
+} = require("../helpers/renstraOpdProgramFilter");
 
 const toInt = (v) => {
   const n = parseInt(v, 10);
@@ -19,6 +23,70 @@ const extractSubkegiatanData = (body) => ({
   nama_opd: body.nama_opd ?? null,
   nama_bidang_opd: body.nama_bidang_opd ?? null,
 });
+
+const mergeOpdFromSubKegiatan = (data, sub) => {
+  const empty = (v) => v == null || String(v).trim() === "";
+  if (empty(data.sub_bidang_opd) && sub.sub_bidang_opd != null)
+    data.sub_bidang_opd = sub.sub_bidang_opd;
+  if (empty(data.nama_opd) && sub.nama_opd != null)
+    data.nama_opd = sub.nama_opd;
+  if (empty(data.nama_bidang_opd) && sub.nama_bidang_opd != null)
+    data.nama_bidang_opd = sub.nama_bidang_opd;
+};
+
+/** Contoh: "02.09.01.1.01" vs "2.09.01.1.01" di master `kegiatan`. */
+function variantsKodeKegiatan(k) {
+  const s = k == null ? "" : String(k).trim();
+  if (!s) return [];
+  const stripped = s.replace(/^0+/, "");
+  const set = new Set([s]);
+  if (stripped && stripped !== s) set.add(stripped);
+  return [...set];
+}
+
+const subIncludeAttrs = [
+  "id",
+  "kode_sub_kegiatan",
+  "nama_sub_kegiatan",
+  "sub_bidang_opd",
+  "nama_opd",
+  "nama_bidang_opd",
+];
+
+async function findSubKegiatanRowsForKegiatanIds(kegiatanIds) {
+  if (!kegiatanIds?.length) return [];
+  return SubKegiatan.findAll({
+    where: { kegiatan_id: { [Op.in]: kegiatanIds } },
+    include: [
+      {
+        model: Kegiatan,
+        as: "kegiatan",
+        attributes: ["id", "kode_kegiatan", "nama_kegiatan"],
+        required: true,
+      },
+    ],
+    order: [["id", "ASC"]],
+    attributes: subIncludeAttrs,
+  });
+}
+
+async function findSubKegiatanRowsForKodeVariants(kode) {
+  const vars = variantsKodeKegiatan(kode);
+  if (!vars.length) return [];
+  return SubKegiatan.findAll({
+    include: [
+      {
+        model: Kegiatan,
+        as: "kegiatan",
+        attributes: ["id", "kode_kegiatan", "nama_kegiatan"],
+        where: { kode_kegiatan: { [Op.in]: vars } },
+        required: true,
+      },
+    ],
+    order: [["id", "ASC"]],
+    attributes: subIncludeAttrs,
+  });
+}
 
 // CREATE
 exports.create = async (req, res) => {
@@ -42,6 +110,7 @@ exports.create = async (req, res) => {
 
     data.nama_sub_kegiatan = subKegiatan.nama_sub_kegiatan;
     data.kode_sub_kegiatan = subKegiatan.kode_sub_kegiatan;
+    mergeOpdFromSubKegiatan(data, subKegiatan);
 
     const newSubkegiatan = await RenstraSubkegiatan.create(data);
     return res.status(201).json({
@@ -57,9 +126,31 @@ exports.create = async (req, res) => {
 // READ ALL
 exports.findAll = async (req, res) => {
   try {
-    const { kegiatan_id, unique } = req.query;
+    const { kegiatan_id, unique, renstra_id } = req.query;
+
+    // Guard aman: wajib ada konteks filter
+    if (!renstra_id && !kegiatan_id) {
+      return res.status(200).json({ data: [] });
+    }
+
     const whereClause = {};
     if (kegiatan_id) whereClause.kegiatan_id = kegiatan_id;
+
+    if (renstra_id) {
+      // Sama cakupan program dengan GET /renstra-kegiatan?renstra_id=… (sibling OPD / nama+rpjmd),
+      // agar sub kegiatan yang renstra_program_id-nya menempel ke periode lain tetap tampil di daftar.
+      const programWhere = await programWhereForRenstraOpdQuery(renstra_id);
+      const programs = await RenstraProgram.findAll({
+        where: programWhere,
+        attributes: ["id"],
+      });
+
+      if (!programs.length) {
+        return res.status(200).json({ data: [] });
+      }
+
+      whereClause.renstra_program_id = programs.map((p) => p.id);
+    }
 
     let rows = await RenstraSubkegiatan.findAll({
       where: whereClause,
@@ -77,9 +168,16 @@ exports.findAll = async (req, res) => {
         "created_at",
         "updated_at",
       ],
+      include: [
+        {
+          model: RenstraKegiatan,
+          as: "kegiatan",
+          attributes: ["id", "kode_kegiatan", "nama_kegiatan"],
+          required: false,
+        },
+      ],
     });
 
-    // unique filter
     if (unique === "true") {
       rows = rows.filter(
         (item, index, self) =>
@@ -140,28 +238,38 @@ exports.findOne = async (req, res) => {
 exports.findByKodeKegiatan = async (req, res) => {
   try {
     const { kode_kegiatan } = req.query;
-    if (!kode_kegiatan) {
-      return res.status(400).json({ message: "kode_kegiatan is required" });
+    const renstraKegiatanId = toInt(req.query.renstra_kegiatan_id);
+
+    if (!kode_kegiatan && !renstraKegiatanId) {
+      return res.status(400).json({
+        message: "kode_kegiatan atau renstra_kegiatan_id wajib diisi",
+      });
     }
 
-    const rows = await SubKegiatan.findAll({
-      include: [
-        {
-          model: Kegiatan,
-          as: "kegiatan",
-          attributes: ["id", "kode_kegiatan", "nama_kegiatan"],
-          where: { kode_kegiatan },
-          required: true,
-        },
-      ],
-      order: [["id", "ASC"]],
-      attributes: ["id", "kode_sub_kegiatan", "nama_sub_kegiatan"],
-    });
+    let rows = [];
+
+    if (renstraKegiatanId) {
+      const rk = await RenstraKegiatan.findByPk(renstraKegiatanId, {
+        attributes: ["id", "rpjmd_kegiatan_id", "kode_kegiatan"],
+      });
+      if (rk?.rpjmd_kegiatan_id) {
+        rows = await findSubKegiatanRowsForKegiatanIds([rk.rpjmd_kegiatan_id]);
+      } else if (rk?.kode_kegiatan) {
+        rows = await findSubKegiatanRowsForKodeVariants(rk.kode_kegiatan);
+      }
+    }
+
+    if (!rows.length && kode_kegiatan) {
+      rows = await findSubKegiatanRowsForKodeVariants(kode_kegiatan);
+    }
 
     const data = rows.map((s) => ({
       id: s.id,
       kode_sub_kegiatan: s.kode_sub_kegiatan,
       nama_sub_kegiatan: s.nama_sub_kegiatan,
+      sub_bidang_opd: s.sub_bidang_opd,
+      nama_opd: s.nama_opd,
+      nama_bidang_opd: s.nama_bidang_opd,
       kegiatan: s.kegiatan
         ? {
             id: s.kegiatan.id,
@@ -207,6 +315,7 @@ exports.update = async (req, res) => {
 
     data.nama_sub_kegiatan = subKegiatan.nama_sub_kegiatan;
     data.kode_sub_kegiatan = subKegiatan.kode_sub_kegiatan;
+    mergeOpdFromSubKegiatan(data, subKegiatan);
 
     const [updated] = await RenstraSubkegiatan.update(data, { where: { id } });
     if (!updated)

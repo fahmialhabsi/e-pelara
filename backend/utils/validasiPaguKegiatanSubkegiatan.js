@@ -38,11 +38,20 @@ async function validasiPaguKegiatan(programId, excludeId = null) {
 }
 
 /**
- * Hitung total pagu subkegiatan per kegiatan
+ * Hitung total pagu subkegiatan per kegiatan.
+ * `kegiatanId` = FK ke `renstra_kegiatan.id` (sama di `renstra_tabel_subkegiatan.kegiatan_id`).
+ * Batas pagu per tahun ada di `renstra_tabel_kegiatan`, bukan di `renstra_kegiatan`.
  */
-async function validasiPaguSubkegiatan(kegiatanId, excludeId = null) {
+async function validasiPaguSubkegiatan(
+  kegiatanId,
+  excludeId = null,
+  programId = null
+) {
   const where = { kegiatan_id: kegiatanId };
   if (excludeId) where.id = { [Op.ne]: excludeId };
+  if (programId != null && String(programId).trim() !== "") {
+    where.program_id = programId;
+  }
 
   const subkegiatan = await RenstraTabelSubkegiatan.findAll({ where });
   const totalPagu = {};
@@ -55,7 +64,21 @@ async function validasiPaguSubkegiatan(kegiatanId, excludeId = null) {
     );
   }
 
-  const kegiatan = await RenstraKegiatan.findByPk(kegiatanId);
+  const tkWhere = { kegiatan_id: kegiatanId };
+  if (programId != null && String(programId).trim() !== "") {
+    tkWhere.program_id = programId;
+  }
+  let tabelKegiatan = await RenstraTabelKegiatan.findOne({ where: tkWhere });
+  if (!tabelKegiatan && tkWhere.program_id != null) {
+    tabelKegiatan = await RenstraTabelKegiatan.findOne({
+      where: { kegiatan_id: kegiatanId },
+    });
+  }
+
+  const kegiatan = tabelKegiatan
+    ? tabelKegiatan.toJSON()
+    : (await RenstraKegiatan.findByPk(kegiatanId))?.toJSON?.() ?? null;
+
   return { kegiatan, totalPagu };
 }
 
@@ -66,6 +89,11 @@ function generateWarningsUpdate(reqBody, totalPaguLain, program) {
   const warnings = {};
   let adaMelebihi = false;
   let adaKurang = false;
+
+  // Belum ada baris renstra_tabel_program untuk program ini → tidak ada cap pagu dari tabel
+  if (!program) {
+    return { warnings, adaMelebihi: false, adaKurang: false };
+  }
 
   for (let i = 1; i <= 6; i++) {
     const field = `pagu_tahun_${i}`;

@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { Op, ForeignKeyConstraintError } = require("sequelize");
@@ -249,6 +250,128 @@ const refreshToken = (req, res) => {
   });
 };
 
+const GENERIC_FORGOT_MESSAGE =
+  "Jika email terdaftar, permintaan reset telah diproses. Sistem ini belum mengirim email otomatis; gunakan tautan reset yang ditampilkan (mode pengembangan) atau reset lewat skrip admin.";
+
+/** Basis URL frontend untuk tautan reset: prioritas Origin browser, lalu env. */
+function resolvePublicFrontendBase(req) {
+  const origin = req.get("origin");
+  if (origin && /^https?:\/\//i.test(origin)) {
+    return origin.replace(/\/+$/, "");
+  }
+  const referer = req.get("referer");
+  if (referer && /^https?:\/\//i.test(referer)) {
+    try {
+      const u = new URL(referer);
+      return `${u.protocol}//${u.host}`.replace(/\/+$/, "");
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  return (
+    process.env.FRONTEND_URL ||
+    process.env.CLIENT_URL ||
+    "http://localhost:5173"
+  ).replace(/\/+$/, "");
+}
+
+/** Minta tautan reset (token berlaku 1 jam). Tanpa SMTP, di non-production respons menyertakan resetUrl. */
+const forgotPassword = async (req, res) => {
+  try {
+    const email = (req.body?.email || "").trim();
+    if (!email) {
+      return res.status(400).json({ message: "Email wajib diisi." });
+    }
+
+    const user = await User.findOne({ where: { email } });
+
+    let resetToken = null;
+    if (user) {
+      resetToken = crypto.randomBytes(32).toString("hex");
+      const expires = new Date(Date.now() + 60 * 60 * 1000);
+      await user.update({
+        password_reset_token: resetToken,
+        password_reset_expires: expires,
+      });
+    }
+
+    const payload = { message: GENERIC_FORGOT_MESSAGE };
+
+    if (user && resetToken && process.env.NODE_ENV !== "production") {
+      const base = resolvePublicFrontendBase(req);
+      payload.hint =
+        "Email tidak dikirim (belum ada SMTP). Buka tautan di bawah di browser yang sama dengan aplikasi. Jika port salah, salin token lalu buka /reset-password dari URL frontend Anda.";
+      payload.resetUrl = `${base.replace(/\/+$/, "")}/reset-password?token=${encodeURIComponent(
+        resetToken,
+      )}&email=${encodeURIComponent(email)}`;
+    }
+
+    return res.json(payload);
+  } catch (error) {
+    console.error("[AuthController forgotPassword]", error);
+    const body = { message: "Terjadi kesalahan saat memproses permintaan." };
+    if (process.env.NODE_ENV !== "production") {
+      body.detail = error?.message;
+      if (String(error?.message || "").includes("Unknown column")) {
+        body.hint =
+          "Jalankan migrasi DB: kolom password_reset_token / password_reset_expires belum ada di tabel users.";
+      }
+    }
+    return res.status(500).json(body);
+  }
+};
+
+/** Terapkan password baru dengan token dari lupa password. */
+const resetPasswordWithToken = async (req, res) => {
+  try {
+    const email = (req.body?.email || "").trim();
+    const token = (req.body?.token || "").trim();
+    const password = req.body?.password;
+
+    if (!email || !token) {
+      return res
+        .status(400)
+        .json({ message: "Email dan token reset wajib diisi." });
+    }
+    if (!password || String(password).length < 8) {
+      return res
+        .status(400)
+        .json({ message: "Password minimal 8 karakter." });
+    }
+
+    const user = await User.findOne({ where: { email } });
+    if (
+      !user ||
+      !user.password_reset_token ||
+      user.password_reset_token !== token
+    ) {
+      return res.status(400).json({
+        message: "Token tidak valid atau sudah digunakan. Minta reset ulang.",
+      });
+    }
+    if (
+      !user.password_reset_expires ||
+      new Date(user.password_reset_expires) <= new Date()
+    ) {
+      return res.status(400).json({
+        message: "Token kedaluwarsa. Silakan minta reset password lagi.",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(String(password), 10);
+    await user.update({
+      password: hashedPassword,
+      password_reset_token: null,
+      password_reset_expires: null,
+    });
+
+    return res.json({ message: "Password berhasil diubah. Silakan login." });
+  } catch (error) {
+    console.error("[AuthController resetPasswordWithToken]", error);
+    return res.status(500).json({ message: "Terjadi kesalahan di server." });
+  }
+};
+
 // Logout endpoint - menghapus cookie
 const logout = (req, res) => {
   res.clearCookie("token", {
@@ -264,4 +387,11 @@ const logout = (req, res) => {
   res.json({ message: "Logout berhasil, token dihapus." });
 };
 
-module.exports = { register, login, logout, refreshToken };
+module.exports = {
+  register,
+  login,
+  logout,
+  refreshToken,
+  forgotPassword,
+  resetPasswordWithToken,
+};

@@ -47,7 +47,7 @@ async function autoCloneKegiatanIfNeeded({ jenis_dokumen, tahun }) {
 
   while (true) {
     const batch = await Program.findAll({
-      where: { jenis_dokumen: "rpjmd", tahun, periode_id },
+      where: { jenis_dokumen: "rpjmd", tahun },
       attributes: [
         "kode_program",
         "opd_penanggung_jawab",

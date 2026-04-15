@@ -5,6 +5,7 @@ import { useAuth } from "../../../hooks/useAuth";
 import { login as loginService } from "../../../services/authService";
 import { Container, Form, Button, Card, Alert, Spinner } from "react-bootstrap";
 import { Link } from "react-router-dom";
+import PasswordInputWithToggle from "../components/PasswordInputWithToggle";
 
 const Login = () => {
   const [form, setForm] = useState({ email: "", password: "" });
@@ -72,8 +73,7 @@ const Login = () => {
           </Form.Group>
           <Form.Group controlId="formPassword" className="mb-4">
             <Form.Label>Password</Form.Label>
-            <Form.Control
-              type="password"
+            <PasswordInputWithToggle
               name="password"
               placeholder="Masukkan password"
               value={form.password}
@@ -91,6 +91,12 @@ const Login = () => {
             {loading ? <Spinner animation="border" size="sm" /> : "Masuk"}
           </Button>
           <div className="text-center mt-3">
+            <Link
+              to="/forgot-password"
+              className="text-decoration-none text-warning d-block mb-2 small"
+            >
+              Lupa password?
+            </Link>
             <span>Belum punya akun? </span>
             <Link to="/register" className="text-decoration-none text-info">
               Daftar di sini

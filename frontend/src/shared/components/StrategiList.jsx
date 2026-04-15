@@ -27,6 +27,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { usePeriodeAktif } from "@/features/rpjmd/hooks/usePeriodeAktif";
 import StrategiForm from "./StrategiForm";
+import {
+  extractListData,
+  extractListMeta,
+  normalizeListItems,
+} from "@/utils/apiResponse";
 
 export default function StrategiList() {
   const navigate = useNavigate();
@@ -62,8 +67,9 @@ export default function StrategiList() {
     const fetchPeriode = async () => {
       try {
         const res = await api.get("/periode-rpjmd");
-        setPeriodeList(res.data);
-        const valid = res.data.some(
+        const periodeData = extractListData(res.data);
+        setPeriodeList(periodeData);
+        const valid = periodeData.some(
           (p) =>
             Number(user?.tahun) >= Number(p.tahun_awal) &&
             Number(user?.tahun) <= Number(p.tahun_akhir)
@@ -85,7 +91,7 @@ export default function StrategiList() {
           tahun,
         },
       });
-      setSasaranList(res.data);
+      setSasaranList(normalizeListItems(res.data));
     } catch (err) {
       console.error("Gagal fetch sasaran:", err);
     }
@@ -104,13 +110,8 @@ export default function StrategiList() {
         params: { page, limit, search, jenis_dokumen: dokumen, tahun },
       });
 
-      const list = Array.isArray(res.data)
-        ? res.data
-        : Array.isArray(res.data.data)
-        ? res.data.data
-        : [];
-
-      const meta = res.data.meta || {};
+      const list = normalizeListItems(res.data);
+      const meta = extractListMeta(res.data);
 
       setStrategiList(list);
       setTotalPages(meta?.totalPages || 1);

@@ -249,6 +249,23 @@ const RenstraTabelProgramForm = ({ initialData = null, renstraAktif }) => {
             </Button>
           </div>
 
+          {programOptions.length === 0 && (
+            <div
+              style={{
+                background: "#fffbe6",
+                border: "1px solid #ffe58f",
+                borderRadius: 6,
+                padding: "10px 16px",
+                marginBottom: 16,
+                fontSize: 13,
+                color: "#614700",
+              }}
+            >
+              ⚠️ <strong>Belum ada Program Renstra.</strong> Tambahkan terlebih dahulu melalui{" "}
+              <strong>Aksi Input Data Renstra → Program</strong>, lalu kembali ke halaman ini.
+            </div>
+          )}
+
           <form onSubmit={handleSubmit(onSubmit)}>
             <SelectWithLabelValue
               name="program_id"

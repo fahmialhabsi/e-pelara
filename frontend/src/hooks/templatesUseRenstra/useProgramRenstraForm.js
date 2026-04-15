@@ -1,7 +1,7 @@
 // src/features/renstra/program/hooks/useProgramRenstraForm.js
 import * as Yup from "yup";
 import api from "@/services/api";
-import { useRenstraFormTemplate } from "@/hooks/templateUseRenstra/useRenstraFormTemplate";
+import { useRenstraFormTemplate } from "@/hooks/templatesUseRenstra/useRenstraFormTemplate";
 
 const getSchema = () =>
   Yup.object().shape({

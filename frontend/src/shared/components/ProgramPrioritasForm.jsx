@@ -14,6 +14,10 @@ import {
 import Select from "react-select";
 import useProgramFormLogic from "@/features/rpjmd/hooks/useProgramFormLogic";
 import { usePeriode } from "@/contexts/PeriodeContext";
+import {
+  formatMasterProgramLabel,
+} from "@/services/masterService";
+import { normalizeProgramKodeForDisplay } from "@/utils/programDisplayLabel";
 
 export default function ProgramPrioritasForm({
   existingData,
@@ -40,9 +44,9 @@ export default function ProgramPrioritasForm({
     filteredSasarans,
     filteredStrategis,
     filteredAras,
-    hierarkiAras,
     bidangOptions,
     opdEntries,
+    opdSelectOptions,
     handleChange,
     handleMultiChange,
     handleBidangChange,
@@ -53,6 +57,11 @@ export default function ProgramPrioritasForm({
     navigate,
     handleCancel,
     errorMsg,
+    masterPrograms,
+    masterProgramsLoading,
+    masterDatasetKey,
+    masterProgramsAllDatasets,
+    masterProgramsError,
   } = useProgramFormLogic(existingData, onSubmitSuccess, tahun_awal);
 
   const multiSelectValue = (selected) =>
@@ -76,32 +85,60 @@ export default function ProgramPrioritasForm({
     [filteredAras]
   );
 
-  console.log("📥 opdEntries:", opdEntries);
-  const mappedOpdOptions = useMemo(() => {
-    const arr = (opdEntries || []).map((opd) => ({
-      value: String(opd.id),
-      label: opd.nama_opd,
-    }));
-    console.log("📍 mappedOpdOptions:", arr);
-    return arr;
-  }, [opdEntries]);
-
-  console.log(
-    "🧩 programData.opd_penanggung_jawab:",
-    programData.opd_penanggung_jawab
-  );
-  console.log(
-    "🔍 OPD Matching Entry:",
-    mappedOpdOptions.find((o) => o.value === programData.opd_penanggung_jawab)
-  );
-
   const selectedOpdValue = useMemo(() => {
-    const sel = mappedOpdOptions.find(
-      (o) => String(o.value) === String(programData.opd_penanggung_jawab)
+    const opts = opdSelectOptions || [];
+    return (
+      opts.find(
+        (o) => String(o.value) === String(programData.opd_penanggung_jawab),
+      ) || null
     );
-    console.log("📌 Selected OPD:", sel);
-    return sel || null;
-  }, [mappedOpdOptions, programData.opd_penanggung_jawab]);
+  }, [opdSelectOptions, programData.opd_penanggung_jawab]);
+
+  const masterProgramOptions = useMemo(
+    () =>
+      (masterPrograms || []).map((p) => ({
+        value: String(p.id),
+        label: formatMasterProgramLabel(p),
+        kode: normalizeProgramKodeForDisplay(
+          p.kode_program_full || p.kode_program || "",
+        ),
+        nama: String(p.nama_program || "").trim(),
+      })),
+    [masterPrograms],
+  );
+
+  const selectedMasterOption = useMemo(() => {
+    const k = normalizeProgramKodeForDisplay(programData.kode_program || "");
+    const n = String(programData.nama_program || "").trim();
+    if (!k && !n) return null;
+    const byKode = masterProgramOptions.find((o) => o.kode === k);
+    if (byKode) return byKode;
+    if (n) {
+      return masterProgramOptions.find((o) => o.nama === n) || null;
+    }
+    return null;
+  }, [
+    masterProgramOptions,
+    programData.kode_program,
+    programData.nama_program,
+  ]);
+
+  const hasMasterList = masterProgramOptions.length > 0;
+  const kodeOutsideMaster =
+    hasMasterList &&
+    (Boolean(String(programData.kode_program || "").trim()) ||
+      Boolean(String(programData.nama_program || "").trim())) &&
+    !selectedMasterOption;
+
+  const applyMasterSelection = (opt) => {
+    if (!opt) {
+      handleChange({ target: { name: "kode_program", value: "" } });
+      handleChange({ target: { name: "nama_program", value: "" } });
+      return;
+    }
+    handleChange({ target: { name: "kode_program", value: opt.kode } });
+    handleChange({ target: { name: "nama_program", value: opt.nama } });
+  };
 
   if (periodeLoading || loading) {
     return (
@@ -118,31 +155,15 @@ export default function ProgramPrioritasForm({
     );
   }
 
-  console.log("🔽 Dropdown Sasaran – Options:", filteredSasarans);
-  console.log("🎯 programData.strategi_ids:", programData.strategi_ids);
-  console.log("📋 strategiOptions:", strategiOptions);
-
   return (
     <>
-      <>
-        {(isPelaksana || isPengawas) && (
-          <Alert variant="warning">
-            Anda tidak diizinkan menambah atau mengedit program. Anda hanya
-            diizinkan untuk Kegiatan, Sub Kegiatan, dan Indikator.
-          </Alert>
-        )}
+      {(isPelaksana || isPengawas) && (
+        <Alert variant="warning">
+          Anda tidak diizinkan menambah atau mengedit program. Anda hanya
+          diizinkan untuk Kegiatan, Sub Kegiatan, dan Indikator.
+        </Alert>
+      )}
 
-        <Card>
-          <Card.Body>
-            <Card.Title>
-              {isEdit ? "Edit" : "Tambah"} Program Prioritas
-            </Card.Title>
-            <Form onSubmit={handleSubmit}>
-              {/* ... semua form tetap dirender, walaupun nanti disable input jika perlu */}
-            </Form>
-          </Card.Body>
-        </Card>
-      </>
       <Breadcrumb className="mt-3">
         <Breadcrumb.Item onClick={() => navigate("/dashboard-rpjmd")}>
           Dashboard
@@ -270,26 +291,100 @@ export default function ProgramPrioritasForm({
               </Tab>
 
               <Tab eventKey="program" title="Data Program">
-                <Form.Group className="mb-3 mt-3">
-                  <Form.Label>Kode Program</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="kode_program"
-                    value={programData.kode_program || ""}
-                    onChange={handleChange}
-                    required
-                  />
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label>Nama Program</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="nama_program"
-                    value={programData.nama_program}
-                    onChange={handleChange}
-                    required
-                  />
-                </Form.Group>
+                {hasMasterList ? (
+                  <Form.Group className="mb-3 mt-3">
+                    <Form.Label>Pilih program (master referensi)</Form.Label>
+                    {masterProgramsLoading ? (
+                      <div className="text-muted small mb-2">
+                        <Spinner animation="border" size="sm" className="me-2" />
+                        Memuat daftar program…
+                      </div>
+                    ) : null}
+                    <Select
+                      classNamePrefix="ep-master-program"
+                      options={masterProgramOptions}
+                      value={selectedMasterOption}
+                      onChange={(opt) => applyMasterSelection(opt)}
+                      isClearable
+                      isSearchable
+                      placeholder="Cari kode atau nama program…"
+                      noOptionsMessage={() => "Tidak ada data"}
+                    />
+                    <Form.Text className="text-muted d-block mt-1">
+                      Data dari <code>/api/master/program</code>
+                      {masterProgramsAllDatasets
+                        ? " (semua dataset_key — impor Anda mungkin memakai key selain default)"
+                        : masterDatasetKey
+                          ? ` (datasetKey: ${masterDatasetKey})`
+                          : " (dataset default sekretariat_bidang_sheet2)"}
+                      . Pilih satu baris untuk mengisi kode dan nama.
+                    </Form.Text>
+                  </Form.Group>
+                ) : (
+                  !masterProgramsLoading && (
+                    <Alert variant="light" className="mt-3 border">
+                      Master program kosong atau tidak dapat dimuat.
+                      {masterProgramsError ? (
+                        <>
+                          {" "}
+                          <strong>Detail:</strong> {masterProgramsError}
+                        </>
+                      ) : null}{" "}
+                      Isi kode dan nama secara manual di bawah, jalankan impor
+                      Sheet2/CSV di backend, atau set{" "}
+                      <code>VITE_MASTER_DATASET_KEY</code> agar sama dengan{" "}
+                      <code>dataset_key</code> baris di tabel{" "}
+                      <code>master_program</code>.
+                    </Alert>
+                  )
+                )}
+
+                {kodeOutsideMaster ? (
+                  <Alert variant="warning" className="mb-3">
+                    Kode/nama program saat ini tidak cocok dengan baris master.
+                    Sesuaikan manual atau pilih dari daftar di atas.
+                  </Alert>
+                ) : null}
+
+                {hasMasterList &&
+                selectedMasterOption &&
+                !kodeOutsideMaster ? (
+                  <>
+                    <Form.Control
+                      type="hidden"
+                      name="kode_program"
+                      value={programData.kode_program || ""}
+                    />
+                    <Form.Control
+                      type="hidden"
+                      name="nama_program"
+                      value={programData.nama_program || ""}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Kode Program</Form.Label>
+                      <Form.Control
+                        type="text"
+                        name="kode_program"
+                        value={programData.kode_program || ""}
+                        onChange={handleChange}
+                        required
+                      />
+                    </Form.Group>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Nama Program</Form.Label>
+                      <Form.Control
+                        type="text"
+                        name="nama_program"
+                        value={programData.nama_program || ""}
+                        onChange={handleChange}
+                        required
+                      />
+                    </Form.Group>
+                  </>
+                )}
 
                 <Form.Group className="mb-3">
                   <Form.Label>Prioritas</Form.Label>
@@ -310,13 +405,13 @@ export default function ProgramPrioritasForm({
               <Tab eventKey="penanggungjawab" title="Penanggung Jawab">
                 <Form.Group className="mb-3 mt-3">
                   <Form.Label>OPD Penanggung Jawab</Form.Label>
-                  {mappedOpdOptions.length === 0 ? (
+                  {(opdSelectOptions || []).length === 0 ? (
                     <div className="text-muted fst-italic">
                       Memuat daftar OPD…
                     </div>
                   ) : (
                     <Select
-                      options={mappedOpdOptions}
+                      options={opdSelectOptions}
                       value={selectedOpdValue}
                       onChange={(sel) =>
                         handleChange({

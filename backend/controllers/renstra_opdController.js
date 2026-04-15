@@ -2,6 +2,9 @@
 const { RenstraOPD, OpdPenanggungJawab } = require("../models");
 const { Op } = require("sequelize");
 
+// Role yang boleh melihat data semua OPD (tidak dibatasi per-OPD)
+const ADMIN_ROLES = ["SUPER_ADMIN", "ADMINISTRATOR"];
+
 // ✅ CREATE
 exports.create = async (req, res) => {
   try {
@@ -60,16 +63,28 @@ exports.findAll = async (req, res) => {
       where.is_aktif = is_aktif === "true" ? 1 : 0;
     }
 
+    // Batasi data berdasarkan OPD user yang login.
+    // SUPER_ADMIN dan ADMINISTRATOR bisa melihat semua OPD.
+    const userRole = (req.user?.role || "").toUpperCase().replace(/\s+/g, "_");
+    const isAdmin = ADMIN_ROLES.includes(userRole);
+
+    // Filter include OPD berdasarkan nama_opd user (jika bukan admin)
+    const opdInclude = {
+      model: OpdPenanggungJawab,
+      as: "opd",
+      attributes: ["id", "nama_opd", "nama_bidang_opd"],
+    };
+
+    if (!isAdmin && req.user?.opd) {
+      // req.user.opd = nama OPD dari token (decoded.opd_penanggung_jawab)
+      opdInclude.where = { nama_opd: req.user.opd };
+      opdInclude.required = true; // INNER JOIN — hanya record yang cocok
+    }
+
     const data = await RenstraOPD.findAll({
       where,
-      include: [
-        {
-          model: OpdPenanggungJawab,
-          as: "opd",
-          attributes: ["id", "nama_opd", "nama_bidang_opd"],
-        },
-      ],
-      order: [["createdAt", "DESC"]],
+      include: [opdInclude],
+      order: [["created_at", "DESC"]],
     });
 
     res.json({ message: "success", data });
@@ -146,7 +161,26 @@ exports.update = async (req, res) => {
 // ✅ GET AKTIF
 exports.getAktif = async (req, res) => {
   try {
-    const data = await RenstraOPD.findOne({ where: { is_aktif: true } });
+    const userRole = (req.user?.role || "").toUpperCase().replace(/\s+/g, "_");
+    const isAdmin = ADMIN_ROLES.includes(userRole);
+
+    const includeOpd = {
+      model: OpdPenanggungJawab,
+      as: "opd",
+      attributes: ["id", "nama_opd", "nama_bidang_opd"],
+    };
+
+    // Batasi berdasarkan OPD user jika bukan admin
+    if (!isAdmin && req.user?.opd) {
+      includeOpd.where = { nama_opd: req.user.opd };
+      includeOpd.required = true;
+    }
+
+    const data = await RenstraOPD.findOne({
+      where: { is_aktif: true },
+      include: [includeOpd],
+    });
+
     if (!data) {
       return res.status(404).json({ message: "Renstra aktif tidak ditemukan" });
     }

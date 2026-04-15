@@ -15,6 +15,10 @@ const {
   getPeriodeFromTahun,
   getPeriodeAktif,
 } = require("../utils/periodeHelper");
+const {
+  sendValidationErrors,
+  fromSequelizeValidationError,
+} = require("../utils/validationErrorResponse");
 
 const applyDefaultsAndNormalize = (data, periode) => {
   if (!periode?.id && !data.periode_id) {
@@ -52,9 +56,12 @@ exports.create = async (req, res) => {
     const rows = Array.isArray(req.body) ? req.body : [req.body];
 
     if (!rows.every((r) => r.indikator_id)) {
-      return res
-        .status(400)
-        .json({ message: "Semua data harus memiliki indikator_id" });
+      return sendValidationErrors(
+        res,
+        400,
+        { indikator_id: ["Semua data harus memiliki indikator_id"] },
+        { message: "Semua data harus memiliki indikator_id" }
+      );
     }
 
     const tahun = rows[0]?.tahun || new Date().getFullYear();
@@ -76,11 +83,23 @@ exports.create = async (req, res) => {
     } catch (error) {
       await transaction.rollback();
       if (error.name === "SequelizeUniqueConstraintError") {
-        return res.status(409).json({
-          status: "error",
-          message:
-            "Data sudah ada untuk kombinasi indikator_id, kode_indikator, jenis_dokumen, dan tahun.",
-          fields: error.fields,
+        return sendValidationErrors(
+          res,
+          409,
+          {
+            kode_indikator: [
+              "Data sudah ada untuk kombinasi indikator_id, kode_indikator, jenis_dokumen, dan tahun.",
+            ],
+          },
+          {
+            message:
+              "Data sudah ada untuk kombinasi indikator_id, kode_indikator, jenis_dokumen, dan tahun.",
+          }
+        );
+      }
+      if (error.name === "SequelizeValidationError") {
+        return sendValidationErrors(res, 400, fromSequelizeValidationError(error), {
+          message: error.message,
         });
       }
       return res.status(500).json({ status: "error", message: error.message });
@@ -96,9 +115,12 @@ exports.bulkCreateDetail = async (req, res) => {
     const rows = req.body.rows;
 
     if (!indikatorId || !Array.isArray(rows) || rows.length === 0) {
-      return res
-        .status(400)
-        .json({ message: "indikatorId dan data rows wajib diisi." });
+      return sendValidationErrors(
+        res,
+        400,
+        { rows: ["indikatorId dan data rows wajib diisi."] },
+        { message: "indikatorId dan data rows wajib diisi." }
+      );
     }
 
     const tahun = rows[0]?.tahun || new Date().getFullYear();
@@ -113,11 +135,23 @@ exports.bulkCreateDetail = async (req, res) => {
     return res.status(201).json({ status: "success", data: created });
   } catch (err) {
     if (err.name === "SequelizeUniqueConstraintError") {
-      return res.status(409).json({
-        status: "error",
-        message:
-          "Data sudah ada untuk kombinasi kode_indikator, jenis_dokumen, dan tahun.",
-        fields: err.fields,
+      return sendValidationErrors(
+        res,
+        409,
+        {
+          kode_indikator: [
+            "Data sudah ada untuk kombinasi kode_indikator, jenis_dokumen, dan tahun.",
+          ],
+        },
+        {
+          message:
+            "Data sudah ada untuk kombinasi kode_indikator, jenis_dokumen, dan tahun.",
+        }
+      );
+    }
+    if (err.name === "SequelizeValidationError") {
+      return sendValidationErrors(res, 400, fromSequelizeValidationError(err), {
+        message: err.message,
       });
     }
     return res.status(500).json({ status: "error", message: err.message });
@@ -130,13 +164,17 @@ exports.findAll = async (req, res) => {
     tahun = "2025",
     page = 1,
     perPage = 50,
+    sasaran_id,
   } = req.query;
   await ensureClonedOnce(jenis_dokumen, tahun);
   const limit = Math.min(parseInt(perPage), MAX_LIMIT),
     offset = (page - 1) * limit;
 
+  const where = { jenis_dokumen, tahun };
+  if (sasaran_id) where.sasaran_id = sasaran_id;
+
   const { count, rows } = await IndikatorSasaran.findAndCountAll({
-    where: { jenis_dokumen, tahun },
+    where,
     include: [
       {
         model: IndikatorProgram,
@@ -303,6 +341,19 @@ exports.update = async (req, res) => {
     await indikatorSasaran.update(updateData);
     return res.status(200).json({ status: "success", data: indikatorSasaran });
   } catch (err) {
+    if (err.name === "SequelizeValidationError") {
+      return sendValidationErrors(res, 400, fromSequelizeValidationError(err), {
+        message: err.message,
+      });
+    }
+    if (err.name === "SequelizeUniqueConstraintError") {
+      return sendValidationErrors(
+        res,
+        409,
+        { kode_indikator: ["Kode indikator bentrok dengan data lain."] },
+        { message: err.message }
+      );
+    }
     return res.status(500).json({ status: "error", message: err.message });
   }
 };

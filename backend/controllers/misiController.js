@@ -1,6 +1,27 @@
 // controllers/misiController.js
 const { Misi, Visi } = require("../models");
 const { logActivity } = require("../services/auditService");
+const { autoCloneMisiIfNeeded } = require("../utils/autoCloneMisiIfNeeded");
+const { listResponse } = require("../utils/responseHelper");
+
+const dedupeMisis = (rows = []) => {
+  const seen = new Set();
+
+  return rows.filter((item) => {
+    const key = [
+      item.visi_id,
+      item.no_misi,
+      String(item.isi_misi || "").trim().toLowerCase(),
+    ].join("|");
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+};
 
 // Create new Misi
 const createMisi = async (req, res) => {
@@ -66,11 +87,29 @@ const createMisi = async (req, res) => {
 // Get all Misi
 const getMisis = async (req, res) => {
   try {
+    const { visi_id, jenis_dokumen, tahun, periode_id } = req.query;
+    const where = {};
+
+    if (jenis_dokumen && tahun) {
+      await autoCloneMisiIfNeeded({ jenis_dokumen, tahun });
+    }
+
+    if (visi_id) where.visi_id = visi_id;
+    if (jenis_dokumen) where.jenis_dokumen = jenis_dokumen;
+    if (tahun) where.tahun = String(tahun);
+    if (periode_id) where.periode_id = periode_id;
+
     const misis = await Misi.findAll({
+      where,
       include: [{ model: Visi, as: "visi", attributes: ["id", "isi_visi"] }],
-      order: [["no_misi", "ASC"]],
+      order: [["no_misi", "ASC"], ["id", "ASC"]],
     });
-    res.status(200).json(misis);
+    return listResponse(
+      res,
+      200,
+      "Daftar misi berhasil diambil",
+      dedupeMisis(misis),
+    );
   } catch (error) {
     console.error("Error fetching Misi:", error);
     res

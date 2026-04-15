@@ -2,6 +2,7 @@
 "use strict";
 const { OpdPenanggungJawab } = require("../models");
 const { sequelize } = require("../models");
+const { listResponse } = require("../utils/responseHelper");
 
 // Create new OpdPenanggungJawab
 exports.createOpdPenanggungJawab = async (req, res) => {
@@ -45,10 +46,17 @@ exports.getOpdPenanggungJawabs = async (req, res) => {
         order: [["nama_opd", "ASC"]],
       });
 
-      return res.status(200).json({
-        totalData: result.length,
-        data: result,
-      });
+      return listResponse(
+        res,
+        200,
+        "Daftar OPD penanggung jawab berhasil diambil",
+        result,
+        {
+          totalItems: result.length,
+          currentPage: 1,
+          totalPages: 1,
+        },
+      );
     }
 
     const offset = (page - 1) * limit;
@@ -67,12 +75,17 @@ exports.getOpdPenanggungJawabs = async (req, res) => {
       offset,
     });
 
-    res.status(200).json({
-      totalData: count,
-      totalPages: Math.ceil(count / limit),
-      currentPage: page,
-      data: rows,
-    });
+    return listResponse(
+      res,
+      200,
+      "Daftar OPD penanggung jawab berhasil diambil",
+      rows,
+      {
+        totalItems: count,
+        totalPages: Math.ceil(count / limit),
+        currentPage: page,
+      },
+    );
   } catch (error) {
     console.error(error);
     res
@@ -106,23 +119,42 @@ exports.getOpdPenanggungJawabById = async (req, res) => {
   }
 };
 
-// Ambil distinct nama_opd & nama_bidang_opd
+// Ambil dropdown OPD unik, dengan opsi sertakan bidang jika dibutuhkan
 exports.getDropdownOPD = async (req, res) => {
   try {
+    const { tahun, jenis_dokumen, include_bidang } = req.query;
+    const where = {};
+
+    if (tahun) where.tahun = tahun;
+    if (jenis_dokumen) where.jenis_dokumen = jenis_dokumen;
+
+    const withBidang = include_bidang === "true";
+    const attributes = [
+      [sequelize.fn("MIN", sequelize.col("id")), "id"],
+      "nama_opd",
+    ];
+    const group = ["nama_opd"];
+    const order = [["nama_opd", "ASC"]];
+
+    if (withBidang) {
+      attributes.push("nama_bidang_opd");
+      group.push("nama_bidang_opd");
+      order.push(["nama_bidang_opd", "ASC"]);
+    }
+
     const data = await OpdPenanggungJawab.findAll({
-      attributes: [
-        [sequelize.fn("MIN", sequelize.col("id")), "id"], // ambil ID terkecil per grup
-        "nama_opd",
-        "nama_bidang_opd",
-      ],
-      group: ["nama_opd", "nama_bidang_opd"],
-      order: [
-        ["nama_opd", "ASC"],
-        ["nama_bidang_opd", "ASC"],
-      ],
+      where,
+      attributes,
+      group,
+      order,
     });
 
-    res.status(200).json(data);
+    return listResponse(
+      res,
+      200,
+      "Dropdown OPD berhasil diambil",
+      data,
+    );
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Gagal mengambil data dropdown OPD" });

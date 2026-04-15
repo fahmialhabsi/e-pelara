@@ -6,6 +6,64 @@ const {
   RenstraProgram,
 } = require("../models");
 const { Op } = require("sequelize");
+const {
+  programWhereForRenstraOpdQuery,
+  renstraOpdSiblingIds,
+} = require("../helpers/renstraOpdProgramFilter");
+
+/**
+ * Pastikan setiap kegiatan RPJMD (tabel `kegiatan`) yang program_id-nya sama dengan
+ * renstra_program.rpjmd_program_id punya pasangan di `renstra_kegiatan`.
+ * Tanpa ini, master kegiatan + sub_kegiatan sudah ada di DB tetapi dropdown Renstra
+ * (yang membaca renstra_kegiatan) tetap kosong untuk baris tersebut.
+ */
+async function ensureRenstraKegiatanRowsForRenstraOpd(renstraOpdId) {
+  const programWhere = await programWhereForRenstraOpdQuery(renstraOpdId);
+  const programs = await RenstraProgram.findAll({
+    where: programWhere,
+    attributes: ["id", "renstra_id", "rpjmd_program_id"],
+  });
+
+  for (const p of programs) {
+    if (!p.rpjmd_program_id) continue;
+
+    const masters = await Kegiatan.unscoped().findAll({
+      where: { program_id: p.rpjmd_program_id },
+      attributes: [
+        "id",
+        "kode_kegiatan",
+        "nama_kegiatan",
+        "bidang_opd_penanggung_jawab",
+      ],
+    });
+
+    for (const k of masters) {
+      const byRpjmd = await RenstraKegiatan.findOne({
+        where: { program_id: p.id, rpjmd_kegiatan_id: k.id },
+      });
+      if (byRpjmd) continue;
+
+      const byKode = await RenstraKegiatan.findOne({
+        where: { program_id: p.id, kode_kegiatan: k.kode_kegiatan },
+      });
+      if (byKode) {
+        if (byKode.rpjmd_kegiatan_id == null) {
+          await byKode.update({ rpjmd_kegiatan_id: k.id });
+        }
+        continue;
+      }
+
+      await RenstraKegiatan.create({
+        program_id: p.id,
+        renstra_id: p.renstra_id ?? null,
+        rpjmd_kegiatan_id: k.id,
+        kode_kegiatan: k.kode_kegiatan,
+        nama_kegiatan: k.nama_kegiatan,
+        bidang_opd: k.bidang_opd_penanggung_jawab ?? "",
+      });
+    }
+  }
+}
 
 /**
  * Membuat Renstra Kegiatan baru (tanpa rpjmd_kegiatan_id)
@@ -100,10 +158,49 @@ exports.update = async (req, res) => {
  */
 exports.findAll = async (req, res) => {
   try {
-    const { renstra_id, tahun_mulai } = req.query;
+    const { renstra_id, tahun_mulai, program_id } = req.query;
 
     const whereClause = {};
-    if (renstra_id) whereClause.renstra_id = renstra_id;
+
+    if (program_id) {
+      whereClause.program_id = program_id;
+    }
+
+    if (renstra_id && !program_id) {
+      try {
+        await ensureRenstraKegiatanRowsForRenstraOpd(renstra_id);
+      } catch (e) {
+        console.error("ensureRenstraKegiatanRowsForRenstraOpd:", e.message);
+      }
+    }
+
+    // Konteks Renstra OPD aktif: gabungkan (1) kegiatan yang program_id-nya
+    // mengarah ke renstra_program milik sibling OPD, dan (2) kegiatan yang
+    // renstra_id barisnya menempel langsung ke salah satu sibling.
+    // Tanpa (2), baris yang program-nya "nyasar" / beda tautan tidak muncul di
+    // dropdown padahal masih tampil di daftar global / DB.
+    if (renstra_id && !program_id) {
+      const programWhere = await programWhereForRenstraOpdQuery(renstra_id);
+      const programs = await RenstraProgram.findAll({
+        where: programWhere,
+        attributes: ["id"],
+      });
+      const programIds = programs.map((p) => p.id);
+      const renstraOpdIds = await renstraOpdSiblingIds(renstra_id);
+
+      const orBranches = [];
+      if (programIds.length) {
+        orBranches.push({ program_id: { [Op.in]: programIds } });
+      }
+      if (renstraOpdIds.length) {
+        orBranches.push({ renstra_id: { [Op.in]: renstraOpdIds } });
+      }
+      if (orBranches.length === 1) {
+        Object.assign(whereClause, orBranches[0]);
+      } else if (orBranches.length > 1) {
+        whereClause[Op.or] = orBranches;
+      }
+    }
 
     const data = await RenstraKegiatan.findAll({
       where: whereClause,

@@ -1,22 +1,21 @@
 // src/features/rpjmd/pages/IndikatorTujuanEditPage.jsx
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import api from "@/services/api";
-import { Formik, Form } from "formik";
-import * as Yup from "yup";
-import StepTemplate from "@/shared/components/steps/StepTemplate";
-import { Spinner, Button, Alert } from "react-bootstrap";
-import useSetPreviewFields from "@/hooks/useSetPreviewFields";
-import useAutoIsiTahunDanTarget from "@/shared/components/hooks/useAutoIsiTahunDanTarget";
+import { Formik } from "formik";
+import { Spinner, Alert } from "react-bootstrap";
+import IndikatorSimpleEditFormBody from "@/features/rpjmd/components/IndikatorSimpleEditFormBody";
+import { editSchemaForLevel } from "@/validations/indikatorSchemas";
+import {
+  mapBackendErrorsToFormik,
+  pickBackendErrorMessage,
+} from "@/utils/mapBackendErrorsToFormik";
+import {
+  getIndikatorTujuanDetail,
+  updateIndikatorTujuan,
+} from "@/features/rpjmd/services/indikatorRpjmdApi";
+import { mapIndikatorTujuanDetailToEditForm } from "@/features/rpjmd/services/indikatorRpjmdMapper";
 
-const validationSchema = Yup.object().shape({
-  // Validasi field sesuai StepTemplate
-  tolok_ukur_kinerja: Yup.string().required(),
-  target_kinerja: Yup.string().required(),
-  definisi_operasional: Yup.string().required(),
-  metode_penghitungan: Yup.string().required(),
-  baseline: Yup.string().required(),
-});
+const validationSchema = editSchemaForLevel("tujuan");
 
 export default function IndikatorTujuanEditPage() {
   const { id } = useParams();
@@ -26,46 +25,10 @@ export default function IndikatorTujuanEditPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api
-      .get(`/indikator-tujuans/${id}`)
+    getIndikatorTujuanDetail(id)
       .then((res) => {
         const d = res.data;
-        setInitialValues({
-          indikator_id: d.id,
-          kode_indikator: d.kode_indikator,
-          nama_indikator: d.nama_indikator,
-          tipe_indikator: d.tipe_indikator || "",
-          jenis: d.jenis || "",
-          tolok_ukur_kinerja: d.tolok_ukur_kinerja || "",
-          target_kinerja: d.target_kinerja || "",
-          jenis_indikator: d.jenis_indikator || "",
-          kriteria_kuantitatif: d.kriteria_kuantitatif || "",
-          kriteria_kualitatif: d.kriteria_kualitatif || "",
-          satuan: d.satuan || "",
-          definisi_operasional: d.definisi_operasional || "",
-          metode_penghitungan: d.metode_penghitungan || "",
-          baseline: d.baseline || "",
-          target_tahun_1: d.target_tahun_1 || "",
-          target_tahun_2: d.target_tahun_2 || "",
-          target_tahun_3: d.target_tahun_3 || "",
-          target_tahun_4: d.target_tahun_4 || "",
-          target_tahun_5: d.target_tahun_5 || "",
-          capaian_tahun_1: d.capaian_tahun_1 || "",
-          capaian_tahun_2: d.capaian_tahun_2 || "",
-          capaian_tahun_3: d.capaian_tahun_3 || "",
-          capaian_tahun_4: d.capaian_tahun_4 || "",
-          capaian_tahun_5: d.capaian_tahun_5 || "",
-          sumber_data: d.sumber_data || "",
-          penanggung_jawab: d.penanggung_jawab || "",
-          keterangan: d.keterangan || "",
-          rekomendasi_ai: d.rekomendasi_ai || "",
-          tahun: d.tahun,
-          jenis_dokumen: d.jenis_dokumen,
-          misi_id: d.misi_id,
-          tujuan_id: d.tujuan_id,
-          no_tujuan: d.tujuan_id, // untuk binding Select tujuan
-          tujuan: [d], // preview list expects array
-        });
+        setInitialValues(mapIndikatorTujuanDetailToEditForm(d));
       })
       .catch((err) => {
         console.error(err);
@@ -83,45 +46,30 @@ export default function IndikatorTujuanEditPage() {
       <Formik
         initialValues={initialValues}
         validationSchema={validationSchema}
-        onSubmit={async (values, { setSubmitting }) => {
+        onSubmit={async (values, { setSubmitting, setErrors }) => {
+          setError("");
+          setErrors({});
           try {
-            await api.put(`/indikator-tujuans/${id}`, values);
+            await updateIndikatorTujuan(id, values);
             navigate("/dashboard-rpjmd");
           } catch (err) {
             console.error(err);
-            setError("Gagal menyimpan perubahan.");
+            const data = err?.response?.data;
+            setError(
+              pickBackendErrorMessage(data, "Gagal menyimpan perubahan.")
+            );
+            setErrors(mapBackendErrorsToFormik(data));
           } finally {
             setSubmitting(false);
           }
         }}
       >
-        {({ values, setFieldValue, isSubmitting }) => {
-          useSetPreviewFields(values, setFieldValue);
-          useAutoIsiTahunDanTarget(values, setFieldValue);
-
-          return (
-            <Form>
-              <StepTemplate
-                stepKey="tujuan"
-                options={{ penanggungJawab: [] }}
-                stepOptions={[]}
-                tabKey={4}
-                setTabKey={() => {}}
-                onSave={() => {}}
-              />
-
-              {error && <Alert variant="danger">{error}</Alert>}
-              <div className="mt-3 d-flex gap-2">
-                <Button variant="secondary" onClick={() => navigate(-1)}>
-                  Batal
-                </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  Simpan Perubahan
-                </Button>
-              </div>
-            </Form>
-          );
-        }}
+        <IndikatorSimpleEditFormBody
+          stepKey="tujuan"
+          stepTemplateOptions={{ penanggungJawab: [] }}
+          error={error}
+          navigate={navigate}
+        />
       </Formik>
     </div>
   );

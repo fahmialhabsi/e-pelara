@@ -21,6 +21,10 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import api from "../../services/api";
 import { usePeriode } from "@/contexts/PeriodeContext";
+import {
+  extractListData,
+  extractListMeta,
+} from "@/utils/apiResponse";
 import SubKegiatanNestedView from "../components/SubKegiatanNestedView";
 
 export default function SubKegiatanList() {
@@ -56,7 +60,8 @@ export default function SubKegiatanList() {
         },
       });
 
-      const mapped = res.data.data.data.map((item) => {
+      const rows = extractListData(res.data);
+      const mapped = rows.map((item) => {
         return {
           ...item,
           kode_program: item.kegiatan?.program?.kode_program ?? "-",
@@ -78,7 +83,14 @@ export default function SubKegiatanList() {
         };
       });
 
-      setOriginalData(mapped || []);
+      const meta = extractListMeta(res.data);
+      if (typeof meta.totalPages === "number" && meta.totalPages >= 1) {
+        setTotalPages(meta.totalPages);
+      } else {
+        setTotalPages(1);
+      }
+
+      setOriginalData(mapped);
       setError("");
     } catch (err) {
       console.error("❌ ERROR FETCHING SUB-KEGIATAN:", err);

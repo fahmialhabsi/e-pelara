@@ -1,15 +1,19 @@
 import React from "react";
+import { Link } from "react-router-dom";
 
 const RenjaSidebar = () => (
-  <aside className="w-64 bg-gray-100 h-screen p-4">
-    <h2 className="font-semibold mb-2">Navigasi RENJA</h2>
+  <aside className="w-64 h-screen bg-gray-100 p-4">
+    <h2 className="mb-2 font-semibold">Navigasi RENJA</h2>
     <ul className="space-y-2 text-sm">
-      <li><a href="#/renja/dashboard" className="text-blue-600">Dashboard</a></li>
-      <li><a href="#/renja/bab" className="text-blue-600">Editor BAB</a></li>
-      <li><a href="#/renja/program" className="text-blue-600">Program</a></li>
-      <li><a href="#/renja/kegiatan" className="text-blue-600">Kegiatan</a></li>
-      <li><a href="#/renja/subkegiatan" className="text-blue-600">Subkegiatan</a></li>
+      <li>
+        <Link to="/dashboard-renja" className="text-blue-600 hover:underline">
+          M029 - Daftar Renja
+        </Link>
+      </li>
     </ul>
+    <p className="mt-4 text-xs text-gray-500">
+      Modul list ini sudah terhubung workflow draft/submitted/approved/rejected.
+    </p>
   </aside>
 );
 

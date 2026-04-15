@@ -24,6 +24,7 @@ exports.getAll = async (req, res) => {
       search = "",
       jenis_dokumen,
       tahun,
+      periode_id,
     } = req.query;
 
     if (!jenis_dokumen || !tahun) {
@@ -34,23 +35,41 @@ exports.getAll = async (req, res) => {
 
     await ensureClonedOnce(jenis_dokumen, tahun);
 
-    const offset = (page - 1) * limit;
-    const where = {
-      [Op.and]: [
-        { jenis_dokumen },
-        { tahun },
-        {
-          [Op.or]: [
-            { kode_prioda: { [Op.like]: `%${search}%` } },
-            { uraian_prioda: { [Op.like]: `%${search}%` } },
-          ],
-        },
-      ],
-    };
+    // Izinkan limit besar (hingga 1000) agar form edit bisa memuat semua pilihan
+    const safeLimit = Math.min(Number(limit) || 10, 1000);
+    const offset = (Number(page) - 1) * safeLimit;
+    const normalizedDokumen = String(jenis_dokumen || "").toLowerCase();
+    const tahunVal =
+      typeof tahun === "number" ? tahun : parseInt(String(tahun), 10);
+    const q = String(search || "").trim();
+
+    const andParts = [
+      { jenis_dokumen: normalizedDokumen },
+      {
+        tahun: Number.isFinite(tahunVal) ? tahunVal : tahun,
+      },
+    ];
+    /**
+     * periode_id opsional: jika tidak dikirim, kembalikan semua baris
+     * untuk jenis_dokumen + tahun — mencegah list kosong saat form edit.
+     */
+    const pid = Number(periode_id);
+    if (periode_id !== undefined && periode_id !== "" && Number.isFinite(pid)) {
+      andParts.push({ periode_id: pid });
+    }
+    if (q) {
+      andParts.push({
+        [Op.or]: [
+          { kode_prioda: { [Op.like]: `%${q}%` } },
+          { uraian_prioda: { [Op.like]: `%${q}%` } },
+        ],
+      });
+    }
+    const where = { [Op.and]: andParts };
 
     const { rows, count } = await PrioritasDaerah.findAndCountAll({
       where,
-      limit: parseInt(limit, 10),
+      limit: safeLimit,
       offset,
       order: [["id", "ASC"]],
     });
@@ -60,8 +79,8 @@ exports.getAll = async (req, res) => {
       meta: {
         total: count,
         page: +page,
-        limit: +limit,
-        totalPages: Math.ceil(count / limit),
+        limit: safeLimit,
+        totalPages: Math.ceil(count / safeLimit),
       },
     });
   } catch (error) {

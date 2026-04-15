@@ -60,6 +60,14 @@ module.exports = (sequelize, DataTypes) => {
         onUpdate: "CASCADE",
         onDelete: "SET NULL",
       },
+      password_reset_token: {
+        type: DataTypes.STRING(128),
+        allowNull: true,
+      },
+      password_reset_expires: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
     },
     {
       sequelize,

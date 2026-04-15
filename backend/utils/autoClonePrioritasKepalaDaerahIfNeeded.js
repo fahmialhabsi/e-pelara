@@ -1,7 +1,5 @@
-// utils/autoClonePrioritasKepalaDaerahIfNeeded.js
-
 const { PrioritasGubernur } = require("../models");
-const { getPeriodeFromTahun } = require("./periodeHelper");
+const { getPeriodeIdFromTahun } = require("./periodeHelper");
 const redisClient = require("./redisClient");
 const { safeGet, safeSetEx } = require("./safeRedis");
 
@@ -14,7 +12,7 @@ async function autoClonePrioritasKepalaDaerahIfNeeded({
 }) {
   if (!jenis_dokumen || !tahun) return;
 
-  const periode_id = await getPeriodeFromTahun(tahun);
+  const periode_id = await getPeriodeIdFromTahun(tahun);
   if (!periode_id) {
     console.warn("Periode tidak ditemukan untuk tahun:", tahun);
     return;
@@ -22,7 +20,7 @@ async function autoClonePrioritasKepalaDaerahIfNeeded({
 
   const cacheKey = `prioritas_kepala_daerah:cloned:${periode_id}:${jenis_dokumen}:${tahun}`;
   if (await safeGet(redisClient, cacheKey)) {
-    console.log("🧊 Clone Prioritas Kepala Daerah dilewati (cached)");
+    console.log("Clone Prioritas Kepala Daerah dilewati (cached)");
     return;
   }
 
@@ -30,13 +28,13 @@ async function autoClonePrioritasKepalaDaerahIfNeeded({
     where: { jenis_dokumen, tahun, periode_id },
   });
   if (existing > 0) {
-    console.log("✅ Prioritas Kepala Daerah sudah ada, skip clone.");
+    console.log("Prioritas Kepala Daerah sudah ada, skip clone.");
     await safeSetEx(redisClient, cacheKey, 86400, "1");
     return;
   }
 
-  let offset = 0,
-    totalCloned = 0;
+  let offset = 0;
+  let totalCloned = 0;
   while (true) {
     const batch = await PrioritasGubernur.findAll({
       where: { tahun, periode_id, jenis_dokumen: "rpjmd" },
@@ -65,7 +63,7 @@ async function autoClonePrioritasKepalaDaerahIfNeeded({
   }
 
   await safeSetEx(redisClient, cacheKey, 86400, "1");
-  console.log(`✅ Prioritas Kepala Daerah cloned: ${totalCloned} items`);
+  console.log(`Prioritas Kepala Daerah cloned: ${totalCloned} items`);
 }
 
 module.exports = { autoClonePrioritasKepalaDaerahIfNeeded };

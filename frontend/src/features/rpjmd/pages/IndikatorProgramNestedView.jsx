@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "@/services/api";
+import { deleteIndikatorRpjmd } from "@/features/rpjmd/services/indikatorRpjmdApi";
 import { Button, Spinner, Table } from "react-bootstrap";
 
 const IndikatorProgramNestedView = ({
@@ -13,7 +13,7 @@ const IndikatorProgramNestedView = ({
 
   const handleDelete = async (item) => {
     try {
-      await api.delete(`/indikator-program/${item.id}`);
+      await deleteIndikatorRpjmd("indikator-program", item.id);
       if (refetch) refetch();
     } catch (err) {
       console.error("Gagal hapus:", err.message);

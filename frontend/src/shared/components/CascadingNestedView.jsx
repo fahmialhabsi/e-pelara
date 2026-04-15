@@ -1,501 +1,347 @@
-import React from "react";
-import { Accordion, Button, ListGroup } from "react-bootstrap";
+/**
+ * CascadingNestedView.jsx
+ *
+ * Tampilan hierarkis cascading yang bersih dan mudah dibaca.
+ * Dikelompokkan per Misi → Tujuan → Sasaran → Program/Kegiatan.
+ * Prioritas ditampilkan sebagai badge di setiap baris.
+ *
+ * Perbaikan vs versi lama:
+ * - Tidak ada 10-level nested accordion yang membingungkan
+ * - Setiap baris menampilkan info lengkap dengan ikon kontekstual
+ * - Tombol aksi lebih jelas dan konsisten
+ */
 
-export default function CascadingNestedView({
-  data = [],
-  onEdit,
-  onDelete,
-  onDetail,
-}) {
+import React, { useState } from "react";
+import {
+  Accordion,
+  Badge,
+  Button,
+  ListGroup,
+  OverlayTrigger,
+  Tooltip,
+} from "react-bootstrap";
+import {
+  BsPencilSquare,
+  BsTrash,
+  BsEye,
+  BsChevronDown,
+  BsChevronRight,
+} from "react-icons/bs";
+
+// ─── Helper label ─────────────────────────────────────────────────────────────
+
+function misiLabel(m) {
+  if (!m) return "—";
+  return [m.no_misi, m.isi_misi].filter(Boolean).join(" — ");
+}
+function tujuanLabel(t) {
+  if (!t) return "—";
+  return [t.no_tujuan, t.isi_tujuan].filter(Boolean).join(" — ");
+}
+function sasaranLabel(s) {
+  if (!s) return "—";
+  return [s.nomor, s.isi_sasaran].filter(Boolean).join(" — ");
+}
+function programLabel(p) {
+  if (!p) return "—";
+  return [p.kode_program, p.nama_program].filter(Boolean).join(" — ");
+}
+function kegiatanLabel(k) {
+  if (!k) return "—";
+  return [k.kode_kegiatan, k.nama_kegiatan].filter(Boolean).join(" — ");
+}
+function subKegiatanLabel(sk) {
+  if (!sk) return null;
+  return [sk.kode_sub_kegiatan, sk.nama_sub_kegiatan].filter(Boolean).join(" — ");
+}
+
+// ─── Sub-komponen ─────────────────────────────────────────────────────────────
+
+/**
+ * Row item: satu entri cascading (level kegiatan/sub-kegiatan)
+ */
+function CascadingItemRow({ item, onEdit, onDelete, onDetail }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const prioritasBadges = [
+    item.priorNasional && {
+      label: item.priorNasional.kode_prionas || "PN",
+      text: item.priorNasional.nama_prionas || item.priorNasional.uraian_prionas || "",
+      bg: "primary",
+    },
+    item.priorDaerah && {
+      label: item.priorDaerah.kode_prioda || "PD",
+      text: item.priorDaerah.nama_prioda || item.priorDaerah.uraian_prioda || "",
+      bg: "info",
+    },
+    item.priorKepda && {
+      label: item.priorKepda.kode_priogub || "PG",
+      text: item.priorKepda.nama_priogub || item.priorKepda.uraian_priogub || "",
+      bg: "warning",
+    },
+  ].filter(Boolean);
+
+  const strategiList = Array.isArray(item.strategis) ? item.strategis : [];
+  const arahList     = Array.isArray(item.arahKebijakans) ? item.arahKebijakans : [];
+
+  return (
+    <ListGroup.Item className="px-3 py-2">
+      <div className="d-flex justify-content-between align-items-start gap-2">
+        {/* Info utama */}
+        <div className="flex-grow-1">
+          {/* Program */}
+          <div className="fw-semibold text-dark mb-1">
+            <span className="text-muted me-1">📂</span>
+            {programLabel(item.program)}
+          </div>
+
+          {/* Kegiatan */}
+          <div className="small text-secondary mb-1">
+            <span className="me-1">📁</span>
+            <span className="fw-medium text-dark">Kegiatan:</span>{" "}
+            {kegiatanLabel(item.kegiatan)}
+          </div>
+
+          {/* Sub Kegiatan (jika ada) */}
+          {item.subKegiatan && subKegiatanLabel(item.subKegiatan) && (
+            <div className="small text-secondary mb-1">
+              <span className="me-1">📎</span>
+              <span className="fw-medium text-dark">Sub Kegiatan:</span>{" "}
+              {subKegiatanLabel(item.subKegiatan)}
+            </div>
+          )}
+
+          {/* Prioritas badges */}
+          {prioritasBadges.length > 0 && (
+            <div className="d-flex flex-wrap gap-1 mt-1 mb-1">
+              {prioritasBadges.map((b, i) => (
+                <OverlayTrigger
+                  key={i}
+                  placement="top"
+                  overlay={<Tooltip>{b.text || b.label}</Tooltip>}
+                >
+                  <Badge bg={b.bg} style={{ cursor: "help", fontSize: "0.7rem" }}>
+                    {b.label}
+                  </Badge>
+                </OverlayTrigger>
+              ))}
+            </div>
+          )}
+
+          {/* Ekspansi detail strategi & arah kebijakan */}
+          {(strategiList.length > 0 || arahList.length > 0) && (
+            <button
+              className="btn btn-link btn-sm p-0 text-muted"
+              style={{ fontSize: "0.75rem" }}
+              onClick={() => setExpanded((e) => !e)}
+            >
+              {expanded ? <BsChevronDown size={12} /> : <BsChevronRight size={12} />}
+              {" "}
+              {expanded ? "Sembunyikan" : "Lihat"} Strategi & Arah Kebijakan
+            </button>
+          )}
+
+          {expanded && (
+            <div className="mt-2 ps-2 border-start border-2">
+              {strategiList.length > 0 && (
+                <div className="small text-secondary mb-1">
+                  <span className="fw-medium text-dark">🧠 Strategi:</span>
+                  <ul className="mb-1 mt-0 ps-3">
+                    {strategiList.map((s) => (
+                      <li key={s.id}>
+                        <strong>{s.kode_strategi}</strong> – {s.deskripsi}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {arahList.length > 0 && (
+                <div className="small text-secondary">
+                  <span className="fw-medium text-dark">📖 Arah Kebijakan:</span>
+                  <ul className="mb-1 mt-0 ps-3">
+                    {arahList.map((a) => (
+                      <li key={a.id}>
+                        <strong>{a.kode_arah}</strong> – {a.deskripsi || a.nama_arah}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Tombol aksi */}
+        <div className="d-flex flex-column gap-1" style={{ minWidth: 80 }}>
+          {onDetail && (
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              onClick={() => onDetail(item)}
+              title="Lihat Detail"
+            >
+              <BsEye />
+            </Button>
+          )}
+          {onEdit && (
+            <Button
+              variant="outline-primary"
+              size="sm"
+              onClick={() => onEdit(item)}
+              title="Ubah"
+            >
+              <BsPencilSquare />
+            </Button>
+          )}
+          {onDelete && (
+            <Button
+              variant="outline-danger"
+              size="sm"
+              onClick={() => onDelete(item.id)}
+              title="Hapus"
+            >
+              <BsTrash />
+            </Button>
+          )}
+        </div>
+      </div>
+    </ListGroup.Item>
+  );
+}
+
+/**
+ * Grup Sasaran — menampilkan daftar item di bawah satu sasaran
+ */
+function SasaranGroup({ sasaranKey, items, onEdit, onDelete, onDetail, eventKey }) {
+  return (
+    <Accordion.Item eventKey={eventKey}>
+      <Accordion.Header>
+        <span className="me-2">🎯</span>
+        <span className="fw-medium">{sasaranKey}</span>
+        <Badge bg="light" text="dark" className="ms-2 border">
+          {items.length} kegiatan
+        </Badge>
+      </Accordion.Header>
+      <Accordion.Body className="p-0">
+        <ListGroup variant="flush">
+          {items.map((it) => (
+            <CascadingItemRow
+              key={it.id}
+              item={it}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onDetail={onDetail}
+            />
+          ))}
+        </ListGroup>
+      </Accordion.Body>
+    </Accordion.Item>
+  );
+}
+
+/**
+ * Grup Tujuan — menampilkan sasaran-sasaran di bawah satu tujuan
+ */
+function TujuanGroup({ tujuanKey, sasaranMap, onEdit, onDelete, onDetail, eventKey }) {
+  const totalItems = Object.values(sasaranMap).reduce((n, arr) => n + arr.length, 0);
+  return (
+    <Accordion.Item eventKey={eventKey}>
+      <Accordion.Header>
+        <span className="me-2">🏹</span>
+        <span className="fw-medium">{tujuanKey}</span>
+        <Badge bg="light" text="dark" className="ms-2 border">
+          {Object.keys(sasaranMap).length} sasaran · {totalItems} kegiatan
+        </Badge>
+      </Accordion.Header>
+      <Accordion.Body>
+        <Accordion>
+          {Object.entries(sasaranMap).map(([sk, items], ni) => (
+            <SasaranGroup
+              key={sk}
+              sasaranKey={sk}
+              items={items}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onDetail={onDetail}
+              eventKey={`ss-${ni}`}
+            />
+          ))}
+        </Accordion>
+      </Accordion.Body>
+    </Accordion.Item>
+  );
+}
+
+// ─── Komponen utama ──────────────────────────────────────────────────────────
+
+export default function CascadingNestedView({ data = [], onEdit, onDelete, onDetail }) {
   if (!data || data.length === 0) {
-    return <p className="text-muted">Belum ada data cascading.</p>;
+    return (
+      <div className="text-center text-muted py-4">
+        <div style={{ fontSize: "2rem" }}>📋</div>
+        <p className="mb-0">Belum ada data cascading untuk dokumen dan tahun ini.</p>
+        <small>Klik <strong>Tambah Cascading</strong> untuk mulai mengisi data.</small>
+      </div>
+    );
   }
 
+  /**
+   * Struktur pengelompokan:
+   * misiKey → tujuanKey → sasaranKey → [ items ]
+   */
   const grouped = {};
 
   data.forEach((item) => {
-    console.log("🧪 item.strategis:", item.strategis);
+    const misiKey    = item.misi
+      ? misiLabel(item.misi)
+      : "— Misi Tidak Diketahui";
+    const tujuanKey  = item.tujuan
+      ? tujuanLabel(item.tujuan)
+      : "— Tujuan Tidak Diketahui";
+    const sasaranKey = item.sasaran
+      ? sasaranLabel(item.sasaran)
+      : "— Sasaran Tidak Diketahui";
 
-    const misi = item.misi ?? { no_misi: "-", isi_misi: "Tidak Ada Misi" };
-    const priorNasional = item.priorNasional ?? {
-      kode_prionas: "-",
-      nama_prionas: "Tidak Ada Prioritas Nasional",
-    };
-    const priorDaerah = item.priorDaerah ?? {
-      kode_prioda: "-",
-      nama_prioda: "Tidak Ada Prioritas Daerah",
-    };
-    const priorKepda = item.priorKepda ?? {
-      kode_priogub: "-",
-      nama_priogub: "Tidak Ada Prioritas Gubernur",
-    };
-    const tujuan = item.tujuan ?? {
-      no_tujuan: "-",
-      isi_tujuan: "Tidak Ada Tujuan",
-    };
-    const sasaran = item.sasaran ?? {
-      nomor: "-",
-      isi_sasaran: "Tidak Ada Sasaran",
-    };
-    const strategi =
-      Array.isArray(item.strategis) && item.strategis.length
-        ? item.strategis
-            .map((s) => `${s.kode_strategi} - ${s.deskripsi}`)
-            .join(", ")
-        : "Tidak Ada Strategi";
-
-    const arahKebijakan =
-      Array.isArray(item.arahKebijakans) && item.arahKebijakans.length
-        ? item.arahKebijakans
-            .map((a) => `${a.kode_arah} - ${a.deskripsi || a.nama_arah}`)
-            .join(", ")
-        : "Tidak Ada Arah Kebijakan";
-
-    const program = item.program ?? {
-      kode_program: "-",
-      nama_program: "Tidak Ada Program",
-    };
-    const kegiatan = item.kegiatan ?? {
-      kode_kegiatan: "-",
-      nama_kegiatan: "Tidak Ada Kegiatan",
-    };
-
-    const key1 = `${misi.no_misi} - ${misi.isi_misi}`;
-    const key2 = `${priorNasional.kode_prionas} - ${priorNasional.nama_prionas}`;
-    const key3 = `${priorDaerah.kode_prioda} - ${priorDaerah.nama_prioda}`;
-    const key4 = `${priorKepda.kode_priogub} - ${priorKepda.nama_priogub}`;
-    const key5 = `${tujuan.no_tujuan} - ${tujuan.isi_tujuan}`;
-    const key6 = `${sasaran.nomor} - ${sasaran.isi_sasaran}`;
-    const key7 = strategi;
-    const key8 = arahKebijakan;
-    const key9 = `${program.kode_program} - ${program.nama_program}`;
-    const key10 = `${kegiatan.kode_kegiatan} - ${kegiatan.nama_kegiatan}`;
-
-    grouped[key1] = grouped[key1] || {};
-    grouped[key1][key2] = grouped[key1][key2] || {};
-    grouped[key1][key2][key3] = grouped[key1][key2][key3] || {};
-    grouped[key1][key2][key3][key4] = grouped[key1][key2][key3][key4] || {};
-    grouped[key1][key2][key3][key4][key5] =
-      grouped[key1][key2][key3][key4][key5] || {};
-    grouped[key1][key2][key3][key4][key5][key6] =
-      grouped[key1][key2][key3][key4][key5][key6] || {};
-    grouped[key1][key2][key3][key4][key5][key6][key7] =
-      grouped[key1][key2][key3][key4][key5][key6][key7] || {};
-    grouped[key1][key2][key3][key4][key5][key6][key7][key8] =
-      grouped[key1][key2][key3][key4][key5][key6][key7][key8] || {};
-    grouped[key1][key2][key3][key4][key5][key6][key7][key8][key9] =
-      grouped[key1][key2][key3][key4][key5][key6][key7][key8][key9] || {};
-    grouped[key1][key2][key3][key4][key5][key6][key7][key8][key9][key10] =
-      grouped[key1][key2][key3][key4][key5][key6][key7][key8][key9][key10] ||
-      [];
-
-    grouped[key1][key2][key3][key4][key5][key6][key7][key8][key9][key10].push(
-      item
-    );
+    grouped[misiKey] = grouped[misiKey] || {};
+    grouped[misiKey][tujuanKey] = grouped[misiKey][tujuanKey] || {};
+    grouped[misiKey][tujuanKey][sasaranKey] = grouped[misiKey][tujuanKey][sasaranKey] || [];
+    grouped[misiKey][tujuanKey][sasaranKey].push(item);
   });
 
   return (
-    <Accordion defaultActiveKey="0" alwaysOpen>
-      {Object.entries(grouped).map(([misi, pnMap], i) => (
-        <Accordion.Item eventKey={i.toString()} key={misi}>
-          <Accordion.Header>{misi}</Accordion.Header>
-          <Accordion.Body>
-            <Accordion alwaysOpen>
-              {Object.entries(pnMap).map(([pn, pdMap], j) => (
-                <Accordion.Item eventKey={`pn-${j}`} key={pn}>
-                  <Accordion.Header>{pn}</Accordion.Header>
-                  <Accordion.Body>
-                    <Accordion alwaysOpen>
-                      {Object.entries(pdMap).map(([pd, pkMap], k) => (
-                        <Accordion.Item eventKey={`pd-${k}`} key={pd}>
-                          <Accordion.Header>{pd}</Accordion.Header>
-                          <Accordion.Body>
-                            <Accordion alwaysOpen>
-                              {Object.entries(pkMap).map(([pk, tjMap], l) => (
-                                <Accordion.Item eventKey={`pk-${l}`} key={pk}>
-                                  <Accordion.Header>{pk}</Accordion.Header>
-                                  <Accordion.Body>
-                                    <Accordion alwaysOpen>
-                                      {Object.entries(tjMap).map(
-                                        ([tj, ssMap], m) => (
-                                          <Accordion.Item
-                                            eventKey={`tj-${m}`}
-                                            key={tj}
-                                          >
-                                            <Accordion.Header>
-                                              {tj}
-                                            </Accordion.Header>
-                                            <Accordion.Body>
-                                              <Accordion alwaysOpen>
-                                                {Object.entries(ssMap).map(
-                                                  ([ss, stMap], n) => (
-                                                    <Accordion.Item
-                                                      eventKey={`ss-${n}`}
-                                                      key={ss}
-                                                    >
-                                                      <Accordion.Header>
-                                                        {ss}
-                                                      </Accordion.Header>
-                                                      <Accordion.Body>
-                                                        <Accordion alwaysOpen>
-                                                          {Object.entries(
-                                                            stMap
-                                                          ).map(
-                                                            (
-                                                              [st, akMap],
-                                                              o
-                                                            ) => (
-                                                              <Accordion.Item
-                                                                eventKey={`st-${o}`}
-                                                                key={st}
-                                                              >
-                                                                <Accordion.Header>
-                                                                  {st}
-                                                                </Accordion.Header>
-                                                                <Accordion.Body>
-                                                                  <Accordion
-                                                                    alwaysOpen
-                                                                  >
-                                                                    {Object.entries(
-                                                                      akMap
-                                                                    ).map(
-                                                                      (
-                                                                        [
-                                                                          ak,
-                                                                          prMap,
-                                                                        ],
-                                                                        p
-                                                                      ) => (
-                                                                        <Accordion.Item
-                                                                          eventKey={`ak-${p}`}
-                                                                          key={
-                                                                            ak
-                                                                          }
-                                                                        >
-                                                                          <Accordion.Header>
-                                                                            {ak}
-                                                                          </Accordion.Header>
-                                                                          <Accordion.Body>
-                                                                            <Accordion
-                                                                              alwaysOpen
-                                                                            >
-                                                                              {Object.entries(
-                                                                                prMap
-                                                                              ).map(
-                                                                                (
-                                                                                  [
-                                                                                    pr,
-                                                                                    kgMap,
-                                                                                  ],
-                                                                                  q
-                                                                                ) => (
-                                                                                  <Accordion.Item
-                                                                                    eventKey={`pr-${q}`}
-                                                                                    key={
-                                                                                      pr
-                                                                                    }
-                                                                                  >
-                                                                                    <Accordion.Header>
-                                                                                      {
-                                                                                        pr
-                                                                                      }
-                                                                                    </Accordion.Header>
-                                                                                    <Accordion.Body>
-                                                                                      <Accordion
-                                                                                        alwaysOpen
-                                                                                      >
-                                                                                        {Object.entries(
-                                                                                          kgMap
-                                                                                        ).map(
-                                                                                          (
-                                                                                            [
-                                                                                              kg,
-                                                                                              items,
-                                                                                            ],
-                                                                                            r
-                                                                                          ) => (
-                                                                                            <Accordion.Item
-                                                                                              eventKey={`kg-${r}`}
-                                                                                              key={
-                                                                                                kg
-                                                                                              }
-                                                                                            >
-                                                                                              <Accordion.Header>
-                                                                                                {
-                                                                                                  kg
-                                                                                                }
-                                                                                              </Accordion.Header>
-                                                                                              <Accordion.Body>
-                                                                                                <ListGroup>
-                                                                                                  {items.map(
-                                                                                                    (
-                                                                                                      it
-                                                                                                    ) => (
-                                                                                                      <ListGroup.Item
-                                                                                                        key={
-                                                                                                          it.id
-                                                                                                        }
-                                                                                                        className="d-flex justify-content-between align-items-start"
-                                                                                                      >
-                                                                                                        <div>
-                                                                                                          <strong className="text-primary">
-                                                                                                            {it.kode_sub_kegiatan ||
-                                                                                                              it.id}
-                                                                                                          </strong>
-
-                                                                                                          <div className="mt-2 text-muted small">
-                                                                                                            <span className="fw-semibold">
-                                                                                                              🎯
-                                                                                                              Misi:
-                                                                                                            </span>{" "}
-                                                                                                            {it
-                                                                                                              ?.misi
-                                                                                                              ?.isi_misi ||
-                                                                                                              "-"}
-                                                                                                          </div>
-                                                                                                          <div className="text-muted small">
-                                                                                                            <span className="fw-semibold">
-                                                                                                              📌
-                                                                                                              Prioritas
-                                                                                                              Nasional:
-                                                                                                            </span>{" "}
-                                                                                                            {it
-                                                                                                              ?.priorNasional
-                                                                                                              ?.nama_prionas ||
-                                                                                                              "-"}
-                                                                                                          </div>
-                                                                                                          <div className="text-muted small">
-                                                                                                            <span className="fw-semibold">
-                                                                                                              🏞️
-                                                                                                              Prioritas
-                                                                                                              Daerah:
-                                                                                                            </span>{" "}
-                                                                                                            {it
-                                                                                                              ?.priorDaerah
-                                                                                                              ?.nama_prioda ||
-                                                                                                              "-"}
-                                                                                                          </div>
-                                                                                                          <div className="text-muted small">
-                                                                                                            <span className="fw-semibold">
-                                                                                                              🏛️
-                                                                                                              Prioritas
-                                                                                                              Gubernur:
-                                                                                                            </span>{" "}
-                                                                                                            {it
-                                                                                                              ?.priorKepda
-                                                                                                              ?.nama_priogub ||
-                                                                                                              "-"}
-                                                                                                          </div>
-                                                                                                          <div className="text-muted small">
-                                                                                                            <span className="fw-semibold">
-                                                                                                              🎯
-                                                                                                              Tujuan:
-                                                                                                            </span>{" "}
-                                                                                                            {it
-                                                                                                              ?.tujuan
-                                                                                                              ?.isi_tujuan ||
-                                                                                                              "-"}
-                                                                                                          </div>
-                                                                                                          <div className="text-muted small">
-                                                                                                            <span className="fw-semibold">
-                                                                                                              🎯
-                                                                                                              Sasaran:
-                                                                                                            </span>{" "}
-                                                                                                            {it
-                                                                                                              ?.sasaran
-                                                                                                              ?.isi_sasaran ||
-                                                                                                              "-"}
-                                                                                                          </div>
-                                                                                                          <div className="text-muted small">
-                                                                                                            <span className="fw-semibold">
-                                                                                                              🧠
-                                                                                                              Strategi:
-                                                                                                            </span>
-                                                                                                            <ul className="mb-1">
-                                                                                                              {Array.isArray(
-                                                                                                                it.strategis
-                                                                                                              ) &&
-                                                                                                              it
-                                                                                                                .strategis
-                                                                                                                .length >
-                                                                                                                0 ? (
-                                                                                                                it.strategis.map(
-                                                                                                                  (
-                                                                                                                    s
-                                                                                                                  ) => (
-                                                                                                                    <li
-                                                                                                                      key={
-                                                                                                                        s.id
-                                                                                                                      }
-                                                                                                                    >
-                                                                                                                      <strong>
-                                                                                                                        {
-                                                                                                                          s.kode_strategi
-                                                                                                                        }
-                                                                                                                      </strong>{" "}
-                                                                                                                      –{" "}
-                                                                                                                      {
-                                                                                                                        s.deskripsi
-                                                                                                                      }
-                                                                                                                    </li>
-                                                                                                                  )
-                                                                                                                )
-                                                                                                              ) : (
-                                                                                                                <li>
-                                                                                                                  -
-                                                                                                                </li>
-                                                                                                              )}
-                                                                                                            </ul>
-                                                                                                          </div>
-
-                                                                                                          <div className="text-muted small">
-                                                                                                            <span className="fw-semibold">
-                                                                                                              📖
-                                                                                                              Arah
-                                                                                                              Kebijakan:
-                                                                                                            </span>
-                                                                                                            <ul className="mb-1">
-                                                                                                              {Array.isArray(
-                                                                                                                it.arahKebijakans
-                                                                                                              ) &&
-                                                                                                              it
-                                                                                                                .arahKebijakans
-                                                                                                                .length >
-                                                                                                                0 ? (
-                                                                                                                it.arahKebijakans.map(
-                                                                                                                  (
-                                                                                                                    a
-                                                                                                                  ) => (
-                                                                                                                    <li
-                                                                                                                      key={
-                                                                                                                        a.id
-                                                                                                                      }
-                                                                                                                    >
-                                                                                                                      <strong>
-                                                                                                                        {
-                                                                                                                          a.kode_arah
-                                                                                                                        }
-                                                                                                                      </strong>{" "}
-                                                                                                                      –{" "}
-                                                                                                                      {a.deskripsi ||
-                                                                                                                        a.nama_arah}
-                                                                                                                    </li>
-                                                                                                                  )
-                                                                                                                )
-                                                                                                              ) : (
-                                                                                                                <li>
-                                                                                                                  -
-                                                                                                                </li>
-                                                                                                              )}
-                                                                                                            </ul>
-                                                                                                          </div>
-                                                                                                          <div className="text-muted small">
-                                                                                                            <span className="fw-semibold">
-                                                                                                              📂
-                                                                                                              Program:
-                                                                                                            </span>{" "}
-                                                                                                            {it
-                                                                                                              ?.program
-                                                                                                              ?.nama_program ||
-                                                                                                              "-"}
-                                                                                                          </div>
-                                                                                                          <div className="text-muted small">
-                                                                                                            <span className="fw-semibold">
-                                                                                                              📁
-                                                                                                              Kegiatan:
-                                                                                                            </span>{" "}
-                                                                                                            {it
-                                                                                                              ?.kegiatan
-                                                                                                              ?.nama_kegiatan ||
-                                                                                                              "-"}
-                                                                                                          </div>
-                                                                                                        </div>
-
-                                                                                                        <div className="ms-2 d-flex flex-column gap-2">
-                                                                                                          <Button
-                                                                                                            variant="outline-primary"
-                                                                                                            size="sm"
-                                                                                                            onClick={() =>
-                                                                                                              onEdit?.(
-                                                                                                                it
-                                                                                                              )
-                                                                                                            }
-                                                                                                          >
-                                                                                                            Ubah
-                                                                                                          </Button>
-                                                                                                          <Button
-                                                                                                            variant="outline-danger"
-                                                                                                            size="sm"
-                                                                                                            onClick={() =>
-                                                                                                              onDelete?.(
-                                                                                                                it.id
-                                                                                                              )
-                                                                                                            }
-                                                                                                          >
-                                                                                                            Hapus
-                                                                                                          </Button>
-                                                                                                        </div>
-                                                                                                        <Button
-                                                                                                          size="sm"
-                                                                                                          variant="outline-primary"
-                                                                                                          onClick={() =>
-                                                                                                            onDetail?.(
-                                                                                                              it
-                                                                                                            )
-                                                                                                          }
-                                                                                                        >
-                                                                                                          Lihat
-                                                                                                          Detail
-                                                                                                        </Button>
-                                                                                                      </ListGroup.Item>
-                                                                                                    )
-                                                                                                  )}
-                                                                                                </ListGroup>
-                                                                                              </Accordion.Body>
-                                                                                            </Accordion.Item>
-                                                                                          )
-                                                                                        )}
-                                                                                      </Accordion>
-                                                                                    </Accordion.Body>
-                                                                                  </Accordion.Item>
-                                                                                )
-                                                                              )}
-                                                                            </Accordion>
-                                                                          </Accordion.Body>
-                                                                        </Accordion.Item>
-                                                                      )
-                                                                    )}
-                                                                  </Accordion>
-                                                                </Accordion.Body>
-                                                              </Accordion.Item>
-                                                            )
-                                                          )}
-                                                        </Accordion>
-                                                      </Accordion.Body>
-                                                    </Accordion.Item>
-                                                  )
-                                                )}
-                                              </Accordion>
-                                            </Accordion.Body>
-                                          </Accordion.Item>
-                                        )
-                                      )}
-                                    </Accordion>
-                                  </Accordion.Body>
-                                </Accordion.Item>
-                              ))}
-                            </Accordion>
-                          </Accordion.Body>
-                        </Accordion.Item>
-                      ))}
-                    </Accordion>
-                  </Accordion.Body>
-                </Accordion.Item>
-              ))}
-            </Accordion>
-          </Accordion.Body>
-        </Accordion.Item>
-      ))}
+    <Accordion defaultActiveKey="0">
+      {Object.entries(grouped).map(([misiKey, tujuanMap], mi) => {
+        const totalItems = Object.values(tujuanMap).reduce(
+          (n, ss) => n + Object.values(ss).reduce((m, arr) => m + arr.length, 0),
+          0
+        );
+        return (
+          <Accordion.Item eventKey={mi.toString()} key={misiKey}>
+            <Accordion.Header>
+              <span className="me-2">🎖️</span>
+              <span className="fw-semibold">{misiKey}</span>
+              <Badge bg="primary" className="ms-2">
+                {Object.keys(tujuanMap).length} tujuan · {totalItems} kegiatan
+              </Badge>
+            </Accordion.Header>
+            <Accordion.Body>
+              <Accordion>
+                {Object.entries(tujuanMap).map(([tujuanKey, sasaranMap], ti) => (
+                  <TujuanGroup
+                    key={tujuanKey}
+                    tujuanKey={tujuanKey}
+                    sasaranMap={sasaranMap}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                    onDetail={onDetail}
+                    eventKey={`tj-${ti}`}
+                  />
+                ))}
+              </Accordion>
+            </Accordion.Body>
+          </Accordion.Item>
+        );
+      })}
     </Accordion>
   );
 }

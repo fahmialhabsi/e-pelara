@@ -13,6 +13,7 @@ import {
   Alert,
 } from "react-bootstrap";
 import api from "../../../services/api";
+import { extractSingleData, normalizeListItems } from "@/utils/apiResponse";
 
 const ReportRPJMDPage = () => {
   const [opds, setOpds] = useState([]);
@@ -27,7 +28,7 @@ const ReportRPJMDPage = () => {
     const fetchOpds = async () => {
       try {
         const res = await api.get("/opd-penanggung-jawab");
-        setOpds(res.data);
+        setOpds(normalizeListItems(res.data));
       } catch (err) {
         console.error(err);
         setError("Gagal memuat daftar OPD. Coba muat ulang.");
@@ -43,10 +44,11 @@ const ReportRPJMDPage = () => {
     setLoading(true);
     try {
       const res = await api.get(`/laporan/rpjmd?opdId=${opdId}&tahun=${year}`);
-      if (!res.data || !res.data.programs) {
+      const payload = extractSingleData(res.data);
+      if (!payload || !payload.programs) {
         setError("Data laporan tidak tersedia untuk OPD/tahun yang dipilih.");
       } else {
-        setReport(res.data);
+        setReport(payload);
       }
     } catch (err) {
       console.error(err);
@@ -195,7 +197,7 @@ const ReportRPJMDPage = () => {
                 <option value="">-- Pilih OPD --</option>
                 {opds.map((o) => (
                   <option key={o.id} value={o.id}>
-                    {o.nama}
+                    {o.nama_opd || o.nama || "-"}
                   </option>
                 ))}
               </Form.Control>
