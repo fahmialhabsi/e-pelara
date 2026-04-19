@@ -117,7 +117,7 @@ export default function IndikatorKhususNestedView({ data = {} }) {
                 </tr>
                 <tr>
                   <td colSpan={11}>
-                    <strong>Outcome:</strong> {row.jenis ?? "-"}
+                    <strong>Outcome:</strong> {row.indikator_kinerja || row.jenis || '-'}
                   </td>
                 </tr>
                 <tr>

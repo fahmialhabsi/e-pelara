@@ -19,6 +19,7 @@ const allowedFields = [
   "kode_indikator",
   "nama_indikator",
   "jenis",
+  "indikator_kinerja",
   "tolok_ukur_kinerja",
   "target_kinerja",
   "jenis_indikator",
@@ -64,6 +65,9 @@ async function sanitizeAndFill(row, overrides = {}) {
 
   if (!periode?.id) throw new Error("Periode tidak ditemukan");
   const data = filterAllowedFields(cleanRow, allowedFields);
+
+  if (data.indikator_kinerja && !data.jenis) data.jenis = data.indikator_kinerja;
+  if (data.jenis && !data.indikator_kinerja) data.indikator_kinerja = data.jenis;
 
   data.tipe_indikator = "Proses";
   data.periode_id = periode.id;
