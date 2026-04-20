@@ -37,6 +37,7 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "periode_id",
         as: "periodeRpjmd",
       });
+      this.belongsTo(models.Tenant, { foreignKey: "tenant_id", as: "tenant" });
     }
   }
 
@@ -76,6 +77,12 @@ module.exports = (sequelize, DataTypes) => {
           key: "id",
         },
       },
+      tenant_id: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: false,
+        defaultValue: 1,
+        references: { model: "tenants", key: "id" },
+      },
       kode_indikator: {
         type: DataTypes.STRING(100),
         allowNull: false,
@@ -89,6 +96,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
       jenis: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
+      indikator_kinerja: {
         type: DataTypes.TEXT,
         allowNull: true,
       },
@@ -193,6 +204,16 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false,
       },
+      /**
+       * Flag pemisah data referensi impor (PDF/Excel) vs data final wizard.
+       *   true  → baris ditulis oleh alur "Terapkan" impor (referensi/staging)
+       *   false → baris final yang disimpan pengguna via wizard "Simpan & Lanjut"
+       */
+      is_import_reference: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
     },
     {
       sequelize,
@@ -212,36 +233,52 @@ module.exports = (sequelize, DataTypes) => {
     }
   );
 
-  // Hooks
-  IndikatorTujuan.addHook("beforeCreate", async (instance) => {
+  // Hooks — pakai transaction + tujuan_id agar konsisten indeks unik & aman di dalam transaksi apply Excel
+  // Hanya blokir duplikat antar data FINAL (is_import_reference = false).
+  // Data referensi impor bebas di-upsert tanpa cek duplikat via hook ini.
+  IndikatorTujuan.addHook("beforeCreate", async (instance, options) => {
+    // Referensi impor: lewati cek duplikat — alur upsert sudah menangani sendiri
+    if (instance.is_import_reference) return;
+
+    const tx = options?.transaction;
     const exists = await IndikatorTujuan.findOne({
       where: {
         kode_indikator: instance.kode_indikator,
+        tujuan_id: instance.tujuan_id,
         jenis_dokumen: instance.jenis_dokumen,
         tahun: instance.tahun,
         periode_id: instance.periode_id,
+        is_import_reference: false,
       },
+      transaction: tx,
     });
     if (exists) {
       throw new Error(
-        "Data dengan kombinasi kode_indikator, jenis_dokumen, tahun, dan periode_id sudah ada. Silahkan periksa kembali."
+        "Data dengan kombinasi kode_indikator, tujuan_id, jenis_dokumen, dan tahun sudah ada untuk periode ini."
       );
     }
   });
 
-  IndikatorTujuan.addHook("beforeBulkCreate", async (instances) => {
+  IndikatorTujuan.addHook("beforeBulkCreate", async (instances, options) => {
+    const tx = options?.transaction;
     for (const instance of instances) {
+      // Referensi impor: lewati cek duplikat
+      if (instance.is_import_reference) continue;
+
       const exists = await IndikatorTujuan.findOne({
         where: {
           kode_indikator: instance.kode_indikator,
+          tujuan_id: instance.tujuan_id,
           jenis_dokumen: instance.jenis_dokumen,
           tahun: instance.tahun,
           periode_id: instance.periode_id,
+          is_import_reference: false,
         },
+        transaction: tx,
       });
       if (exists) {
         throw new Error(
-          `Data duplikat ditemukan: kode_indikator=${instance.kode_indikator}, tahun=${instance.tahun}, periode_id=${instance.periode_id}`
+          `Data duplikat: kode_indikator=${instance.kode_indikator}, tujuan_id=${instance.tujuan_id}, tahun=${instance.tahun}`
         );
       }
     }

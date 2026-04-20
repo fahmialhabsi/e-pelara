@@ -17,6 +17,7 @@ const {
   sendValidationErrors,
   fromSequelizeValidationError,
 } = require("../utils/validationErrorResponse");
+const { syncIndikatorKinerjaFromJenis } = require("../utils/syncIndikatorKinerjaFromJenis");
 
 const allowedFields = [
   "misi_id",
@@ -25,6 +26,7 @@ const allowedFields = [
   "nama_indikator",
   "tipe_indikator",
   "jenis",
+  "indikator_kinerja",
   "tolok_ukur_kinerja",
   "target_kinerja",
   "jenis_indikator",
@@ -102,7 +104,9 @@ async function sanitizeAndFill(row, overrides = {}) {
     data.tahun_akhir = tahunSekarang;
   }
 
-  return { ...data, ...overrides };
+  const merged = { ...data, ...overrides };
+  syncIndikatorKinerjaFromJenis(merged);
+  return merged;
 }
 
 async function getNextKode(req, res) {
@@ -149,6 +153,9 @@ async function getNextKode(req, res) {
 }
 
 async function create(req, res) {
+  console.group("[DEBUG][POST /indikator-tujuans] request body");
+  console.dir(req.body, { depth: null });
+  console.groupEnd();
   try {
     const entries = Array.isArray(req.body) ? req.body : [req.body];
     const results = [];
@@ -175,8 +182,16 @@ async function create(req, res) {
         );
       }
 
+      const entryWithMisi = {
+        ...entry,
+        misi_id:
+          entry.misi_id != null && entry.misi_id !== ""
+            ? entry.misi_id
+            : tujuan.misi_id,
+      };
+
       // Sanitasi + lengkapi data
-      const sanitized = await sanitizeAndFill(entry); // <-- pakai await
+      const sanitized = await sanitizeAndFill(entryWithMisi); // <-- pakai await
 
       // Generate kode indikator jika tidak ada
       if (!sanitized.kode_indikator) {
@@ -187,24 +202,55 @@ async function create(req, res) {
         );
       }
 
-      // Normalisasi angka decimal
+      // Normalisasi angka (koma Indonesia → titik) + kosong → null untuk DECIMAL/TEXT angka
       const normalized = normalizeDecimalFields(sanitized, [
         "baseline",
+        "target_awal",
+        "target_akhir",
+        "target_tahun_1",
+        "target_tahun_2",
+        "target_tahun_3",
+        "target_tahun_4",
+        "target_tahun_5",
         "capaian_tahun_1",
         "capaian_tahun_2",
         "capaian_tahun_3",
         "capaian_tahun_4",
         "capaian_tahun_5",
       ]);
+      // Data wizard final selalu is_import_reference = false
+      normalized.is_import_reference = false;
 
-      // Simpan ke DB
-      const created = await IndikatorTujuan.create(normalized);
-      results.push(created);
+      // Jika sudah ada baris REFERENSI impor dengan kunci yang sama,
+      // promote baris tersebut menjadi data final daripada membuat baris baru
+      // (mencegah 409 akibat bentrok referensi vs final).
+      const existingRef = await IndikatorTujuan.findOne({
+        where: {
+          kode_indikator: normalized.kode_indikator,
+          tujuan_id: normalized.tujuan_id,
+          jenis_dokumen: normalized.jenis_dokumen,
+          tahun: normalized.tahun,
+          periode_id: normalized.periode_id,
+          is_import_reference: true,
+        },
+      });
+      let saved;
+      if (existingRef) {
+        // Promote: update semua kolom + set is_import_reference = false
+        await existingRef.update({ ...normalized, is_import_reference: false });
+        saved = existingRef;
+      } else {
+        saved = await IndikatorTujuan.create(normalized);
+      }
+      results.push(saved);
     }
 
     res.status(201).json(results);
   } catch (error) {
-    console.error("❌ Error create indikator tujuan:", error);
+    console.error("[ERROR][POST /indikator-tujuans] message:", error.message);
+    console.error("[ERROR][POST /indikator-tujuans] name:", error.name);
+    console.error("[ERROR][POST /indikator-tujuans] errors:", error.errors);
+    console.error("[ERROR][POST /indikator-tujuans] stack:", error.stack);
     if (error.name === "SequelizeUniqueConstraintError") {
       return sendValidationErrors(
         res,
@@ -218,7 +264,32 @@ async function create(req, res) {
         message: error.message,
       });
     }
-    res.status(500).json({ message: "Gagal membuat indikator tujuan" });
+    if (
+      typeof error.message === "string" &&
+      (error.message.includes("kombinasi kode_indikator") ||
+        error.message.includes("Data duplikat") ||
+        error.message.includes("sudah ada untuk periode"))
+    ) {
+      return res.status(409).json({
+        message: error.message,
+        code: "INDIKATOR_TUJUAN_DUPLICATE",
+      });
+    }
+    if (
+      typeof error.message === "string" &&
+      (error.message.includes("Parameter 'kodeTujuan'") ||
+        error.message.includes("kodeTujuan tidak boleh kosong") ||
+        error.message.includes("tahun tidak valid") ||
+        error.message.includes("jenis_dokumen tidak boleh kosong") ||
+        error.message.includes("tahun tidak boleh kosong"))
+    ) {
+      return res.status(400).json({ message: error.message });
+    }
+    res.status(500).json({
+      message: "Gagal membuat indikator tujuan",
+      detail: error.message,
+      name: error.name,
+    });
   }
 }
 
@@ -231,7 +302,10 @@ async function update(req, res) {
         .json({ message: "Indikator Tujuan tidak ditemukan" });
     }
 
-    const updateData = await sanitizeAndFill(req.body);
+    /* Partial PUT (mis. modal edit): isi identitas periode/tahun dari DB agar
+       sanitizeAndFill tidak mengira ulang dari tahun sistem & memindahkan baris keluar filter. */
+    const mergedRow = { ...indikator.get({ plain: true }), ...req.body };
+    const updateData = await sanitizeAndFill(mergedRow);
     normalizeDecimalFields(updateData);
 
     await indikator.update(updateData);
@@ -436,7 +510,10 @@ async function listByTujuan(req, res) {
       return res.status(400).json({ message: "tujuan_id diperlukan" });
     }
 
-    const result = await IndikatorTujuan.findAll({ where: { tujuan_id } });
+    // Tampilkan hanya data final (bukan referensi impor)
+    const result = await IndikatorTujuan.findAll({
+      where: { tujuan_id, is_import_reference: false },
+    });
     return res.status(200).json({ data: result });
   } catch (err) {
     console.error(err);
@@ -466,13 +543,15 @@ async function generateKodeIndikator(kodeTujuan, tahun, jenis_dokumen) {
     throw new Error("jenis_dokumen tidak boleh kosong setelah trim");
   }
 
-  // Ambil kode terakhir
+  // Ambil kode terakhir — hanya dari baris FINAL (is_import_reference = false).
+  // Baris referensi impor tidak boleh menghitung urutan sehingga simpan wizard pertama = 01.
   const existing = await IndikatorTujuan.findAll({
     attributes: ["kode_indikator"],
     where: {
       kode_indikator: { [Op.like]: `${cleanKodeTujuan}-%` },
       tahun: cleanTahun,
       jenis_dokumen: cleanJenisDokumen,
+      is_import_reference: false,
     },
     order: [["kode_indikator", "DESC"]],
   });
@@ -595,7 +674,7 @@ async function findSpecial(req, res) {
       });
     }
 
-    const where = { tahun, jenis_dokumen };
+    const where = { tahun, jenis_dokumen, is_import_reference: false };
     if (periode_id) where.periode_id = periode_id;
     const safeLimit = Math.min(Number(limit), 200);
     const offset = (Number(page) - 1) * safeLimit;
