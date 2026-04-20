@@ -53,6 +53,7 @@ import PrioritasGubernurList from "@/shared/components/PrioritasGubernurList";
 import OpdList from "@/shared/components/OpdList";
 import IndikatorTujuanListPage from "@/features/rpjmd/pages/IndikatorTujuanListPage";
 import CascadingDetail from "@/pages/CascadingDetail";
+import ImportIndikatorPage from "@/features/rpjmd/pages/ImportIndikatorPage";
 
 const routes = [
   // 📘 RPJMD
@@ -377,6 +378,13 @@ const routes = [
     path: "/dashboard-rpjmd/indikator-kegiatan-list",
     element: <IndikatorList />,
     role: ["SUPER_ADMIN"],
+  },
+
+  // 📥 Import Indikator RPJMD
+  {
+    path: "/rpjmd/import-indikator",
+    element: <ImportIndikatorPage />,
+    role: ["SUPER_ADMIN", "ADMINISTRATOR"],
   },
 
   // 📡 Statistik & Aktivitas

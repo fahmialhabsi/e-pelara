@@ -21,6 +21,7 @@ const allowedFields = [
   "nama_indikator",
   "tipe_indikator",
   "jenis",
+  "indikator_kinerja",
   "tolok_ukur_kinerja",
   "target_kinerja",
   "jenis_indikator",
@@ -59,6 +60,10 @@ async function sanitizeAndFill(row, overrides = {}) {
   const data = Object.fromEntries(
     Object.entries(row).filter(([key]) => allowedFields.includes(key))
   );
+
+  // Mirror indikator_kinerja ↔ jenis for backward compatibility
+  if (data.indikator_kinerja && !data.jenis) data.jenis = data.indikator_kinerja;
+  if (data.jenis && !data.indikator_kinerja) data.indikator_kinerja = data.jenis;
 
   let periode = null;
 

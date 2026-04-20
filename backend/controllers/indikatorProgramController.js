@@ -19,6 +19,7 @@ const allowedFields = [
   "nama_indikator",
   "tipe_indikator",
   "jenis",
+  "indikator_kinerja",
   "tolok_ukur_kinerja",
   "target_kinerja",
   "jenis_indikator",
@@ -80,6 +81,9 @@ exports.create = async (req, res) => {
         Object.entries(r).filter(([key]) => allowedFields.includes(key))
       );
 
+      if (row.indikator_kinerja && !row.jenis) row.jenis = row.indikator_kinerja;
+      if (row.jenis && !row.indikator_kinerja) row.indikator_kinerja = row.jenis;
+
       const tahun = r.tahun || new Date().getFullYear();
       const periode =
         (await getPeriodeFromTahun(tahun)) || (await getPeriodeAktif());
@@ -128,6 +132,9 @@ exports.bulkCreateDetail = async (req, res) => {
       const row = Object.fromEntries(
         Object.entries(r).filter(([key]) => allowedFields.includes(key))
       );
+
+      if (row.indikator_kinerja && !row.jenis) row.jenis = row.indikator_kinerja;
+      if (row.jenis && !row.indikator_kinerja) row.indikator_kinerja = row.jenis;
 
       const tahun = r.tahun || new Date().getFullYear();
       const periode =

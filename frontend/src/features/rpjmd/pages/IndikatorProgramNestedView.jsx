@@ -125,7 +125,7 @@ const IndikatorProgramNestedView = ({
                     <td colSpan={18}>
                       <div className="bg-light p-3 rounded">
                         <p>
-                          <strong>Outcome:</strong> {item.jenis}
+                          <strong>Outcome:</strong> {item.indikator_kinerja || item.jenis || '—'}
                         </p>
                         <p>
                           <strong>Jenis Indikator:</strong>{" "}

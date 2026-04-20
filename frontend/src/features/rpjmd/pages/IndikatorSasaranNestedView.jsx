@@ -138,7 +138,7 @@ const IndikatorSasaranNestedView = () => {
                   <td colSpan="15">
                     <div className="bg-light p-3 rounded">
                       <p>
-                        <strong>Jenis:</strong> {item.jenis}
+                        <strong>Jenis:</strong> {item.indikator_kinerja || item.jenis || '—'}
                       </p>
                       <p>
                         <strong>Jenis Indikator:</strong> {item.jenis_indikator}
