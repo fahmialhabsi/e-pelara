@@ -94,26 +94,47 @@ const AUTOFILL_FIELD_NAMES = new Set([
 ]);
 
   /**
-   * Indikator tujuan impor: saat Misi dipilih → hanya baris misi tersebut (API + filter client).
+   * Indikator tujuan impor: saat Misi atau Tujuan dipilih → tampilkan baris referensi yang relevan.
    *
-   * Khusus baris dari Excel preview (`_xlsxSource: true` atau misi_id === null):
-   * baris tanpa misi_id ditampilkan untuk semua misi yang dipilih, karena template
-   * Excel tidak wajib mengisi kolom misi_id.
+   * Strategi filter (dua lapis, OR):
+   *   1. tujuan_id cocok (paling spesifik & tidak bergantung pada kebenaran misi_id di DB)
+   *   2. misi_id cocok atau null (fallback ketika tujuan belum dipilih)
+   *
+   * Lapis 1 memproteksi dari bug data lama: jika misi_id di baris referensi salah karena
+   * tujuan_id mapping salah (import sebelum fix), baris tetap muncul selama tujuan_id benar.
    *
    * Tabel 3.1 & 2.28 tidak punya kolom misi — hanya ditampilkan jika Misi wizard belum dipilih.
    */
   const mergedIndikatorImportOptions = useMemo(() => {
     const out = [];
-    const selMisi = parsePositiveIntId(values.misi_id);
+    const selMisi   = parsePositiveIntId(values.misi_id);
+    const selTujuan = parsePositiveIntId(values.tujuan_id);
+
+    // Butuh setidaknya satu konteks terpilih agar baris ditampilkan
+    const hasContext = selMisi != null || selTujuan != null;
+
+    if (process.env.NODE_ENV !== "production") {
+      console.debug(
+        `[IndikatorTabContent] rpjmdImporIndikatorTujuan: ${(rpjmdImporIndikatorTujuan || []).length} baris mentah | selMisi=${selMisi} selTujuan=${selTujuan}`,
+      );
+    }
+
     (rpjmdImporIndikatorTujuan || []).forEach((r) => {
-      if (selMisi == null) return;
-      const rowMisi = rowMisiIdFromIndikatorTujuanRow(r);
+      if (!hasContext) return;
+
+      const rowMisi    = rowMisiIdFromIndikatorTujuanRow(r);
+      const rowTujuan  = parsePositiveIntId(r.tujuan_id ?? r.tujuanId);
+
       /**
-       * Izinkan baris jika:
-       * 1. misi_id cocok, ATAU
-       * 2. misi_id null (baris dari Excel yang tidak memiliki binding misi)
+       * Izinkan baris jika SALAH SATU kondisi terpenuhi:
+       * A. tujuan_id cocok persis (paling andal — tidak perlu misi_id benar)
+       * B. misi_id cocok, ATAU misi_id null (baris Excel tanpa binding misi)
        */
-      if (rowMisi !== null && rowMisi !== selMisi) return;
+      const matchTujuan = selTujuan != null && rowTujuan != null && rowTujuan === selTujuan;
+      const matchMisi   = selMisi   != null && (rowMisi === null || rowMisi === selMisi);
+
+      if (!matchTujuan && !matchMisi) return;
+
       const nama = String(r.nama_indikator || "").trim();
       if (!nama) return;
       const shortNama = nama.length > 90 ? `${nama.slice(0, 90)}…` : nama;
@@ -130,7 +151,12 @@ const AUTOFILL_FIELD_NAMES = new Set([
         _rowKey: rowKey,
       });
     });
-    if (selMisi == null) {
+
+    if (process.env.NODE_ENV !== "production") {
+      console.debug(`[IndikatorTabContent] options setelah filter: ${out.length} baris`);
+    }
+
+    if (!hasContext) {
       (rpjmdTujuanSasaran31 || []).forEach((r) => {
         const ind = String(r.indikator || "").trim();
         if (!ind) return;
@@ -155,7 +181,7 @@ const AUTOFILL_FIELD_NAMES = new Set([
       });
     }
     return out;
-  }, [rpjmdImporIndikatorTujuan, values.misi_id, rpjmdTujuanSasaran31, urusanKinerja228]);
+  }, [rpjmdImporIndikatorTujuan, values.misi_id, values.tujuan_id, rpjmdTujuanSasaran31, urusanKinerja228]);
 
   const namaIndikatorSelectValue = useMemo(() => {
     const v = values.nama_indikator;
