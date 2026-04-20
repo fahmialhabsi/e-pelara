@@ -22,9 +22,45 @@ import debounce from "lodash.debounce";
 import { normalizeListItems } from "@/utils/apiResponse";
 import {
   mapApiIndikatorToListRow,
-  hydrateDraftFromIndikatorRow,
   clearIndikatorDraftScalars,
+  RPJMD_INDIKATOR_DRAFT_KEYS,
+  dedupeRpjmdIndikatorDraftRows,
+  stripAllPersistedRpjmdIndicatorDrafts,
 } from "./wizardIndikatorStepUtils";
+import { TIPE_INDIKATOR_MAP } from "@/shared/components/constants/indikatorFields";
+
+/** Baris Preview (`values.tujuan[]`) sering hanya snapshot impor; isian tab Formik ada di `values` / baris preview [0] — gabung sebelum POST. */
+function mergeTujuanRowWithWizardForm(formValues, row) {
+  const preview0 =
+    Array.isArray(formValues.tujuan) && formValues.tujuan.length > 0
+      ? formValues.tujuan[0]
+      : null;
+  const merged = { ...(row || {}) };
+  for (const key of RPJMD_INDIKATOR_DRAFT_KEYS) {
+    const fromRoot = formValues[key];
+    const fromPreview = preview0 && preview0[key] !== undefined ? preview0[key] : undefined;
+    if (fromRoot !== undefined) merged[key] = fromRoot;
+    else if (
+      fromPreview !== undefined &&
+      (merged[key] === undefined || merged[key] === null || merged[key] === "")
+    ) {
+      merged[key] = fromPreview;
+    }
+  }
+  if (formValues.kode_indikator !== undefined) {
+    merged.kode_indikator = formValues.kode_indikator;
+  }
+  if (formValues.nama_indikator !== undefined) {
+    merged.nama_indikator = formValues.nama_indikator;
+  }
+  if (!String(merged.tipe_indikator ?? "").trim()) {
+    merged.tipe_indikator = TIPE_INDIKATOR_MAP.tujuan ?? "Impact";
+  }
+  if (!String(merged.jenis_indikator ?? "").trim()) {
+    merged.jenis_indikator = "Kuantitatif";
+  }
+  return merged;
+}
 
 function computeNextNoTujuanLocal(noMisi, tujuanRows) {
   const misiNum = Number(noMisi);
@@ -52,6 +88,11 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
   const { values, setFieldValue, resetForm } = useFormikContext();
   const tujuanIdRef = useRef(values.tujuan_id);
   tujuanIdRef.current = values.tujuan_id;
+  /** Guard: restore dari localStorage hanya boleh dijalankan SEKALI saat mount.
+   *  Tanpa guard ini, setiap kali Formik recreate referensi setFieldValue (misal
+   *  setelah batch hydrateDraftFromIndikatorRow), effect ini re-fire dan
+   *  stripAllPersistedRpjmdIndicatorDrafts mengosongkan semua field tab form. */
+  const didRestoreRef = useRef(false);
 
   const [filteredTujuanOptions, setFilteredTujuanOptions] = useState([]);
   const [tujuanSourceRows, setTujuanSourceRows] = useState([]);
@@ -93,12 +134,15 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
   ]);
 
   useEffect(() => {
+    // Guard: jalankan sekali saja saat mount pertama kali
+    if (didRestoreRef.current) return;
+    didRestoreRef.current = true;
     const saved =
       localStorage.getItem("form_rpjmd") ||
       sessionStorage.getItem("form_rpjmd");
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
+        const parsed = stripAllPersistedRpjmdIndicatorDrafts(JSON.parse(saved));
         Object.entries(parsed).forEach(([key, val]) => setFieldValue(key, val));
       } catch {
         // abaikan jika JSON corrupt
@@ -116,9 +160,14 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
   useEffect(() => {
     setFieldValue("tujuan_id", "");
     setFieldValue("no_tujuan", "");
+    setFieldValue("rpjmd_import_indikator_tujuan_id", "");
     setFilteredTujuanOptions([]);
     setTujuanSourceRows([]);
   }, [values.misi_id, values.periode_id, values.tahun, setFieldValue]);
+
+  useEffect(() => {
+    setFieldValue("rpjmd_import_indikator_tujuan_id", "");
+  }, [values.tujuan_id, setFieldValue]);
 
   const fetchTujuanByMisi = useCallback(
     debounce(
@@ -250,12 +299,6 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
   }, [values, setFieldValue, generateKeteranganFrom]);
 
   useEffect(() => {
-    if (values.capaian_tahun_5) {
-      setFieldValue("baseline", values.capaian_tahun_5);
-    }
-  }, [values.capaian_tahun_5, setFieldValue]);
-
-  useEffect(() => {
     if (!values.tujuan_id) return;
     let cancelled = false;
     (async () => {
@@ -269,9 +312,8 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
           : [];
         const mapped = raw.map(mapApiIndikatorToListRow);
         setFieldValue("tujuan", mapped);
-        if (mapped.length > 0) {
-          hydrateDraftFromIndikatorRow(mapped[0], setFieldValue);
-        } else {
+        /* Draft isi dari dropdown Nama Indikator (impor / 3.1 / 2.28), bukan auto baris pertama DB. */
+        if (mapped.length === 0) {
           clearIndikatorDraftScalars(setFieldValue);
         }
       } catch {
@@ -287,7 +329,10 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
   }, [values.tujuan_id, setFieldValue]);
 
   const handleNextStep = async () => {
-    const tujuanList = Array.isArray(values.tujuan) ? values.tujuan : [];
+    const tujuanList = dedupeRpjmdIndikatorDraftRows(
+      Array.isArray(values.tujuan) ? values.tujuan : [],
+      values
+    );
 
     if (!values.misi_id) {
       toast.error("Misi belum dipilih. Silakan pilih misi terlebih dahulu.");
@@ -300,22 +345,25 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
     }
 
     if (!values.tahun || !values.jenis_dokumen) {
-      toast.error("Tahun atau jenis dokumen belum terisi.");
+      toast.error("Jenis dokumen / konteks periode belum lengkap.");
       return;
     }
 
     try {
-      const cleanedList = tujuanList.map((item) =>
-        sanitizeIndikator({
-          ...item,
+      console.log("[DEBUG] form values (TujuanStep submit):", values);
+      const cleanedList = tujuanList.map((item) => {
+        const merged = mergeTujuanRowWithWizardForm(values, item);
+        console.log("[DEBUG] merged row before sanitize:", merged);
+        return sanitizeIndikator({
+          ...merged,
           misi_id: values.misi_id,
           tujuan_id: values.tujuan_id,
-          kode_indikator: values.kode_indikator,
+          kode_indikator: merged.kode_indikator ?? values.kode_indikator,
           jenis_dokumen: values.jenis_dokumen,
           tahun: values.tahun,
           periode_id: values.periode_id,
-        })
-      );
+        });
+      });
 
       await createIndikatorTujuanBatch(cleanedList);
       toast.success("Indikator tujuan berhasil disimpan!");
