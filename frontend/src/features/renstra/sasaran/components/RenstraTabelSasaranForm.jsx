@@ -356,23 +356,23 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
               errors={errors}
             />
 
-            <h4 style={{ marginTop: 24 }}>Target per Tahun</h4>
+            <h4 style={{ marginTop: 24 }}>Target periode (th. ke-1 s/d ke-6)</h4>
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <InputField
                 key={`target_tahun_${i}`}
                 name={`target_tahun_${i}`}
-                label={`Target Tahun ${i}`}
+                label={`Target (th. ke-${i})`}
                 control={control}
                 errors={errors}
               />
             ))}
 
-            <h4 style={{ marginTop: 24 }}>Pagu per Tahun</h4>
+            <h4 style={{ marginTop: 24 }}>Pagu periode (th. ke-1 s/d ke-6)</h4>
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <InputField
                 key={`pagu_tahun_${i}`}
                 name={`pagu_tahun_${i}`}
-                label={`Pagu Tahun ${i}`}
+                label={`Pagu (th. ke-${i})`}
                 control={control}
                 errors={errors}
               />

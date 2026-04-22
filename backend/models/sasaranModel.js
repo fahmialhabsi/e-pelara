@@ -18,6 +18,7 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "periode_id",
         as: "periode",
       });
+      Sasaran.belongsTo(models.Tenant, { foreignKey: "tenant_id", as: "tenant" });
 
       Sasaran.hasMany(models.Program, {
         foreignKey: "sasaran_id",
@@ -51,6 +52,12 @@ module.exports = (sequelize, DataTypes) => {
           model: "periode_rpjmds",
           key: "id",
         },
+      },
+      tenant_id: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: false,
+        defaultValue: 1,
+        references: { model: "tenants", key: "id" },
       },
       tujuan_id: {
         type: DataTypes.INTEGER,

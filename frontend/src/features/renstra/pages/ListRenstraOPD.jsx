@@ -285,7 +285,7 @@ const ListRenstraOPD = () => {
         <div>
           <h3 className="text-lg font-semibold">M027 - Daftar Renstra</h3>
           <p className="text-sm text-gray-600">
-            Periode, judul, pagu multi-tahun, referensi RPJMD, audit mutasi, dan status workflow.
+            Periode, judul, pagu per slot periode, referensi RPJMD, audit mutasi, dan status workflow.
           </p>
         </div>
         <div className="flex gap-2">
@@ -351,7 +351,7 @@ const ListRenstraOPD = () => {
                     <td className="border p-2 text-xs">
                       <div>Total: {row.total_pagu ?? "—"}</div>
                       <div className="text-gray-600">
-                        Y1–Y5: {[1, 2, 3, 4, 5].map((i) => row[`pagu_tahun_${i}`] ?? "—").join(" / ")}
+                        Th. ke-1 s/d 5: {[1, 2, 3, 4, 5].map((i) => row[`pagu_tahun_${i}`] ?? "—").join(" / ")}
                       </div>
                     </td>
                     <td className="border p-2 text-xs">
@@ -543,7 +543,7 @@ const ListRenstraOPD = () => {
                 value={form[`pagu_tahun_${i}`]}
                 onChange={onChangeForm}
                 className="rounded border px-3 py-2"
-                placeholder={`Pagu tahun ${i}`}
+                placeholder={`Pagu (th. ke-${i})`}
               />
             ))}
             <input

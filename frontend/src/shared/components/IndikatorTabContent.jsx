@@ -38,6 +38,40 @@ function rowMisiIdFromIndikatorTujuanRow(r) {
   return parsePositiveIntId(r.misi_id ?? r.misiId);
 }
 
+/**
+ * Dropdown Nama Indikator — step Strategi: baris `values.strategi` (GET by-strategi),
+ * bukan sheet impor indikator tujuan (itk) agar kode tetap STR…
+ */
+function buildMergedStrategiNamaIndikatorOptions(values) {
+  const out = [];
+  const selSid = parsePositiveIntId(values.strategi_id);
+  if (selSid == null) return out;
+
+  (Array.isArray(values.strategi) ? values.strategi : []).forEach((r) => {
+    if (!r || typeof r !== "object") return;
+    const rowSid = parsePositiveIntId(r.strategi_id ?? r.strategiId);
+    if (rowSid != null && rowSid !== selSid) return;
+    const nama = String(r.nama_indikator || r.indikator || "").trim();
+    if (!nama) return;
+    const shortNama = nama.length > 90 ? `${nama.slice(0, 90)}…` : nama;
+    const isXlsx = Boolean(r._xlsxSource);
+    const rowKey =
+      isXlsx && r.__uid
+        ? String(r.__uid)
+        : String(r.id ?? "").trim() ||
+          (r.__uid != null ? String(r.__uid).trim() : "");
+    if (!rowKey) return;
+    out.push({
+      value: `ist:${rowKey}`,
+      label: shortNama,
+      row: r,
+      _src: "ist",
+      _rowKey: rowKey,
+    });
+  });
+  return out;
+}
+
 /** Label dropdown Penanggung Jawab: hanya `nama_opd` (bersih dari angka di depan). */
 function opdPenanggungJawabLabelOnly(opd) {
   if (!opd || typeof opd !== "object") return "";
@@ -80,18 +114,18 @@ export default function IndikatorTabContent({
   handleFieldChange,
   handleFieldChangeWithUnit,
 }) {
-/** Field yang diisi otomatis (autofill) saat memilih baris dari impor Excel. */
-const AUTOFILL_FIELD_NAMES = new Set([
-  "tipe_indikator",
-  "jenis_indikator",
-  "jenis",
-  "tolok_ukur_kinerja",
-  "target_kinerja",
-  "kriteria_kuantitatif",
-  "kriteria_kualitatif",
-  "definisi_operasional",
-  "metode_penghitungan",
-]);
+  /** Field yang diisi otomatis (autofill) saat memilih baris dari impor Excel. */
+  const AUTOFILL_FIELD_NAMES = new Set([
+    "tipe_indikator",
+    "jenis_indikator",
+    "jenis",
+    "tolok_ukur_kinerja",
+    "target_kinerja",
+    "kriteria_kuantitatif",
+    "kriteria_kualitatif",
+    "definisi_operasional",
+    "metode_penghitungan",
+  ]);
 
   /**
    * Indikator tujuan impor: saat Misi atau Tujuan dipilih → tampilkan baris referensi yang relevan.
@@ -106,34 +140,69 @@ const AUTOFILL_FIELD_NAMES = new Set([
    * Tabel 3.1 & 2.28 tidak punya kolom misi — hanya ditampilkan jika Misi wizard belum dipilih.
    */
   const mergedIndikatorImportOptions = useMemo(() => {
+    if (wizardStepKey === "strategi") {
+      return buildMergedStrategiNamaIndikatorOptions(values);
+    }
+
     const out = [];
-    const selMisi   = parsePositiveIntId(values.misi_id);
+    const selMisi = parsePositiveIntId(values.misi_id);
     const selTujuan = parsePositiveIntId(values.tujuan_id);
+    // Kode prefix tujuan (mis. "T1-01") yang disimpan saat pengguna memilih tujuan.
+    // Diisi oleh handleTujuanChange / syncSelectionFromTujuanItem via setFieldValue.
+    const selNoTujuanCode = String(values.tujuan_no_tujuan_code || "")
+      .trim()
+      .toUpperCase();
 
     // Butuh setidaknya satu konteks terpilih agar baris ditampilkan
     const hasContext = selMisi != null || selTujuan != null;
 
     if (process.env.NODE_ENV !== "production") {
       console.debug(
-        `[IndikatorTabContent] rpjmdImporIndikatorTujuan: ${(rpjmdImporIndikatorTujuan || []).length} baris mentah | selMisi=${selMisi} selTujuan=${selTujuan}`,
+        `[IndikatorTabContent] rpjmdImporIndikatorTujuan: ${(rpjmdImporIndikatorTujuan || []).length} baris mentah | selMisi=${selMisi} selTujuan=${selTujuan} selNoTujuanCode=${selNoTujuanCode}`,
       );
     }
 
+    if (wizardStepKey === "tujuan") {
     (rpjmdImporIndikatorTujuan || []).forEach((r) => {
       if (!hasContext) return;
 
-      const rowMisi    = rowMisiIdFromIndikatorTujuanRow(r);
-      const rowTujuan  = parsePositiveIntId(r.tujuan_id ?? r.tujuanId);
+      const rowMisi = rowMisiIdFromIndikatorTujuanRow(r);
+      const rowTujuan = parsePositiveIntId(r.tujuan_id ?? r.tujuanId);
+      const rowRefCode = String(
+        r.reference_target_code ?? r.referenceTargetCode ?? "",
+      )
+        .trim()
+        .toUpperCase();
 
       /**
-       * Izinkan baris jika SALAH SATU kondisi terpenuhi:
-       * A. tujuan_id cocok persis (paling andal — tidak perlu misi_id benar)
-       * B. misi_id cocok, ATAU misi_id null (baris Excel tanpa binding misi)
+       * Strategi filter (tiga lapis):
+       *
+       * Lapis 1 — reference_target_code (paling andal, tidak bergantung pada FK lama):
+       *   Jika baris referensi punya reference_target_code dan pengguna sudah memilih
+       *   tujuan (selNoTujuanCode tersedia), gunakan kecocokan kode prefix sebagai sumber
+       *   kebenaran utama.
+       *
+       * Lapis 2 — tujuan_id cocok persis (fallback untuk baris tanpa reference_target_code):
+       *   Tidak bergantung pada kebenaran misi_id di DB.
+       *
+       * Lapis 3 — misi_id cocok atau null (fallback terakhir):
+       *   Untuk baris yang tidak punya tujuan_id / reference_target_code tapi ada misi.
        */
-      const matchTujuan = selTujuan != null && rowTujuan != null && rowTujuan === selTujuan;
-      const matchMisi   = selMisi   != null && (rowMisi === null || rowMisi === selMisi);
+      let match = false;
 
-      if (!matchTujuan && !matchMisi) return;
+      if (rowRefCode && selNoTujuanCode) {
+        // Lapis 1: filter berdasarkan kode prefix tujuan (paling deterministic)
+        match = rowRefCode === selNoTujuanCode;
+      } else {
+        // Lapis 2 & 3: fallback ke tujuan_id / misi_id
+        const matchTujuan =
+          selTujuan != null && rowTujuan != null && rowTujuan === selTujuan;
+        const matchMisi =
+          selMisi != null && (rowMisi === null || rowMisi === selMisi);
+        match = matchTujuan || matchMisi;
+      }
+
+      if (!match) return;
 
       const nama = String(r.nama_indikator || "").trim();
       if (!nama) return;
@@ -151,9 +220,12 @@ const AUTOFILL_FIELD_NAMES = new Set([
         _rowKey: rowKey,
       });
     });
+    }
 
     if (process.env.NODE_ENV !== "production") {
-      console.debug(`[IndikatorTabContent] options setelah filter: ${out.length} baris`);
+      console.debug(
+        `[IndikatorTabContent] options setelah filter: ${out.length} baris`,
+      );
     }
 
     if (!hasContext) {
@@ -181,10 +253,44 @@ const AUTOFILL_FIELD_NAMES = new Set([
       });
     }
     return out;
-  }, [rpjmdImporIndikatorTujuan, values.misi_id, values.tujuan_id, rpjmdTujuanSasaran31, urusanKinerja228]);
+  }, [
+    wizardStepKey,
+    rpjmdImporIndikatorTujuan,
+    values.misi_id,
+    values.tujuan_id,
+    values.tujuan_no_tujuan_code,
+    values.strategi_id,
+    values.strategi,
+    rpjmdTujuanSasaran31,
+    urusanKinerja228,
+  ]);
 
   const namaIndikatorSelectValue = useMemo(() => {
     const v = values.nama_indikator;
+
+    if (wizardStepKey === "strategi") {
+      const pickId = values.rpjmd_import_indikator_strategi_id;
+      if (pickId != null && String(pickId).trim() !== "") {
+        const pickStr = String(pickId).trim();
+        const istHit = mergedIndikatorImportOptions.find((o) => {
+          if (o._src !== "ist") return false;
+          if (o._rowKey != null && String(o._rowKey) === pickStr) return true;
+          return Number(o.row?.id) === Number(pickStr);
+        });
+        if (istHit) return istHit;
+      }
+      if (v == null || String(v).trim() === "") return null;
+      const t = String(v).trim();
+      const hit = mergedIndikatorImportOptions.find((o) => {
+        const rowNama = String(
+          o.row?.nama_indikator ?? o.row?.indikator ?? "",
+        ).trim();
+        return rowNama === t;
+      });
+      if (hit) return hit;
+      return { value: "__manual__", label: t, row: null };
+    }
+
     const pickId = values.rpjmd_import_indikator_tujuan_id;
     if (pickId != null && String(pickId).trim() !== "") {
       const pickStr = String(pickId).trim();
@@ -208,8 +314,10 @@ const AUTOFILL_FIELD_NAMES = new Set([
     if (hit) return hit;
     return { value: "__manual__", label: t, row: null };
   }, [
+    wizardStepKey,
     values.nama_indikator,
     values.rpjmd_import_indikator_tujuan_id,
+    values.rpjmd_import_indikator_strategi_id,
     mergedIndikatorImportOptions,
   ]);
 
@@ -238,6 +346,28 @@ const AUTOFILL_FIELD_NAMES = new Set([
     setFieldValue,
   ]);
 
+  useEffect(() => {
+    const pickId = values.rpjmd_import_indikator_strategi_id;
+    if (pickId == null || String(pickId).trim() === "") return;
+    if (wizardStepKey !== "strategi") {
+      setFieldValue("rpjmd_import_indikator_strategi_id", "");
+      return;
+    }
+    const pickStr = String(pickId).trim();
+    const still = mergedIndikatorImportOptions.some((o) => {
+      if (o._src !== "ist") return false;
+      if (o._rowKey != null && String(o._rowKey) === pickStr) return true;
+      return Number(o.row?.id) === Number(pickStr);
+    });
+    if (still) return;
+    setFieldValue("rpjmd_import_indikator_strategi_id", "");
+  }, [
+    wizardStepKey,
+    values.rpjmd_import_indikator_strategi_id,
+    mergedIndikatorImportOptions,
+    setFieldValue,
+  ]);
+
   const unionYearOpts = useMemo(
     () => unionYearColumnsOptions(urusanKinerja228),
     [urusanKinerja228],
@@ -254,10 +384,12 @@ const AUTOFILL_FIELD_NAMES = new Set([
     if (!next) return;
     const curN = parseFlexibleNumber(values.baseline);
     const nextN = parseFlexibleNumber(next);
-    if (curN !== null && nextN !== null && Math.abs(curN - nextN) < 1e-6) return;
+    if (curN !== null && nextN !== null && Math.abs(curN - nextN) < 1e-6)
+      return;
     setFieldValue("baseline", next);
     const cap5Empty =
-      values.capaian_tahun_5 == null || String(values.capaian_tahun_5).trim() === "";
+      values.capaian_tahun_5 == null ||
+      String(values.capaian_tahun_5).trim() === "";
     if (cap5Empty) {
       const cap5 = extrapolateCapaianTahun5FromFour(
         values.capaian_tahun_1,
@@ -359,24 +491,56 @@ const AUTOFILL_FIELD_NAMES = new Set([
                   if (!opt) {
                     setFieldValue("nama_indikator", "");
                     setFieldValue("rpjmd_import_indikator_tujuan_id", "");
+                    setFieldValue("rpjmd_import_indikator_strategi_id", "");
                     return;
                   }
                   if (opt.__isNew__) {
-                    setFieldValue("nama_indikator", String(opt.value || "").trim());
+                    setFieldValue(
+                      "nama_indikator",
+                      String(opt.value || "").trim(),
+                    );
                     setFieldValue("rpjmd_import_indikator_tujuan_id", "");
+                    setFieldValue("rpjmd_import_indikator_strategi_id", "");
                     return;
                   }
                   if (opt.row) {
-                    if (opt._src === "itk") {
+                    if (opt._src === "ist") {
+                      if (wizardStepKey !== "strategi") return;
+                      setFieldValue("rpjmd_import_indikator_tujuan_id", "");
+                      setFieldValue(
+                        "rpjmd_import_indikator_strategi_id",
+                        opt._rowKey ?? opt.row.id ?? "",
+                      );
+                      hydrateDraftFromIndikatorRow(opt.row, setFieldValue);
+                      const rowKode = String(
+                        opt.row?.kode_indikator ?? "",
+                      ).trim();
                       const kodeWizard = values.kode_indikator;
-                      setFieldValue("rpjmd_import_indikator_tujuan_id", opt._rowKey ?? opt.row.id);
+                      setFieldValue(
+                        "kode_indikator",
+                        rowKode ||
+                          (kodeWizard == null ? "" : String(kodeWizard).trim()),
+                      );
+                      return;
+                    }
+                    if (opt._src === "itk") {
+                      if (wizardStepKey !== "tujuan") return;
+                      const kodeWizard = values.kode_indikator;
+                      setFieldValue("rpjmd_import_indikator_strategi_id", "");
+                      setFieldValue(
+                        "rpjmd_import_indikator_tujuan_id",
+                        opt._rowKey ?? opt.row.id,
+                      );
                       hydrateDraftFromIndikatorRow(opt.row, setFieldValue);
                       // Pakai kode dari baris yang dipilih jika tersedia (misal: T1-01-01 dari DB).
                       // Fallback ke kode wizard (next-kode otomatis) hanya jika baris belum punya kode.
-                      const rowKode = String(opt.row?.kode_indikator ?? "").trim();
+                      const rowKode = String(
+                        opt.row?.kode_indikator ?? "",
+                      ).trim();
                       setFieldValue(
                         "kode_indikator",
-                        rowKode || (kodeWizard == null ? "" : String(kodeWizard).trim()),
+                        rowKode ||
+                          (kodeWizard == null ? "" : String(kodeWizard).trim()),
                       );
                       const mapped = { ...mapApiIndikatorToListRow(opt.row) };
                       delete mapped.id;
@@ -386,48 +550,67 @@ const AUTOFILL_FIELD_NAMES = new Set([
                     }
                     if (opt._src === "t31") {
                       setFieldValue("rpjmd_import_indikator_tujuan_id", "");
+                      setFieldValue("rpjmd_import_indikator_strategi_id", "");
                       applyRpjmdTujuanSasaran31Row(opt.row, setFieldValue);
                       return;
                     }
                     const row = opt.row;
                     setFieldValue("rpjmd_import_indikator_tujuan_id", "");
+                    setFieldValue("rpjmd_import_indikator_strategi_id", "");
                     setFieldValue(
                       "nama_indikator",
                       row.indikator != null ? String(row.indikator) : "",
                     );
                     return;
                   }
-                  setFieldValue("nama_indikator", String(opt.label || "").trim());
+                  setFieldValue(
+                    "nama_indikator",
+                    String(opt.label || "").trim(),
+                  );
                 }}
                 placeholder={
                   wizardStepKey === "tujuan"
                     ? "Pilih indikator tujuan (impor PDF, sesuai Misi) / 3.1 / 2.28 atau ketik manual"
-                    : "Pilih nama indikator dari impor (PDF/Excel) atau ketik manual"
+                    : wizardStepKey === "strategi"
+                      ? "Pilih indikator strategi (data strategi terpilih) atau ketik manual"
+                      : "Pilih nama indikator dari impor (PDF/Excel) atau ketik manual"
                 }
                 isClearable
                 formatCreateLabel={(input) => `Gunakan teks: "${input}"`}
                 classNamePrefix="rs"
               />
               <Form.Text className="text-muted">
-                {mergedIndikatorImportOptions.some((o) => o.row?._xlsxSource) ? (
+                {mergedIndikatorImportOptions.some(
+                  (o) => o.row?._xlsxSource,
+                ) ? (
                   <>
-                    <strong>Sumber aktif: pratinjau Excel</strong> — dropdown memuat baris dari berkas .xlsx
-                    yang dipratinjau di tab <em>Indikator Tujuan</em> (Data impor dokumen RPJMD). Setelah pilih
-                    baris, tab Detail, Deskripsi, dan Target terisi otomatis (field ditandai{" "}
-                    <span className="badge bg-secondary text-white">terisi otomatis</span>). Semua kolom tetap dapat
-                    disunting manual dengan menghapus pilihan dropdown Nama Indikator terlebih dahulu.
+                    <strong>Sumber aktif: pratinjau Excel</strong> — dropdown
+                    memuat baris dari berkas .xlsx yang dipratinjau di tab{" "}
+                    <em>Indikator Tujuan</em> (Data impor dokumen RPJMD).
+                    Setelah pilih baris, tab Detail, Deskripsi, dan Target
+                    terisi otomatis (field ditandai{" "}
+                    <span className="badge bg-secondary text-white">
+                      terisi otomatis
+                    </span>
+                    ). Semua kolom tetap dapat disunting manual dengan menghapus
+                    pilihan dropdown Nama Indikator terlebih dahulu.
                   </>
                 ) : (
                   <>
-                    <strong>Indikator tujuan impor</strong> (Data impor dokumen RPJMD → tab Indikator tujuan) hanya muncul
-                    setelah <strong>Misi</strong> dipilih di step sebelumnya. Tanpa misi, dropdown memuat acuan{" "}
-                    <strong>3.1</strong> dan <strong>2.28</strong> saja. Setelah pilih baris impor, tab Detail,
-                    Deskripsi, dan Target mengikuti data baris tersebut. Semua kolom tetap dapat diedit.
+                    <strong>Indikator tujuan impor</strong> (Data impor dokumen
+                    RPJMD → tab Indikator tujuan) hanya muncul setelah{" "}
+                    <strong>Misi</strong> dipilih di step sebelumnya. Tanpa
+                    misi, dropdown memuat acuan <strong>3.1</strong> dan{" "}
+                    <strong>2.28</strong> saja. Setelah pilih baris impor, tab
+                    Detail, Deskripsi, dan Target mengikuti data baris tersebut.
+                    Semua kolom tetap dapat diedit.
                   </>
                 )}
               </Form.Text>
               {touched[field.name] && errors[field.name] ? (
-                <div className="text-danger small mt-1">{errors[field.name]}</div>
+                <div className="text-danger small mt-1">
+                  {errors[field.name]}
+                </div>
               ) : null}
             </Form.Group>
           );
@@ -483,7 +666,10 @@ const AUTOFILL_FIELD_NAMES = new Set([
           Array.isArray(urusanKinerja228) &&
           urusanKinerja228.length > 0
         ) {
-          const opts = optionsWithCurrentValue(unionYearOpts, values[field.name]);
+          const opts = optionsWithCurrentValue(
+            unionYearOpts,
+            values[field.name],
+          );
           const cur = values[field.name];
           const selected =
             cur != null && String(cur).trim() !== ""
@@ -507,14 +693,18 @@ const AUTOFILL_FIELD_NAMES = new Set([
                 classNamePrefix="rs"
               />
               <Form.Text className="text-muted">
-                Daftar gabungan nilai unik dari kolom <strong>2021</strong> s.d. <strong>2024</strong> pada tabel impor
-                2.28.
+                Daftar gabungan nilai unik dari kolom <strong>2021</strong> s.d.{" "}
+                <strong>2024</strong> pada tabel impor 2.28.
               </Form.Text>
             </Form.Group>
           );
         }
 
-        if (wizardStepKey === "tujuan" && tabKey === 4 && field.name === "baseline") {
+        if (
+          wizardStepKey === "tujuan" &&
+          tabKey === 4 &&
+          field.name === "baseline"
+        ) {
           return (
             <Form.Group as={Col} md={6} key={field.name}>
               <Form.Label>{field.label}</Form.Label>
@@ -530,9 +720,11 @@ const AUTOFILL_FIELD_NAMES = new Set([
                 {errors[field.name]}
               </Form.Control.Feedback>
               <Form.Text className="text-muted">
-                Otomatis: rata-rata berbobot <strong>1&nbsp;: 2&nbsp;: 3&nbsp;: 4</strong> pada capaian th. ke-1 s/d ke-4
-                (th. ke-4 historis lebih berat). Contoh 68,30 … 70,04 menghasilkan sekitar <strong>69.50</strong>. Nilai
-                tetap dapat Anda sesuaikan manual setelah perubahan capaian.
+                Otomatis: rata-rata berbobot{" "}
+                <strong>1&nbsp;: 2&nbsp;: 3&nbsp;: 4</strong> pada capaian th.
+                ke-1 s/d ke-4 (th. ke-4 historis lebih berat). Contoh 68,30 …
+                70,04 menghasilkan sekitar <strong>69.50</strong>. Nilai tetap
+                dapat Anda sesuaikan manual setelah perubahan capaian.
               </Form.Text>
             </Form.Group>
           );
@@ -568,7 +760,7 @@ const AUTOFILL_FIELD_NAMES = new Set([
               : opdListBase;
 
           const selectedOption = rawStr
-            ? opdList.find((opt) => String(opt.value) === rawStr) ?? null
+            ? (opdList.find((opt) => String(opt.value) === rawStr) ?? null)
             : null;
 
           return (
@@ -622,10 +814,16 @@ const AUTOFILL_FIELD_NAMES = new Set([
                 as="textarea"
                 rows={3}
                 value={values[field.name] || ""}
-                onChange={isAutofillLocked ? undefined : handleFieldChange(field.name)}
+                onChange={
+                  isAutofillLocked ? undefined : handleFieldChange(field.name)
+                }
                 isInvalid={touched[field.name] && !!errors[field.name]}
                 readOnly={isAutofillLocked || false}
-                style={isAutofillLocked ? { backgroundColor: "#f8f9fa", cursor: "default" } : undefined}
+                style={
+                  isAutofillLocked
+                    ? { backgroundColor: "#f8f9fa", cursor: "default" }
+                    : undefined
+                }
               />
               <Form.Control.Feedback type="invalid">
                 {errors[field.name]}
@@ -719,7 +917,11 @@ const AUTOFILL_FIELD_NAMES = new Set([
               }
               isInvalid={touched[field.name] && !!errors[field.name]}
               readOnly={effectiveReadOnly}
-              style={isAutofillLocked ? { backgroundColor: "#f8f9fa", cursor: "default" } : undefined}
+              style={
+                isAutofillLocked
+                  ? { backgroundColor: "#f8f9fa", cursor: "default" }
+                  : undefined
+              }
               placeholder={
                 field.placeholder ||
                 (isNumericField ? "Masukkan angka saja" : "")

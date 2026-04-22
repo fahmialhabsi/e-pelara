@@ -14,6 +14,8 @@ import {
 import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { useDokumen } from "../../hooks/useDokumen";
+import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
+import { konteksBannerRows } from "../../utils/planningDokumenUtils";
 import {
   extractListData,
   normalizeListItems,
@@ -22,6 +24,10 @@ import {
 export default function MisiForm() {
   const { user } = useAuth();
   const { dokumen, tahun } = useDokumen();
+  const { periode_id, periodeList } = usePeriodeAktif();
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(periode_id),
+  );
   const [visiList, setVisiList] = useState([]);
   const [misiList, setMisiList] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -195,8 +201,11 @@ export default function MisiForm() {
       </Breadcrumb>
 
       <div className="mb-3">
-        <strong>Dokumen Aktif:</strong> {dokumen} <br />
-        <strong>Tahun:</strong> {tahun}
+        {konteksBannerRows(dokumen, tahun, periodeAktif).map((r) => (
+          <span key={r.key} className="d-block">
+            <strong>{r.label}:</strong> {r.value}
+          </span>
+        ))}
       </div>
 
       {errorMsg && (

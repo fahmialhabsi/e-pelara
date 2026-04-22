@@ -271,8 +271,7 @@ export default function TujuanList() {
     return (
       <Container className="my-5">
         <Alert variant="danger">
-          Tahun periode login tidak sesuai. Silakan hubungi admin atau login
-          ulang dengan tahun RPJMD yang aktif.
+          Konteks periode login tidak sesuai dengan RPJMD aktif. Silakan hubungi admin atau login ulang.
         </Alert>
       </Container>
     );

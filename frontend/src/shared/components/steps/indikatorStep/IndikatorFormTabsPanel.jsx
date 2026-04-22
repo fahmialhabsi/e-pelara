@@ -38,6 +38,11 @@ export default function IndikatorFormTabsPanel({
   setFieldValue,
   opdSelectOptions,
   stepOptions,
+  wizardStepKey,
+  urusanKinerja228 = [],
+  rpjmdTujuanSasaran31 = [],
+  rpjmdImporIndikatorTujuan = [],
+  rpjmdPdfImportRefsLoading = false,
   handleFieldChange,
   handleFieldChangeWithUnit,
   list,
@@ -54,6 +59,8 @@ export default function IndikatorFormTabsPanel({
   onSave,
   previewOpdOptions,
   showTab5WizardActions = true,
+  /** True bila list sudah sama dengan data tersimpan di DB (semua item ber-id numerik). */
+  isSameAsStored = false,
 }) {
   const saveHint = SAVE_FLOW_HINT[stepKey] || "";
   const [savingInProgress, setSavingInProgress] = useState(false);
@@ -94,6 +101,11 @@ export default function IndikatorFormTabsPanel({
                 setFieldValue={setFieldValue}
                 opdOptions={opdSelectOptions}
                 stepOptions={stepOptions}
+                wizardStepKey={wizardStepKey}
+                urusanKinerja228={urusanKinerja228}
+                rpjmdTujuanSasaran31={rpjmdTujuanSasaran31}
+                rpjmdImporIndikatorTujuan={rpjmdImporIndikatorTujuan}
+                rpjmdPdfImportRefsLoading={rpjmdPdfImportRefsLoading}
                 handleFieldChange={handleFieldChange}
                 handleFieldChangeWithUnit={handleFieldChangeWithUnit}
               />
@@ -172,13 +184,19 @@ export default function IndikatorFormTabsPanel({
               <span />
             )}
             <div className="text-end">
-              <Button
-                variant="secondary"
-                onClick={handleAdd}
-                disabled={list.length >= MAX_INDIKATOR}
-              >
-                Tambah Indikator
-              </Button>
+              {isSameAsStored && list.length > 0 ? (
+                <Alert variant="success" className="mb-0 py-2 px-3 small text-start">
+                  ✓ Data indikator ini sudah tersimpan. Tidak ada perubahan yang perlu ditambahkan.
+                </Alert>
+              ) : (
+                <Button
+                  variant="secondary"
+                  onClick={handleAdd}
+                  disabled={list.length >= MAX_INDIKATOR}
+                >
+                  Tambah Indikator
+                </Button>
+              )}
               {showTab5WizardActions ? (
                 <>
                   <Button

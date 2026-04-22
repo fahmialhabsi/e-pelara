@@ -24,6 +24,7 @@ module.exports = (sequelize, DataTypes) => {
         as: "opdPenanggungJawab",
       });
       this.belongsTo(models.Rkpd, { foreignKey: "rkpd_id", as: "rkpd" });
+      this.belongsTo(models.Tenant, { foreignKey: "tenant_id", as: "tenant" });
     }
   }
 
@@ -76,6 +77,12 @@ module.exports = (sequelize, DataTypes) => {
       rkpd_id: DataTypes.INTEGER.UNSIGNED,
       jenis_dokumen: { type: DataTypes.STRING, allowNull: false },
       tahun: { type: DataTypes.STRING, allowNull: false },
+      tenant_id: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: false,
+        defaultValue: 1,
+        references: { model: "tenants", key: "id" },
+      },
     },
     {
       sequelize,
@@ -95,14 +102,16 @@ module.exports = (sequelize, DataTypes) => {
     }
   );
 
-  // Hooks
-  IndikatorKegiatan.addHook("beforeCreate", async (instance) => {
+  // Hooks — sertakan transaction (impor Excel apply dalam satu transaksi)
+  IndikatorKegiatan.addHook("beforeCreate", async (instance, options) => {
+    const tx = options?.transaction;
     const exists = await IndikatorKegiatan.findOne({
       where: {
         kode_indikator: instance.kode_indikator,
         jenis_dokumen: instance.jenis_dokumen,
         tahun: instance.tahun,
       },
+      transaction: tx,
     });
     if (exists) {
       throw new Error(
@@ -111,7 +120,8 @@ module.exports = (sequelize, DataTypes) => {
     }
   });
 
-  IndikatorKegiatan.addHook("beforeBulkCreate", async (instances) => {
+  IndikatorKegiatan.addHook("beforeBulkCreate", async (instances, options) => {
+    const tx = options?.transaction;
     for (const instance of instances) {
       const exists = await IndikatorKegiatan.findOne({
         where: {
@@ -119,6 +129,7 @@ module.exports = (sequelize, DataTypes) => {
           jenis_dokumen: instance.jenis_dokumen,
           tahun: instance.tahun,
         },
+        transaction: tx,
       });
       if (exists) {
         throw new Error(

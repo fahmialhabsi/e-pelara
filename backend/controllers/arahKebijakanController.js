@@ -12,6 +12,26 @@ const { getPeriodeFromTahun } = require("../utils/periodeHelper");
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
 const { listResponse } = require("../utils/responseHelper");
 
+/**
+ * Samakan awalan kode SST strategi dengan nomor sasaran (ST… → SST…).
+ * Menangani kode_strategi di DB yang tidak selaras (mis. SST1-01-02.1 untuk sasaran ST3-01-02).
+ */
+function canonicalSstKodeForArah(strategi) {
+  const raw = String(strategi?.kode_strategi || "").trim();
+  const nom = strategi?.Sasaran?.nomor;
+  if (!nom) return raw || "";
+  const sasSst = String(nom).replace(/^ST/, "SST");
+  if (!raw) return `${sasSst}.1`;
+  if (raw.startsWith(sasSst)) return raw;
+  const m = raw.match(/\.(\d+)$/);
+  const suffix = m ? `.${m[1]}` : ".1";
+  return `${sasSst}${suffix}`;
+}
+
+function arahKodePrefixFromStrategi(strategi) {
+  return canonicalSstKodeForArah(strategi).replace(/^SST/, "ASST");
+}
+
 module.exports = {
   async create(req, res) {
     try {
@@ -46,14 +66,17 @@ module.exports = {
       }
       const periode_id = periode.id;
 
-      const strategi = await Strategi.findByPk(strategi_id);
+      const strategi = await Strategi.findByPk(strategi_id, {
+        include: [
+          { model: Sasaran, as: "Sasaran", attributes: ["id", "nomor"] },
+        ],
+      });
       if (!strategi) {
         return res.status(404).json({ message: "Strategi tidak ditemukan." });
       }
 
-      // Ambil prefix lengkap dengan mempertahankan bagian setelah 'SST'
-      // Contoh: 'SST1-01-01.1' jadi 'ASST1-01-01.1'
-      const prefix = strategi.kode_strategi.replace(/^SST/, "ASST");
+      // Samakan awalan ASST dengan nomor sasaran (ST→SST) bila kode_strategi di DB tidak selaras.
+      const prefix = arahKodePrefixFromStrategi(strategi);
 
       // Cari semua kode_arah yang dimulai dengan prefix + '.'
       const existing = await ArahKebijakan.findAll({
@@ -143,7 +166,7 @@ module.exports = {
       const periode_id = periode.id;
 
       const page = parseInt(req.query.page, 10) || 1;
-      const limit = Math.min(parseInt(req.query.limit, 10) || 10, 100);
+      const limit = Math.min(parseInt(req.query.limit, 10) || 50, 1000);
       const offset = (page - 1) * limit;
 
       const where = { jenis_dokumen, tahun, periode_id };
@@ -165,6 +188,7 @@ module.exports = {
         where,
         limit,
         offset,
+        subQuery: false,
         distinct: true,
         include: [
           {
@@ -236,6 +260,7 @@ module.exports = {
             where: fallbackWhere,
             limit,
             offset,
+            subQuery: false,
             distinct: true,
             include: [
               {
@@ -358,12 +383,16 @@ module.exports = {
       }
       const periode_id = periode.id;
 
-      const strategi = await Strategi.findByPk(strategi_id);
+      const strategi = await Strategi.findByPk(strategi_id, {
+        include: [
+          { model: Sasaran, as: "Sasaran", attributes: ["id", "nomor"] },
+        ],
+      });
       if (!strategi) {
         return res.status(404).json({ message: "Strategi tidak ditemukan." });
       }
 
-      const prefix = strategi.kode_strategi.replace(/^SST/, "ASST");
+      const prefix = arahKodePrefixFromStrategi(strategi);
 
       // Ambil semua kode yang sama dengan prefix atau mulai dengan prefix + '.'
       const existing = await ArahKebijakan.findAll({

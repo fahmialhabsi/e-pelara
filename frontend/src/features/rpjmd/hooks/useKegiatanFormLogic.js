@@ -188,10 +188,8 @@ export default function useKegiatanFormLogic(
   useEffect(() => {
     if (!programsLoading && programs.length === 0) {
       console.warn(
-        "⚠️ Tidak ada data program yang tersedia untuk tahun",
-        tahun,
-        "dan jenis dokumen",
-        jenis_dokumen
+        "⚠️ Tidak ada data program yang tersedia untuk konteks ini",
+        { tahun, jenis_dokumen },
       );
     }
   }, [programs, programsLoading, tahun, jenis_dokumen]);

@@ -16,7 +16,6 @@ import {
   Container,
 } from "react-bootstrap";
 import { useNavigate } from "react-router-dom";
-import { CSVLink } from "react-csv";
 
 import { BsInfoCircle } from "react-icons/bs";
 import api from "@/services/api";
@@ -26,11 +25,7 @@ import { usePeriodeAktif } from "@/features/rpjmd/hooks/usePeriodeAktif";
 import SasaranForm from "./SasaranForm";
 import {
   generateExportDataFromGroupedList,
-  exportToExcel,
-  exportToPDF,
-  exportToCSV,
   groupDataForCSV,
-  generateExportDataForCSV,
 } from "@/shared/components/utils/exportHelpers";
 import { getInstansiNama } from "@/shared/components/utils/getInstansiNama";
 import ExportDropdown from "@/shared/components/ExportDropdown";
@@ -39,6 +34,7 @@ import {
   extractListMeta,
   normalizeListItems,
 } from "@/utils/apiResponse";
+import { isDokumenLevelPeriode } from "@/utils/planningDokumenUtils";
 
 const highlightText = (text, keyword) => {
   if (!keyword) return text;
@@ -61,7 +57,11 @@ const highlightText = (text, keyword) => {
 export default function SasaranList() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { dokumen, tahun } = usePeriodeAktif();
+  const { dokumen, tahun, periode_id, periodeList: periodeListHook } =
+    usePeriodeAktif();
+  const periodeAktif = periodeListHook.find(
+    (p) => String(p.id) === String(periode_id),
+  );
   const [darkMode, setDarkMode] = useDarkMode();
   const matchRefs = useRef([]);
 
@@ -69,7 +69,7 @@ export default function SasaranList() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const [periodeIdValid, setPeriodeIdValid] = useState(null);
-  const [periodeList, setPeriodeList] = useState([]);
+  const [periodeListValidasi, setPeriodeListValidasi] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -82,6 +82,12 @@ export default function SasaranList() {
   const [searchQuery, setSearchQuery] = useState("");
 
   const tahunJudul = tahun || dokumen?.tahun || new Date().getFullYear();
+  const exportSlug =
+    isDokumenLevelPeriode(dokumen) &&
+    periodeAktif?.tahun_awal != null &&
+    periodeAktif?.tahun_akhir != null
+      ? `periode_${periodeAktif.tahun_awal}-${periodeAktif.tahun_akhir}`
+      : String(tahunJudul).replace(/\s+/g, "_");
 
   const extractors = {
     groupKey: (item) => item.Tujuan?.id ?? "NO_TUJUAN_ID",
@@ -96,39 +102,16 @@ export default function SasaranList() {
   };
 
   const flatData = generateExportDataFromGroupedList(sasaranList, extractors);
-  const groupedData = groupDataForCSV(sasaranList, extractors);
-  const csvData = generateExportDataForCSV(groupedData);
-
-  // Group dan flatten data untuk CSV
-  const handleExportCSV = () => {
-    const grouped = groupDataForCSV(sasaranList, {
-      groupKey: (item) => item.Tujuan.id,
-      groupValue: (item) => ({
-        kode: item.Tujuan.no_tujuan,
-        isi: item.Tujuan.isi_tujuan,
-      }),
-      itemValue: (item) => ({
-        kode: item.nomor,
-        isi: item.isi_sasaran,
-      }),
-    });
-
-    const flatData = generateExportDataForCSV(grouped);
-
-    exportToCSV({
-      data: flatData,
-      filename: `sasaran_${jenis_dokumen.toLowerCase()}_${tahunJudul}.csv`,
-      judul,
-      subjudul,
-      pembuat,
-    });
-  };
 
   const instansiNama = getInstansiNama(user);
   const dibuatOleh = user?.username?.toUpperCase() || "-";
   const jenis_dokumen = dokumen?.jenis?.toUpperCase() || "RPJMD";
 
-  const judul = `DAFTAR SASARAN RPJMD TAHUN ${tahunJudul}`;
+  const judulPeriode =
+    isDokumenLevelPeriode(dokumen) && periodeAktif?.tahun_awal != null
+      ? `PERIODE ${periodeAktif.tahun_awal}–${periodeAktif.tahun_akhir}`
+      : `KONTEKS ${tahunJudul}`;
+  const judul = `DAFTAR SASARAN RPJMD ${judulPeriode}`;
   const subjudul = `Nama Instansi : ${instansiNama}`;
   const pembuat = dibuatOleh;
 
@@ -141,7 +124,7 @@ export default function SasaranList() {
       try {
         const res = await api.get("/periode-rpjmd");
         const periodeData = extractListData(res.data);
-        setPeriodeList(periodeData);
+        setPeriodeListValidasi(periodeData);
         const valid = periodeData.some(
           (p) =>
             Number(user?.tahun) >= Number(p.tahun_awal) &&
@@ -162,10 +145,11 @@ export default function SasaranList() {
       console.log("👤 user:", user);
       console.log("📦 dokumen:", dokumen);
 
+      const offset = (page - 1) * limit;
       const res = await api.get("/sasaran", {
         params: {
-          page,
           limit,
+          offset,
           search: searchQuery,
           jenis_dokumen: dokumen,
           tahun,
@@ -192,7 +176,20 @@ export default function SasaranList() {
 
       const sortedList = [...matched, ...others];
       setSasaranList(sortedList);
-      setTotalPages(meta.totalPages || 1);
+      const totalItems = Number(meta.totalItems);
+      const sizeFromMeta = Number(meta.limit);
+      const pageSize =
+        Number.isFinite(sizeFromMeta) && sizeFromMeta > 0 ? sizeFromMeta : limit;
+      const pagesFromMeta = Number(meta.totalPages);
+      const computedPages =
+        Number.isFinite(totalItems) && totalItems >= 0
+          ? Math.max(1, Math.ceil(totalItems / pageSize))
+          : 1;
+      setTotalPages(
+        Number.isFinite(pagesFromMeta) && pagesFromMeta > 0
+          ? pagesFromMeta
+          : computedPages,
+      );
 
       if (keyword && matched.length === 0) {
         setErrorMsg("Tidak ada yang cocok dengan pencarian.");
@@ -208,6 +205,49 @@ export default function SasaranList() {
       setLoading(false);
     }
   }, [page, limit, searchQuery, dokumen, tahun]);
+
+  /** Ambil semua sasaran untuk ekspor (backend max 200/batch). */
+  const fetchAllSasaranForExport = useCallback(async () => {
+    const batch = 200;
+    const aggregated = [];
+    let offset = 0;
+    let totalTarget = Number.POSITIVE_INFINITY;
+
+    while (aggregated.length < totalTarget) {
+      const res = await api.get("/sasaran", {
+        params: {
+          limit: batch,
+          offset,
+          search: searchQuery,
+          jenis_dokumen: dokumen,
+          tahun,
+        },
+      });
+      const list = normalizeListItems(res.data);
+      const meta = extractListMeta(res.data);
+      const ti = Number(meta.totalItems);
+      if (Number.isFinite(ti) && ti >= 0) {
+        totalTarget = ti;
+      }
+
+      if (!list.length) break;
+      aggregated.push(...list);
+      if (list.length < batch) break;
+      offset += batch;
+      if (offset > 500000) break;
+    }
+
+    const keyword = searchQuery.toLowerCase().trim();
+    if (!keyword) return aggregated;
+    const matched = [];
+    const others = [];
+    aggregated.forEach((item) => {
+      const isi = item.isi_sasaran?.toLowerCase() || "";
+      if (isi.includes(keyword)) matched.push(item);
+      else others.push(item);
+    });
+    return [...matched, ...others];
+  }, [dokumen, tahun, searchQuery]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -268,32 +308,12 @@ export default function SasaranList() {
     fetchSasaran();
   };
 
-  const handleExportExcel = () => {
-    exportToExcel({
-      data: flatData,
-      filename: `sasaran_${jenis_dokumen.toLowerCase()}_${tahunJudul}.xlsx`,
-      judul,
-      subjudul,
-      pembuat,
-    });
-  };
-
-  const handleExportPDF = () => {
-    exportToPDF({
-      data: flatData,
-      filename: `sasaran_${jenis_dokumen.toLowerCase()}_${tahunJudul}.pdf`,
-      judul,
-      subjudul,
-      pembuat,
-    });
-  };
-
   if (periodeIdValid === false) {
     return (
       <Container className="mt-5">
         <Alert variant="danger">
-          Tahun login tidak sesuai periode RPJMD. Silakan login ulang atau
-          hubungi admin.
+          Konteks login tidak selaras dengan periode RPJMD. Silakan login ulang
+          atau hubungi admin.
         </Alert>
       </Container>
     );
@@ -358,7 +378,8 @@ export default function SasaranList() {
               judul={judul}
               subjudul={subjudul}
               pembuat={pembuat}
-              filename={`sasaran_${jenis_dokumen.toLowerCase()}_${tahunJudul}`}
+              filename={`sasaran_${jenis_dokumen.toLowerCase()}_${exportSlug}`}
+              getFullDataset={fetchAllSasaranForExport}
             />
 
             <Button

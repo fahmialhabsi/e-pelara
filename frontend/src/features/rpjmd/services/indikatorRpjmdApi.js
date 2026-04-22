@@ -1,9 +1,7 @@
 import api from "@/services/api";
 import apiAI from "@/services/apiAI";
 import { normalizeListItems } from "@/utils/apiResponse";
-import {
-  KEGIATAN_INDIKATOR_CREATE_PATH,
-} from "./indikatorRpjmdPayload";
+import { KEGIATAN_INDIKATOR_CREATE_PATH } from "./indikatorRpjmdPayload";
 import {
   normalizeAiRecoStatus,
   normalizeIndikatorListResponse,
@@ -12,13 +10,13 @@ import {
 
 /** Path resource indikator (tanpa leading slash untuk composability) */
 export const INDIKATOR_RPJMD_RESOURCES = {
-  tujuan:          "indikator-tujuans",
-  sasaran:         "indikator-sasaran",
-  strategi:        "indikator-strategi",        // TODO: konfirmasi endpoint backend
-  arah_kebijakan:  "indikator-arah-kebijakan",  // TODO: konfirmasi endpoint backend
-  program:         "indikator-program",
-  kegiatan:        "indikator-kegiatan",
-  sub_kegiatan:    "indikator-sub-kegiatan",    // TODO: konfirmasi endpoint backend
+  tujuan: "indikator-tujuans",
+  sasaran: "indikator-sasaran",
+  strategi: "indikator-strategi", // TODO: konfirmasi endpoint backend
+  arah_kebijakan: "indikator-arah-kebijakan", // TODO: konfirmasi endpoint backend
+  program: "indikator-program",
+  kegiatan: "indikator-kegiatan",
+  sub_kegiatan: "indikator-sub-kegiatan", // TODO: konfirmasi endpoint backend
 };
 
 // ——— Wizard bootstrap (IndikatorRPJMDForm) ———
@@ -65,8 +63,8 @@ export async function fetchAllOpdPenanggungJawabWizard() {
   if (totalPages > 1) {
     const rest = await Promise.all(
       Array.from({ length: totalPages - 1 }, (_, i) =>
-        api.get(`/opd-penanggung-jawab?page=${i + 2}`)
-      )
+        api.get(`/opd-penanggung-jawab?page=${i + 2}`),
+      ),
     );
     opdList = opdList.concat(...rest.map((r) => normalizeListItems(r.data)));
   }
@@ -145,6 +143,38 @@ export async function createIndikatorKegiatanBatch(payload) {
 }
 
 export async function createIndikatorTujuanBatch(payload) {
+  const list = Array.isArray(payload) ? payload : [payload];
+  list.forEach((p, idx) => {
+    console.group(
+      `[DEBUG] POST /api/indikator-tujuans payload${list.length > 1 ? ` [${idx}]` : ""}`,
+    );
+    console.log("payload final:", p);
+    console.table({
+      nama_indikator: p?.nama_indikator,
+      tipe_indikator: p?.tipe_indikator,
+      jenis_indikator: p?.jenis_indikator,
+      metode_penghitungan: p?.metode_penghitungan,
+      penanggung_jawab: p?.penanggung_jawab,
+      target_tahun_1: p?.target_tahun_1,
+      target_tahun_2: p?.target_tahun_2,
+      target_tahun_3: p?.target_tahun_3,
+      target_tahun_4: p?.target_tahun_4,
+      target_tahun_5: p?.target_tahun_5,
+      capaian_tahun_1: p?.capaian_tahun_1,
+      capaian_tahun_2: p?.capaian_tahun_2,
+      capaian_tahun_3: p?.capaian_tahun_3,
+      capaian_tahun_4: p?.capaian_tahun_4,
+      capaian_tahun_5: p?.capaian_tahun_5,
+    });
+    if (!p?.tipe_indikator || !p?.jenis_indikator) {
+      console.error("[DEBUG] Missing required indikator fields", {
+        tipe_indikator: p?.tipe_indikator,
+        jenis_indikator: p?.jenis_indikator,
+        payload: p,
+      });
+    }
+    console.groupEnd();
+  });
   return api.post("/indikator-tujuans", payload);
 }
 
@@ -222,7 +252,9 @@ export async function fetchIndikatorProgramOptions(params) {
 
 /** GET /indikator-tujuans/by-tujuan?tujuan_id=X — load indikator existing untuk edit */
 export async function fetchIndikatorTujuanByTujuan(tujuanId) {
-  return api.get("/indikator-tujuans/by-tujuan", { params: { tujuan_id: tujuanId } });
+  return api.get("/indikator-tujuans/by-tujuan", {
+    params: { tujuan_id: tujuanId },
+  });
 }
 
 /** GET /indikator-sasaran?sasaran_id=&tahun=&jenis_dokumen= */
@@ -240,13 +272,19 @@ export async function fetchIndikatorProgramByProgram(programId, params = {}) {
 }
 
 /** GET /indikator-kegiatan?kegiatan_id=&tahun=&jenis_dokumen=&indikator_program_id= */
-export async function fetchIndikatorKegiatanByKegiatan(kegiatanId, params = {}) {
+export async function fetchIndikatorKegiatanByKegiatan(
+  kegiatanId,
+  params = {},
+) {
   return api.get("/indikator-kegiatan", {
     params: { kegiatan_id: kegiatanId, ...params },
   });
 }
 
-export async function fetchIndikatorStrategiByStrategi(strategiId, params = {}) {
+export async function fetchIndikatorStrategiByStrategi(
+  strategiId,
+  params = {},
+) {
   return api.get("/indikator-strategi/by-strategi", {
     params: { strategi_id: strategiId, ...params },
   });
@@ -326,12 +364,19 @@ export async function fetchNextKodeIndikatorStrategi(strateqiId, params) {
   return api.get(`/indikator-strategi/${strateqiId}/next-kode`, { params });
 }
 
-export async function fetchNextKodeIndikatorArahKebijakan(arahKebijakanId, params) {
-  return api.get(`/indikator-arah-kebijakan/${arahKebijakanId}/next-kode`, { params });
+export async function fetchNextKodeIndikatorArahKebijakan(
+  arahKebijakanId,
+  params,
+) {
+  return api.get(`/indikator-arah-kebijakan/${arahKebijakanId}/next-kode`, {
+    params,
+  });
 }
 
 export async function fetchNextKodeIndikatorSubKegiatan(subKegiatanId, params) {
-  return api.get(`/indikator-sub-kegiatan/${subKegiatanId}/next-kode`, { params });
+  return api.get(`/indikator-sub-kegiatan/${subKegiatanId}/next-kode`, {
+    params,
+  });
 }
 
 // ——— AI (domain indikator) ———
@@ -364,21 +409,33 @@ export async function fetchIndikatorKhususBundleByMisi(params) {
     arahKebijakan,
     subKegiatan,
   ] = await Promise.all([
-    safeAxiosData(api.get("/indikator-tujuans", { params }), "indikator-tujuans"),
-    safeAxiosData(api.get("/indikator-sasaran", { params }), "indikator-sasaran"),
-    safeAxiosData(api.get("/indikator-program", { params }), "indikator-program"),
-    safeAxiosData(api.get("/indikator-kegiatan", { params }), "indikator-kegiatan"),
+    safeAxiosData(
+      api.get("/indikator-tujuans", { params }),
+      "indikator-tujuans",
+    ),
+    safeAxiosData(
+      api.get("/indikator-sasaran", { params }),
+      "indikator-sasaran",
+    ),
+    safeAxiosData(
+      api.get("/indikator-program", { params }),
+      "indikator-program",
+    ),
+    safeAxiosData(
+      api.get("/indikator-kegiatan", { params }),
+      "indikator-kegiatan",
+    ),
     safeAxiosData(
       api.get("/indikator-strategi", { params: pageParams }),
-      "indikator-strategi"
+      "indikator-strategi",
     ),
     safeAxiosData(
       api.get("/indikator-arah-kebijakan", { params: pageParams }),
-      "indikator-arah-kebijakan"
+      "indikator-arah-kebijakan",
     ),
     safeAxiosData(
       api.get("/indikator-sub-kegiatan", { params: pageParams }),
-      "indikator-sub-kegiatan"
+      "indikator-sub-kegiatan",
     ),
   ]);
   return {

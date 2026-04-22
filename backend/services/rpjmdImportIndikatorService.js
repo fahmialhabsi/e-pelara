@@ -558,6 +558,10 @@ async function createIndikatorTujuan(periodeId, body, opts = {}) {
     rkpd_id: toInt(b.rkpd_id) || null,
     // Hormati flag dari pemanggil (upsertIndikatorTujuanImport = true, wizard = false/default)
     is_import_reference: b.is_import_reference === true ? true : false,
+    // Prefix kode tujuan dari import Excel (mis. "T1-01") — hanya untuk baris referensi impor
+    reference_target_code: b.is_import_reference === true && b.reference_target_code
+      ? String(b.reference_target_code).slice(0, 50)
+      : null,
   };
   syncIndikatorKinerjaFromJenis(payload);
   const row = await IndikatorTujuan.create(payload, { transaction: tx });
@@ -603,6 +607,14 @@ async function updateIndikatorTujuan(periodeId, id, body, opts = {}) {
   // Teruskan flag is_import_reference jika disertakan pemanggil (mis. upsertIndikatorTujuanImport = true)
   if (body.is_import_reference !== undefined) {
     data.is_import_reference = body.is_import_reference === true ? true : false;
+  }
+  // Teruskan reference_target_code hanya untuk baris referensi impor
+  if (body.reference_target_code !== undefined) {
+    const isRef = body.is_import_reference === true ||
+      (body.is_import_reference === undefined && row.get("is_import_reference"));
+    data.reference_target_code = isRef && body.reference_target_code
+      ? String(body.reference_target_code).slice(0, 50)
+      : null;
   }
   const mergedJenis = data.jenis_dokumen !== undefined ? data.jenis_dokumen : row.get("jenis_dokumen");
   const mergedKode = data.kode_indikator !== undefined ? data.kode_indikator : row.get("kode_indikator");
@@ -715,6 +727,9 @@ async function createIndikatorSasaran(periodeId, body, opts = {}) {
     e.code = "BAD_REQUEST";
     throw e;
   }
+  const _TIPE_ALLOWED = ["Outcome", "Output", "Impact", "Process", "Input", "Proses"];
+  const _tipeRaw = str(b.tipe_indikator, 32);
+  const _tipeResolved = _TIPE_ALLOWED.includes(_tipeRaw) ? _tipeRaw : "Impact";
   return runInOptionalTransaction(opts.transaction, async (tx) => {
     const sasaran = await Sasaran.findByPk(sasaran_id, {
       transaction: tx,
@@ -758,19 +773,21 @@ async function createIndikatorSasaran(periodeId, body, opts = {}) {
       nama_indikator: core.nama_indikator,
       satuan: core.satuan,
       jenis_indikator: core.jenis_indikator,
-      tipe_indikator: "Outcome",
+      tipe_indikator: _tipeResolved,
       jenis_dokumen: core.jenis_dokumen,
       tahun: core.tahun,
       stage: "sasaran",
     });
+    const extra = pickIndikatorTujuanExtra(b);
     const row = await IndikatorSasaran.create(
       {
         ...core,
+        ...extra,
         periode_id: pid,
         indikator_id: String(master.id),
         tujuan_id,
         sasaran_id,
-        tipe_indikator: "Outcome",
+        tipe_indikator: _tipeResolved,
         rkpd_id: toInt(b.rkpd_id) || null,
       },
       { transaction: tx },
@@ -792,7 +809,10 @@ async function updateIndikatorSasaran(periodeId, id, body, opts = {}) {
     "tahun",
     ...TARGET_KEYS,
   ]);
-  data.tipe_indikator = "Outcome";
+  Object.assign(data, pickIndikatorTujuanExtra(body));
+  const _TIPE_ALLOWED_UPD = ["Outcome", "Output", "Impact", "Process", "Input", "Proses"];
+  const _tipeRawUpd = str((body || {}).tipe_indikator, 32);
+  data.tipe_indikator = _TIPE_ALLOWED_UPD.includes(_tipeRawUpd) ? _tipeRawUpd : "Impact";
   const mergedJenis = data.jenis_dokumen !== undefined ? data.jenis_dokumen : row.get("jenis_dokumen");
   const mergedKode = data.kode_indikator !== undefined ? data.kode_indikator : row.get("kode_indikator");
   if (data.kode_indikator !== undefined || data.jenis_dokumen !== undefined) {
@@ -808,7 +828,7 @@ async function updateIndikatorSasaran(periodeId, id, body, opts = {}) {
         nama_indikator: data.nama_indikator ?? undefined,
         satuan: data.satuan ?? undefined,
         jenis_indikator: data.jenis_indikator ? masterJenisLower(data.jenis_indikator) : undefined,
-        tipe_indikator: "Outcome",
+        tipe_indikator: data.tipe_indikator,
         jenis_dokumen: data.jenis_dokumen,
         tahun: data.tahun,
       },
@@ -905,8 +925,8 @@ async function createIndikatorStrategi(periodeId, body, opts = {}) {
     throw e;
   }
   const tipe = str(b.tipe_indikator, 32);
-  const allowed = ["Outcome", "Output", "Impact", "Process", "Input"];
-  const tipe_indikator = allowed.includes(tipe) ? tipe : "Outcome";
+  const allowed = ["Outcome", "Output", "Impact", "Process", "Input", "Proses"];
+  const tipe_indikator = allowed.includes(tipe) ? tipe : "Impact";
   return runInOptionalTransaction(opts.transaction, async (tx) => {
     const st = await Strategi.findByPk(strategi_id, {
       transaction: tx,
@@ -998,9 +1018,14 @@ async function updateIndikatorStrategi(periodeId, id, body, opts = {}) {
     "tahun",
     ...TARGET_KEYS,
   ]);
+  const extraUpdSt = pickIndikatorTujuanExtra(b);
+  const pjSt = toInt(extraUpdSt.penanggung_jawab ?? b.penanggung_jawab);
+  delete extraUpdSt.penanggung_jawab;
+  Object.assign(data, extraUpdSt);
+  if (Number.isFinite(pjSt) && pjSt > 0) data.penanggung_jawab = pjSt;
   const tipe = str(b.tipe_indikator, 32);
-  const allowed = ["Outcome", "Output", "Impact", "Process", "Input"];
-  if (tipe) data.tipe_indikator = allowed.includes(tipe) ? tipe : "Outcome";
+  const allowed = ["Outcome", "Output", "Impact", "Process", "Input", "Proses"];
+  data.tipe_indikator = allowed.includes(tipe) ? tipe : "Impact";
   const mergedJenis = data.jenis_dokumen !== undefined ? data.jenis_dokumen : row.get("jenis_dokumen");
   const mergedKode = data.kode_indikator !== undefined ? data.kode_indikator : row.get("kode_indikator");
   if (data.kode_indikator !== undefined || data.jenis_dokumen !== undefined) {
@@ -1113,8 +1138,8 @@ async function createIndikatorArahKebijakan(periodeId, body, opts = {}) {
     throw e;
   }
   const tipe = str(b.tipe_indikator, 32);
-  const allowed = ["Outcome", "Output", "Impact", "Process", "Input"];
-  const tipe_indikator = allowed.includes(tipe) ? tipe : "Outcome";
+  const allowed = ["Outcome", "Output", "Impact", "Process", "Input", "Proses"];
+  const tipe_indikator = allowed.includes(tipe) ? tipe : "Impact";
   return runInOptionalTransaction(opts.transaction, async (tx) => {
     const arahRow = await ArahKebijakan.findByPk(arah_kebijakan_id, {
       transaction: tx,
@@ -1206,9 +1231,14 @@ async function updateIndikatorArahKebijakan(periodeId, id, body, opts = {}) {
     "tahun",
     ...TARGET_KEYS,
   ]);
+  const extraUpdAk = pickIndikatorTujuanExtra(b);
+  const pjAk = toInt(extraUpdAk.penanggung_jawab ?? b.penanggung_jawab);
+  delete extraUpdAk.penanggung_jawab;
+  Object.assign(data, extraUpdAk);
+  if (Number.isFinite(pjAk) && pjAk > 0) data.penanggung_jawab = pjAk;
   const tipe = str(b.tipe_indikator, 32);
-  const allowed = ["Outcome", "Output", "Impact", "Process", "Input"];
-  if (tipe) data.tipe_indikator = allowed.includes(tipe) ? tipe : "Outcome";
+  const allowed = ["Outcome", "Output", "Impact", "Process", "Input", "Proses"];
+  data.tipe_indikator = allowed.includes(tipe) ? tipe : "Impact";
   const mergedJenis = data.jenis_dokumen !== undefined ? data.jenis_dokumen : row.get("jenis_dokumen");
   const mergedKode = data.kode_indikator !== undefined ? data.kode_indikator : row.get("kode_indikator");
   if (data.kode_indikator !== undefined || data.jenis_dokumen !== undefined) {

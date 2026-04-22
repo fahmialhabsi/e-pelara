@@ -1,5 +1,5 @@
 // src/features/rpjmd/pages/DashboardUtamaRpjmd.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../../../hooks/useAuth";
 import {
   BsEye,
@@ -14,6 +14,7 @@ import {
   BsLayers,
   BsBuildings,
   BsListUl,
+  BsFileEarmarkText,
 } from "react-icons/bs";
 
 import {
@@ -68,18 +69,29 @@ import CascadingDetail from "@/pages/CascadingDetail";
 
 import api from "../../../services/api";
 import { useDokumen } from "../../../hooks/useDokumen";
-import { Navigate, Outlet } from "react-router-dom";
+import { Link, Navigate, Outlet } from "react-router-dom";
 import SidebarMenu from "@/shared/components/SidebarMenu";
 import { checkAuthStatus } from "../../../contexts/AuthProvider";
 import { useNavigate } from "react-router-dom";
 import { usePeriodeAktif } from "@/features/rpjmd/hooks/usePeriodeAktif";
 import CascadingNestedView from "@/shared/components/CascadingNestedView";
 import IndikatorList from "@/shared/components/IndikatorList";
+import RpjmdDokumenImporPanel from "@/features/rpjmd/components/RpjmdDokumenImporPanel";
+import RpjmdMonitoringIndikator from "@/features/rpjmd/pages/RpjmdMonitoringIndikator";
+import RpjmdMonitoringOPD from "@/features/rpjmd/pages/RpjmdMonitoringOPD";
+import RpjmdMonitoringHeatmap from "@/features/rpjmd/pages/RpjmdMonitoringHeatmap";
 import {
   extractListData,
   extractListMeta,
   normalizeListItems,
 } from "@/utils/apiResponse";
+import { hasPlanFeature, PLAN_FEATURE_KEYS } from "@/utils/planFeatures";
+
+function menuItemPlanGate(menuKey) {
+  if (menuKey === "monitoring_rpjmd_heatmap") return PLAN_FEATURE_KEYS.heatmap;
+  if (menuKey === "monitoring_rpjmd_opd") return PLAN_FEATURE_KEYS.monitoring_opd;
+  return null;
+}
 
 const groupedMenuList = [
   {
@@ -88,6 +100,11 @@ const groupedMenuList = [
       { key: "visi", icon: <BsEye size={18} />, label: "Visi" },
       { key: "misi", icon: <BsPeople size={18} />, label: "Misi" },
       { key: "tujuan", icon: <BsFlag size={18} />, label: "Tujuan" },
+      {
+        key: "dokumen_impor_rpjmd",
+        icon: <BsFileEarmarkText size={18} />,
+        label: "Dokumen impor RPJMD (PDF)",
+      },
     ],
   },
   {
@@ -248,6 +265,21 @@ const groupedMenuList = [
         label: "Daftar Indikator Sub Kegiatan",
       },
       {
+        key: "monitoring_indikator_rpjmd",
+        icon: <BsBarChart size={18} />,
+        label: "Monitoring Indikator RPJMD",
+      },
+      {
+        key: "monitoring_rpjmd_opd",
+        icon: <BsBuildings size={18} />,
+        label: "Monitoring capaian per OPD",
+      },
+      {
+        key: "monitoring_rpjmd_heatmap",
+        icon: <BsLayers size={18} />,
+        label: "Heatmap indikator RPJMD",
+      },
+      {
         key: "indikator_khusus_list",
         icon: <BsFlag size={18} />,
         label: "Daftar Indikator Khusus",
@@ -262,12 +294,30 @@ const roleBasedMenu = {
   PENGAWAS: groupedMenuList
     .flatMap((g) => g.items)
     .filter((m) =>
-      ["program", "kegiatan", "sub_kegiatan", "indikator"].includes(m.key)
+      [
+        "program",
+        "kegiatan",
+        "sub_kegiatan",
+        "indikator",
+        "dokumen_impor_rpjmd",
+        "monitoring_indikator_rpjmd",
+        "monitoring_rpjmd_opd",
+        "monitoring_rpjmd_heatmap",
+      ].includes(m.key)
     ),
   PELAKSANA: groupedMenuList
     .flatMap((g) => g.items)
     .filter((m) =>
-      ["program", "kegiatan", "sub_kegiatan", "indikator"].includes(m.key)
+      [
+        "program",
+        "kegiatan",
+        "sub_kegiatan",
+        "indikator",
+        "dokumen_impor_rpjmd",
+        "monitoring_indikator_rpjmd",
+        "monitoring_rpjmd_opd",
+        "monitoring_rpjmd_heatmap",
+      ].includes(m.key)
     ),
 };
 
@@ -325,7 +375,17 @@ export default function DashboardUtamaRpjmd() {
 
   const { dokumen, tahun } = useDokumen();
   const { user, loading: userLoading } = useAuth();
-  const { periode_id } = usePeriodeAktif();
+  const { periode_id, periodeList } = usePeriodeAktif();
+
+  const periodeRentangLabel = useMemo(() => {
+    const p = (periodeList || []).find(
+      (x) => String(x.id) === String(periode_id),
+    );
+    if (p?.tahun_awal != null && p?.tahun_akhir != null) {
+      return `${p.tahun_awal} – ${p.tahun_akhir}`;
+    }
+    return null;
+  }, [periodeList, periode_id]);
   const navigate = useNavigate();
 
   const [openedGroup, setOpenedGroup] = useState(() => {
@@ -567,6 +627,14 @@ export default function DashboardUtamaRpjmd() {
         return <CascadingStatistik />;
       case "cascading_detail":
         return <CascadingDetail />;
+      case "dokumen_impor_rpjmd":
+        return <RpjmdDokumenImporPanel periodeId={periode_id} />;
+      case "monitoring_indikator_rpjmd":
+        return <RpjmdMonitoringIndikator />;
+      case "monitoring_rpjmd_opd":
+        return <RpjmdMonitoringOPD />;
+      case "monitoring_rpjmd_heatmap":
+        return <RpjmdMonitoringHeatmap />;
       default:
         return null;
     }
@@ -601,32 +669,47 @@ export default function DashboardUtamaRpjmd() {
                             (m) => m.key === item.key
                           )
                         )
-                        .map((menu) => (
-                          <ListGroup.Item
-                            key={menu.key}
-                            action
-                            active={selectedMenu === menu.key}
-                            onClick={() => {
-                              setSelectedMenu(menu.key);
-                              localStorage.setItem(
-                                "selectedMenuRPJMD",
-                                menu.key
-                              );
-                            }}
-                            className="ps-4 d-flex align-items-center"
-                            style={{ cursor: "pointer" }}
-                          >
-                            <span className="me-2">{menu.icon}</span>{" "}
-                            {menu.label}
-                          </ListGroup.Item>
-                        ))}
+                        .map((menu) => {
+                          const gate = menuItemPlanGate(menu.key);
+                          const locked =
+                            gate != null && !hasPlanFeature(user, gate);
+                          return (
+                            <ListGroup.Item
+                              key={menu.key}
+                              action
+                              active={selectedMenu === menu.key}
+                              disabled={locked}
+                              onClick={() => {
+                                if (locked) return;
+                                setSelectedMenu(menu.key);
+                                localStorage.setItem(
+                                  "selectedMenuRPJMD",
+                                  menu.key
+                                );
+                              }}
+                              className="ps-4 d-flex align-items-center flex-wrap"
+                              style={{ cursor: locked ? "not-allowed" : "pointer" }}
+                              title={locked ? "Upgrade ke PRO" : undefined}
+                            >
+                              <span className="me-2">{menu.icon}</span>
+                              {menu.label}
+                              {locked ? (
+                                <span className="ms-1 small">
+                                  <Link to={PRICING_PATH} className="text-muted">
+                                    (Upgrade ke PRO)
+                                  </Link>
+                                </span>
+                              ) : null}
+                            </ListGroup.Item>
+                          );
+                        })}
                   </div>
                 ))}
               </ListGroup>
             </Card.Body>
           </Card>
         </Col>
-        <Col md={9} lg={10}>
+        <Col md={9} lg={10} className="min-w-0">
           <h3 className="fw-bold mb-1 text-primary">
             📊 Dashboard Pengelolaan Data RPJMD
           </h3>
@@ -634,8 +717,15 @@ export default function DashboardUtamaRpjmd() {
             <span className="me-3">
               <strong>Dokumen Aktif:</strong> <Badge bg="info">{dokumen}</Badge>
             </span>
-            <span>
-              <strong>Tahun:</strong> <Badge bg="secondary">{tahun}</Badge>
+            {periodeRentangLabel ? (
+              <span className="me-3">
+                <strong>Periode RPJMD:</strong>{" "}
+                <Badge bg="primary">{periodeRentangLabel}</Badge>
+              </span>
+            ) : null}
+            <span className="text-muted small d-block d-md-inline mt-1 mt-md-0">
+              RPJMD satu periode (lima tahun); tidak ada pemilihan tahun terpisah — konteks data mengikuti periode aktif
+              Anda.
             </span>
           </div>
 

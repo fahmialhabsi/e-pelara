@@ -13,7 +13,7 @@ export const formatNumberShort = (num) =>
     ? "—"
     : Number(num).toLocaleString("id-ID", { maximumFractionDigits: 0 });
 
-/** Grid 6 tahun untuk baris expand (target / pagu) */
+/** Grid 6 slot periode (target / pagu) untuk baris expand */
 export function TahunGrid({ record, prefix, label }) {
   return (
     <div style={{ marginBottom: 12 }}>
@@ -52,7 +52,7 @@ export function TahunGrid({ record, prefix, label }) {
 }
 
 /**
- * Detail expand standar: baseline + satuan + pasangan label opsional, lalu target & pagu per tahun.
+ * Detail expand standar: baseline + satuan + pasangan label opsional, lalu target & pagu per slot periode.
  * @param {Array<{ label: string, value: React.ReactNode }>} extraMeta
  */
 export function StandardRenstraExpandedRow({ record, extraMeta = [] }) {
@@ -88,8 +88,8 @@ export function StandardRenstraExpandedRow({ record, extraMeta = [] }) {
           </span>
         ))}
       </div>
-      <TahunGrid record={record} prefix="target" label="Target per tahun" />
-      <TahunGrid record={record} prefix="pagu" label="Pagu per tahun (Rp)" />
+      <TahunGrid record={record} prefix="target" label="Target per slot periode (th. ke-1 s/d ke-6)" />
+      <TahunGrid record={record} prefix="pagu" label="Pagu per slot periode (th. ke-1 s/d ke-6, Rp)" />
     </div>
   );
 }

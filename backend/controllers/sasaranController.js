@@ -9,6 +9,9 @@ const parseId = (value) => {
   return Number.isNaN(parsed) ? null : parsed;
 };
 
+/** Untuk regex prefix nomor sasaran (S{no_tujuan}-NN). */
+const escapeRegExp = (s) => String(s ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 const applyTujuanFilter = (where, tujuanIds = []) => {
   if (!Array.isArray(tujuanIds) || !tujuanIds.length) return;
   where.tujuan_id = tujuanIds.length === 1 ? tujuanIds[0] : { [Op.in]: tujuanIds };
@@ -525,11 +528,38 @@ const sasaranController = {
         return res.status(400).json({ message: "Periode tidak ditemukan." });
       const periode_id = periode.id;
 
-      const maxNomor = await Sasaran.max("nomor", {
+      const tujuan = await Tujuan.findByPk(tujuan_id, {
+        attributes: ["no_tujuan"],
+      });
+      if (!tujuan) {
+        return res.status(404).json({ message: "Tujuan tidak ditemukan." });
+      }
+      const noTujuan = String(tujuan.no_tujuan ?? "").trim();
+      if (!noTujuan) {
+        return res
+          .status(400)
+          .json({ message: "Tujuan tidak memiliki no_tujuan untuk penomoran." });
+      }
+      const prefix = `S${noTujuan}`;
+
+      const rows = await Sasaran.findAll({
         where: { tujuan_id, jenis_dokumen, tahun, periode_id },
+        attributes: ["nomor"],
+        raw: true,
       });
 
-      const nextNomor = maxNomor ? maxNomor + 1 : 1;
+      let maxSeq = 0;
+      const re = new RegExp(`^${escapeRegExp(prefix)}-(\\d+)$`);
+      for (const row of rows) {
+        const nom = row.nomor != null ? String(row.nomor).trim() : "";
+        const m = nom.match(re);
+        if (m) {
+          const n = Number.parseInt(m[1], 10);
+          if (Number.isFinite(n) && n > maxSeq) maxSeq = n;
+        }
+      }
+
+      const nextNomor = maxSeq + 1;
       return res.status(200).json({ nextNomor });
     } catch (err) {
       console.error("Error fetching next nomor:", err);

@@ -52,6 +52,9 @@ import PrioritasDaerahList from "@/shared/components/PrioritasDaerahList";
 import PrioritasGubernurList from "@/shared/components/PrioritasGubernurList";
 import OpdList from "@/shared/components/OpdList";
 import IndikatorTujuanListPage from "@/features/rpjmd/pages/IndikatorTujuanListPage";
+import RpjmdMonitoringIndikator from "@/features/rpjmd/pages/RpjmdMonitoringIndikator";
+import RpjmdMonitoringOPD from "@/features/rpjmd/pages/RpjmdMonitoringOPD";
+import RpjmdMonitoringHeatmap from "@/features/rpjmd/pages/RpjmdMonitoringHeatmap";
 import CascadingDetail from "@/pages/CascadingDetail";
 
 const routes = [
@@ -329,6 +332,21 @@ const routes = [
   {
     path: "/dashboard-rpjmd",
     element: <DashboardUtamaRpjmd />,
+    role: ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"],
+  },
+  {
+    path: "/dashboard-rpjmd/monitoring-indikator",
+    element: <RpjmdMonitoringIndikator />,
+    role: ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"],
+  },
+  {
+    path: "/dashboard-rpjmd/monitoring-opd",
+    element: <RpjmdMonitoringOPD />,
+    role: ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"],
+  },
+  {
+    path: "/dashboard-rpjmd/monitoring-heatmap",
+    element: <RpjmdMonitoringHeatmap />,
     role: ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"],
   },
   {

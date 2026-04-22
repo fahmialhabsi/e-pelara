@@ -1,8 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { useDokumen } from "../../hooks/useDokumen";
 import { useAuth } from "../../hooks/useAuth";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Form, Button, Spinner } from "react-bootstrap";
+import api from "../../services/api";
+import { extractListData } from "../../utils/apiResponse";
+import {
+  isDokumenLevelPeriode,
+  pickAnchorPeriodeFromList,
+} from "../../utils/planningDokumenUtils";
 
 const jenisToPath = {
   rpjmd: "/dashboard-rpjmd",
@@ -49,8 +55,20 @@ export default function GlobalDokumenTahunPicker() {
   async function handleSubmit(e) {
     e.preventDefault();
     const dok = localDok.toLowerCase();
-    const thn = localThn;
-    if (!dok || !thn) return;
+    const periodeLevel = isDokumenLevelPeriode(dok);
+    let thn = localThn;
+    if (!dok) return;
+    if (periodeLevel) {
+      try {
+        const res = await api.get("/periode-rpjmd");
+        const list = extractListData(res.data);
+        const pick = pickAnchorPeriodeFromList(list, user);
+        if (pick?.tahun_awal != null) thn = String(pick.tahun_awal);
+      } catch {
+        /* handled below */
+      }
+      if (!thn) return;
+    } else if (!thn) return;
 
     setDokumen(dok);
     setTahun(thn);
@@ -97,24 +115,31 @@ export default function GlobalDokumenTahunPicker() {
               </option>
             ))}
           </Form.Select>
-          <Form.Select
-            size="sm"
-            value={localThn}
-            onChange={(e) => setLocalThn(e.target.value)}
-            style={{ maxWidth: 110 }}
-          >
-            <option value="">Tahun</option>
-            {[2025, 2026, 2027, 2028, 2029].map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </Form.Select>
+          {!isDokumenLevelPeriode(localDok) ? (
+            <Form.Select
+              size="sm"
+              value={localThn}
+              onChange={(e) => setLocalThn(e.target.value)}
+              style={{ maxWidth: 110 }}
+            >
+              <option value="">Konteks waktu</option>
+              {[2025, 2026, 2027, 2028, 2029].map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </Form.Select>
+          ) : null}
           <Button
             type="submit"
             size="sm"
             variant="primary"
-            disabled={submitting || loading || !localDok || !localThn}
+            disabled={
+              submitting ||
+              loading ||
+              !localDok ||
+              (!isDokumenLevelPeriode(localDok) && !localThn)
+            }
           >
             {submitting ? <Spinner size="sm" /> : "Masuk"}
           </Button>

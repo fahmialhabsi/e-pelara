@@ -89,8 +89,144 @@ export async function getRenjaMismatchValidation(renjaId) {
   return unwrap(res);
 }
 
+export async function validateRenjaDokumen(renjaId, body = {}) {
+  const res = await api.post(`/renja/v2/${renjaId}/validate`, body);
+  return unwrap(res);
+}
+
+export async function recomputeRenjaMismatch(renjaId) {
+  const res = await api.post(`/renja/v2/${renjaId}/recompute-mismatch`, {});
+  return unwrap(res);
+}
+
+export async function getRenjaReadiness(renjaId, params = {}) {
+  const res = await api.get(`/renja/v2/${renjaId}/readiness`, { params });
+  return unwrap(res);
+}
+
+export async function validateRenjaItemDraft(renjaId, body) {
+  const res = await api.post(`/renja/v2/${renjaId}/items/validate`, body);
+  return unwrap(res);
+}
+
+export async function bulkValidateRenjaItems(renjaId) {
+  const res = await api.post(`/renja/v2/${renjaId}/items/bulk-validate`, {});
+  return unwrap(res);
+}
+
 export async function getRenjaExportViewModel(renjaId) {
   const res = await api.get(`/renja/v2/${renjaId}/export`);
+  return unwrap(res);
+}
+
+export async function getRenjaDataFixSummary(renjaId) {
+  const res = await api.get(`/renja/v2/${renjaId}/data-fix/summary`);
+  return unwrap(res);
+}
+
+export async function generateRenjaDataFixMapping(renjaId, body = {}) {
+  const res = await api.post(`/renja/v2/${renjaId}/data-fix/generate-mapping`, body);
+  return unwrap(res);
+}
+
+export async function getRenjaDataFixMappingSuggestions(renjaId) {
+  const res = await api.get(`/renja/v2/${renjaId}/data-fix/mapping-suggestions`);
+  return unwrap(res);
+}
+
+export async function applyRenjaDataFixMapping(renjaId, body = {}) {
+  const res = await api.post(`/renja/v2/${renjaId}/data-fix/apply-mapping`, body);
+  return unwrap(res);
+}
+
+/** Dry-run dampak apply mapping (tidak menulis DB). */
+export async function previewRenjaDataFixMapping(renjaId, body = {}) {
+  const res = await api.post(`/renja/v2/${renjaId}/data-fix/preview-mapping`, body);
+  return unwrap(res);
+}
+
+export async function previewRenjaDataFixImpact(renjaId, body = {}) {
+  const res = await api.post(`/renja/v2/${renjaId}/data-fix/preview-impact`, body);
+  return unwrap(res);
+}
+
+export async function getRenjaDataFixQualityScore(renjaId) {
+  const res = await api.get(`/renja/v2/${renjaId}/data-fix/quality-score`);
+  return unwrap(res);
+}
+
+export async function listRenjaMappingApplyBatches(renjaId, params = {}) {
+  const res = await api.get(`/renja/v2/${renjaId}/data-fix/mapping-apply-batches`, { params });
+  return unwrap(res);
+}
+
+export async function getRenjaDataFixBatchHistory(renjaId, params = {}) {
+  const res = await api.get(`/renja/v2/${renjaId}/data-fix/batch-history`, { params });
+  return unwrap(res);
+}
+
+export async function getRenjaDataFixBatchDetail(renjaId, batchId) {
+  const res = await api.get(`/renja/v2/${renjaId}/data-fix/batch-detail/${batchId}`);
+  return unwrap(res);
+}
+
+export async function acquireRenjaDataFixLock(renjaId, body = {}) {
+  const res = await api.post(`/renja/v2/${renjaId}/data-fix/lock`, body);
+  return unwrap(res);
+}
+
+export async function releaseRenjaDataFixLock(renjaId) {
+  const res = await api.delete(`/renja/v2/${renjaId}/data-fix/lock`);
+  return unwrap(res);
+}
+
+export async function getRenjaDataFixLock(renjaId) {
+  const res = await api.get(`/renja/v2/${renjaId}/data-fix/lock`);
+  return unwrap(res);
+}
+
+export async function rollbackRenjaMappingApplyBatch(renjaId, body = {}) {
+  const res = await api.post(`/renja/v2/${renjaId}/data-fix/rollback-mapping`, body);
+  return unwrap(res);
+}
+
+export async function generateRenjaIndicatorSuggestions(renjaId, body = {}) {
+  const res = await api.post(`/renja/v2/${renjaId}/data-fix/generate-indicator-suggestions`, body);
+  return unwrap(res);
+}
+
+export async function getRenjaIndicatorSuggestions(renjaId) {
+  const res = await api.get(`/renja/v2/${renjaId}/data-fix/indicator-suggestions`);
+  return unwrap(res);
+}
+
+export async function applyRenjaIndicatorSuggestions(renjaId, body = {}) {
+  const res = await api.post(`/renja/v2/${renjaId}/data-fix/apply-indicator-mapping`, body);
+  return unwrap(res);
+}
+
+export async function autofillRenjaTargets(renjaId, body = {}) {
+  const res = await api.post(`/renja/v2/${renjaId}/data-fix/autofill-targets`, body);
+  return unwrap(res);
+}
+
+export async function getRenjaTargetSuggestions(renjaId) {
+  const res = await api.get(`/renja/v2/${renjaId}/data-fix/target-suggestions`);
+  return unwrap(res);
+}
+
+export async function resolveRenjaPolicyConflicts(renjaId, body = {}) {
+  const res = await api.post(`/renja/v2/${renjaId}/data-fix/resolve-policy-conflicts`, body);
+  return unwrap(res);
+}
+
+export async function getRenjaPolicyConflicts(renjaId) {
+  const res = await api.get(`/renja/v2/${renjaId}/data-fix/policy-conflicts`);
+  return unwrap(res);
+}
+
+export async function applyRenjaAllHighConfidence(renjaId, body = {}) {
+  const res = await api.post(`/renja/v2/${renjaId}/data-fix/apply-all-high-confidence`, body);
   return unwrap(res);
 }
 

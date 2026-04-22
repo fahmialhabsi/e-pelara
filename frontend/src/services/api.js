@@ -1,8 +1,11 @@
 // src/services/api.js
 import axios from "axios";
+import { jwtDecode } from "jwt-decode";
 import { refreshToken } from "./authService";
 import { toast } from "react-toastify";
 import { API_BASE_URL } from "../config/runtimeConfig";
+import { normalizeRole } from "../utils/roleUtils";
+import { ACTIVE_TENANT_LS_KEY } from "../constants/tenantStorage";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -15,6 +18,17 @@ api.interceptors.request.use(
     const token = localStorage.getItem("token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      try {
+        const decoded = jwtDecode(token);
+        if (normalizeRole(decoded.role) === "SUPER_ADMIN") {
+          const pick = localStorage.getItem(ACTIVE_TENANT_LS_KEY);
+          if (pick != null && String(pick).trim() !== "") {
+            config.headers["X-Tenant-Id"] = String(pick).trim();
+          }
+        }
+      } catch {
+        /* ignore */
+      }
     }
     const method = String(config.method || "get").toLowerCase();
     if (method === "get" && config.params !== false) {

@@ -128,6 +128,8 @@ const tujuanRoutes = require("./routes/tujuanRoutes");
 const visiRoutes = require("./routes/visiRoutes");
 const targetsRoutes = require("./routes/targetsRoutes");
 const rpjmdRoutes = require("./routes/rpjmdRoutes");
+const rpjmdImportRoutes = require("./routes/rpjmdImportRoutes");
+const rpjmdMonitoringRoutes = require("./routes/rpjmdMonitoringRoutes");
 const realisasiRoutes = require("./routes/realisasiIndikatorRoutes");
 const evaluasiRoutes = require("./routes/evaluasiRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
@@ -235,6 +237,8 @@ const lkAccountingRoutes = require("./routes/lkAccountingRoutes");
 
 // USE CLONE PERIODE
 const clonePeriodeRoutes = require("./routes/clonePeriodeRoutes");
+const tenantRoutes = require("./routes/tenantRoutes");
+const planRoutes = require("./routes/planRoutes");
 
 app.use(cookieParser());
 app.use(express.json({ limit: "10mb" }));
@@ -249,6 +253,8 @@ app.use("/api", signPdfRoutes);
 app.use("/api/periode-rpjmd", periodeRoutes);
 app.use("/api/rekomendasi-ai", rekomendasiAIRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/tenants", tenantRoutes);
+app.use("/api/plans", planRoutes);
 app.use("/api", derivationRoutes);
 app.use("/api", userRoutes);
 app.use("/api/divisions", divisionRoutes);
@@ -272,6 +278,8 @@ app.use("/api/tujuan", tujuanRoutes);
 app.use("/api/visi", visiRoutes);
 app.use("/api/targets", targetsRoutes);
 app.use("/api/rpjmd", rpjmdRoutes);
+app.use("/api/rpjmd-import", rpjmdImportRoutes);
+app.use("/api/rpjmd-monitoring", rpjmdMonitoringRoutes);
 app.use("/api/realisasi-indikator", realisasiRoutes);
 app.use("/api/evaluasi", evaluasiRoutes);
 app.use("/api", dashboardRoutes);

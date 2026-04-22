@@ -1,0 +1,681 @@
+[
+  {
+    "file": "`frontend\\src\\contexts\\DokumenProvider.jsx`",
+    "line": "16",
+    "snippet": "const initialTahun = isFreshSsoSession",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\contexts\\DokumenProvider.jsx`",
+    "line": "35",
+    "snippet": "const setTahunGlobal = useCallback((th) => {",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\contexts\\DokumenProvider.jsx`",
+    "line": "36",
+    "snippet": "setTahun(th);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\contexts\\DokumenProvider.jsx`",
+    "line": "48",
+    "snippet": "setTahun(\"\");",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\contexts\\DokumenProvider.jsx`",
+    "line": "61",
+    "snippet": "setTahun: setTahunGlobal,",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\components\\FormRenstraOPD.jsx`",
+    "line": "232",
+    "snippet": "{/* Tahun Mulai */}",
+    "kat": "UI_LABEL",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\components\\FormRenstraOPD.jsx`",
+    "line": "234",
+    "snippet": "label=\"Tahun Mulai\"",
+    "kat": "UI_LABEL",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\components\\FormRenstraOPD.jsx`",
+    "line": "242",
+    "snippet": "<Select {...field} allowClear placeholder=\"Pilih Tahun Mulai\">",
+    "kat": "UI_LABEL",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\components\\FormRenstraOPD.jsx`",
+    "line": "253",
+    "snippet": "{/* Tahun Akhir */}",
+    "kat": "UI_LABEL",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\components\\FormRenstraOPD.jsx`",
+    "line": "255",
+    "snippet": "label=\"Tahun Akhir\"",
+    "kat": "UI_LABEL",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\components\\FormRenstraOPD.jsx`",
+    "line": "263",
+    "snippet": "<Select {...field} allowClear placeholder=\"Pilih Tahun Akhir\">",
+    "kat": "UI_LABEL",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\ListRenstraOPD.jsx`",
+    "line": "102",
+    "snippet": "}, [tahunAktif]);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\RenstraDashboard.jsx`",
+    "line": "135",
+    "snippet": "const paguPerTahun = [1, 2, 3, 4, 5, 6].map((i) => ({",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\RenstraDashboard.jsx`",
+    "line": "140",
+    "snippet": "setPaguSummary({ paguPerTahun, totalAkhir, count: rows.length });",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "49",
+    "snippet": "const resetTargets = (yearList = years) => {",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "52",
+    "snippet": "target_program: yearList.map(() => \"\"),",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "53",
+    "snippet": "target_kegiatan: yearList.map(() => \"\"),",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "54",
+    "snippet": "target_subkegiatan: yearList.map(() => \"\"),",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "59",
+    "snippet": "const fetchYears = async () => {",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "63",
+    "snippet": "setYears(res.data);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "234",
+    "snippet": "target_subkegiatan: years.map(() => \"\"), // ❌ kosongkan juga",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "247",
+    "snippet": "fetchYears();",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "275",
+    "snippet": "for (let i = 0; i < years.length; i++) {",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "298",
+    "snippet": "...years.map((y, i) => ({",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "303",
+    "snippet": "...years.map((y, i) => ({",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "308",
+    "snippet": "...years.map((y, i) => ({",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "361",
+    "snippet": "const renderYearInputs = (key) =>",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "420",
+    "snippet": "{renderYearInputs(\"target_program\")}",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "452",
+    "snippet": "{renderYearInputs(\"target_kegiatan\")}",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\pages\\TargetRenstra.jsx`",
+    "line": "484",
+    "snippet": "{renderYearInputs(\"target_subkegiatan\")}",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\shared\\components\\RenstraTabelListCommon.jsx`",
+    "line": "44",
+    "snippet": "? formatNumberShort(record[`${prefix}_tahun_${i}`])",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\shared\\components\\RenstraTabelListCommon.jsx`",
+    "line": "45",
+    "snippet": ": formatNumber(record[`${prefix}_tahun_${i}`])}",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\shared\\components\\RenstraTabelListCommon.jsx`",
+    "line": "91",
+    "snippet": "<TahunGrid record={record} prefix=\"target\" label=\"Target per slot periode (th. ke-1 s/d ke-6)\" />",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\shared\\components\\RenstraTabelListCommon.jsx`",
+    "line": "92",
+    "snippet": "<TahunGrid record={record} prefix=\"pagu\" label=\"Pagu per slot periode (th. ke-1 s/d ke-6, Rp)\" />",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\renstra\\subkegiatan\\components\\RenstraTabelSubKegiatanForm.jsx`",
+    "line": "142",
+    "snippet": "return Number.isFinite(y) && y > 0 ? y : new Date().getFullYear();",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\rpjmd\\components\\AktivitasFilter.jsx`",
+    "line": "36",
+    "snippet": "<option value=\"tahun\">Agregat tahunan (log aktivitas)</option>",
+    "kat": "UI_LABEL",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\rpjmd\\components\\IndikatorSimpleEditFormBody.jsx`",
+    "line": "28",
+    "snippet": "useAutoIsiTahunDanTarget(values, setFieldValue);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\rpjmd\\hooks\\ListPageComponent.jsx`",
+    "line": "89",
+    "snippet": "const tahunAktif = new Date().getFullYear();",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\rpjmd\\hooks\\usePeriodeAktif.jsx`",
+    "line": "15",
+    "snippet": "tahunDalamPeriode,",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\rpjmd\\hooks\\usePeriodeAktif.jsx`",
+    "line": "85",
+    "snippet": "return currentYear >= tahunAwal && currentYear <= tahunAkhir;",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\rpjmd\\pages\\DashboardHome.jsx`",
+    "line": "19",
+    "snippet": "const { isReady, GuardModal } = useRequireDokumenTahun(); // ✅ Gunakan hook ini",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\rpjmd\\pages\\DashboardMonitoring.jsx`",
+    "line": "195",
+    "snippet": "<option value=\"tahun\">Agregat tahunan (monitoring)</option>",
+    "kat": "UI_LABEL",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\rpjmd\\pages\\IndikatorKegiatanEditPage.jsx`",
+    "line": "43",
+    "snippet": "useAutoIsiTahunDanTarget(values, setFieldValue);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\rpjmd\\pages\\ReportRPJMDPage.jsx`",
+    "line": "38",
+    "snippet": "} else if (ctxTahun) {",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\rpjmd\\pages\\ReportRPJMDPage.jsx`",
+    "line": "39",
+    "snippet": "const n = parseInt(String(ctxTahun), 10);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\rpjmd\\pages\\ReportRPJMDPage.jsx`",
+    "line": "40",
+    "snippet": "if (Number.isFinite(n)) setYear(n);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\rpjmd\\pages\\ReportRPJMDPage.jsx`",
+    "line": "42",
+    "snippet": "}, [dokumen, ctxTahun, periodeAktif]);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\rpjmd\\pages\\ReportRPJMDPage.jsx`",
+    "line": "225",
+    "snippet": "<Form.Group controlId=\"formYear\">",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\features\\rpjmd\\services\\mockApi.js`",
+    "line": "18",
+    "snippet": "years: [\"2020\", \"2021\", \"2022\", \"2023\", \"2024\"],",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\GlobalDokumenTahunPicker.jsx`",
+    "line": "74",
+    "snippet": "setTahun(thn);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\GlobalDokumenTahunPickerModal.jsx`",
+    "line": "1",
+    "snippet": "// src/shared/components/GlobalDokumenTahunPickerModal.jsx",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\GlobalDokumenTahunPickerModal.jsx`",
+    "line": "29",
+    "snippet": "const tahunList = [\"2025\", \"2026\", \"2027\", \"2028\", \"2029\"];",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\GlobalDokumenTahunPickerModal.jsx`",
+    "line": "46",
+    "snippet": "const needsYear = dokLower && !periodeLevel;",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\GlobalDokumenTahunPickerModal.jsx`",
+    "line": "140",
+    "snippet": "setTahun(thn);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\GlobalDokumenTahunPickerModal.jsx`",
+    "line": "190",
+    "snippet": "{tahunList.map((th) => (",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\hooks\\useAutoIsiTahunDanTarget.js`",
+    "line": "1",
+    "snippet": "// src/shared/hooks/useAutoIsiTahunDanTarget.js",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\hooks\\useIndikatorBuilder.js`",
+    "line": "9",
+    "snippet": "const getTargetTahunValues = (values) =>",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\hooks\\useIndikatorBuilder.js`",
+    "line": "39",
+    "snippet": "...getTargetTahunValues(values),",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\IndikatorTabContent.jsx`",
+    "line": "10",
+    "snippet": "unionYearColumnsOptions,",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\IndikatorTabContent.jsx`",
+    "line": "13",
+    "snippet": "extrapolateCapaianTahun5FromFour,",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\IndikatorTabContent.jsx`",
+    "line": "18",
+    "snippet": "const URU_TAHUN_COL_BY_CAPAIAN = {",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\IndikatorTabContent.jsx`",
+    "line": "80",
+    "snippet": "const unionYearOpts = useMemo(",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\IndikatorTabContent.jsx`",
+    "line": "81",
+    "snippet": "() => unionYearColumnsOptions(urusanKinerja228),",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\IndikatorTabContent.jsx`",
+    "line": "101",
+    "snippet": "const cap5 = extrapolateCapaianTahun5FromFour(",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\IndikatorTabContent.jsx`",
+    "line": "213",
+    "snippet": "yearKeys.forEach((yk, idx) => {",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\IndikatorTabContent.jsx`",
+    "line": "227",
+    "snippet": "const autoCap5 = extrapolateCapaianTahun5FromFour(",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\IndikatorTabContent.jsx`",
+    "line": "263",
+    "snippet": "const uruCol = URU_TAHUN_COL_BY_CAPAIAN[field.name];",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\IndikatorTabContent.jsx`",
+    "line": "293",
+    "snippet": "placeholder={`Pilih dari impor (${uruCol.replace(\"tahun_\", \"\")})`}",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\IndikatorTabContent.jsx`",
+    "line": "312",
+    "snippet": "const opts = optionsWithCurrentValue(unionYearOpts, values[field.name]);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\MuiTopbarGlobal.jsx`",
+    "line": "28",
+    "snippet": "<GlobalDokumenTahunPicker />",
+    "kat": "UI_FILTER",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\MuiTopbarGlobal.jsx`",
+    "line": "32",
+    "snippet": "<GlobalDokumenTahunPickerModal />",
+    "kat": "UI_FILTER",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\RequireDokumenTahun.jsx`",
+    "line": "26",
+    "snippet": "<GlobalDokumenTahunPickerModal forceOpen />",
+    "kat": "UI_FILTER",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\RequireDokumenTahun.jsx`",
+    "line": "46",
+    "snippet": "<GlobalDokumenTahunPickerModal forceOpen />",
+    "kat": "UI_FILTER",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\RequireDokumenTahun.jsx`",
+    "line": "63",
+    "snippet": "<GlobalDokumenTahunPickerModal forceOpen />",
+    "kat": "UI_FILTER",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\RPJMDList.jsx`",
+    "line": "101",
+    "snippet": "<th>Tahun Penetapan</th>",
+    "kat": "UI_LABEL",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\RpjmdMetadataForm.jsx`",
+    "line": "99",
+    "snippet": "<Form.Label>Tahun Penetapan</Form.Label>",
+    "kat": "UI_LABEL",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\SasaranForm.jsx`",
+    "line": "166",
+    "snippet": "!tahunFromForm",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\SasaranList.jsx`",
+    "line": "124",
+    "snippet": "filename: `sasaran_${jenis_dokumen.toLowerCase()}_${tahunJudul}.csv`,",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\SasaranList.jsx`",
+    "line": "282",
+    "snippet": "filename: `sasaran_${jenis_dokumen.toLowerCase()}_${tahunJudul}.xlsx`,",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\SasaranList.jsx`",
+    "line": "292",
+    "snippet": "filename: `sasaran_${jenis_dokumen.toLowerCase()}_${tahunJudul}.pdf`,",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\SasaranList.jsx`",
+    "line": "369",
+    "snippet": "filename={`sasaran_${jenis_dokumen.toLowerCase()}_${tahunJudul}`}",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\steps\\ArahKebijakanStep.jsx`",
+    "line": "47",
+    "snippet": "useAutoIsiTahunDanTarget(values, setFieldValue);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\steps\\indikatorStep\\useStepTemplateAddAndAi.js`",
+    "line": "51",
+    "snippet": "const projected = extrapolateCapaianTahun5FromFour(",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\steps\\KegiatanStep.jsx`",
+    "line": "48",
+    "snippet": "useAutoIsiTahunDanTarget(values, setFieldValue);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\steps\\ProgramStep.jsx`",
+    "line": "58",
+    "snippet": "useAutoIsiTahunDanTarget(values, setFieldValue);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\steps\\SasaranStep.jsx`",
+    "line": "53",
+    "snippet": "useAutoIsiTahunDanTarget(values, setFieldValue);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\steps\\StrategiStep.jsx`",
+    "line": "47",
+    "snippet": "useAutoIsiTahunDanTarget(values, setFieldValue);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\steps\\SubKegiatanStep.jsx`",
+    "line": "40",
+    "snippet": "useAutoIsiTahunDanTarget(values, setFieldValue);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\TablerTopbarGlobal.jsx`",
+    "line": "23",
+    "snippet": "<GlobalDokumenTahunPicker />",
+    "kat": "UI_FILTER",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\shared\\components\\TablerTopbarGlobal.jsx`",
+    "line": "24",
+    "snippet": "<GlobalDokumenTahunPickerModal />",
+    "kat": "UI_FILTER",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\utils\\planningDokumenUtils.js`",
+    "line": "23",
+    "snippet": "const nowYear =",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\utils\\planningDokumenUtils.js`",
+    "line": "24",
+    "snippet": "typeof opts.nowYear === \"number\"",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\utils\\planningDokumenUtils.js`",
+    "line": "25",
+    "snippet": "? opts.nowYear",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\utils\\planningDokumenUtils.js`",
+    "line": "26",
+    "snippet": ": new Date().getFullYear();",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\utils\\planningDokumenUtils.js`",
+    "line": "28",
+    "snippet": "const periodeMemuatTahun = (y) =>",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\utils\\planningDokumenUtils.js`",
+    "line": "35",
+    "snippet": "const byCalendar = periodeMemuatTahun(nowYear);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  },
+  {
+    "file": "`frontend\\src\\utils\\planningDokumenUtils.js`",
+    "line": "57",
+    "snippet": "const y = parseInt(String(tahunStr ?? \"\"), 10);",
+    "kat": "UNKNOWN",
+    "stat": "PERLU VALIDASI"
+  }
+]

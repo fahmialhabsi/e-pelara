@@ -19,7 +19,9 @@ import {
   PeriodeAktifProvider,
   usePeriodeAktif,
 } from "./features/rpjmd/hooks/usePeriodeAktif";
+import { RpjmdExcelPreviewProvider } from "./contexts/RpjmdExcelPreviewContext";
 import { useAuth } from "./hooks/useAuth";
+import { isDokumenLevelPeriode } from "./utils/planningDokumenUtils";
 
 import GlobalDokumenTahunPickerModal from "./shared/components/GlobalDokumenTahunPickerModal";
 import ProtectedRoute from "./features/auth/components/ProtectedRoute";
@@ -46,6 +48,7 @@ import RenjaVersionsPage from "./features/renja/pages/RenjaVersionsPage";
 import RenjaComparePage from "./features/renja/pages/RenjaComparePage";
 import RenjaValidationPage from "./features/renja/pages/RenjaValidationPage";
 import RenjaSinkronisasiPage from "./features/renja/pages/RenjaSinkronisasiPage";
+import RenjaDataFixDashboardPage from "./features/renja/pages/RenjaDataFixDashboardPage";
 import RenjaExportPage from "./features/renja/pages/RenjaExportPage";
 import RenjaReadonlyDetailPage from "./features/renja/pages/RenjaReadonlyDetailPage";
 import RkaDashboard from "./features/rka/pages/RkaDashboard";
@@ -59,6 +62,11 @@ import LkDashboard from "./features/lk-dispang/pages/LkDashboard";
 import LakipDashboard from "./features/lakip/pages/LAKIPDashboard";
 import CloningData from "./admin/ClonePeriodePage";
 import ClonedDataTable from "./admin/ClonedDataTable";
+const TenantManagementPage = React.lazy(() => import("./admin/TenantManagementPage"));
+const SubscriptionAdminPage = React.lazy(() =>
+  import("./admin/SubscriptionAdminPage"),
+);
+const PricingPage = React.lazy(() => import("./pages/PricingPage"));
 
 const Login = React.lazy(() => import("./features/auth/pages/Login"));
 const Register = React.lazy(() => import("./features/auth/pages/Register"));
@@ -116,15 +124,31 @@ function RequireDokumenType({ dokType, children }) {
 
 function DokumenTahunGuard({ children }) {
   const { dokumen, tahun } = useDokumen();
-  return (
-    <>
-      {!dokumen || !tahun ? (
-        <GlobalDokumenTahunPickerModal forceOpen />
+  const { loading: periodeLoading } = usePeriodeAktif();
+
+  if (!dokumen) {
+    return <GlobalDokumenTahunPickerModal forceOpen />;
+  }
+
+  if (isDokumenLevelPeriode(dokumen)) {
+    if (!tahun) {
+      return periodeLoading ? (
+        <div className="text-center mt-5 py-5">
+          <Spinner animation="border" />
+          <p className="mt-2 text-muted">Menyiapkan periode RPJMD (Tahun 1–5)…</p>
+        </div>
       ) : (
-        children
-      )}
-    </>
-  );
+        <GlobalDokumenTahunPickerModal forceOpen />
+      );
+    }
+    return children;
+  }
+
+  if (!tahun) {
+    return <GlobalDokumenTahunPickerModal forceOpen />;
+  }
+
+  return children;
 }
 
 /** Deep link: /dashboard-rpjmd/wizard?from=…&sasaran_id=… → dashboard + menu wizard + query */
@@ -376,6 +400,16 @@ function InnerApp() {
               }
             />
             <Route
+              path="dashboard-renja/v2/dokumen/:id/data-fix"
+              element={
+                <DokumenTahunGuard>
+                  <RequireDokumenType dokType="renja">
+                    <RenjaDataFixDashboardPage />
+                  </RequireDokumenType>
+                </DokumenTahunGuard>
+              }
+            />
+            <Route
               path="dashboard-renja/v2/dokumen/:id/validasi"
               element={
                 <DokumenTahunGuard>
@@ -570,6 +604,23 @@ function InnerApp() {
                 </DokumenTahunGuard>
               }
             />
+            <Route
+              path="admin/tenants"
+              element={
+                <ProtectedRoute role="SUPER_ADMIN">
+                  <TenantManagementPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="admin/subscriptions"
+              element={
+                <ProtectedRoute role="SUPER_ADMIN">
+                  <SubscriptionAdminPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="pricing" element={<PricingPage />} />
             {/* Inject dynamic routes here */}
             {[...rpjmdRoutes, ...renstraRoutes].map(
               ({ path, element, role }, index) => (
@@ -617,7 +668,14 @@ const AppContent = () => {
     return <Navigate to="/login" replace />;
   }
 
-  if (user && (!dokumen || !tahun)) {
+  const needsTahunForApp =
+    !dokumen || (!isDokumenLevelPeriode(dokumen) && !tahun);
+
+  const p = (location.pathname || "/").replace(/\/+$/, "") || "/";
+  const skipDokumenPicker =
+    p === "/pricing" || p === "/admin/tenants" || p === "/admin/subscriptions";
+
+  if (user && needsTahunForApp && !skipDokumenPicker) {
     return <GlobalDokumenTahunPickerModal forceOpen />;
   }
 
@@ -668,7 +726,9 @@ const AppRoot = () => {
     >
       <AntdApp>
         <DokumenProvider>
-          <AppWithAuth />
+          <RpjmdExcelPreviewProvider>
+            <AppWithAuth />
+          </RpjmdExcelPreviewProvider>
         </DokumenProvider>
       </AntdApp>
     </ConfigProvider>

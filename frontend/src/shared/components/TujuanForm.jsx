@@ -14,10 +14,12 @@ import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { useDokumen } from "../../hooks/useDokumen";
+import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
 import {
   extractListData,
   normalizeListItems,
 } from "../../utils/apiResponse";
+import { konteksBannerRows } from "../../utils/planningDokumenUtils";
 
 const StrukturTab = ({
   formData,
@@ -76,6 +78,10 @@ const DetailTab = ({ formData, handleChange }) => (
 
 function TujuanForm({ initialData = null, onSuccess }) {
   const { dokumen, tahun } = useDokumen();
+  const { periode_id, periodeList } = usePeriodeAktif();
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(periode_id),
+  );
   const navigate = useNavigate();
   const [rpjmdList, setRpjmdList] = useState([]);
   const [misiList, setMisiList] = useState([]);
@@ -195,7 +201,7 @@ function TujuanForm({ initialData = null, onSuccess }) {
     }
 
     if (!dokumen || !tahun) {
-      alert("Dokumen dan tahun belum tersedia.");
+      alert("Konteks dokumen / periode belum siap. Atur pemilihan dokumen di header lalu coba lagi.");
       return;
     }
 
@@ -256,8 +262,11 @@ function TujuanForm({ initialData = null, onSuccess }) {
         </Breadcrumb.Item>
       </Breadcrumb>
       <div className="mb-3">
-        <strong>Dokumen Aktif:</strong> {dokumen} <br />
-        <strong>Tahun:</strong> {tahun}
+        {konteksBannerRows(dokumen, tahun, periodeAktif).map((r) => (
+          <span key={r.key} className="d-block">
+            <strong>{r.label}:</strong> {r.value}
+          </span>
+        ))}
       </div>
       <Card>
         <Card.Body>

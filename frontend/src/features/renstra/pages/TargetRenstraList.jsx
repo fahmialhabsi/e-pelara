@@ -75,7 +75,7 @@ export default function TargetRenstraList() {
               <th>Program</th>
               <th>Kegiatan</th>
               <th>Sub Kegiatan</th>
-              <th>Tahun</th>
+              <th>Acuan periode (data)</th>
               <th>Target</th>
               <th>Satuan</th>
               <th>Pagu Anggaran</th>

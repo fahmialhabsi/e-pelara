@@ -114,11 +114,11 @@ const IndikatorTujuanNestedView = ({ data = [], onDeleted }) => {
                   <th rowSpan="2">Target</th>
                   <th rowSpan="2">Satuan</th>
                   <th colSpan="5" className="text-center">
-                    Capaian Tahun Ke
+                    Capaian (th. ke-I s/d V)
                   </th>
                   <th rowSpan="2">Baseline</th>
                   <th colSpan="5" className="text-center">
-                    Target Tahun Ke
+                    Target (th. ke-I s/d V)
                   </th>
                   <th rowSpan="2">Aksi</th>
                 </tr>

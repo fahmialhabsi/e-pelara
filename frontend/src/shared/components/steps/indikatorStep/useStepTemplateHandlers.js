@@ -6,14 +6,22 @@ import { useCallback } from "react";
 export default function useStepTemplateHandlers(setFieldValue) {
   const handleTujuanChange = useCallback(
     (selected) => {
-      const { value = "", label = "", isi_tujuan = "" } = selected || {};
+      const {
+        value = "",
+        label = "",
+        isi_tujuan = "",
+        no_tujuan = "",
+      } = selected || {};
       setFieldValue("no_tujuan", value);
       setFieldValue("label_tujuan", label);
       setFieldValue("tujuan_label", label);
       setFieldValue("isi_tujuan", isi_tujuan);
       setFieldValue("tujuan_id", value);
+      // Simpan kode prefix tujuan (mis. "T1-01") untuk filter dropdown referensi impor
+      // Nilai ini digunakan IndikatorTabContent untuk mencocokkan reference_target_code
+      setFieldValue("tujuan_no_tujuan_code", no_tujuan);
     },
-    [setFieldValue]
+    [setFieldValue],
   );
 
   const handleSasaranChange = useCallback(
@@ -33,7 +41,7 @@ export default function useStepTemplateHandlers(setFieldValue) {
       setFieldValue("misi_id", misi_id || "");
       setFieldValue("tujuan_id", tujuan_id || "");
     },
-    [setFieldValue]
+    [setFieldValue],
   );
 
   const handleProgramChange = useCallback(
@@ -57,16 +65,20 @@ export default function useStepTemplateHandlers(setFieldValue) {
       setFieldValue("tujuan_id", tujuan_id || "");
       setFieldValue("sasaran_id", sasaran_id || "");
     },
-    [setFieldValue]
+    [setFieldValue],
   );
 
   const handleStrategiChange = useCallback(
     (selected) => {
       const { value = "", label = "" } = selected || {};
-      setFieldValue("strategi_id", value != null && value !== "" ? String(value) : "");
+      setFieldValue(
+        "strategi_id",
+        value != null && value !== "" ? String(value) : "",
+      );
       setFieldValue("strategi_label", label);
+      setFieldValue("rpjmd_import_indikator_strategi_id", "");
     },
-    [setFieldValue]
+    [setFieldValue],
   );
 
   const handleArahKebijakanChange = useCallback(
@@ -74,11 +86,11 @@ export default function useStepTemplateHandlers(setFieldValue) {
       const { value = "", label = "" } = selected || {};
       setFieldValue(
         "arah_kebijakan_id",
-        value != null && value !== "" ? String(value) : ""
+        value != null && value !== "" ? String(value) : "",
       );
       setFieldValue("arah_kebijakan_label", label);
     },
-    [setFieldValue]
+    [setFieldValue],
   );
 
   const handleSubKegiatanChange = useCallback(
@@ -94,12 +106,14 @@ export default function useStepTemplateHandlers(setFieldValue) {
       } = selected || {};
       setFieldValue(
         "sub_kegiatan_id",
-        value != null && value !== "" ? String(value) : ""
+        value != null && value !== "" ? String(value) : "",
       );
       setFieldValue("sub_kegiatan_label", label);
       if (misi_id !== "" && misi_id != null) setFieldValue("misi_id", misi_id);
-      if (tujuan_id !== "" && tujuan_id != null) setFieldValue("tujuan_id", tujuan_id);
-      if (sasaran_id !== "" && sasaran_id != null) setFieldValue("sasaran_id", sasaran_id);
+      if (tujuan_id !== "" && tujuan_id != null)
+        setFieldValue("tujuan_id", tujuan_id);
+      if (sasaran_id !== "" && sasaran_id != null)
+        setFieldValue("sasaran_id", sasaran_id);
       if (program_id !== "" && program_id != null) {
         setFieldValue("program_id", String(program_id));
       }
@@ -107,7 +121,7 @@ export default function useStepTemplateHandlers(setFieldValue) {
         setFieldValue("kegiatan_id", String(kegiatan_id));
       }
     },
-    [setFieldValue]
+    [setFieldValue],
   );
 
   const handleKegiatanChange = useCallback(
@@ -133,7 +147,7 @@ export default function useStepTemplateHandlers(setFieldValue) {
       setFieldValue("tujuan_id", tujuan_id);
       setFieldValue("sasaran_id", sasaran_id);
     },
-    [setFieldValue]
+    [setFieldValue],
   );
 
   const handleFieldChange = useCallback(
@@ -141,7 +155,7 @@ export default function useStepTemplateHandlers(setFieldValue) {
       if (name === "baseline") return;
       setFieldValue(name, e.target.value);
     },
-    [setFieldValue]
+    [setFieldValue],
   );
 
   const handleFieldChangeWithUnit = useCallback(
@@ -149,7 +163,7 @@ export default function useStepTemplateHandlers(setFieldValue) {
       const val = e.target.value.replace(/[^0-9.,]/g, "").trim();
       setFieldValue(name, val);
     },
-    [setFieldValue]
+    [setFieldValue],
   );
 
   return {

@@ -6,6 +6,8 @@ import Toolbar from "@mui/material/Toolbar";
 import Box from "@mui/material/Box";
 import GlobalDokumenTahunPicker from "./GlobalDokumenTahunPicker";
 import GlobalDokumenTahunPickerModal from "./GlobalDokumenTahunPickerModal";
+import SuperAdminTenantSwitcher from "./SuperAdminTenantSwitcher";
+import TenantOverrideBanner from "./TenantOverrideBanner";
 // Optional: import Avatar, Menu, IconButton, etc.
 
 export default function MuiTopbarGlobal() {
@@ -23,11 +25,13 @@ export default function MuiTopbarGlobal() {
       }}
       elevation={0}
     >
-      <Toolbar sx={{ justifyContent: "space-between", minHeight: 64 }}>
-        {/* Left: Dokumen/Tahun Picker */}
-        <GlobalDokumenTahunPicker />
+      <TenantOverrideBanner />
+      <Toolbar sx={{ justifyContent: "space-between", minHeight: 64, flexWrap: "wrap", gap: 1 }}>
+        <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, flex: 1, minWidth: 0 }}>
+          <GlobalDokumenTahunPicker />
+          <SuperAdminTenantSwitcher />
+        </Box>
 
-        {/* Right: Modal trigger (Ganti Dokumen/Tahun), avatar, dsb */}
         <Box>
           <GlobalDokumenTahunPickerModal />
         </Box>

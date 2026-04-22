@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Form,
   Button,
@@ -13,13 +13,15 @@ import {
 import { toast } from "react-toastify";
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
-import { useDokumen } from "../../hooks/useDokumen";
+import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
 import usePostDokThnWithContext from "../../hooks/usePostDokThnWithContext";
 import { getPeriodeIdFromTahun } from "./utils/periodeUtils";
 import {
   extractListData,
   normalizeListItems,
+  normalizeId,
 } from "../../utils/apiResponse";
+import { konteksBannerRows } from "../../utils/planningDokumenUtils";
 
 export default function ArahKebijakanForm({
   existingData,
@@ -28,9 +30,15 @@ export default function ArahKebijakanForm({
 }) {
   const isEdit = Boolean(existingData?.id);
   const navigate = useNavigate();
-  const { dokumen, tahun } = useDokumen();
+  const { dokumen, tahun, loading: periodeAktifLoading } = usePeriodeAktif();
   const { postData, posting, error } = usePostDokThnWithContext();
   const [daftarPeriode, setDaftarPeriode] = useState([]);
+
+  const periodeAktifBanner = useMemo(() => {
+    if (!daftarPeriode?.length || !tahun) return null;
+    const pid = getPeriodeIdFromTahun(tahun, daftarPeriode);
+    return daftarPeriode.find((p) => String(p.id) === String(pid)) || null;
+  }, [daftarPeriode, tahun]);
 
   const [data, setData] = useState({
     tujuan: "",
@@ -75,7 +83,13 @@ export default function ArahKebijakanForm({
   const fetchStrategi = useCallback(
     async (sasaran_id) => {
       const res = await api.get("/strategi", {
-        params: { jenis_dokumen: dokumen, tahun, sasaran_id },
+        params: {
+          jenis_dokumen: dokumen,
+          tahun,
+          sasaran_id,
+          limit: 500,
+          page: 1,
+        },
       });
       const list = normalizeListItems(res.data);
       setOptions((prev) => ({ ...prev, strategi: list }));
@@ -83,53 +97,79 @@ export default function ArahKebijakanForm({
     [dokumen, tahun]
   );
 
-  // useEffect yang fetch kode arah secara otomatis saat data.strategi berubah
+  // Kode arah otomatis: hindari respons lawas menimpa strategi yang sudah diganti (race).
   useEffect(() => {
-    const fetchNextKode = async () => {
-      if (!isEdit && data.strategi) {
-        try {
-          const res = await api.get("/arah-kebijakan/next-kode", {
-            params: {
-              strategi_id: data.strategi,
-              jenis_dokumen: dokumen,
-              tahun,
-            },
-          });
-          setData((prev) => ({
-            ...prev,
-            kode_arah: res.data?.kode_arah || "",
-          }));
-        } catch (err) {
+    if (isEdit || !data.strategi || !dokumen || !tahun) return;
+
+    const sid = String(data.strategi);
+    let cancelled = false;
+
+    setData((prev) => {
+      if (String(prev.strategi) !== sid) return prev;
+      return { ...prev, kode_arah: "" };
+    });
+
+    (async () => {
+      try {
+        const res = await api.get("/arah-kebijakan/next-kode", {
+          params: {
+            strategi_id: sid,
+            jenis_dokumen: dokumen,
+            tahun,
+          },
+        });
+        if (cancelled) return;
+        setData((prev) => {
+          if (String(prev.strategi) !== sid) return prev;
+          return { ...prev, kode_arah: res.data?.kode_arah || "" };
+        });
+      } catch (err) {
+        if (!cancelled) {
           console.error("Gagal mengambil kode arah otomatis:", err);
           toast.warning("Kode arah otomatis gagal diambil.");
         }
       }
-    };
+    })();
 
-    fetchNextKode();
+    return () => {
+      cancelled = true;
+    };
   }, [data.strategi, dokumen, tahun, isEdit]);
 
-  const handleCascadeChange = async (key, value) => {
-    const newData = { ...data, [key]: value };
+  const handleCascadeChange = async (key, rawValue) => {
+    const value = rawValue === null || rawValue === undefined ? "" : String(rawValue);
 
     if (key === "tujuan") {
-      newData.sasaran = "";
-      newData.strategi = "";
+      setData((prev) => ({
+        ...prev,
+        tujuan: value,
+        sasaran: "",
+        strategi: "",
+      }));
       setPreview((prev) => ({
         ...prev,
-        tujuan: options.tujuan.find((t) => t.id === +value)?.isi_tujuan || "",
+        tujuan: value
+          ? options.tujuan.find((t) => String(t.id) === value)?.isi_tujuan ||
+            ""
+          : "",
+        strategi: "",
       }));
-      await fetchSasaran(value);
+      if (value) await fetchSasaran(value);
+      else setOptions((p) => ({ ...p, sasaran: [], strategi: [] }));
     } else if (key === "sasaran") {
-      newData.strategi = "";
-      await fetchStrategi(value);
+      setData((prev) => ({
+        ...prev,
+        sasaran: value,
+        strategi: "",
+      }));
+      setPreview((prev) => ({ ...prev, strategi: "" }));
+      if (value) await fetchStrategi(value);
+      else setOptions((p) => ({ ...p, strategi: [] }));
     } else if (key === "strategi") {
-      const selected = options.strategi.find((s) => s.id === +value);
+      setData((prev) => ({ ...prev, strategi: value }));
+      const selected = options.strategi.find((s) => String(s.id) === value);
       setPreview((prev) => ({ ...prev, strategi: selected?.deskripsi || "" }));
-      // Hapus fetch kode arah dari sini supaya tidak duplikat
     }
-
-    setData(newData);
   };
 
   const handleInput = (e) => {
@@ -150,7 +190,7 @@ export default function ArahKebijakanForm({
       const periode_id = getPeriodeIdFromTahun(tahun, daftarPeriode);
 
       if (!periode_id) {
-        toast.error("Periode tidak ditemukan untuk tahun " + tahun);
+        toast.error("Periode tidak ditemukan untuk rentang periode acuan saat ini.");
         return;
       }
 
@@ -181,17 +221,26 @@ export default function ArahKebijakanForm({
       onSubmitSuccess?.();
     } catch (err) {
       console.error("Gagal menyimpan data:", err);
+      const errText = `${err.response?.data?.error || ""} ${err.response?.data?.message || ""}`;
       const msg =
-        err.response?.data?.error?.includes("kode_arah") &&
-        err.response?.data?.error?.includes("unique")
-          ? "Kode arah kebijakan sudah ada."
+        err.response?.status === 409 ||
+        (errText.toLowerCase().includes("kode_arah") &&
+          errText.toLowerCase().includes("unique"))
+          ? "Kode / kombinasi arah kebijakan sudah ada untuk strategi ini."
           : err.response?.data?.message || "Gagal menyimpan data.";
       toast.error(msg);
     }
   };
 
   useEffect(() => {
+    if (periodeAktifLoading) return;
+
     const initializeForm = async () => {
+      if (!dokumen || !tahun) {
+        setLoading(false);
+        return;
+      }
+
       await fetchTujuan();
 
       if (isEdit && existingData?.Strategi) {
@@ -204,7 +253,13 @@ export default function ArahKebijakanForm({
         });
 
         const strategiRes = await api.get("/strategi", {
-          params: { jenis_dokumen: dokumen, tahun, sasaran_id: sasaran.id },
+          params: {
+            jenis_dokumen: dokumen,
+            tahun,
+            sasaran_id: sasaran.id,
+            limit: 500,
+            page: 1,
+          },
         });
 
         setOptions((prev) => ({
@@ -218,7 +273,38 @@ export default function ArahKebijakanForm({
     };
 
     initializeForm();
-  }, [isEdit, existingData, dokumen, tahun]);
+  }, [periodeAktifLoading, isEdit, existingData, dokumen, tahun]);
+
+  /** Jika strategi terpilih tidak ada di daftar (mis. kode vs sasaran tidak selaras), ambil via GET /:id agar <select> tetap konsisten. */
+  useEffect(() => {
+    const sid = data.strategi;
+    if (!sid || !dokumen || !tahun) return;
+    if (options.strategi.some((s) => String(s.id) === String(sid))) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get(`/strategi/${sid}`);
+        const row = res.data;
+        if (cancelled || !row?.id) return;
+        const entry = {
+          id: normalizeId(row.id),
+          kode_strategi: row.kode_strategi,
+          deskripsi: row.deskripsi,
+        };
+        setOptions((prev) => {
+          if (prev.strategi.some((s) => String(s.id) === entry.id)) return prev;
+          return { ...prev, strategi: [...prev.strategi, entry] };
+        });
+      } catch {
+        /* strategi tidak ditemukan / akses */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [data.strategi, dokumen, tahun, options.strategi]);
 
   // Set data form hanya setelah opsi sasaran & strategi tersedia
   useEffect(() => {
@@ -233,9 +319,9 @@ export default function ArahKebijakanForm({
       const tujuan = sasaran.Tujuan;
 
       setData({
-        tujuan: tujuan.id,
-        sasaran: sasaran.id,
-        strategi: strategi.id,
+        tujuan: String(tujuan.id),
+        sasaran: String(sasaran.id),
+        strategi: String(strategi.id),
         kode_arah: existingData.kode_arah,
         deskripsi: existingData.deskripsi,
       });
@@ -253,7 +339,9 @@ export default function ArahKebijakanForm({
       .then((res) => setDaftarPeriode(extractListData(res.data)));
   }, []);
 
-  if (loading) return <Spinner className="my-5" animation="border" />;
+  if (periodeAktifLoading || loading) {
+    return <Spinner className="my-5" animation="border" />;
+  }
 
   return (
     <Container className="my-4">
@@ -270,8 +358,11 @@ export default function ArahKebijakanForm({
       </Breadcrumb>
 
       <div className="mb-3">
-        <strong>Dokumen Aktif:</strong> {dokumen} <br />
-        <strong>Tahun:</strong> {tahun}
+        {konteksBannerRows(dokumen, tahun, periodeAktifBanner).map((r) => (
+          <span key={r.key} className="d-block">
+            <strong>{r.label}:</strong> {r.value}
+          </span>
+        ))}
       </div>
 
       <Card>
@@ -295,7 +386,7 @@ export default function ArahKebijakanForm({
                   >
                     <option value="">-- Pilih Tujuan --</option>
                     {options.tujuan.map((t) => (
-                      <option key={t.id} value={t.id}>
+                      <option key={t.id} value={String(t.id)}>
                         {t.no_tujuan} - {t.isi_tujuan}
                       </option>
                     ))}
@@ -319,7 +410,7 @@ export default function ArahKebijakanForm({
                     <option value="">-- Pilih Sasaran --</option>
                     {Array.isArray(options.sasaran) &&
                       options.sasaran.map((s) => (
-                        <option key={s.id} value={s.id}>
+                        <option key={s.id} value={String(s.id)}>
                           {s.nomor} - {s.isi_sasaran}
                         </option>
                       ))}
@@ -337,7 +428,7 @@ export default function ArahKebijakanForm({
                   >
                     <option value="">-- Pilih Strategi --</option>
                     {options.strategi.map((s) => (
-                      <option key={s.id} value={s.id}>
+                      <option key={s.id} value={String(s.id)}>
                         {s.kode_strategi} - {s.deskripsi}
                       </option>
                     ))}

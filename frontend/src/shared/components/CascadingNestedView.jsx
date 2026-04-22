@@ -12,6 +12,15 @@
  */
 
 import React, { useState } from "react";
+import { useDokumen } from "../../hooks/useDokumen";
+import { isDokumenLevelPeriode } from "../../utils/planningDokumenUtils";
+import {
+  cascadingPrioritasDisplayLabel,
+  cascadingPrioritasTooltipText,
+  CASCADING_PRIORITAS_NASIONAL_FIELDS,
+  CASCADING_PRIORITAS_DAERAH_FIELDS,
+  CASCADING_PRIORITAS_GUB_FIELDS,
+} from "../../utils/cascadingPrioritasLabels";
 import {
   Accordion,
   Badge,
@@ -65,18 +74,39 @@ function CascadingItemRow({ item, onEdit, onDelete, onDetail }) {
 
   const prioritasBadges = [
     item.priorNasional && {
-      label: item.priorNasional.kode_prionas || "PN",
-      text: item.priorNasional.nama_prionas || item.priorNasional.uraian_prionas || "",
+      display:
+        cascadingPrioritasDisplayLabel(
+          item.priorNasional,
+          CASCADING_PRIORITAS_NASIONAL_FIELDS,
+        ) || "PN",
+      tooltip: cascadingPrioritasTooltipText(
+        item.priorNasional,
+        CASCADING_PRIORITAS_NASIONAL_FIELDS,
+      ),
       bg: "primary",
     },
     item.priorDaerah && {
-      label: item.priorDaerah.kode_prioda || "PD",
-      text: item.priorDaerah.nama_prioda || item.priorDaerah.uraian_prioda || "",
+      display:
+        cascadingPrioritasDisplayLabel(
+          item.priorDaerah,
+          CASCADING_PRIORITAS_DAERAH_FIELDS,
+        ) || "PD",
+      tooltip: cascadingPrioritasTooltipText(
+        item.priorDaerah,
+        CASCADING_PRIORITAS_DAERAH_FIELDS,
+      ),
       bg: "info",
     },
     item.priorKepda && {
-      label: item.priorKepda.kode_priogub || "PG",
-      text: item.priorKepda.nama_priogub || item.priorKepda.uraian_priogub || "",
+      display:
+        cascadingPrioritasDisplayLabel(
+          item.priorKepda,
+          CASCADING_PRIORITAS_GUB_FIELDS,
+        ) || "PG",
+      tooltip: cascadingPrioritasTooltipText(
+        item.priorKepda,
+        CASCADING_PRIORITAS_GUB_FIELDS,
+      ),
       bg: "warning",
     },
   ].filter(Boolean);
@@ -88,7 +118,7 @@ function CascadingItemRow({ item, onEdit, onDelete, onDetail }) {
     <ListGroup.Item className="px-3 py-2">
       <div className="d-flex justify-content-between align-items-start gap-2">
         {/* Info utama */}
-        <div className="flex-grow-1">
+        <div className="flex-grow-1 min-w-0 pe-1">
           {/* Program */}
           <div className="fw-semibold text-dark mb-1">
             <span className="text-muted me-1">📂</span>
@@ -113,15 +143,30 @@ function CascadingItemRow({ item, onEdit, onDelete, onDetail }) {
 
           {/* Prioritas badges */}
           {prioritasBadges.length > 0 && (
-            <div className="d-flex flex-wrap gap-1 mt-1 mb-1">
+            <div className="d-flex flex-wrap gap-1 mt-1 mb-1 align-items-stretch">
               {prioritasBadges.map((b, i) => (
                 <OverlayTrigger
                   key={i}
                   placement="top"
-                  overlay={<Tooltip>{b.text || b.label}</Tooltip>}
+                  overlay={
+                    <Tooltip style={{ whiteSpace: "pre-line", maxWidth: 360 }}>
+                      {b.tooltip}
+                    </Tooltip>
+                  }
                 >
-                  <Badge bg={b.bg} style={{ cursor: "help", fontSize: "0.7rem" }}>
-                    {b.label}
+                  <Badge
+                    bg={b.bg}
+                    className="fw-normal text-start text-wrap"
+                    style={{
+                      cursor: "help",
+                      fontSize: "0.75rem",
+                      lineHeight: 1.35,
+                      maxWidth: "100%",
+                      whiteSpace: "normal",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {b.display}
                   </Badge>
                 </OverlayTrigger>
               ))}
@@ -275,11 +320,17 @@ function TujuanGroup({ tujuanKey, sasaranMap, onEdit, onDelete, onDetail, eventK
 // ─── Komponen utama ──────────────────────────────────────────────────────────
 
 export default function CascadingNestedView({ data = [], onEdit, onDelete, onDetail }) {
+  const { dokumen } = useDokumen();
+
   if (!data || data.length === 0) {
     return (
       <div className="text-center text-muted py-4">
         <div style={{ fontSize: "2rem" }}>📋</div>
-        <p className="mb-0">Belum ada data cascading untuk dokumen dan tahun ini.</p>
+        <p className="mb-0">
+          {isDokumenLevelPeriode(dokumen)
+            ? "Belum ada data cascading untuk konteks dokumen / periode ini."
+            : "Belum ada data cascading untuk konteks dokumen / waktu ini."}
+        </p>
         <small>Klik <strong>Tambah Cascading</strong> untuk mulai mengisi data.</small>
       </div>
     );

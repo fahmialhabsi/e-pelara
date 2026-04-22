@@ -214,6 +214,18 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: false,
       },
+      /**
+       * Kode prefix tujuan yang di-parse dari kode_indikator saat import Excel.
+       * Contoh: kode_indikator "T1-01-02" → reference_target_code "T1-01".
+       * Digunakan frontend untuk mem-filter dropdown referensi berdasarkan tujuan
+       * yang dipilih pengguna — lebih andal daripada tujuan_id / misi_id lama.
+       * Null untuk baris final wizard (is_import_reference = false).
+       */
+      reference_target_code: {
+        type: DataTypes.STRING(50),
+        allowNull: true,
+        defaultValue: null,
+      },
     },
     {
       sequelize,

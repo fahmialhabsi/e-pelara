@@ -20,6 +20,7 @@ const documentPhase = Joi.string().valid(
   "final",
 );
 const documentKind = Joi.string().valid("renja_awal", "renja_perubahan");
+const sourceMode = Joi.string().valid("RENSTRA", "RKPD", "IRISAN", "MANUAL");
 
 /** Tetap di req.body setelah stripUnknown agar audit & requireChangeReason jalan. */
 const auditMetaFields = {
@@ -139,7 +140,7 @@ exports.renjaDokumenUpdate = Joi.object({
 
 exports.renjaItemCreate = Joi.object({
   renja_dokumen_id: Joi.number().integer().positive().required(),
-  source_mode: Joi.string().valid("RENSTRA", "RKPD", "IRISAN", "MANUAL").optional(),
+  source_mode: sourceMode.optional(),
   source_renstra_program_id: Joi.number().integer().positive().allow(null).optional(),
   source_renstra_kegiatan_id: Joi.number().integer().positive().allow(null).optional(),
   source_renstra_subkegiatan_id: Joi.number().integer().positive().allow(null).optional(),
@@ -157,7 +158,7 @@ exports.renjaItemCreate = Joi.object({
   sub_kegiatan: Joi.string().max(512).allow(null, "").optional(),
   indikator: Joi.string().allow(null, "").optional(),
   target: Joi.number().optional(),
-  target_numerik: Joi.number().allow(null).optional(),
+  target_numerik: Joi.number().min(0).allow(null).optional(),
   target_teks: Joi.string().max(255).allow(null, "").optional(),
   satuan: Joi.string().max(64).allow(null, "").optional(),
   lokasi: Joi.string().max(255).allow(null, "").optional(),
@@ -170,10 +171,32 @@ exports.renjaItemCreate = Joi.object({
     .optional(),
   status_baris: Joi.string().valid("draft", "siap", "terkunci").optional(),
   ...auditMetaFields,
-});
+}).custom((value, helpers) => {
+  const mode = String(value.source_mode || "MANUAL").toUpperCase();
+  if (value.kegiatan_id && !value.program_id) {
+    return helpers.message("kegiatan_id tidak boleh diisi tanpa program_id.");
+  }
+  if (value.sub_kegiatan_id && !value.kegiatan_id) {
+    return helpers.message("sub_kegiatan_id tidak boleh diisi tanpa kegiatan_id.");
+  }
+  if (mode === "RENSTRA") {
+    if (!value.source_renstra_program_id || !value.source_renstra_kegiatan_id || !value.source_renstra_subkegiatan_id) {
+      return helpers.message("source_mode=RENSTRA mewajibkan source_renstra_program_id, source_renstra_kegiatan_id, source_renstra_subkegiatan_id.");
+    }
+  }
+  if (mode === "RKPD" && !value.source_rkpd_item_id) {
+    return helpers.message("source_mode=RKPD mewajibkan source_rkpd_item_id.");
+  }
+  if (mode === "IRISAN") {
+    if (!value.source_rkpd_item_id || !value.source_renstra_program_id || !value.source_renstra_kegiatan_id || !value.source_renstra_subkegiatan_id) {
+      return helpers.message("source_mode=IRISAN mewajibkan referensi RENSTRA minimum dan source_rkpd_item_id.");
+    }
+  }
+  return value;
+}, "renja item hard business schema");
 
 exports.renjaItemUpdate = Joi.object({
-  source_mode: Joi.string().valid("RENSTRA", "RKPD", "IRISAN", "MANUAL").optional(),
+  source_mode: sourceMode.optional(),
   source_renstra_program_id: Joi.number().integer().positive().allow(null).optional(),
   source_renstra_kegiatan_id: Joi.number().integer().positive().allow(null).optional(),
   source_renstra_subkegiatan_id: Joi.number().integer().positive().allow(null).optional(),
@@ -191,7 +214,7 @@ exports.renjaItemUpdate = Joi.object({
   sub_kegiatan: Joi.string().max(512).allow(null, "").optional(),
   indikator: Joi.string().allow(null, "").optional(),
   target: Joi.number().optional(),
-  target_numerik: Joi.number().allow(null).optional(),
+  target_numerik: Joi.number().min(0).allow(null).optional(),
   target_teks: Joi.string().max(255).allow(null, "").optional(),
   satuan: Joi.string().max(64).allow(null, "").optional(),
   lokasi: Joi.string().max(255).allow(null, "").optional(),
@@ -204,7 +227,31 @@ exports.renjaItemUpdate = Joi.object({
     .optional(),
   status_baris: Joi.string().valid("draft", "siap", "terkunci").optional(),
   ...auditMetaFields,
-}).min(1);
+})
+  .min(1)
+  .custom((value, helpers) => {
+    const mode = value.source_mode ? String(value.source_mode).toUpperCase() : null;
+    if (value.kegiatan_id && !value.program_id) {
+      return helpers.message("kegiatan_id tidak boleh diisi tanpa program_id.");
+    }
+    if (value.sub_kegiatan_id && !value.kegiatan_id) {
+      return helpers.message("sub_kegiatan_id tidak boleh diisi tanpa kegiatan_id.");
+    }
+    if (mode === "RENSTRA") {
+      if (!value.source_renstra_program_id || !value.source_renstra_kegiatan_id || !value.source_renstra_subkegiatan_id) {
+        return helpers.message("source_mode=RENSTRA mewajibkan referensi RENSTRA minimum.");
+      }
+    }
+    if (mode === "RKPD" && !value.source_rkpd_item_id) {
+      return helpers.message("source_mode=RKPD mewajibkan source_rkpd_item_id.");
+    }
+    if (mode === "IRISAN") {
+      if (!value.source_rkpd_item_id || !value.source_renstra_program_id || !value.source_renstra_kegiatan_id || !value.source_renstra_subkegiatan_id) {
+        return helpers.message("source_mode=IRISAN mewajibkan referensi RENSTRA minimum dan source_rkpd_item_id.");
+      }
+    }
+    return value;
+  }, "renja item update hard business schema");
 
 exports.linkRkpdBody = Joi.object({
   rkpd_item_id: Joi.number().integer().positive().required(),
@@ -223,6 +270,74 @@ exports.renjaSectionUpdate = Joi.object({
 exports.renjaCreateRevision = Joi.object({
   change_reason: Joi.string().min(3).required(),
   revision_type: Joi.string().valid("perubahan", "minor_fix", "rollback").default("perubahan"),
+  ...auditMetaFields,
+});
+
+exports.renjaDataFixGenerateMapping = Joi.object({
+  include_mapped: Joi.boolean().optional(),
+  ...auditMetaFields,
+});
+
+exports.renjaDataFixGenerateIndicator = Joi.object({
+  include_mapped: Joi.boolean().optional(),
+  ...auditMetaFields,
+});
+
+exports.renjaDataFixApply = Joi.object({
+  suggestion_ids: Joi.array().items(Joi.number().integer().positive()).optional(),
+  apply_high_confidence_only: Joi.boolean().optional(),
+  overwrite_target: Joi.boolean().optional(),
+  expect_item_stamps: Joi.object().pattern(/^\d+$/, Joi.string().allow("", null)).optional(),
+  require_data_fix_lock_owner: Joi.boolean().optional(),
+  ...auditMetaFields,
+});
+
+exports.renjaDataFixPreviewMapping = Joi.object({
+  suggestion_ids: Joi.array().items(Joi.number().integer().positive()).optional(),
+  apply_high_confidence_only: Joi.boolean().optional(),
+  ...auditMetaFields,
+});
+
+exports.renjaDataFixPreviewImpact = Joi.object({
+  suggestion_type: Joi.string()
+    .valid("mapping_program", "indicator_mapping", "target_autofill", "policy_conflict")
+    .required(),
+  suggestion_ids: Joi.array().items(Joi.number().integer().positive()).optional(),
+  apply_high_confidence_only: Joi.boolean().optional(),
+  overwrite_target: Joi.boolean().optional(),
+  ...auditMetaFields,
+});
+
+exports.renjaDataFixRollbackMapping = Joi.object({
+  batch_id: Joi.number().integer().positive().required(),
+  force_partial_rollback: Joi.boolean().optional(),
+  ...auditMetaFields,
+});
+
+exports.renjaDataFixLockAcquire = Joi.object({
+  ttl_minutes: Joi.number().integer().min(5).max(120).optional(),
+  ...auditMetaFields,
+});
+
+exports.renjaDataFixAutofillTargets = Joi.object({
+  auto_apply: Joi.boolean().optional(),
+  overwrite_target: Joi.boolean().optional(),
+  expect_item_stamps: Joi.object().pattern(/^\d+$/, Joi.string().allow("", null)).optional(),
+  require_data_fix_lock_owner: Joi.boolean().optional(),
+  ...auditMetaFields,
+});
+
+exports.renjaDataFixResolvePolicy = Joi.object({
+  auto_apply: Joi.boolean().optional(),
+  expect_item_stamps: Joi.object().pattern(/^\d+$/, Joi.string().allow("", null)).optional(),
+  require_data_fix_lock_owner: Joi.boolean().optional(),
+  ...auditMetaFields,
+});
+
+exports.renjaDataFixApplyAllHigh = Joi.object({
+  overwrite_target: Joi.boolean().optional(),
+  expect_item_stamps: Joi.object().pattern(/^\d+$/, Joi.string().allow("", null)).optional(),
+  require_data_fix_lock_owner: Joi.boolean().optional(),
   ...auditMetaFields,
 });
 

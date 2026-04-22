@@ -18,6 +18,7 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "periode_id",
         as: "periode",
       });
+      Tujuan.belongsTo(models.Tenant, { foreignKey: "tenant_id", as: "tenant" });
 
       Tujuan.hasMany(models.Sasaran, {
         foreignKey: "tujuan_id",
@@ -55,6 +56,12 @@ module.exports = (sequelize, DataTypes) => {
       periode_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
+      },
+      tenant_id: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: false,
+        defaultValue: 1,
+        references: { model: "tenants", key: "id" },
       },
       no_tujuan: {
         type: DataTypes.STRING,

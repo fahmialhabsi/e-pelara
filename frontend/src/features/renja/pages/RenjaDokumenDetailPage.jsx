@@ -31,6 +31,7 @@ import {
 } from "../services/planningRenjaApi";
 import {
   createRenjaRevision,
+  getRenjaReadiness,
   runRenjaWorkflowAction,
 } from "../services/renjaGovernanceApi";
 import RenjaPlanningDashboardLayout from "./RenjaPlanningDashboardLayout";
@@ -84,6 +85,7 @@ const RenjaDokumenDetailPage = () => {
   const [logLoading, setLogLoading] = useState(false);
   const [wfBusy, setWfBusy] = useState(false);
   const [revisionReason, setRevisionReason] = useState("");
+  const [readiness, setReadiness] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -116,6 +118,21 @@ const RenjaDokumenDetailPage = () => {
   useEffect(() => {
     if (id) loadAudit();
   }, [id, loadAudit]);
+
+  useEffect(() => {
+    let ok = true;
+    (async () => {
+      try {
+        const data = await getRenjaReadiness(id, { action: "publish" });
+        if (ok) setReadiness(data);
+      } catch {
+        if (ok) setReadiness(null);
+      }
+    })();
+    return () => {
+      ok = false;
+    };
+  }, [id, doc?.updated_at]);
 
   const saveMeta = async () => {
     if (!can) return;
@@ -432,7 +449,12 @@ const RenjaDokumenDetailPage = () => {
                 key={action}
                 size="sm"
                 variant="outline-success"
-                disabled={wfBusy || !can}
+                disabled={
+                  wfBusy ||
+                  !can ||
+                  (action === "submit" && readiness && !readiness.readiness?.ready_for_submit) ||
+                  (action === "publish" && readiness && !readiness.readiness?.ready_for_publish)
+                }
                 onClick={() => runAction(action)}
               >
                 {action}
@@ -453,10 +475,37 @@ const RenjaDokumenDetailPage = () => {
             >
               Create Revision
             </Button>
+            <Button
+              size="sm"
+              variant="outline-success"
+              as={Link}
+              to={`/dashboard-renja/v2/dokumen/${id}/data-fix`}
+            >
+              Data Fix & Mapping
+            </Button>
             <Badge bg={isReadonly ? "success" : "secondary"}>
               {isReadonly ? "Readonly Final" : "Editable Draft"}
             </Badge>
           </div>
+        </CardBody>
+      </Card>
+      <Card className="mb-3 shadow-sm">
+        <CardBody>
+          <h6 className="fw-bold mb-1">Readiness Panel</h6>
+          <div className="small">
+            Siap submit: <b>{readiness?.readiness?.ready_for_submit ? "Ya" : "Tidak"}</b> · Siap publish:{" "}
+            <b>{readiness?.readiness?.ready_for_publish ? "Ya" : "Tidak"}</b>
+          </div>
+          <div className="small text-muted">
+            blocker {readiness?.summary?.blocking_count ?? 0} · warning {readiness?.summary?.warning_count ?? 0}
+          </div>
+          {!!(readiness?.next_actions || []).length && (
+            <ul className="small mb-0 mt-1">
+              {readiness.next_actions.slice(0, 5).map((x, i) => (
+                <li key={i}>{x}</li>
+              ))}
+            </ul>
+          )}
         </CardBody>
       </Card>
 

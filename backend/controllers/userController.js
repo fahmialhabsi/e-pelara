@@ -28,6 +28,10 @@ exports.createUser = async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    const tidRaw =
+      req.body?.tenant_id != null ? parseInt(String(req.body.tenant_id), 10) : req.tenantId;
+    const tenant_id = Number.isFinite(tidRaw) && tidRaw > 0 ? tidRaw : 1;
+
     const newUser = await User.create({
       username,
       email,
@@ -35,6 +39,7 @@ exports.createUser = async (req, res) => {
       role_id,
       divisions_id,
       opd,
+      tenant_id,
     });
 
     res.status(201).json(newUser);
@@ -58,7 +63,11 @@ exports.checkSuperAdmin = async (req, res) => {
 // Get all users
 exports.getUsers = async (req, res) => {
   try {
-    const users = await User.findAll();
+    const tenantFilter =
+      req.tenantId != null && Number.isFinite(Number(req.tenantId))
+        ? { tenant_id: Number(req.tenantId) }
+        : {};
+    const users = await User.findAll({ where: tenantFilter });
     res.status(200).json(users);
   } catch (error) {
     console.error(error);
@@ -91,6 +100,14 @@ exports.getUserById = async (req, res) => {
 
     if (!user) {
       return res.status(404).json({ message: "User tidak ditemukan." });
+    }
+
+    if (
+      req.tenantId != null &&
+      Number(user.tenant_id) !== Number(req.tenantId) &&
+      normalizedRole !== "SUPER_ADMIN"
+    ) {
+      return res.status(403).json({ message: "Akses ditolak." });
     }
 
     res.json(user);
@@ -133,6 +150,9 @@ exports.updateUser = async (req, res) => {
     const { username, email, password, role_id, divisions_id, opd } = req.body;
     const user = await User.findByPk(req.params.id);
     if (!user) return res.status(404).json({ message: "User not found" });
+    if (req.tenantId != null && Number(user.tenant_id) !== Number(req.tenantId)) {
+      return res.status(403).json({ message: "Akses ditolak." });
+    }
 
     // Jika role diganti ke SUPER ADMIN, cek apakah sudah ada
     if (
@@ -171,6 +191,9 @@ exports.deleteUser = async (req, res) => {
   try {
     const user = await User.findByPk(req.params.id);
     if (!user) return res.status(404).json({ message: "User not found" });
+    if (req.tenantId != null && Number(user.tenant_id) !== Number(req.tenantId)) {
+      return res.status(403).json({ message: "Akses ditolak." });
+    }
     await user.destroy();
     res.status(200).json({ message: "User deleted" });
   } catch (error) {

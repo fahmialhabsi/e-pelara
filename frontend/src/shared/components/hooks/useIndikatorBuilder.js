@@ -9,13 +9,21 @@ export default function useIndikatorBuilder({ penanggungJawab = [] }) {
   const getTargetTahunValues = (values) =>
     [1, 2, 3, 4, 5].reduce((acc, i) => {
       const key = `target_tahun_${i}`;
-      acc[key] = values[key] ? String(values[key]) : "";
+      const v = values[key];
+      acc[key] = v != null && v !== "" ? String(v) : "";
+      return acc;
+    }, {});
+
+  const getCapaianTahunValues = (values) =>
+    [1, 2, 3, 4, 5].reduce((acc, i) => {
+      const key = `capaian_tahun_${i}`;
+      const v = values[key];
+      acc[key] = v != null && v !== "" ? String(v) : "";
       return acc;
     }, {});
 
   const buildIndikatorItem = useCallback(
     (values, overrides = {}) => {
-      const satuan = values.satuan || "";
       const pjNum = Number(values.penanggung_jawab);
       const selectedOPD = opdOptions.find(
         (o) => Number(o.value ?? o.id) === pjNum,
@@ -27,16 +35,17 @@ export default function useIndikatorBuilder({ penanggungJawab = [] }) {
         penanggung_jawab: Number.isFinite(pjNum) && !Number.isNaN(pjNum)
           ? pjNum
           : null,
-        baseline: values.baseline || "",
+        baseline: values.baseline ?? "",
         penanggung_jawab_label: selectedOPD
           ? formatOpdPenanggungLabel(selectedOPD)
           : "",
         rekomendasi_ai: "",
-        tahun_awal: values.tahun_awal || "",
-        tahun_akhir: values.tahun_akhir || "",
-        target_awal: values.target_awal || "",
-        target_akhir: values.target_akhir || "",
+        tahun_awal: values.tahun_awal ?? "",
+        tahun_akhir: values.tahun_akhir ?? "",
+        target_awal: values.target_awal ?? "",
+        target_akhir: values.target_akhir ?? "",
         ...getTargetTahunValues(values),
+        ...getCapaianTahunValues(values),
         ...overrides,
       };
     },

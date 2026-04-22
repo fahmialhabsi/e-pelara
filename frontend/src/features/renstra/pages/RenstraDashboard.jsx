@@ -132,12 +132,12 @@ const RenstraDashboard = () => {
           });
           const rows = Array.isArray(tabelProgramRes.data) ? tabelProgramRes.data : [];
           if (rows.length > 0) {
-            const paguPerTahun = [1, 2, 3, 4, 5, 6].map((i) => ({
-              tahun: i,
+            const paguPerSlot = [1, 2, 3, 4, 5, 6].map((i) => ({
+              slot: i,
               total: rows.reduce((sum, r) => sum + (Number(r[`pagu_tahun_${i}`]) || 0), 0),
             }));
             const totalAkhir = rows.reduce((sum, r) => sum + (Number(r.pagu_akhir_renstra) || 0), 0);
-            setPaguSummary({ paguPerTahun, totalAkhir, count: rows.length });
+            setPaguSummary({ paguPerSlot, totalAkhir, count: rows.length });
           }
         } finally {
           setLoadingPagu(false);
@@ -302,10 +302,10 @@ const RenstraDashboard = () => {
             ) : paguSummary ? (
               <>
                 <Row className="g-2 mb-2">
-                  {paguSummary.paguPerTahun.map(({ tahun: t, total }) => (
+                  {paguSummary.paguPerSlot.map(({ slot: t, total }) => (
                     <Col key={t} xs={6} sm={4} md={2}>
                       <div className="border rounded p-2 text-center bg-light">
-                        <div className="small text-muted fw-semibold">Tahun {t}</div>
+                        <div className="small text-muted fw-semibold">Th. ke-{t} (periode)</div>
                         <div className="fw-bold text-info small">{formatRupiah(total)}</div>
                       </div>
                     </Col>

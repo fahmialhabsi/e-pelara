@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import api from "@/services/api";
 import IndikatorUmumRenstraForm from "../components/IndikatorUmumRenstraForm";
-import GlobalDokumenTahunPicker from "@/shared/components/GlobalDokumenTahunPicker";
 import { useDokumen } from "@/hooks/useDokumen";
 
 const IndikatorUmumRenstraAddPage = () => {
@@ -30,11 +29,14 @@ const IndikatorUmumRenstraAddPage = () => {
 
   if (loading) return <div>Loading...</div>;
   if (!renstraAktif)
-    return <div>Renstra aktif tidak ditemukan untuk tahun {tahun}</div>;
+    return (
+      <div>
+        Renstra aktif tidak ditemukan untuk konteks dokumen / periode saat ini.
+      </div>
+    );
 
   return (
     <div style={{ padding: 16 }}>
-      <GlobalDokumenTahunPicker />
       <IndikatorUmumRenstraForm renstraAktif={renstraAktif} />
     </div>
   );

@@ -6,6 +6,24 @@ import {
 import { pickBackendErrorMessage } from "@/utils/mapBackendErrorsToFormik";
 import { formatOpdPenanggungLabel } from "@/utils/opdDisplayLabel";
 
+/** Nilai skalar dari baris API (snake_case DB + variasi camelCase JSON). */
+function pickIndikatorScalar(row, snakeKey) {
+  if (row == null || typeof row !== "object") return "";
+  const camelKey = snakeKey.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+  let v = row[snakeKey];
+  if (v === undefined || v === null) v = row[camelKey];
+  if (v === undefined || v === null) return "";
+  return String(v);
+}
+
+/** Slot tahun target/capaian: snake + camel eksplisit, `??` agar 0 tidak hilang. */
+function slotYear(row, snake, camel) {
+  if (row == null || typeof row !== "object") return "";
+  const v = row[snake] ?? row[camel];
+  if (v === undefined || v === null) return "";
+  return String(v);
+}
+
 /**
  * Satu baris OPD (API / normalizeListItems) → opsi react-select.
  * `value` selalu string agar konsisten dengan `normalizeListItems` (id string) + Yup `penanggung_jawab` string.
@@ -26,43 +44,65 @@ export function normalizePenanggungJawabFormValue(raw) {
   return String(raw);
 }
 
+function pickPenanggungJawabIdFromRow(d) {
+  if (d == null || typeof d !== "object") return "";
+  const nested =
+    d.penanggung_jawab ??
+    d.opdPenanggungJawab?.id ??
+    d.opd_penanggung_jawab?.id ??
+    d.OpdPenanggungJawab?.id;
+  return normalizePenanggungJawabFormValue(nested);
+}
+
 /** Normalisasi body detail → initialValues Formik (edit tujuan). */
 export function mapIndikatorTujuanDetailToEditForm(d) {
+  const row = extractSingleData(d) ?? d;
   return {
-    indikator_id: d.id,
-    kode_indikator: d.kode_indikator,
-    nama_indikator: d.nama_indikator,
-    tipe_indikator: d.tipe_indikator || "",
-    jenis: d.jenis || "",
-    tolok_ukur_kinerja: d.tolok_ukur_kinerja || "",
-    target_kinerja: d.target_kinerja || "",
-    jenis_indikator: d.jenis_indikator || "",
-    kriteria_kuantitatif: d.kriteria_kuantitatif || "",
-    kriteria_kualitatif: d.kriteria_kualitatif || "",
-    satuan: d.satuan || "",
-    definisi_operasional: d.definisi_operasional || "",
-    metode_penghitungan: d.metode_penghitungan || "",
-    baseline: d.baseline || "",
-    target_tahun_1: d.target_tahun_1 || "",
-    target_tahun_2: d.target_tahun_2 || "",
-    target_tahun_3: d.target_tahun_3 || "",
-    target_tahun_4: d.target_tahun_4 || "",
-    target_tahun_5: d.target_tahun_5 || "",
-    capaian_tahun_1: d.capaian_tahun_1 || "",
-    capaian_tahun_2: d.capaian_tahun_2 || "",
-    capaian_tahun_3: d.capaian_tahun_3 || "",
-    capaian_tahun_4: d.capaian_tahun_4 || "",
-    capaian_tahun_5: d.capaian_tahun_5 || "",
-    sumber_data: d.sumber_data || "",
-    penanggung_jawab: normalizePenanggungJawabFormValue(d.penanggung_jawab),
-    keterangan: d.keterangan || "",
-    rekomendasi_ai: d.rekomendasi_ai || "",
-    tahun: d.tahun,
-    jenis_dokumen: d.jenis_dokumen,
-    misi_id: d.misi_id,
-    tujuan_id: d.tujuan_id,
-    no_tujuan: d.tujuan_id,
-    tujuan: [d],
+    indikator_id: row.id,
+    kode_indikator: row.kode_indikator,
+    nama_indikator: row.nama_indikator,
+    tipe_indikator: row.tipe_indikator || "",
+    jenis: pickIndikatorScalar(row, "jenis"),
+    tolok_ukur_kinerja: pickIndikatorScalar(row, "tolok_ukur_kinerja"),
+    target_kinerja: pickIndikatorScalar(row, "target_kinerja"),
+    jenis_indikator: pickIndikatorScalar(row, "jenis_indikator") || "",
+    kriteria_kuantitatif: pickIndikatorScalar(row, "kriteria_kuantitatif"),
+    kriteria_kualitatif: pickIndikatorScalar(row, "kriteria_kualitatif"),
+    satuan: pickIndikatorScalar(row, "satuan"),
+    definisi_operasional: pickIndikatorScalar(row, "definisi_operasional"),
+    metode_penghitungan: pickIndikatorScalar(row, "metode_penghitungan"),
+    baseline: pickIndikatorScalar(row, "baseline"),
+    target_tahun_1: slotYear(row, "target_tahun_1", "targetTahun1"),
+    target_tahun_2: slotYear(row, "target_tahun_2", "targetTahun2"),
+    target_tahun_3: slotYear(row, "target_tahun_3", "targetTahun3"),
+    target_tahun_4: slotYear(row, "target_tahun_4", "targetTahun4"),
+    target_tahun_5: slotYear(row, "target_tahun_5", "targetTahun5"),
+    capaian_tahun_1: slotYear(row, "capaian_tahun_1", "capaianTahun1"),
+    capaian_tahun_2: slotYear(row, "capaian_tahun_2", "capaianTahun2"),
+    capaian_tahun_3: slotYear(row, "capaian_tahun_3", "capaianTahun3"),
+    capaian_tahun_4: slotYear(row, "capaian_tahun_4", "capaianTahun4"),
+    capaian_tahun_5: slotYear(row, "capaian_tahun_5", "capaianTahun5"),
+    sumber_data: pickIndikatorScalar(row, "sumber_data"),
+    penanggung_jawab: pickPenanggungJawabIdFromRow(row),
+    keterangan: pickIndikatorScalar(row, "keterangan"),
+    rekomendasi_ai: pickIndikatorScalar(row, "rekomendasi_ai"),
+    tahun: row.tahun,
+    jenis_dokumen: row.jenis_dokumen,
+    periode_id: row.periode_id,
+    misi_id: row.misi_id,
+    tujuan_id: row.tujuan_id,
+    no_tujuan: row.tujuan_id,
+    tahun_awal: row.tahun_awal ?? "",
+    tahun_akhir: row.tahun_akhir ?? "",
+    target_awal:
+      slotYear(row, "target_awal", "targetAwal") ||
+      slotYear(row, "target_tahun_1", "targetTahun1"),
+    target_akhir:
+      slotYear(row, "target_akhir", "targetAkhir") ||
+      slotYear(row, "target_tahun_5", "targetTahun5"),
+    level_dokumen: row.level_dokumen || row.jenis_dokumen || "RPJMD",
+    jenis_iku: row.jenis_iku || "IKU",
+    tujuan: [row],
   };
 }
 

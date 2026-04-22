@@ -1,27 +1,24 @@
 // src/components/IndikatorRPJMDForm.jsx  — Redesign profesional (2-column layout)
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import {
-  Button,
-  Modal,
-  Spinner,
-  Form as BootstrapForm,
-} from "react-bootstrap";
+import { Button, Modal, Spinner, Form as BootstrapForm } from "react-bootstrap";
 import { Formik, Form as FormikForm, useFormikContext } from "formik";
 import toast, { Toaster } from "react-hot-toast";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import MisiStep           from "./steps/MisiStep";
-import TujuanStep         from "./steps/TujuanStep";
-import SasaranStep        from "./steps/SasaranStep";
-import StrategiStep       from "./steps/StrategiStep";
-import ArahKebijakanStep  from "./steps/ArahKebijakanStep";
-import ProgramStep        from "./steps/ProgramStep";
-import KegiatanStep       from "./steps/KegiatanStep";
-import SubKegiatanStep    from "./steps/SubKegiatanStep";
+import MisiStep from "./steps/MisiStep";
+import TujuanStep from "./steps/TujuanStep";
+import SasaranStep from "./steps/SasaranStep";
+import StrategiStep from "./steps/StrategiStep";
+import ArahKebijakanStep from "./steps/ArahKebijakanStep";
+import ProgramStep from "./steps/ProgramStep";
+import KegiatanStep from "./steps/KegiatanStep";
+import SubKegiatanStep from "./steps/SubKegiatanStep";
 
 import { wizardSchemas } from "../../validations";
-import { useDokumen }    from "@/hooks/useDokumen";
+import { useDokumen } from "@/hooks/useDokumen";
+import { usePeriodeAktif } from "@/features/rpjmd/hooks/usePeriodeAktif";
+import { konteksBannerRows } from "@/utils/planningDokumenUtils";
 import { normalizeListItems } from "../../utils/apiResponse";
 import {
   buildKegiatanIndikatorPayload,
@@ -106,21 +103,96 @@ const steps = [
 
 /* ──────────────────── Downstream reset util ────────────────── */
 const _PARENT_FIELDS = [
-  "misi_id", "tujuan_id", "sasaran_id", "strategi_id",
-  "arah_kebijakan_id", "program_id", "kegiatan_id",
+  "misi_id",
+  "tujuan_id",
+  "sasaran_id",
+  "strategi_id",
+  "arah_kebijakan_id",
+  "program_id",
+  "kegiatan_id",
 ];
 const _FIELD_STEP = {
-  misi_id: 0, tujuan_id: 1, sasaran_id: 2, strategi_id: 3,
-  arah_kebijakan_id: 4, program_id: 5, kegiatan_id: 6,
+  misi_id: 0,
+  tujuan_id: 1,
+  sasaran_id: 2,
+  strategi_id: 3,
+  arah_kebijakan_id: 4,
+  program_id: 5,
+  kegiatan_id: 6,
 };
 const _CLEAR_FROM = [
-  /* 0 misi    */ ["tujuan_id","tujuan_label","sasaran_id","sasaran_label","strategi_id","strategi_label","arah_kebijakan_id","arah_kebijakan_label","program_id","program_label","kode_program","kegiatan_id","kegiatan_label","sub_kegiatan_id","sub_kegiatan_label"],
-  /* 1 tujuan  */ ["sasaran_id","sasaran_label","strategi_id","strategi_label","arah_kebijakan_id","arah_kebijakan_label","program_id","program_label","kode_program","kegiatan_id","kegiatan_label","sub_kegiatan_id","sub_kegiatan_label"],
-  /* 2 sasaran */ ["strategi_id","strategi_label","arah_kebijakan_id","arah_kebijakan_label","program_id","program_label","kode_program","kegiatan_id","kegiatan_label","sub_kegiatan_id","sub_kegiatan_label"],
-  /* 3 strategi*/ ["arah_kebijakan_id","arah_kebijakan_label","program_id","program_label","kode_program","kegiatan_id","kegiatan_label","sub_kegiatan_id","sub_kegiatan_label"],
-  /* 4 arah_keb*/ ["program_id","program_label","kode_program","kegiatan_id","kegiatan_label","sub_kegiatan_id","sub_kegiatan_label"],
-  /* 5 program */ ["kegiatan_id","kegiatan_label","sub_kegiatan_id","sub_kegiatan_label"],
-  /* 6 kegiatan*/ ["sub_kegiatan_id","sub_kegiatan_label"],
+  /* 0 misi    */ [
+    "tujuan_id",
+    "tujuan_label",
+    "sasaran_id",
+    "sasaran_label",
+    "strategi_id",
+    "strategi_label",
+    "arah_kebijakan_id",
+    "arah_kebijakan_label",
+    "program_id",
+    "program_label",
+    "kode_program",
+    "kegiatan_id",
+    "kegiatan_label",
+    "sub_kegiatan_id",
+    "sub_kegiatan_label",
+  ],
+  /* 1 tujuan  */ [
+    "sasaran_id",
+    "sasaran_label",
+    "strategi_id",
+    "strategi_label",
+    "arah_kebijakan_id",
+    "arah_kebijakan_label",
+    "program_id",
+    "program_label",
+    "kode_program",
+    "kegiatan_id",
+    "kegiatan_label",
+    "sub_kegiatan_id",
+    "sub_kegiatan_label",
+  ],
+  /* 2 sasaran */ [
+    "strategi_id",
+    "strategi_label",
+    "arah_kebijakan_id",
+    "arah_kebijakan_label",
+    "program_id",
+    "program_label",
+    "kode_program",
+    "kegiatan_id",
+    "kegiatan_label",
+    "sub_kegiatan_id",
+    "sub_kegiatan_label",
+  ],
+  /* 3 strategi*/ [
+    "arah_kebijakan_id",
+    "arah_kebijakan_label",
+    "program_id",
+    "program_label",
+    "kode_program",
+    "kegiatan_id",
+    "kegiatan_label",
+    "sub_kegiatan_id",
+    "sub_kegiatan_label",
+  ],
+  /* 4 arah_keb*/ [
+    "program_id",
+    "program_label",
+    "kode_program",
+    "kegiatan_id",
+    "kegiatan_label",
+    "sub_kegiatan_id",
+    "sub_kegiatan_label",
+  ],
+  /* 5 program */ [
+    "kegiatan_id",
+    "kegiatan_label",
+    "sub_kegiatan_id",
+    "sub_kegiatan_label",
+  ],
+  /* 6 kegiatan*/ ["sub_kegiatan_id", "sub_kegiatan_label"],
 ];
 
 function DownstreamResetter({ lockedSteps }) {
@@ -131,7 +203,9 @@ function DownstreamResetter({ lockedSteps }) {
     const prev = prevRef.current;
     // Snapshot current parent values
     const snap = {};
-    _PARENT_FIELDS.forEach((f) => { snap[f] = values[f]; });
+    _PARENT_FIELDS.forEach((f) => {
+      snap[f] = values[f];
+    });
     prevRef.current = snap;
 
     // Skip first render (prev is empty)
@@ -146,10 +220,15 @@ function DownstreamResetter({ lockedSteps }) {
         break; // process only highest changed level
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    values.misi_id, values.tujuan_id, values.sasaran_id, values.strategi_id,
-    values.arah_kebijakan_id, values.program_id, values.kegiatan_id,
+    values.misi_id,
+    values.tujuan_id,
+    values.sasaran_id,
+    values.strategi_id,
+    values.arah_kebijakan_id,
+    values.program_id,
+    values.kegiatan_id,
   ]);
 
   return null;
@@ -158,13 +237,17 @@ function DownstreamResetter({ lockedSteps }) {
 /* ──────────────────── LockedStepSummary (sub-komponen) ─────── */
 function LockedStepSummary({ stepKey, values }) {
   const LABELS = {
-    misi:           `${values.no_misi || ""} ${values.isi_misi || ""}`.trim() || values.misi_id || "—",
-    tujuan:         values.tujuan_label || values.tujuan_id || "—",
-    sasaran:        values.sasaran_label || values.sasaran_id || "—",
-    strategi:       values.strategi_label || values.strategi_id || "—",
-    arah_kebijakan: values.arah_kebijakan_label || values.arah_kebijakan_id || "—",
-    program:        values.program_label || values.program_id || "—",
-    kegiatan:       values.kegiatan_label || values.kegiatan_id || "—",
+    misi:
+      `${values.no_misi || ""} ${values.isi_misi || ""}`.trim() ||
+      values.misi_id ||
+      "—",
+    tujuan: values.tujuan_label || values.tujuan_id || "—",
+    sasaran: values.sasaran_label || values.sasaran_id || "—",
+    strategi: values.strategi_label || values.strategi_id || "—",
+    arah_kebijakan:
+      values.arah_kebijakan_label || values.arah_kebijakan_id || "—",
+    program: values.program_label || values.program_id || "—",
+    kegiatan: values.kegiatan_label || values.kegiatan_id || "—",
   };
   const text = LABELS[stepKey] || "—";
   return (
@@ -176,7 +259,16 @@ function LockedStepSummary({ stepKey, values }) {
         border: "1px solid #dee2e6",
       }}
     >
-      <div style={{ fontSize: 11, color: "#6c757d", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: "#6c757d",
+          marginBottom: 6,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
+        }}
+      >
         🔒 Context (terkunci)
       </div>
       <div style={{ fontWeight: 600, color: "#495057", fontSize: 14 }}>
@@ -209,7 +301,9 @@ function AutoSaver({ values, onSaved }) {
         localStorage.setItem("form_rpjmd", str);
         sessionStorage.setItem("form_rpjmd", str);
         onSaved(new Date());
-      } catch { /* ignore quota error */ }
+      } catch {
+        /* ignore quota error */
+      }
     }, 1500);
 
     return () => clearTimeout(timer);
@@ -219,7 +313,14 @@ function AutoSaver({ values, onSaved }) {
 }
 
 /* ──────────────────── StepNavigator (sub-komponen) ─────────── */
-function StepNavigator({ currentStep, completedSteps, lockedSteps = [], loading, isSubmitting, onNavigate }) {
+function StepNavigator({
+  currentStep,
+  completedSteps,
+  lockedSteps = [],
+  loading,
+  isSubmitting,
+  onNavigate,
+}) {
   return (
     <div
       style={{
@@ -233,17 +334,30 @@ function StepNavigator({ currentStep, completedSteps, lockedSteps = [], loading,
       }}
     >
       {steps.map((s, idx) => {
-        const isDone      = completedSteps.includes(idx);
-        const isActive    = idx === currentStep;
-        const isLocked    = lockedSteps.includes(idx);
-        const maxReached  = Math.max(currentStep, ...completedSteps, 0);
-        const isClickable = !isLocked && idx <= maxReached && !loading && !isSubmitting;
+        const isDone = completedSteps.includes(idx);
+        const isActive = idx === currentStep;
+        const isLocked = lockedSteps.includes(idx);
+        const maxReached = Math.max(currentStep, ...completedSteps, 0);
+        const isClickable =
+          !isLocked && idx <= maxReached && !loading && !isSubmitting;
 
         /* colours */
-        const circleBg  = isLocked ? "#6c757d" : isActive ? "#0d6efd" : isDone ? "#198754" : "#e9ecef";
+        const circleBg = isLocked
+          ? "#6c757d"
+          : isActive
+            ? "#0d6efd"
+            : isDone
+              ? "#198754"
+              : "#e9ecef";
         const circleClr = isLocked || isActive || isDone ? "#fff" : "#6c757d";
-        const labelClr  = isLocked ? "#adb5bd" : isActive ? "#0d6efd" : isDone ? "#198754" : "#adb5bd";
-        const lineClr   = isDone ? "#198754" : "#dee2e6";
+        const labelClr = isLocked
+          ? "#adb5bd"
+          : isActive
+            ? "#0d6efd"
+            : isDone
+              ? "#198754"
+              : "#adb5bd";
+        const lineClr = isDone ? "#198754" : "#dee2e6";
 
         return (
           <React.Fragment key={s.key}>
@@ -258,7 +372,13 @@ function StepNavigator({ currentStep, completedSteps, lockedSteps = [], loading,
                 transition: "opacity 0.2s",
               }}
               onClick={() => isClickable && onNavigate(idx)}
-              title={isLocked ? `🔒 ${s.label} (terkunci)` : isClickable ? `Buka ${s.label}` : ""}
+              title={
+                isLocked
+                  ? `🔒 ${s.label} (terkunci)`
+                  : isClickable
+                    ? `Buka ${s.label}`
+                    : ""
+              }
             >
               {/* circle */}
               <div
@@ -277,8 +397,8 @@ function StepNavigator({ currentStep, completedSteps, lockedSteps = [], loading,
                   boxShadow: isActive
                     ? "0 0 0 4px rgba(13,110,253,.18)"
                     : isDone
-                    ? "0 0 0 3px rgba(25,135,84,.12)"
-                    : "none",
+                      ? "0 0 0 3px rgba(25,135,84,.12)"
+                      : "none",
                   transition: "all 0.25s",
                   userSelect: "none",
                 }}
@@ -328,6 +448,13 @@ function StepNavigator({ currentStep, completedSteps, lockedSteps = [], loading,
 
 const IndikatorRPJMD = () => {
   const { dokumen, tahun } = useDokumen();
+  const { periode_id, periodeList } = usePeriodeAktif();
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(periode_id),
+  );
+  const wizardKonteksLine = konteksBannerRows(dokumen, tahun, periodeAktif)
+    .map((r) => `${r.label}: ${r.value}`)
+    .join(" · ");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -338,9 +465,8 @@ const IndikatorRPJMD = () => {
     : -1;
   const _entryStep = _fromStepIdx >= 0 ? _fromStepIdx : -1;
   /* Step-step yang dikunci (parent dari entry point) */
-  const lockedSteps = _entryStep > 0
-    ? Array.from({ length: _entryStep }, (_, i) => i)
-    : [];
+  const lockedSteps =
+    _entryStep > 0 ? Array.from({ length: _entryStep }, (_, i) => i) : [];
 
   /* ── state ── */
   const [currentStep, setCurrentStep] = useState(() => {
@@ -352,16 +478,22 @@ const IndikatorRPJMD = () => {
         /* Guard: jika step > 0 tapi form_rpjmd tidak ada / misi_id kosong,
            berarti data konteks hilang → mulai dari awal */
         if (v > 0) {
-          const raw = localStorage.getItem("form_rpjmd") || sessionStorage.getItem("form_rpjmd");
+          const raw =
+            localStorage.getItem("form_rpjmd") ||
+            sessionStorage.getItem("form_rpjmd");
           if (!raw) return 0;
           try {
             const parsed = JSON.parse(raw);
             if (!parsed?.misi_id) return 0;
-          } catch { return 0; }
+          } catch {
+            return 0;
+          }
         }
         return v;
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return 0;
   });
 
@@ -372,25 +504,36 @@ const IndikatorRPJMD = () => {
       const v = parseInt(localStorage.getItem(STEP_KEY), 10);
       if (!isNaN(v) && v > 0 && v < steps.length) {
         /* Pastikan ada konteks sebelum restore completedSteps */
-        const raw = localStorage.getItem("form_rpjmd") || sessionStorage.getItem("form_rpjmd");
+        const raw =
+          localStorage.getItem("form_rpjmd") ||
+          sessionStorage.getItem("form_rpjmd");
         if (raw) {
           try {
             const parsed = JSON.parse(raw);
             if (parsed?.misi_id) {
               return Array.from({ length: v }, (_, i) => i);
             }
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
         }
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return [];
   });
 
-  const [loading, setLoading]       = useState(false);
+  const [loading, setLoading] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState(null);
 
   const [options, setOptions] = useState({
-    misi: [], tujuan: [], sasaran: [], program: [], kegiatan: [], penanggungJawab: [],
+    misi: [],
+    tujuan: [],
+    sasaran: [],
+    program: [],
+    kegiatan: [],
+    penanggungJawab: [],
   });
 
   /* ── persist currentStep ── */
@@ -406,28 +549,39 @@ const IndikatorRPJMD = () => {
 
     const params = {};
     [
-      "misi_id","tujuan_id","sasaran_id","strategi_id",
-      "arah_kebijakan_id","program_id","kegiatan_id",
+      "misi_id",
+      "tujuan_id",
+      "sasaran_id",
+      "strategi_id",
+      "arah_kebijakan_id",
+      "program_id",
+      "kegiatan_id",
     ].forEach((k) => {
       const v = searchParams.get(k);
       if (v) params[k] = v;
     });
-    if (dokumen)  params.jenis_dokumen = dokumen;
-    if (tahun)    params.tahun         = tahun;
+    if (dokumen) params.jenis_dokumen = dokumen;
+    if (tahun) params.tahun = tahun;
 
     fetchWizardBootstrapContext(_fromParam, params)
       .then((ctx) => {
         if (!ctx || Object.keys(ctx).length === 0) return;
         // 1. Tulis ke localStorage untuk sesi berikutnya
         const existing = (() => {
-          try { return JSON.parse(localStorage.getItem("form_rpjmd") || "{}"); } catch { return {}; }
+          try {
+            return JSON.parse(localStorage.getItem("form_rpjmd") || "{}");
+          } catch {
+            return {};
+          }
         })();
         const merged = { ...existing, ...ctx };
         localStorage.setItem("form_rpjmd", JSON.stringify(merged));
         sessionStorage.setItem("form_rpjmd", JSON.stringify(merged));
         // 2. Langsung prefill Formik saat ini juga via resetForm
         if (formikRef.current) {
-          formikRef.current.resetForm({ values: { ...formikRef.current.values, ...ctx } });
+          formikRef.current.resetForm({
+            values: { ...formikRef.current.values, ...ctx },
+          });
         }
       })
       .catch(() => {
@@ -440,14 +594,16 @@ const IndikatorRPJMD = () => {
   useEffect(() => {
     if (!dokumen || !tahun) return;
     fetchWizardHierarchyOptions({ jenis_dokumen: dokumen, tahun })
-      .then((loaded) => setOptions({
-        misi:           loaded.misi,
-        tujuan:         loaded.tujuan,
-        sasaran:        loaded.sasaran,
-        program:        loaded.program,
-        kegiatan:       loaded.kegiatan,
-        penanggungJawab: loaded.penanggungJawab,
-      }))
+      .then((loaded) =>
+        setOptions({
+          misi: loaded.misi,
+          tujuan: loaded.tujuan,
+          sasaran: loaded.sasaran,
+          program: loaded.program,
+          kegiatan: loaded.kegiatan,
+          penanggungJawab: loaded.penanggungJawab,
+        }),
+      )
       .catch((err) => {
         console.error("Gagal load data awal:", err);
         toast.error("Gagal memuat data awal.");
@@ -472,12 +628,12 @@ const IndikatorRPJMD = () => {
 
       if (nextStep > currentStep) {
         setCompletedSteps((prev) =>
-          prev.includes(currentStep) ? prev : [...prev, currentStep]
+          prev.includes(currentStep) ? prev : [...prev, currentStep],
         );
       }
       setCurrentStep(nextStep);
     },
-    [currentStep, dokumen, options.tujuan.length, tahun]
+    [currentStep, dokumen, options.tujuan.length, tahun],
   );
 
   const handleSaved = useCallback((ts) => setLastSavedAt(ts), []);
@@ -485,44 +641,79 @@ const IndikatorRPJMD = () => {
   /* ── initialValues ── baca dari localStorage agar wizard bisa resume */
   const _defaultValues = {
     level_dokumen: "RPJMD",
-    jenis_iku:     "IKU",
-    tujuan_id:  "", misi_id:    "", sasaran_id: "",
-    program_id: "", kegiatan_id: "",
+    jenis_iku: "IKU",
+    tujuan_id: "",
+    misi_id: "",
+    sasaran_id: "",
+    program_id: "",
+    kegiatan_id: "",
     /* label fields untuk sidebar */
-    tujuan_label:        "", sasaran_label:       "", program_label:       "",
-    strategi_label:      "", arah_kebijakan_label: "", sub_kegiatan_label:  "",
+    tujuan_label: "",
+    sasaran_label: "",
+    program_label: "",
+    strategi_label: "",
+    arah_kebijakan_label: "",
+    sub_kegiatan_label: "",
     /* context IDs baru */
-    strategi_id:         "", arah_kebijakan_id:    "", sub_kegiatan_id:     "",
+    strategi_id: "",
+    arah_kebijakan_id: "",
+    sub_kegiatan_id: "",
     /* misi fields */
-    no_misi: "", isi_misi: "",
+    no_misi: "",
+    isi_misi: "",
     /* indikator fields */
-    nama_indikator: "", kode_indikator: "", satuan: "",
-    tipe_indikator: "", jenis_indikator: "",
-    definisi_operasional: "", metode_penghitungan: "",
+    nama_indikator: "",
+    kode_indikator: "",
+    satuan: "",
+    tipe_indikator: "",
+    jenis_indikator: "",
+    definisi_operasional: "",
+    metode_penghitungan: "",
     baseline: "",
-    target_tahun_1: "", target_tahun_2: "", target_tahun_3: "",
-    target_tahun_4: "", target_tahun_5: "",
-    sumber_data: "", penanggung_jawab: "", keterangan: "",
+    target_tahun_1: "",
+    target_tahun_2: "",
+    target_tahun_3: "",
+    target_tahun_4: "",
+    target_tahun_5: "",
+    sumber_data: "",
+    penanggung_jawab: "",
+    keterangan: "",
+    /** Baris impor PDF terpilih (tab Indikator tujuan) — untuk dropdown & isi otomatis. */
+    rpjmd_import_indikator_tujuan_id: "",
+    /** Baris indikator strategi (GET by-strategi) — dropdown Nama Indikator step Strategi. */
+    rpjmd_import_indikator_strategi_id: "",
     /* list arrays per step */
-    misi: [], tujuan: [], sasaran: [],
-    strategi: [], arah_kebijakan: [],
-    program: [], kegiatan: [], sub_kegiatan: [],
+    misi: [],
+    tujuan: [],
+    sasaran: [],
+    strategi: [],
+    arah_kebijakan: [],
+    program: [],
+    kegiatan: [],
+    sub_kegiatan: [],
   };
 
   const initialValues = (() => {
     try {
-      const raw = localStorage.getItem("form_rpjmd") || sessionStorage.getItem("form_rpjmd");
+      const raw =
+        localStorage.getItem("form_rpjmd") ||
+        sessionStorage.getItem("form_rpjmd");
       if (raw) {
         const saved = JSON.parse(raw);
         /* merge: pastikan semua key default tersedia walau data lama belum punya */
         return { ..._defaultValues, ...saved };
       }
-    } catch { /* ignore parse error */ }
+    } catch {
+      /* ignore parse error */
+    }
     return _defaultValues;
   })();
 
   /* ── submit handler (step terakhir = Sub Kegiatan) ── */
-  const handleSubmit = async (values, { resetForm, setSubmitting, setErrors }) => {
+  const handleSubmit = async (
+    values,
+    { resetForm, setSubmitting, setErrors },
+  ) => {
     if (currentStep !== steps.length - 1) {
       setSubmitting(false);
       return;
@@ -555,8 +746,11 @@ const IndikatorRPJMD = () => {
           : "";
       toast.error(
         validationMsg ||
-          pickBackendErrorMessage(data, "Gagal menyelesaikan wizard. Coba lagi."),
-        { duration: 5000 }
+          pickBackendErrorMessage(
+            data,
+            "Gagal menyelesaikan wizard. Coba lagi.",
+          ),
+        { duration: 5000 },
       );
     } finally {
       setSubmitting(false);
@@ -565,7 +759,9 @@ const IndikatorRPJMD = () => {
 
   const currentStepObj = steps[currentStep];
   if (!currentStepObj) {
-    return <div className="text-danger p-3">Step tidak ditemukan: {currentStep}</div>;
+    return (
+      <div className="text-danger p-3">Step tidak ditemukan: {currentStep}</div>
+    );
   }
 
   /* ── render ── */
@@ -579,7 +775,13 @@ const IndikatorRPJMD = () => {
         validationSchema={wizardSchemas[currentStep]}
         onSubmit={handleSubmit}
       >
-        {({ values, setFieldValue, validateForm, submitForm, isSubmitting }) => (
+        {({
+          values,
+          setFieldValue,
+          validateForm,
+          submitForm,
+          isSubmitting,
+        }) => (
           <FormikForm id="formik-form">
             {/* Auto-saver: tidak render apapun, hanya efek samping */}
             <AutoSaver values={values} onSaved={handleSaved} />
@@ -601,11 +803,13 @@ const IndikatorRPJMD = () => {
               }}
             >
               <div>
-                <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: 0.3 }}>
+                <div
+                  style={{ fontSize: 16, fontWeight: 800, letterSpacing: 0.3 }}
+                >
                   🏛 Pengisian Indikator Spesifik RPJMD
                 </div>
                 <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2 }}>
-                  Wizard 5 langkah · {[dokumen, tahun].filter(Boolean).join(" · ")}
+                  Wizard 5 langkah · {wizardKonteksLine}
                 </div>
               </div>
 
@@ -620,7 +824,9 @@ const IndikatorRPJMD = () => {
                   }}
                 >
                   {currentStep + 1}
-                  <span style={{ fontSize: 14, opacity: 0.65 }}>/{steps.length}</span>
+                  <span style={{ fontSize: 14, opacity: 0.65 }}>
+                    /{steps.length}
+                  </span>
                 </div>
                 <div style={{ fontSize: 10, opacity: 0.65, marginTop: 2 }}>
                   {currentStepObj.label}
@@ -675,8 +881,12 @@ const IndikatorRPJMD = () => {
                       background: "#fafbff",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: 22 }}>{currentStepObj.icon}</span>
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 10 }}
+                    >
+                      <span style={{ fontSize: 22 }}>
+                        {currentStepObj.icon}
+                      </span>
                       <div>
                         <div
                           style={{
@@ -688,7 +898,13 @@ const IndikatorRPJMD = () => {
                         >
                           Langkah {currentStep + 1}: {currentStepObj.label}
                         </div>
-                        <div style={{ fontSize: 12, color: "#6c757d", marginTop: 1 }}>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "#6c757d",
+                            marginTop: 1,
+                          }}
+                        >
                           {currentStepObj.description}
                         </div>
                       </div>
@@ -707,16 +923,20 @@ const IndikatorRPJMD = () => {
                           title="Ringkasan sebelum Kirim (indikator kegiatan)"
                         />
                         <BootstrapForm.Text className="text-muted d-block mb-3">
-                          Tombol <strong>Simpan &amp; Lanjut</strong> pada tab Ringkasan
-                          menyimpan indikator kegiatan, lalu wizard melanjut ke{" "}
-                          <strong>Sub Kegiatan</strong>. Tombol <strong>Lanjut →</strong> di
-                          footer hanya berpindah langkah (tanpa simpan ke server).
+                          Tombol <strong>Simpan &amp; Lanjut</strong> pada tab
+                          Ringkasan menyimpan indikator kegiatan, lalu wizard
+                          melanjut ke <strong>Sub Kegiatan</strong>. Tombol{" "}
+                          <strong>Lanjut →</strong> di footer hanya berpindah
+                          langkah (tanpa simpan ke server).
                         </BootstrapForm.Text>
                       </>
                     )}
 
                     {lockedSteps.includes(currentStep) ? (
-                      <LockedStepSummary stepKey={currentStepObj.key} values={values} />
+                      <LockedStepSummary
+                        stepKey={currentStepObj.key}
+                        values={values}
+                      />
                     ) : (
                       <currentStepObj.component
                         options={options}
@@ -747,9 +967,15 @@ const IndikatorRPJMD = () => {
                       variant="outline-secondary"
                       style={{ minWidth: 110, fontWeight: 600 }}
                       onClick={() =>
-                        setCurrentStep((prev) => Math.max(prev - 1, _entryStep >= 0 ? _entryStep : 0))
+                        setCurrentStep((prev) =>
+                          Math.max(prev - 1, _entryStep >= 0 ? _entryStep : 0),
+                        )
                       }
-                      disabled={currentStep === (_entryStep >= 0 ? _entryStep : 0) || loading || isSubmitting}
+                      disabled={
+                        currentStep === (_entryStep >= 0 ? _entryStep : 0) ||
+                        loading ||
+                        isSubmitting
+                      }
                     >
                       ← Kembali
                     </Button>
@@ -772,16 +998,20 @@ const IndikatorRPJMD = () => {
 
                     {/* Next / Submit button */}
                     <Button
-                      variant={currentStep === steps.length - 1 ? "success" : "primary"}
+                      variant={
+                        currentStep === steps.length - 1 ? "success" : "primary"
+                      }
                       style={{ minWidth: 130, fontWeight: 700 }}
                       type="button"
                       onClick={async () => {
                         const errors = await validateForm();
                         if (Object.keys(errors).length > 0) {
-                          toast.error("Periksa kembali isian yang belum valid.");
+                          toast.error(
+                            "Periksa kembali isian yang belum valid.",
+                          );
                           setTimeout(() => {
                             const el = document.querySelector(
-                              "#formik-form .is-invalid, #formik-form [aria-invalid='true']"
+                              "#formik-form .is-invalid, #formik-form [aria-invalid='true']",
                             );
                             el?.focus({ preventScroll: true });
                           }, 150);
@@ -797,7 +1027,11 @@ const IndikatorRPJMD = () => {
                     >
                       {loading || isSubmitting ? (
                         <>
-                          <Spinner animation="border" size="sm" className="me-2" />
+                          <Spinner
+                            animation="border"
+                            size="sm"
+                            className="me-2"
+                          />
                           Memproses...
                         </>
                       ) : currentStep === steps.length - 1 ? (
@@ -821,8 +1055,14 @@ const IndikatorRPJMD = () => {
                   borderRadius: 12,
                 }}
               >
-                <Spinner animation="border" variant="primary" style={{ width: 48, height: 48 }} />
-                <div style={{ marginTop: 16, fontWeight: 600, color: "#1a237e" }}>
+                <Spinner
+                  animation="border"
+                  variant="primary"
+                  style={{ width: 48, height: 48 }}
+                />
+                <div
+                  style={{ marginTop: 16, fontWeight: 600, color: "#1a237e" }}
+                >
                   Menyimpan data…
                 </div>
                 <div style={{ fontSize: 12, color: "#6c757d", marginTop: 4 }}>
@@ -830,7 +1070,6 @@ const IndikatorRPJMD = () => {
                 </div>
               </Modal.Body>
             </Modal>
-
           </FormikForm>
         )}
       </Formik>

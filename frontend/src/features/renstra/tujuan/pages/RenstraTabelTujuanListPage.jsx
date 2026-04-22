@@ -160,7 +160,7 @@ const RenstraTabelTujuanListPage = () => {
           Tambah
         </Button>
         <Text type="secondary" style={{ marginLeft: 8 }}>
-          Klik baris untuk melihat target &amp; pagu per tahun (1–6).
+          Klik baris untuk melihat target &amp; pagu periode (th. ke-1 s/d ke-6).
         </Text>
       </div>
 

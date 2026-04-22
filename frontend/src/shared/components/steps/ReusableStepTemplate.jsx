@@ -183,7 +183,7 @@ export default function ReusableStepTemplate({
                     <th>Nama</th>
                     <th>Baseline</th>
                     {[1, 2, 3, 4, 5].map((i) => (
-                      <th key={i}>{`Tahun ${i}`}</th>
+                      <th key={i}>{`Th. ke-${i}`}</th>
                     ))}
                     <th>Aksi</th>
                   </tr>

@@ -34,6 +34,10 @@ import CascadingMultiSelectField from "./CascadingMultiSelectField";
 import { useDokumen } from "../../hooks/useDokumen";
 import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
 import { normalizeId, normalizeListItems } from "../../utils/apiResponse";
+import {
+  konteksBannerRows,
+  isDokumenLevelPeriode,
+} from "../../utils/planningDokumenUtils";
 
 // ─── Konstanta level cascading ──────────────────────────────────────────────
 
@@ -166,6 +170,16 @@ function resolveExistingValue(key, existingData) {
  * Memastikan nilai terpilih (dari FK) ada di daftar opsi.
  * Jika tidak ada, injeksi dari nested object snapshot atau buat opsi sintetis.
  */
+/** Label tampilan prioritas: uraian/nama dulu; kode hanya fallback jika tidak ada teks. */
+function prioritasOptionText(item, { uraianKey, namaKey, kodeKey }) {
+  const u = String(item?.[uraianKey] ?? "").trim();
+  const n = String(item?.[namaKey] ?? "").trim();
+  if (u) return u;
+  if (n) return n;
+  const k = String(item?.[kodeKey] ?? "").trim();
+  return k || String(item?.id ?? "");
+}
+
 function mergeRowsWithSnapshot(levelKey, rows, snapshot) {
   const base = Array.isArray(rows) ? [...rows] : [];
   if (!snapshot) return base;
@@ -213,9 +227,24 @@ function getOptionLabel(key, item) {
   if (item?._synthetic) return `[Tersimpan ID: ${item.id}]`;
   switch (key) {
     case "misi":         return `${item.no_misi ?? ""} - ${item.isi_misi ?? ""}`;
-    case "priorNasional":{ const u = item.nama_prionas || item.uraian_prionas || ""; const k = item.kode_prionas || ""; return k ? `${k} - ${u}` : u; }
-    case "priorDaerah":  { const u = item.nama_prioda  || item.uraian_prioda  || ""; const k = item.kode_prioda  || ""; return k ? `${k} - ${u}` : u; }
-    case "priorKepda":   { const u = item.nama_priogub || item.uraian_priogub || ""; const k = item.kode_priogub || ""; return k ? `${k} - ${u}` : u; }
+    case "priorNasional":
+      return prioritasOptionText(item, {
+        uraianKey: "uraian_prionas",
+        namaKey: "nama_prionas",
+        kodeKey: "kode_prionas",
+      });
+    case "priorDaerah":
+      return prioritasOptionText(item, {
+        uraianKey: "uraian_prioda",
+        namaKey: "nama_prioda",
+        kodeKey: "kode_prioda",
+      });
+    case "priorKepda":
+      return prioritasOptionText(item, {
+        uraianKey: "uraian_priogub",
+        namaKey: "nama_priogub",
+        kodeKey: "kode_priogub",
+      });
     case "tujuan":       return `${item.no_tujuan ?? ""} - ${item.isi_tujuan ?? ""}`;
     case "sasaran":      return `${item.nomor ?? ""} - ${item.isi_sasaran ?? ""}`;
     case "strategi":     return `${item.kode_strategi ?? ""} - ${item.deskripsi ?? ""}`;
@@ -233,7 +262,10 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
   const { user, userReady, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const { dokumen, tahun } = useDokumen();
-  const { periode_id: periodeAktifId } = usePeriodeAktif();
+  const { periode_id: periodeAktifId, periodeList } = usePeriodeAktif();
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(periodeAktifId),
+  );
 
   const [data,    setData]    = useState({});
   const [options, setOptions] = useState({});
@@ -561,7 +593,11 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
   if (!dokumen || !tahun) {
     return (
       <div className="text-center my-5">
-        <Alert variant="warning">Silakan pilih dokumen dan tahun terlebih dahulu.</Alert>
+        <Alert variant="warning">
+          {isDokumenLevelPeriode(dokumen)
+            ? "Atur jenis dokumen di header. RPJMD/Renstra memakai satu periode (lima tahun); tidak perlu memilih tahun terpisah."
+            : "Silakan pilih jenis dokumen dan konteks waktu di header terlebih dahulu."}
+        </Alert>
       </div>
     );
   }
@@ -590,9 +626,12 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
         {!isEditMode && <Breadcrumb.Item active>Tambah Cascading</Breadcrumb.Item>}
       </Breadcrumb>
 
-      <Alert variant="info" className="d-flex align-items-center gap-2 py-2">
-        <strong>Dokumen:</strong>&nbsp;{String(dokumen || "").toUpperCase()}&nbsp;
-        <strong>Tahun:</strong>&nbsp;{tahun}
+      <Alert variant="info" className="py-2 small mb-3">
+        {konteksBannerRows(dokumen, tahun, periodeAktif).map((r) => (
+          <span key={r.key} className="d-block">
+            <strong>{r.label}:</strong> {r.value}
+          </span>
+        ))}
       </Alert>
 
       {globalLoading && (

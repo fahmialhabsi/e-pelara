@@ -16,8 +16,8 @@ const schema = Yup.object().shape({
   bidang_opd: Yup.string().required("Bidang OPD wajib dipilih"),
   sub_bidang_opd: Yup.string().required("Sub Bidang OPD wajib diisi"),
   rpjmd_id: Yup.number().required("RPJMD wajib dipilih"),
-  tahun_mulai: Yup.number().required("Tahun Mulai wajib dipilih"),
-  tahun_akhir: Yup.number().required("Tahun Akhir wajib dipilih"),
+  tahun_mulai: Yup.number().required("Awal periode Renstra wajib dipilih"),
+  tahun_akhir: Yup.number().required("Akhir periode Renstra wajib dipilih"),
   keterangan: Yup.string(),
 });
 
@@ -229,9 +229,9 @@ const FormRenstraOPD = ({ initialData = null, onSuccess }) => {
           />
         </Form.Item>
 
-        {/* Tahun Mulai */}
+        {/* Awal periode (nilai = tahun_awal RPJMD, dipetakan ke field tahun_mulai) */}
         <Form.Item
-          label="Tahun Mulai"
+          label="Awal periode Renstra"
           validateStatus={errors.tahun_mulai ? "error" : ""}
           help={errors.tahun_mulai?.message}
         >
@@ -239,10 +239,10 @@ const FormRenstraOPD = ({ initialData = null, onSuccess }) => {
             name="tahun_mulai"
             control={control}
             render={({ field }) => (
-              <Select {...field} allowClear placeholder="Pilih Tahun Mulai">
+              <Select {...field} allowClear placeholder="Pilih awal periode">
                 {periodeOptions.map((p) => (
                   <Select.Option key={p.tahun_awal} value={p.tahun_awal}>
-                    {p.nama} ({p.tahun_awal})
+                    {p.nama} ({p.tahun_awal}–{p.tahun_akhir})
                   </Select.Option>
                 ))}
               </Select>
@@ -250,9 +250,9 @@ const FormRenstraOPD = ({ initialData = null, onSuccess }) => {
           />
         </Form.Item>
 
-        {/* Tahun Akhir */}
+        {/* Akhir periode (nilai = tahun_akhir RPJMD, dipetakan ke field tahun_akhir) */}
         <Form.Item
-          label="Tahun Akhir"
+          label="Akhir periode Renstra"
           validateStatus={errors.tahun_akhir ? "error" : ""}
           help={errors.tahun_akhir?.message}
         >
@@ -260,10 +260,10 @@ const FormRenstraOPD = ({ initialData = null, onSuccess }) => {
             name="tahun_akhir"
             control={control}
             render={({ field }) => (
-              <Select {...field} allowClear placeholder="Pilih Tahun Akhir">
+              <Select {...field} allowClear placeholder="Pilih akhir periode">
                 {periodeOptions.map((p) => (
                   <Select.Option key={p.tahun_akhir} value={p.tahun_akhir}>
-                    {p.nama} ({p.tahun_akhir})
+                    {p.nama} ({p.tahun_awal}–{p.tahun_akhir})
                   </Select.Option>
                 ))}
               </Select>

@@ -3,6 +3,10 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { Op, ForeignKeyConstraintError } = require("sequelize");
 const { User, Role, Division, PeriodeRpjmd } = require("../models");
+const {
+  getPlanContextForTenant,
+  planFieldsForJwt,
+} = require("../helpers/subscriptionPlanFeatures");
 
 // Register
 const register = async (req, res) => {
@@ -78,6 +82,9 @@ const register = async (req, res) => {
       });
     }
 
+    const tenantIdRaw = req.body?.tenant_id != null ? parseInt(String(req.body.tenant_id), 10) : 1;
+    const tenant_id = Number.isFinite(tenantIdRaw) && tenantIdRaw > 0 ? tenantIdRaw : 1;
+
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = await User.create({
       username,
@@ -87,10 +94,12 @@ const register = async (req, res) => {
       divisions_id: divisionId,
       opd,
       periode_id: periode.id,
+      tenant_id,
     });
 
     const division = await Division.findByPk(divisionId);
 
+    const planCtx = await getPlanContextForTenant(newUser.tenant_id);
     const payload = {
       id: newUser.id,
       username: newUser.username,
@@ -102,6 +111,8 @@ const register = async (req, res) => {
       bidang_opd_penanggung_jawab: division?.name,
       tahun: periode.tahun_awal,
       periode_id: periode.id,
+      tenant_id: newUser.tenant_id,
+      ...planFieldsForJwt(planCtx),
     };
 
     const accessToken = jwt.sign(payload, process.env.JWT_SECRET, {
@@ -183,6 +194,11 @@ const login = async (req, res) => {
       user.periode = periodeAktif; // inject agar bisa dipakai di payload
     }
 
+    const tenantIdForPlan =
+      user.tenant_id != null && Number(user.tenant_id) > 0
+        ? Number(user.tenant_id)
+        : 1;
+    const planCtx = await getPlanContextForTenant(tenantIdForPlan);
     const payload = {
       id: user.id,
       email: user.email,
@@ -194,6 +210,8 @@ const login = async (req, res) => {
       bidang_opd_penanggung_jawab: user.division?.name,
       tahun: user.periode?.tahun_awal,
       periode_id: user.periode?.id,
+      tenant_id: tenantIdForPlan,
+      ...planFieldsForJwt(planCtx),
     };
 
     const accessToken = jwt.sign(payload, process.env.JWT_SECRET, {
@@ -228,15 +246,20 @@ const login = async (req, res) => {
   }
 };
 
-// Refresh Token Handler
-const refreshToken = (req, res) => {
-  const { refreshToken } = req.cookies;
-  if (!refreshToken)
-    return res.status(401).json({ message: "Refresh token missing" });
+// Refresh Token Handler — segarkan klaim paket dari DB
+const refreshToken = async (req, res) => {
+  const rt = req.cookies?.refreshToken;
+  if (!rt) return res.status(401).json({ message: "Refresh token missing" });
 
-  jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, (err, decoded) => {
-    if (err) return res.status(403).json({ message: "Invalid refresh token" });
-    const { iat, exp, ...userPayload } = decoded;
+  try {
+    const decoded = jwt.verify(rt, process.env.JWT_REFRESH_SECRET);
+    const { iat, exp, ...rest } = decoded;
+    const tid =
+      rest.tenant_id != null && Number(rest.tenant_id) > 0
+        ? Number(rest.tenant_id)
+        : 1;
+    const planCtx = await getPlanContextForTenant(tid);
+    const userPayload = { ...rest, ...planFieldsForJwt(planCtx) };
     const newAccessToken = jwt.sign(userPayload, process.env.JWT_SECRET, {
       expiresIn: "1h",
     });
@@ -246,8 +269,21 @@ const refreshToken = (req, res) => {
       sameSite: "strict",
       maxAge: 60 * 60 * 1000,
     });
-    res.json({ accessToken: newAccessToken });
-  });
+    res.json({
+      accessToken: newAccessToken,
+      user: {
+        plan_code: planCtx.plan_code,
+        plan_nama: planCtx.plan_nama,
+        plan_features: planCtx.plan_features,
+      },
+    });
+  } catch (err) {
+    if (err?.name === "JsonWebTokenError" || err?.name === "TokenExpiredError") {
+      return res.status(403).json({ message: "Invalid refresh token" });
+    }
+    console.error("[AuthController refreshToken]", err);
+    return res.status(500).json({ message: "Terjadi kesalahan di server." });
+  }
 };
 
 const GENERIC_FORGOT_MESSAGE =

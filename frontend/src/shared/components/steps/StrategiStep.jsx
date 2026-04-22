@@ -13,6 +13,7 @@ import {
   createIndikatorStrategiBatch,
   createStrategi,
   fetchIndikatorStrategiByStrategi,
+  fetchNextKodeIndikatorStrategi,
 } from "@/features/rpjmd/services/indikatorRpjmdApi";
 import { pickBackendErrorMessage } from "@/utils/mapBackendErrorsToFormik";
 import { useAuth } from "@/hooks/useAuth";
@@ -47,19 +48,24 @@ export default function StrategiStep({ options, tabKey, setTabKey, onNext }) {
   useAutoIsiTahunDanTarget(values, setFieldValue);
 
   useEffect(() => {
-    if (periode_id && values.periode_id !== periode_id) setFieldValue("periode_id", periode_id);
+    if (periode_id && values.periode_id !== periode_id)
+      setFieldValue("periode_id", periode_id);
     if (tahun && !values.tahun) setFieldValue("tahun", tahun);
     if (!values.jenis_dokumen && user?.default_jenis_dokumen)
       setFieldValue("jenis_dokumen", user.default_jenis_dokumen);
   }, [periode_id, tahun, user, values, setFieldValue]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("form_rpjmd") || sessionStorage.getItem("form_rpjmd");
+    const saved =
+      localStorage.getItem("form_rpjmd") ||
+      sessionStorage.getItem("form_rpjmd");
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         Object.entries(parsed).forEach(([key, val]) => setFieldValue(key, val));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }, [setFieldValue]);
 
@@ -79,6 +85,7 @@ export default function StrategiStep({ options, tabKey, setTabKey, onNext }) {
       setFieldValue("strategi_id", "");
       setFieldValue("strategi_label", "");
       setFieldValue("strategi", []);
+      setFieldValue("rpjmd_import_indikator_strategi_id", "");
       clearIndikatorDraftScalars(setFieldValue);
     }
     prevSasaranRef.current = cur;
@@ -118,7 +125,7 @@ export default function StrategiStep({ options, tabKey, setTabKey, onNext }) {
 
         const selectedId = strategiIdRef.current;
         const hasSelected = mapped.some(
-          (o) => String(o.value) === String(selectedId || "")
+          (o) => String(o.value) === String(selectedId || ""),
         );
         if (mapped.length > 0 && !hasSelected) {
           setFieldValue("strategi_id", String(mapped[0].value));
@@ -132,7 +139,7 @@ export default function StrategiStep({ options, tabKey, setTabKey, onNext }) {
         setLoadingStrategi(false);
       }
     }, 500),
-    [values.sasaran_id, values.tahun, values.jenis_dokumen, setFieldValue]
+    [values.sasaran_id, values.tahun, values.jenis_dokumen, setFieldValue],
   );
 
   useEffect(() => {
@@ -142,7 +149,7 @@ export default function StrategiStep({ options, tabKey, setTabKey, onNext }) {
 
   useEffect(() => {
     const o = strategiOptionsForStep.find(
-      (x) => String(x.value) === String(values.strategi_id ?? "")
+      (x) => String(x.value) === String(values.strategi_id ?? ""),
     );
     if (o?.label) setFieldValue("strategi_label", o.label);
   }, [strategiOptionsForStep, values.strategi_id, setFieldValue]);
@@ -157,17 +164,65 @@ export default function StrategiStep({ options, tabKey, setTabKey, onNext }) {
           jenis_dokumen: values.jenis_dokumen,
         });
         if (cancelled) return;
-        const raw = normalizeListItems(res.data);
+        let raw = normalizeListItems(res.data);
+        /**
+         * Jika filter jenis_dokumen wizard (label panjang) tidak cocok eksak dengan DB ("RPJMD"),
+         * daftar kosong → jangan langsung next-kode (-02). Coba ulang tanpa jenis_dokumen.
+         */
+        if (
+          raw.length === 0 &&
+          values.tahun &&
+          !cancelled
+        ) {
+          const res2 = await fetchIndikatorStrategiByStrategi(
+            values.strategi_id,
+            { tahun: values.tahun },
+          );
+          if (!cancelled) raw = normalizeListItems(res2.data);
+        }
         const mapped = raw.map(mapApiIndikatorToListRow);
         setFieldValue("strategi", mapped);
         if (mapped.length > 0) {
-          hydrateDraftFromIndikatorRow(mapped[0], setFieldValue);
+          const r0 = mapped[0];
+          const raw0 = raw[0] || {};
+          hydrateDraftFromIndikatorRow(r0, setFieldValue);
+          /* Kunci dropdown ist = id baris indikatorstrategis (PK), bukan indikator_id master. */
+          const pk =
+            raw0.id ??
+            r0.id ??
+            r0.__uid ??
+            raw0.__uid;
+          const id0 =
+            pk != null && String(pk).trim() !== "" ? String(pk).trim() : "";
+          setFieldValue("rpjmd_import_indikator_strategi_id", id0);
         } else {
+          setFieldValue("rpjmd_import_indikator_strategi_id", "");
           clearIndikatorDraftScalars(setFieldValue);
+          if (
+            !cancelled &&
+            values.strategi_id &&
+            values.jenis_dokumen &&
+            values.tahun
+          ) {
+            try {
+              const nk = await fetchNextKodeIndikatorStrategi(
+                values.strategi_id,
+                {
+                  jenis_dokumen: values.jenis_dokumen,
+                  tahun: values.tahun,
+                },
+              );
+              const next = nk.data?.next_kode;
+              if (!cancelled && next) setFieldValue("kode_indikator", next);
+            } catch {
+              /* next-kode opsional */
+            }
+          }
         }
       } catch {
         if (!cancelled) {
           setFieldValue("strategi", []);
+          setFieldValue("rpjmd_import_indikator_strategi_id", "");
           clearIndikatorDraftScalars(setFieldValue);
         }
       }
@@ -175,7 +230,12 @@ export default function StrategiStep({ options, tabKey, setTabKey, onNext }) {
     return () => {
       cancelled = true;
     };
-  }, [values.strategi_id, values.tahun, values.jenis_dokumen, setFieldValue]);
+  }, [
+    values.strategi_id,
+    values.tahun,
+    values.jenis_dokumen,
+    setFieldValue,
+  ]);
 
   const handleTambahStrategiSameStep = async () => {
     if (!values.sasaran_id) return toast.error("Sasaran belum dipilih.");
@@ -189,7 +249,8 @@ export default function StrategiStep({ options, tabKey, setTabKey, onNext }) {
         tahun: values.tahun,
       });
       const newId = res.data?.id || res.data?.data?.id;
-      const newKode = res.data?.kode_strategi || res.data?.data?.kode_strategi || "";
+      const newKode =
+        res.data?.kode_strategi || res.data?.data?.kode_strategi || "";
       const desk =
         res.data?.deskripsi ||
         res.data?.data?.deskripsi ||
@@ -208,10 +269,18 @@ export default function StrategiStep({ options, tabKey, setTabKey, onNext }) {
       setFieldValue("strategi_id", String(newId));
       setFieldValue("strategi_label", newLabel);
       setFieldValue("strategi", []);
+      setFieldValue("rpjmd_import_indikator_strategi_id", "");
       clearIndikatorDraftScalars(setFieldValue);
-      toast.success("Strategi baru siap; lanjutkan isi indikator di tab yang sama.");
+      toast.success(
+        "Strategi baru siap; lanjutkan isi indikator di tab yang sama.",
+      );
     } catch (err) {
-      toast.error(pickBackendErrorMessage(err?.response?.data, "Gagal menambah strategi."));
+      toast.error(
+        pickBackendErrorMessage(
+          err?.response?.data,
+          "Gagal menambah strategi.",
+        ),
+      );
     } finally {
       setAddingStrategi(false);
     }
@@ -221,12 +290,17 @@ export default function StrategiStep({ options, tabKey, setTabKey, onNext }) {
     const strategiList = Array.isArray(values.strategi) ? values.strategi : [];
 
     if (!values.sasaran_id) {
-      toast.error("Sasaran belum dipilih. Kembali ke step Sasaran terlebih dahulu.");
+      toast.error(
+        "Sasaran belum dipilih. Kembali ke step Sasaran terlebih dahulu.",
+      );
       return;
     }
 
     if (apiUnavailable) {
-      toast("Step Strategi dilewati (API belum tersedia). Lanjut ke Arah Kebijakan.", { icon: "⚠️" });
+      toast(
+        "Step Strategi dilewati (API belum tersedia). Lanjut ke Arah Kebijakan.",
+        { icon: "⚠️" },
+      );
     } else {
       if (!values.strategi_id) {
         toast.error("Pilih Strategi terlebih dahulu.");
@@ -249,15 +323,22 @@ export default function StrategiStep({ options, tabKey, setTabKey, onNext }) {
               jenis_dokumen: values.jenis_dokumen,
               tahun: values.tahun,
               periode_id: values.periode_id,
-            }))
+            })),
           );
           toast.success("Indikator Strategi berhasil disimpan!");
         } catch (err) {
-          toast.error(pickBackendErrorMessage(err?.response?.data, "Gagal menyimpan indikator strategi."));
+          toast.error(
+            pickBackendErrorMessage(
+              err?.response?.data,
+              "Gagal menyimpan indikator strategi.",
+            ),
+          );
           return;
         }
       } else {
-        toast.success("Indikator strategi sudah tersimpan. Melanjutkan wizard.");
+        toast.success(
+          "Indikator strategi sudah tersimpan. Melanjutkan wizard.",
+        );
       }
     }
 
@@ -298,9 +379,12 @@ export default function StrategiStep({ options, tabKey, setTabKey, onNext }) {
           <div>
             <strong>Backend Strategi belum tersedia</strong>
             <p className="mb-2 mt-1 small">
-              Endpoint <code>/strategi</code> dan <code>/indikator-strategi</code> belum aktif.
+              Endpoint <code>/strategi</code> dan{" "}
+              <code>/indikator-strategi</code> belum aktif.
             </p>
-            <Badge bg="secondary" className="me-2">TODO: aktifkan API backend</Badge>
+            <Badge bg="secondary" className="me-2">
+              TODO: aktifkan API backend
+            </Badge>
             <Badge bg="info">Step dapat dilewati sementara</Badge>
           </div>
         </Alert>
@@ -316,7 +400,8 @@ export default function StrategiStep({ options, tabKey, setTabKey, onNext }) {
   if (!values.sasaran_id) {
     return (
       <Alert variant="info">
-        Silakan pilih <strong>Sasaran</strong> terlebih dahulu di step sebelumnya.
+        Silakan pilih <strong>Sasaran</strong> terlebih dahulu di step
+        sebelumnya.
       </Alert>
     );
   }

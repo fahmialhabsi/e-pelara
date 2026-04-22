@@ -82,6 +82,8 @@ function syncSelectionFromTujuanItem(item, label, setFieldValue) {
   setFieldValue("tujuan_label", label);
   setFieldValue("label_tujuan", label);
   setFieldValue("isi_tujuan", item.isi_tujuan || "");
+  // Simpan kode prefix tujuan (mis. "T1-01") untuk filter dropdown referensi impor
+  setFieldValue("tujuan_no_tujuan_code", item.no_tujuan || "");
 }
 
 export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
@@ -160,6 +162,7 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
   useEffect(() => {
     setFieldValue("tujuan_id", "");
     setFieldValue("no_tujuan", "");
+    setFieldValue("tujuan_no_tujuan_code", "");
     setFieldValue("rpjmd_import_indikator_tujuan_id", "");
     setFilteredTujuanOptions([]);
     setTujuanSourceRows([]);
@@ -195,6 +198,9 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
             value: item.id,
             label: `${item.no_tujuan} - ${item.isi_tujuan}`,
             isi_tujuan: item.isi_tujuan || "",
+            // no_tujuan disertakan agar handleTujuanChange dapat menyimpannya ke Formik
+            // sebagai tujuan_no_tujuan_code (dipakai filter dropdown referensi impor)
+            no_tujuan: item.no_tujuan || "",
           }));
 
           setFilteredTujuanOptions(tujuanOptions);

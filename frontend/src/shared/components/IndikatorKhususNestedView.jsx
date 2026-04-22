@@ -28,12 +28,12 @@ const exportToPDF = (rows, title) => {
   const head = [
     [
       "Uraian Indikator",
-      "Capaian Tahun I",
+      "Capaian (th. ke-1)",
       "II",
       "III",
       "IV",
       "V",
-      "Target Tahun I",
+      "Target (th. ke-1)",
       "II",
       "III",
       "IV",
@@ -90,10 +90,10 @@ export default function IndikatorKhususNestedView({ data = {} }) {
           <tr>
             <th rowSpan={2}>Uraian Indikator</th>
             <th colSpan={5} className="text-center">
-              Capaian Tahun Ke
+              Capaian (th. ke-)
             </th>
             <th colSpan={5} className="text-center">
-              Target/Proyeksi Tahun Ke
+              Target / proyeksi (th. ke-)
             </th>
           </tr>
           <tr>

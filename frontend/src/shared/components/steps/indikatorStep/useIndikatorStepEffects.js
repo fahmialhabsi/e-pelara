@@ -53,7 +53,7 @@ export default function useIndikatorStepEffects({
         console.error("Gagal fetch next kode tujuan:", error);
       }
     },
-    [setFieldValue, dokumen, tahun]
+    [setFieldValue, dokumen, tahun],
   );
 
   const fetchNextKodeSasaran = useCallback(
@@ -70,7 +70,7 @@ export default function useIndikatorStepEffects({
         console.error("Gagal fetch next kode sasaran:", error);
       }
     },
-    [setFieldValue]
+    [setFieldValue],
   );
 
   const fetchNextKodeProgram = useCallback(
@@ -94,7 +94,7 @@ export default function useIndikatorStepEffects({
         console.error("Gagal fetch next kode program:", error);
       }
     },
-    [setFieldValue, dokumen, tahun]
+    [setFieldValue, dokumen, tahun],
   );
 
   const fetchNextKodeKegiatan = useCallback(
@@ -118,7 +118,7 @@ export default function useIndikatorStepEffects({
         console.error("Gagal fetch next kode kegiatan:", error);
       }
     },
-    [setFieldValue, dokumen, tahun]
+    [setFieldValue, dokumen, tahun],
   );
 
   useEffect(() => {
@@ -148,21 +148,27 @@ export default function useIndikatorStepEffects({
   }, [values.kegiatan_id, values.kegiatan, stepKey, fetchNextKodeKegiatan]);
 
   useEffect(() => {
+    /* Hanya step Tujuan: jangan fetch next-kode T… di Sasaran/Strategi/dll. */
+    if (stepKey !== "tujuan") return;
+
     const { no_tujuan } = values;
 
     if (!no_tujuan) return;
+
+    const tujuanList = Array.isArray(values.tujuan) ? values.tujuan : [];
+    if (listLooksPersistedFromServer(tujuanList)) return;
 
     if (fetchedOnceRef.current[`kode_${no_tujuan}`]) return;
     fetchedOnceRef.current[`kode_${no_tujuan}`] = true;
 
     fetchNextKode(no_tujuan);
-  }, [values.no_tujuan, fetchNextKode]);
+  }, [stepKey, values.no_tujuan, values.tujuan, fetchNextKode]);
 
   useEffect(() => {
     if (!Object.keys(errors).length) return;
     const timer = setTimeout(() => {
       const el = formRef.current?.querySelector(
-        ".is-invalid, [aria-invalid='true']"
+        ".is-invalid, [aria-invalid='true']",
       );
       if (el) el.focus({ preventScroll: true });
     }, 300);
@@ -170,16 +176,18 @@ export default function useIndikatorStepEffects({
   }, [errors, formRef]);
 
   useEffect(() => {
+    /* Step Tujuan: baseline diisi otomatis dari capaian T1–T4 (impor 2.28), bukan dari capaian tahun 5. */
+    if (stepKey === "tujuan") return;
     if (debouncedCapaian5 && debouncedCapaian5 !== values.baseline) {
       setFieldValue("baseline", debouncedCapaian5);
     }
-  }, [debouncedCapaian5, values.baseline, setFieldValue]);
+  }, [debouncedCapaian5, values.baseline, setFieldValue, stepKey]);
 
   useEffect(() => {
     if (!sasaranOptions.length || !values.sasaran_id) return;
 
     const selected = sasaranOptions.find(
-      (opt) => Number(opt.value) === Number(values.sasaran_id)
+      (opt) => Number(opt.value) === Number(values.sasaran_id),
     );
 
     if (selected) {
@@ -188,5 +196,4 @@ export default function useIndikatorStepEffects({
       console.warn("❗ Sasaran tidak ditemukan di options.");
     }
   }, [sasaranOptions, values.sasaran_id, handleSasaranChange]);
-
 }

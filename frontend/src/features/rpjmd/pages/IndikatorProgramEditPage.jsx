@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Formik } from "formik";
-import { Spinner, Alert } from "react-bootstrap";
+import { Spinner, Alert, Button } from "react-bootstrap";
 import IndikatorSimpleEditFormBody from "@/features/rpjmd/components/IndikatorSimpleEditFormBody";
 import { extractSingleData } from "@/utils/apiResponse";
 import { editSchemaForLevel } from "@/validations/indikatorSchemas";
@@ -42,8 +42,31 @@ export default function IndikatorProgramEditPage() {
   if (error) return <Alert variant="danger">{error}</Alert>;
 
   return (
-    <div className="p-4">
-      <h4>Edit Indikator Program</h4>
+    <div className="p-0">
+      <div
+        style={{
+          background: "linear-gradient(135deg,#1a237e 0%,#283593 100%)",
+          color: "#fff",
+          padding: "16px 24px 14px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          boxShadow: "0 2px 8px rgba(26,35,126,.18)",
+        }}
+      >
+        <div>
+          <h4 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#fff" }}>
+            ✏️ Edit Indikator Program
+          </h4>
+          <div style={{ fontSize: 12, opacity: 0.72, marginTop: 3 }}>
+            Perubahan disimpan pada indikator program ini.
+          </div>
+        </div>
+        <Button variant="outline-light" size="sm" onClick={() => navigate(-1)} style={{ fontWeight: 600 }}>
+          ✕ Tutup
+        </Button>
+      </div>
+      <div className="p-4 pt-3">
       <Formik
         initialValues={initialValues}
         validationSchema={validationSchema}
@@ -72,6 +95,7 @@ export default function IndikatorProgramEditPage() {
           navigate={navigate}
         />
       </Formik>
+      </div>
     </div>
   );
 }

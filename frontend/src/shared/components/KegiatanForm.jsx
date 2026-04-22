@@ -15,6 +15,8 @@ import Select from "react-select";
 import useKegiatanFormLogic from "@/features/rpjmd/hooks/useKegiatanFormLogic";
 import { formatProgramOptionLabel } from "@/utils/programDisplayLabel";
 import { useDokumen } from "@/hooks/useDokumen";
+import { usePeriodeAktif } from "@/features/rpjmd/hooks/usePeriodeAktif";
+import { konteksBannerRows } from "@/utils/planningDokumenUtils";
 import { useNavigate } from "react-router-dom";
 
 function KegiatanForm({ existingData, onSubmitSuccess }) {
@@ -46,6 +48,10 @@ function KegiatanForm({ existingData, onSubmitSuccess }) {
   } = useKegiatanFormLogic(existingData, onSubmitSuccess);
 
   const { dokumen, tahun } = useDokumen();
+  const { periode_id, periodeList } = usePeriodeAktif();
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(periode_id),
+  );
   const navigate = useNavigate();
 
   if (programsLoading) {
@@ -73,8 +79,8 @@ function KegiatanForm({ existingData, onSubmitSuccess }) {
       <Container className="my-4 text-center">
         <Alert variant="warning">
           Tidak ada data program yang tersedia. Pastikan data program sudah
-          diinput untuk tahun <strong>{kegiatanData.tahun}</strong> dan jenis
-          dokumen <strong>{kegiatanData.jenis_dokumen}</strong>.
+          diinput untuk konteks <strong>{kegiatanData.jenis_dokumen}</strong>{" "}
+          (periode / acuan yang sama).
         </Alert>
       </Container>
     );
@@ -95,8 +101,11 @@ function KegiatanForm({ existingData, onSubmitSuccess }) {
       </Breadcrumb>
 
       <div className="mb-3">
-        <strong>Dokumen Aktif:</strong> {dokumen || "-"} <br />
-        <strong>Tahun:</strong> {tahun || "-"}
+        {konteksBannerRows(dokumen, tahun, periodeAktif).map((r) => (
+          <span key={r.key} className="d-block">
+            <strong>{r.label}:</strong> {r.value}
+          </span>
+        ))}
       </div>
 
       {errorMsg && <Alert variant="danger">{errorMsg}</Alert>}

@@ -14,6 +14,7 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "periode_id",
         as: "periode",
       });
+      User.belongsTo(models.Tenant, { foreignKey: "tenant_id", as: "tenant" });
     }
   }
 
@@ -59,6 +60,17 @@ module.exports = (sequelize, DataTypes) => {
         },
         onUpdate: "CASCADE",
         onDelete: "SET NULL",
+      },
+      tenant_id: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: false,
+        defaultValue: 1,
+        references: {
+          model: "tenants",
+          key: "id",
+        },
+        onUpdate: "CASCADE",
+        onDelete: "RESTRICT",
       },
       password_reset_token: {
         type: DataTypes.STRING(128),

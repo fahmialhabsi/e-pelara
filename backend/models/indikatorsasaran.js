@@ -25,6 +25,7 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "periode_id",
         as: "periode",
       });
+      this.belongsTo(models.Tenant, { foreignKey: "tenant_id", as: "tenant" });
     }
   }
 
@@ -47,6 +48,12 @@ module.exports = (sequelize, DataTypes) => {
       periode_id: {
         type: DataTypes.INTEGER.UNSIGNED,
         allowNull: false,
+      },
+      tenant_id: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: false,
+        defaultValue: 1,
+        references: { model: "tenants", key: "id" },
       },
       tujuan_id: DataTypes.INTEGER.UNSIGNED,
       sasaran_id: DataTypes.INTEGER.UNSIGNED,
@@ -106,8 +113,9 @@ module.exports = (sequelize, DataTypes) => {
     }
   );
 
-  // Hooks
-  IndikatorSasaran.addHook("beforeCreate", async (instance) => {
+  // Hooks — sertakan transaction agar cek duplikat sejalan dengan transaksi (impor Excel apply)
+  IndikatorSasaran.addHook("beforeCreate", async (instance, options) => {
+    const tx = options?.transaction;
     const exists = await IndikatorSasaran.findOne({
       where: {
         indikator_id: instance.indikator_id,
@@ -115,6 +123,7 @@ module.exports = (sequelize, DataTypes) => {
         jenis_dokumen: instance.jenis_dokumen,
         tahun: instance.tahun,
       },
+      transaction: tx,
     });
     if (exists) {
       throw new Error(
@@ -123,7 +132,8 @@ module.exports = (sequelize, DataTypes) => {
     }
   });
 
-  IndikatorSasaran.addHook("beforeBulkCreate", async (instances) => {
+  IndikatorSasaran.addHook("beforeBulkCreate", async (instances, options) => {
+    const tx = options?.transaction;
     for (const instance of instances) {
       const exists = await IndikatorSasaran.findOne({
         where: {
@@ -132,6 +142,7 @@ module.exports = (sequelize, DataTypes) => {
           jenis_dokumen: instance.jenis_dokumen,
           tahun: instance.tahun,
         },
+        transaction: tx,
       });
       if (exists) {
         throw new Error(

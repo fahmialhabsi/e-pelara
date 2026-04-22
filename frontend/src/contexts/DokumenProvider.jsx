@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import { DokumenContext } from "./DokumenContext";
 
 export function DokumenProvider({ children }) {
@@ -20,7 +20,7 @@ export function DokumenProvider({ children }) {
   const [dokumen, setDokumen] = useState(initialDokumen);
   const [tahun, setTahun] = useState(initialTahun);
 
-  const setDokumenGlobal = (dok) => {
+  const setDokumenGlobal = useCallback((dok) => {
     const value = dok?.toLowerCase() || "";
     setDokumen(value);
     if (value) {
@@ -30,9 +30,9 @@ export function DokumenProvider({ children }) {
       sessionStorage.removeItem("dokumenTujuan");
       localStorage.removeItem("dokumen");
     }
-  };
+  }, []);
 
-  const setTahunGlobal = (th) => {
+  const setTahunGlobal = useCallback((th) => {
     setTahun(th);
     if (th) {
       sessionStorage.setItem("tahun", th);
@@ -41,7 +41,7 @@ export function DokumenProvider({ children }) {
       sessionStorage.removeItem("tahun");
       localStorage.removeItem("tahun");
     }
-  };
+  }, []);
 
   const resetDokumen = () => {
     setDokumen("");

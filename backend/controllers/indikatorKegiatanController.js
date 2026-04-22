@@ -59,7 +59,7 @@ const MAX_LIMIT = 200;
 
 function filterAllowedFields(row, allowed) {
   return Object.fromEntries(
-    Object.entries(row).filter(([key]) => allowed.includes(key))
+    Object.entries(row).filter(([key]) => allowed.includes(key)),
   );
 }
 
@@ -163,7 +163,10 @@ exports.getAll = async (req, res) => {
     const where = { jenis_dokumen, tahun };
     let selectedKegiatan = null;
 
-    if (indikator_program_id != null && String(indikator_program_id).trim() !== "") {
+    if (
+      indikator_program_id != null &&
+      String(indikator_program_id).trim() !== ""
+    ) {
       const ipNum = Number(indikator_program_id);
       if (Number.isFinite(ipNum)) where.indikator_program_id = ipNum;
     }
@@ -210,7 +213,7 @@ exports.getAll = async (req, res) => {
             program_id: sourceKegiatan.program_id,
           },
           safeLimit,
-          offset
+          offset,
         );
 
         count = fallback.count;
@@ -286,7 +289,7 @@ exports.create = async (req, res) => {
         {
           message:
             "Data dengan kombinasi kode_indikator, jenis_dokumen, dan tahun sudah ada.",
-        }
+        },
       );
     }
     if (err.name === "SequelizeValidationError") {
@@ -306,13 +309,13 @@ exports.bulkCreateDetail = async (req, res) => {
         res,
         400,
         { indikator_program_id: ["Parent indikator ID wajib diisi."] },
-        { message: "Parent indikator ID wajib diisi." }
+        { message: "Parent indikator ID wajib diisi." },
       );
     }
 
     const rows = Array.isArray(req.body) ? req.body : [req.body];
     const sanitized = await Promise.all(
-      rows.map((r) => sanitizeAndFill(r, { indikator_program_id: parentId }))
+      rows.map((r) => sanitizeAndFill(r, { indikator_program_id: parentId })),
     );
 
     sanitized.forEach(normalizeDecimalFields);
@@ -333,13 +336,18 @@ exports.bulkCreateDetail = async (req, res) => {
           {
             message:
               "Terdapat data duplikat berdasarkan kode_indikator, jenis_dokumen, dan tahun.",
-          }
+          },
         );
       }
       if (err.name === "SequelizeValidationError") {
-        return sendValidationErrors(res, 400, fromSequelizeValidationError(err), {
-          message: err.message,
-        });
+        return sendValidationErrors(
+          res,
+          400,
+          fromSequelizeValidationError(err),
+          {
+            message: err.message,
+          },
+        );
       }
       return res.status(500).json({ message: err.message });
     }
@@ -375,7 +383,7 @@ exports.getNextKode = async (req, res) => {
         model: IndikatorKegiatan,
         foreignKey: "kegiatan_id",
         kegiatan_id,
-      }
+      },
     );
 
     return res.json({ next_kode });
@@ -411,7 +419,7 @@ exports.update = async (req, res) => {
         res,
         409,
         { kode_indikator: ["Kode indikator bentrok dengan data lain."] },
-        { message: err.message }
+        { message: err.message },
       );
     }
     return res.status(500).json({ message: err.message });

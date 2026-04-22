@@ -98,7 +98,7 @@ export default function RPJMDList() {
                 <th>Wakil Kepala</th>
                 <th>Periode Awal</th>
                 <th>Periode Akhir</th>
-                <th>Tahun Penetapan</th>
+                <th>Penetapan (metadata)</th>
                 <th>Akronim</th>
                 <th>Aksi</th>
               </tr>

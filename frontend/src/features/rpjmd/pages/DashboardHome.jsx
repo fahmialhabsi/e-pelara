@@ -59,7 +59,9 @@ const DashboardHome = () => {
 
         {!isReady && (
           <Alert variant="info">
-            Silakan pilih jenis dokumen &amp; tahun terlebih dahulu.
+            Silakan pilih jenis dokumen di header. RPJMD dan Renstra memakai
+            konteks periode dokumen otomatis. Renja/RKPD dan dokumen berbasis
+            satu angka kalender memakai konteks di header seperti biasa.
           </Alert>
         )}
 

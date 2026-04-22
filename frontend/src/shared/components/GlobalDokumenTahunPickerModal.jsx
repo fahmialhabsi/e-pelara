@@ -4,6 +4,12 @@ import { Modal, Button, Form, Spinner } from "react-bootstrap";
 import { useDokumen } from "../../hooks/useDokumen";
 import { useAuth } from "../../hooks/useAuth";
 import { useNavigate, useLocation } from "react-router-dom";
+import api from "../../services/api";
+import { extractListData } from "../../utils/apiResponse";
+import {
+  isDokumenLevelPeriode,
+  pickAnchorPeriodeFromList,
+} from "../../utils/planningDokumenUtils";
 
 const jenisToPath = {
   rpjmd: "/dashboard-rpjmd",
@@ -35,20 +41,24 @@ export default function GlobalDokumenTahunPickerModal({ forceOpen }) {
   const location = useLocation();
 
   useEffect(() => {
-    const initialShow = forceOpen || !dokumen || !tahun;
+    const dokLower = (dokumen || user?.jenis_dokumen || "").toLowerCase();
+    const periodeLevel = isDokumenLevelPeriode(dokLower);
+    const needsYear = dokLower && !periodeLevel;
+    const initialShow =
+      forceOpen || !dokumen || (needsYear && !tahun);
 
     // auto-set kalau sudah ada di user
     if (!dokumen && user?.jenis_dokumen) {
       setDokumen(user.jenis_dokumen.toLowerCase());
     }
-    if (!tahun && user?.tahun) {
+    if (!tahun && user?.tahun && !periodeLevel) {
       setTahun(String(user.tahun));
     }
 
     setLocalDok(dokumen || user?.jenis_dokumen?.toLowerCase() || "");
     setLocalThn(tahun || String(user?.tahun || ""));
     setShow(initialShow);
-  }, [dokumen, tahun, forceOpen, user]);
+  }, [dokumen, tahun, forceOpen, user, setDokumen, setTahun]);
 
   useEffect(() => {
     if (!user?.token) {
@@ -105,11 +115,26 @@ export default function GlobalDokumenTahunPickerModal({ forceOpen }) {
       keyboard={false}
     >
       <Form
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
 
           const cleanedDok = (localDok || "").trim().toLowerCase();
-          const thn = localThn;
+          const periodeLevel = isDokumenLevelPeriode(cleanedDok);
+          let thn = localThn;
+
+          if (periodeLevel) {
+            try {
+              const res = await api.get("/periode-rpjmd");
+              const list = extractListData(res.data);
+              const pick = pickAnchorPeriodeFromList(list, user);
+              if (pick?.tahun_awal != null) {
+                thn = String(pick.tahun_awal);
+              }
+            } catch (err) {
+              console.error("Gagal mengambil periode RPJMD:", err);
+            }
+            if (!thn) return;
+          }
 
           setDokumen(cleanedDok);
           setTahun(thn);
@@ -121,7 +146,11 @@ export default function GlobalDokumenTahunPickerModal({ forceOpen }) {
         }}
       >
         <Modal.Header closeButton={!forceOpen}>
-          <Modal.Title>Pilih Dokumen & Tahun</Modal.Title>
+          <Modal.Title>
+            {isDokumenLevelPeriode(localDok)
+              ? "Pilih Dokumen"
+              : "Pilih dokumen & konteks waktu"}
+          </Modal.Title>
         </Modal.Header>
         <Modal.Body>
           {loading ? (
@@ -143,21 +172,29 @@ export default function GlobalDokumenTahunPickerModal({ forceOpen }) {
                   ))}
                 </Form.Select>
               </Form.Group>
-              <Form.Group className="mb-2">
-                <Form.Label>Tahun</Form.Label>
-                <Form.Select
-                  value={localThn}
-                  onChange={(e) => setLocalThn(e.target.value)}
-                  required
-                >
-                  <option value="">Pilih Tahun...</option>
-                  {tahunList.map((th) => (
-                    <option key={th} value={th}>
-                      {th}
-                    </option>
-                  ))}
-                </Form.Select>
-              </Form.Group>
+              {isDokumenLevelPeriode(localDok) ? (
+                <p className="text-muted small mb-0">
+                  RPJMD dan Renstra berlaku untuk satu periode berjalan. Parameter internal
+                  mengikuti rentang periode aktif Anda — tidak ada pemilihan angka terpisah di
+                  luar periode.
+                </p>
+              ) : (
+                <Form.Group className="mb-2">
+                  <Form.Label>Konteks waktu</Form.Label>
+                  <Form.Select
+                    value={localThn}
+                    onChange={(e) => setLocalThn(e.target.value)}
+                    required
+                  >
+                    <option value="">Pilih konteks waktu…</option>
+                    {tahunList.map((th) => (
+                      <option key={th} value={th}>
+                        {th}
+                      </option>
+                    ))}
+                  </Form.Select>
+                </Form.Group>
+              )}
             </>
           )}
         </Modal.Body>
@@ -170,7 +207,11 @@ export default function GlobalDokumenTahunPickerModal({ forceOpen }) {
           <Button
             type="submit"
             variant="primary"
-            disabled={loading || !localDok || !localThn}
+            disabled={
+              loading ||
+              !localDok ||
+              (!isDokumenLevelPeriode(localDok) && !localThn)
+            }
           >
             Simpan
           </Button>

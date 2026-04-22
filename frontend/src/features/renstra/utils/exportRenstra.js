@@ -11,7 +11,7 @@ const flattenRenstraFlat = (data) => {
   return data.map((t) => ({
     ID: t.id,
     Indikator: t.indikator?.nama_indikator || "-", // kalau ada relasi indikator
-    Tahun: t.tahun,
+    "Acuan periode (data)": t.tahun,
     Target: t.target_value,
     Satuan: t.satuan,
     Pagu: t.pagu_anggaran,
@@ -34,7 +34,7 @@ export const exportRenstraToExcel = (data) => {
   // Tambahkan header manual agar urut
   XLSX.utils.sheet_add_aoa(
     worksheet,
-    [["ID", "Indikator", "Tahun", "Target", "Satuan", "Pagu", "Lokasi"]],
+    [["ID", "Indikator", "Acuan periode (data)", "Target", "Satuan", "Pagu", "Lokasi"]],
     { origin: "A1" }
   );
 
@@ -54,7 +54,7 @@ export const exportRenstraToPDF = (data) => {
   const tableColumn = [
     "ID",
     "Indikator",
-    "Tahun",
+    "Acuan periode (data)",
     "Target",
     "Satuan",
     "Pagu",
@@ -64,7 +64,7 @@ export const exportRenstraToPDF = (data) => {
   const tableRows = rows.map((r) => [
     r.ID,
     r.Indikator,
-    r.Tahun,
+    r["Acuan periode (data)"],
     r.Target,
     r.Satuan,
     r.Pagu,

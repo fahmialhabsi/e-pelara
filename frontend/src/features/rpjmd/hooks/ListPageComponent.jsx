@@ -86,8 +86,6 @@ export default function ListPageComponent({
 
     const logoWidth = 20;
     const logoHeight = 20;
-    const tahunAktif = new Date().getFullYear();
-
     if (logoBase64) {
       doc.addImage(logoBase64, "PNG", 15, 10, logoWidth, logoHeight);
     }
@@ -101,7 +99,12 @@ export default function ListPageComponent({
     doc.text(`Jenis Dokumen: ${jenis_dokumen}`, pageWidth / 2, 26, {
       align: "center",
     });
-    doc.text(`Tahun: ${tahunAktif}`, pageWidth / 2, 32, { align: "center" });
+    doc.text(
+      `Tanggal ekspor: ${new Date().toLocaleDateString("id-ID")}`,
+      pageWidth / 2,
+      32,
+      { align: "center" },
+    );
 
     const head = [["#", ...columns.map((col) => col.label)]];
     const body = filteredData.map((item, idx) => [

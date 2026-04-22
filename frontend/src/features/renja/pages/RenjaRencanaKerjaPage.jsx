@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
+import { useParams, Link, useLocation } from "react-router-dom";
 import { Alert, Badge, Button, Card, CardBody, Form, Spinner, Table } from "react-bootstrap";
 import RenjaPlanningDashboardLayout from "./RenjaPlanningDashboardLayout";
 import RenjaDokumenNavTabs from "../components/RenjaDokumenNavTabs";
@@ -7,9 +7,12 @@ import { fetchRenjaDokumenById } from "../services/planningRenjaApi";
 import {
   createRenjaItemByDokumen,
   getRenjaItemsByDokumen,
+  getRenjaMismatchValidation,
   syncRenjaFromRenstra,
   syncRenjaFromRkpd,
+  validateRenjaItemDraft,
 } from "../services/renjaGovernanceApi";
+import { focusRenjaItemRow, parseTargetItemIdFromSearch } from "../utils/rowFocusUtils";
 
 const empty = {
   program: "",
@@ -24,22 +27,51 @@ const empty = {
   kelompok_sasaran: "",
 };
 
+function groupMismatchByItem(rows = []) {
+  const map = new Map();
+  for (const row of rows) {
+    const itemId = Number(row.related_item_id || row.renja_item_id || 0);
+    if (!itemId) continue;
+    if (!map.has(itemId)) map.set(itemId, []);
+    map.get(itemId).push(row);
+  }
+  return map;
+}
+
+function getItemAlignment(issues = []) {
+  if (!issues.length) return { label: "aligned", variant: "success" };
+  if (issues.some((x) => x.is_blocking)) return { label: "blocking", variant: "danger" };
+  if (issues.some((x) => x.severity === "warning")) return { label: "warning", variant: "warning", textDark: true };
+  return { label: "info", variant: "secondary" };
+}
+
 const RenjaRencanaKerjaPage = () => {
   const { id } = useParams();
+  const location = useLocation();
   const [doc, setDoc] = useState(null);
   const [rows, setRows] = useState([]);
+  const [mismatchRows, setMismatchRows] = useState([]);
   const [form, setForm] = useState(empty);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [itemValidation, setItemValidation] = useState([]);
+  const [activeRowId, setActiveRowId] = useState(null);
+
+  const mismatchByItem = useMemo(() => groupMismatchByItem(mismatchRows), [mismatchRows]);
 
   const load = async () => {
     setLoading(true);
     setErr("");
     try {
-      const [d, r] = await Promise.all([fetchRenjaDokumenById(id), getRenjaItemsByDokumen(id)]);
+      const [d, r, mm] = await Promise.all([
+        fetchRenjaDokumenById(id),
+        getRenjaItemsByDokumen(id),
+        getRenjaMismatchValidation(id).catch(() => ({ results: [] })),
+      ]);
       setDoc(d);
       setRows(Array.isArray(r) ? r : []);
+      setMismatchRows(Array.isArray(mm?.results) ? mm.results : []);
     } catch (e) {
       setErr(e?.response?.data?.message || e.message || "Gagal memuat item.");
     } finally {
@@ -50,6 +82,15 @@ const RenjaRencanaKerjaPage = () => {
   useEffect(() => {
     load();
   }, [id]);
+
+  useEffect(() => {
+    const targetId = parseTargetItemIdFromSearch(location.search);
+    if (!targetId) return;
+    setActiveRowId(targetId);
+    setTimeout(() => {
+      focusRenjaItemRow(targetId);
+    }, 150);
+  }, [location.search, rows.length]);
 
   const readOnly = doc?.workflow_status === "published";
 
@@ -71,6 +112,19 @@ const RenjaRencanaKerjaPage = () => {
     setBusy(true);
     setErr("");
     try {
+      const validation = await validateRenjaItemDraft(id, {
+        ...form,
+        target_numerik: form.target_numerik === "" ? null : Number(form.target_numerik),
+        pagu_indikatif: form.pagu_indikatif === "" ? null : Number(form.pagu_indikatif),
+        source_mode: "MANUAL",
+      });
+      const blocking = (validation?.results || []).filter((x) => x.is_blocking);
+      setItemValidation(validation?.results || []);
+      if (blocking.length) {
+        setErr("Item tidak valid. Periksa error inline.");
+        setBusy(false);
+        return;
+      }
       await createRenjaItemByDokumen(id, {
         ...form,
         target_numerik: form.target_numerik === "" ? null : Number(form.target_numerik),
@@ -128,6 +182,15 @@ const RenjaRencanaKerjaPage = () => {
                   </div>
                 ))}
               </div>
+              {!!itemValidation.length && (
+                <div className="mt-2 small">
+                  {itemValidation.map((v, idx) => (
+                    <div key={idx} className={v.is_blocking ? "text-danger" : "text-warning"}>
+                      {v.mismatch_code}: {v.message}
+                    </div>
+                  ))}
+                </div>
+              )}
               <Button className="mt-2" size="sm" disabled={busy || readOnly} onClick={addItem}>
                 Simpan Draft
               </Button>
@@ -148,31 +211,44 @@ const RenjaRencanaKerjaPage = () => {
                     <th>Target</th>
                     <th>Pagu</th>
                     <th>Sumber</th>
-                    <th>Mismatch</th>
+                    <th>Strategi Sumber</th>
+                    <th>Arah Kebijakan</th>
+                    <th>Status Alignment</th>
                   </tr>
                 </thead>
                 <tbody>
                   {!rows.length ? (
                     <tr>
-                      <td colSpan={9} className="text-muted">Belum ada item.</td>
+                      <td colSpan={11} className="text-muted">Belum ada item.</td>
                     </tr>
-                  ) : rows.map((r, i) => (
-                    <tr key={r.id}>
-                      <td>{i + 1}</td>
-                      <td>{r.program}</td>
-                      <td>{r.kegiatan}</td>
-                      <td>{r.sub_kegiatan}</td>
-                      <td>{r.indikator}</td>
-                      <td>{r.target_numerik ?? r.target_teks ?? r.target}</td>
-                      <td>{r.pagu_indikatif ?? r.pagu}</td>
-                      <td><Badge bg="light" text="dark">{r.source_mode || "MANUAL"}</Badge></td>
-                      <td>
-                        <Badge bg={r.mismatch_status && r.mismatch_status !== "matched" ? "warning" : "success"}>
-                          {r.mismatch_status || "matched"}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
+                  ) : rows.map((r, i) => {
+                    const issues = mismatchByItem.get(Number(r.id)) || [];
+                    const firstTrace = issues.find((x) => x.expected_source_trace)?.expected_source_trace || {};
+                    const alignment = getItemAlignment(issues);
+                    return (
+                      <tr
+                        key={r.id}
+                        id={`item-${r.id}`}
+                        className={Number(activeRowId) === Number(r.id) ? "table-warning" : ""}
+                      >
+                        <td>{i + 1}</td>
+                        <td>{r.program}</td>
+                        <td>{r.kegiatan}</td>
+                        <td>{r.sub_kegiatan}</td>
+                        <td>{r.indikator}</td>
+                        <td>{r.target_numerik ?? r.target_teks ?? r.target}</td>
+                        <td>{r.pagu_indikatif ?? r.pagu}</td>
+                        <td><Badge bg="light" text="dark">{r.source_mode || "MANUAL"}</Badge></td>
+                        <td className="small">{firstTrace.strategi || "-"}</td>
+                        <td className="small">{firstTrace.arah_kebijakan || "-"}</td>
+                        <td>
+                          <Badge bg={alignment.variant} text={alignment.textDark ? "dark" : "light"}>
+                            {alignment.label}
+                          </Badge>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </Table>
             </CardBody>
@@ -184,3 +260,4 @@ const RenjaRencanaKerjaPage = () => {
 };
 
 export default RenjaRencanaKerjaPage;
+

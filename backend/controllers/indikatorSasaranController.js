@@ -60,7 +60,7 @@ exports.create = async (req, res) => {
         res,
         400,
         { indikator_id: ["Semua data harus memiliki indikator_id"] },
-        { message: "Semua data harus memiliki indikator_id" }
+        { message: "Semua data harus memiliki indikator_id" },
       );
     }
 
@@ -69,7 +69,7 @@ exports.create = async (req, res) => {
       (await getPeriodeFromTahun(tahun)) || (await getPeriodeAktif());
 
     const withDefaults = rows.map((row) =>
-      applyDefaultsAndNormalize(row, periode)
+      applyDefaultsAndNormalize(row, periode),
     );
 
     const transaction = await sequelize.transaction();
@@ -94,13 +94,18 @@ exports.create = async (req, res) => {
           {
             message:
               "Data sudah ada untuk kombinasi indikator_id, kode_indikator, jenis_dokumen, dan tahun.",
-          }
+          },
         );
       }
       if (error.name === "SequelizeValidationError") {
-        return sendValidationErrors(res, 400, fromSequelizeValidationError(error), {
-          message: error.message,
-        });
+        return sendValidationErrors(
+          res,
+          400,
+          fromSequelizeValidationError(error),
+          {
+            message: error.message,
+          },
+        );
       }
       return res.status(500).json({ status: "error", message: error.message });
     }
@@ -119,7 +124,7 @@ exports.bulkCreateDetail = async (req, res) => {
         res,
         400,
         { rows: ["indikatorId dan data rows wajib diisi."] },
-        { message: "indikatorId dan data rows wajib diisi." }
+        { message: "indikatorId dan data rows wajib diisi." },
       );
     }
 
@@ -128,7 +133,7 @@ exports.bulkCreateDetail = async (req, res) => {
       (await getPeriodeFromTahun(tahun)) || (await getPeriodeAktif());
 
     const toInsert = rows.map((r) =>
-      applyDefaultsAndNormalize({ ...r, indikator_id: indikatorId }, periode)
+      applyDefaultsAndNormalize({ ...r, indikator_id: indikatorId }, periode),
     );
 
     const created = await IndikatorSasaran.bulkCreate(toInsert);
@@ -146,7 +151,7 @@ exports.bulkCreateDetail = async (req, res) => {
         {
           message:
             "Data sudah ada untuk kombinasi kode_indikator, jenis_dokumen, dan tahun.",
-        }
+        },
       );
     }
     if (err.name === "SequelizeValidationError") {
@@ -351,7 +356,7 @@ exports.update = async (req, res) => {
         res,
         409,
         { kode_indikator: ["Kode indikator bentrok dengan data lain."] },
-        { message: err.message }
+        { message: err.message },
       );
     }
     return res.status(500).json({ status: "error", message: err.message });

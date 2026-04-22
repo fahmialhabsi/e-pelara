@@ -96,7 +96,7 @@ export default function RpjmdMetadataForm({ mode, data, onSubmit, onCancel }) {
         </Col>
         <Col md={4}>
           <Form.Group>
-            <Form.Label>Tahun Penetapan</Form.Label>
+            <Form.Label>Penetapan (metadata)</Form.Label>
             <Form.Control
               name="tahun_penetapan"
               value={form.tahun_penetapan}

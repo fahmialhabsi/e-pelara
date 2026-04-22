@@ -23,6 +23,8 @@ export default function useStepTemplateData({
   setFieldValue,
   penanggungJawabRef,
   options,
+  /** Nilai Formik saat ini — agar sinkron OPD jalan jika hydrate mengisi PJ setelah fetch opsi. */
+  formPenanggungJawab,
 }) {
   const [aiRecoAvailable, setAiRecoAvailable] = useState(null);
   const [aiRecoHint, setAiRecoHint] = useState("");
@@ -117,6 +119,9 @@ export default function useStepTemplateData({
           value: item.id,
           label: `${item.no_tujuan}: ${item.isi_tujuan}`,
           isi_tujuan: item.isi_tujuan,
+          // no_tujuan disertakan agar handleTujuanChange dapat menyimpannya
+          // ke Formik sebagai tujuan_no_tujuan_code (filter dropdown referensi impor)
+          no_tujuan: item.no_tujuan || "",
         }));
         setTujuanOptions(opts);
       } catch { /* diam */ }
@@ -142,21 +147,6 @@ export default function useStepTemplateData({
 
         setPenanggungJawabOptions(opts);
 
-        const currentPj = penanggungJawabRef.current;
-        const hasValidId =
-          currentPj != null &&
-          currentPj !== undefined &&
-          String(currentPj).trim() !== "";
-        const match = hasValidId
-          ? opts.find((opt) => String(opt.value) === String(currentPj))
-          : null;
-
-        if (match) {
-          setFieldValue("penanggung_jawab", String(match.value));
-        } else if (!hasValidId && opts.length > 0) {
-          setFieldValue("penanggung_jawab", String(opts[0].value));
-        }
-
         if (typeof options?.setOPDOptions === "function") {
           options.setOPDOptions(opts);
         }
@@ -170,6 +160,30 @@ export default function useStepTemplateData({
       cancelled = true;
     };
   }, [tahun, dokumen, setFieldValue]);
+
+  useEffect(() => {
+    if (!penanggungJawabOptions.length) return;
+    const fromForm =
+      formPenanggungJawab != null && String(formPenanggungJawab).trim() !== ""
+        ? String(formPenanggungJawab).trim()
+        : "";
+    const fromRef =
+      penanggungJawabRef?.current != null &&
+      String(penanggungJawabRef.current).trim() !== ""
+        ? String(penanggungJawabRef.current).trim()
+        : "";
+    const currentPj = fromForm || fromRef;
+    if (!currentPj) return;
+    const match = penanggungJawabOptions.find(
+      (opt) => String(opt.value) === currentPj,
+    );
+    if (match) setFieldValue("penanggung_jawab", String(match.value));
+  }, [
+    penanggungJawabOptions,
+    formPenanggungJawab,
+    penanggungJawabRef,
+    setFieldValue,
+  ]);
 
   useEffect(() => {
     if (stepKey === "sasaran") {

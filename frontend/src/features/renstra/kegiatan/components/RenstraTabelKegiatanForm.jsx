@@ -176,9 +176,9 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
     fetchAvailablePagu();
   }, [selectedTabelProgramId, inputPagu, initialData?.id]);
 
-  const handlePaguChange = (tahun, value) => {
-    setInputPagu((prev) => ({ ...prev, [tahun]: Number(value || 0) }));
-    setValue(`pagu_tahun_${tahun}`, Number(value || 0));
+  const handlePaguChange = (slotIndex, value) => {
+    setInputPagu((prev) => ({ ...prev, [slotIndex]: Number(value || 0) }));
+    setValue(`pagu_tahun_${slotIndex}`, Number(value || 0));
   };
 
   // Sinkron FK program + isi otomatis dari baris renstra_tabel_program (data RPJMD yang sudah dijadwalkan di tabel)
@@ -356,7 +356,7 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
                 type="info"
                 showIcon
                 style={{ marginBottom: 12 }}
-                message="Belum ada baris di menu Input Tabel → Program untuk Renstra OPD ini. Pilih program dari master Program Renstra; pagu per tahun tidak dibatasi oleh Tabel Program."
+                message="Belum ada baris di menu Input Tabel → Program untuk Renstra OPD ini. Pilih program dari master Program Renstra; pagu periode tidak dibatasi oleh Tabel Program."
               />
               <SelectWithLabelValue
                 name="program_id"
@@ -456,7 +456,7 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
             <Card
               key={i}
               size="small"
-              title={`📅 Tahun ${i}`}
+              title={`📅 Th. ke-${i}`}
               style={{ marginBottom: 12 }}
             >
               <Controller
@@ -466,7 +466,7 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
                   <InputNumber
                     {...field}
                     style={{ width: "100%" }}
-                    placeholder={`Target Tahun ${i}`}
+                    placeholder={`Target (th. ke-${i})`}
                     formatter={numberFormatter}
                     parser={numberParser}
                   />
@@ -480,7 +480,7 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
                   <InputNumber
                     {...field}
                     style={{ width: "100%" }}
-                    placeholder={`Pagu Tahun ${i}`}
+                    placeholder={`Pagu (th. ke-${i})`}
                     formatter={numberFormatter}
                     parser={numberParser}
                     onChange={(value) => handlePaguChange(i, value)}

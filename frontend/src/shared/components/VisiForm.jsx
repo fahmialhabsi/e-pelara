@@ -6,6 +6,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { useDokumen } from "../../hooks/useDokumen";
 import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
 import { normalizeListItems } from "../../utils/apiResponse";
+import { konteksBannerRows } from "../../utils/planningDokumenUtils";
 
 const VisiForm = () => {
   const { user } = useAuth();
@@ -17,7 +18,9 @@ const VisiForm = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const periodeAktif = periodeList.find((p) => p.id === periode_id);
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(periode_id),
+  );
 
   const fetchVisi = async () => {
     try {
@@ -74,7 +77,7 @@ const VisiForm = () => {
 
     if (!periodeAktif?.tahun_awal || !periodeAktif?.tahun_akhir) {
       setError(
-        "Data periode aktif tidak lengkap. Coba pilih dokumen dan tahun lain."
+        "Data periode aktif tidak lengkap. Sesuaikan konteks dokumen atau periode Anda.",
       );
       return;
     }
@@ -114,8 +117,11 @@ const VisiForm = () => {
         {success && <Alert variant="success">{success}</Alert>}
 
         <div className="mb-3">
-          <strong>Dokumen Aktif:</strong> {dokumen} <br />
-          <strong>Tahun:</strong> {tahun}
+          {konteksBannerRows(dokumen, tahun, periodeAktif).map((r) => (
+            <span key={r.key} className="d-block">
+              <strong>{r.label}:</strong> {r.value}
+            </span>
+          ))}
         </div>
 
         <Form onSubmit={handleSubmit} className="mb-4">

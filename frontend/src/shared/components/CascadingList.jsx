@@ -28,6 +28,15 @@ import * as XLSX from "xlsx";
 import CascadingForm from "./CascadingForm";
 import CascadingNestedView from "./CascadingNestedView";
 import { useDokumen } from "../../hooks/useDokumen";
+import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
+import { isDokumenLevelPeriode } from "../../utils/planningDokumenUtils";
+import {
+  cascadingPrioritasDisplayLabel,
+  cascadingPrioritasTooltipText,
+  CASCADING_PRIORITAS_NASIONAL_FIELDS,
+  CASCADING_PRIORITAS_DAERAH_FIELDS,
+  CASCADING_PRIORITAS_GUB_FIELDS,
+} from "../../utils/cascadingPrioritasLabels";
 import {
   extractListMeta,
   normalizeListItems,
@@ -119,18 +128,52 @@ function CascadingTableRow({ item, onEdit, onDelete, onDetail }) {
       <td className="align-middle">
         <div className="d-flex flex-wrap gap-1">
           {item.priorNasional && (
-            <Badge bg="primary" title={item.priorNasional.nama_prionas || item.priorNasional.uraian_prionas}>
-              PN
+            <Badge
+              bg="primary"
+              className="text-truncate"
+              style={{ maxWidth: 140, verticalAlign: "middle" }}
+              title={cascadingPrioritasTooltipText(
+                item.priorNasional,
+                CASCADING_PRIORITAS_NASIONAL_FIELDS,
+              ).replace(/\n/g, " · ")}
+            >
+              {cascadingPrioritasDisplayLabel(
+                item.priorNasional,
+                CASCADING_PRIORITAS_NASIONAL_FIELDS,
+              ) || "—"}
             </Badge>
           )}
           {item.priorDaerah && (
-            <Badge bg="info" title={item.priorDaerah.nama_prioda || item.priorDaerah.uraian_prioda}>
-              PD
+            <Badge
+              bg="info"
+              className="text-truncate"
+              style={{ maxWidth: 140, verticalAlign: "middle" }}
+              title={cascadingPrioritasTooltipText(
+                item.priorDaerah,
+                CASCADING_PRIORITAS_DAERAH_FIELDS,
+              ).replace(/\n/g, " · ")}
+            >
+              {cascadingPrioritasDisplayLabel(
+                item.priorDaerah,
+                CASCADING_PRIORITAS_DAERAH_FIELDS,
+              ) || "—"}
             </Badge>
           )}
           {item.priorKepda && (
-            <Badge bg="warning" text="dark" title={item.priorKepda.nama_priogub || item.priorKepda.uraian_priogub}>
-              PG
+            <Badge
+              bg="warning"
+              text="dark"
+              className="text-truncate"
+              style={{ maxWidth: 140, verticalAlign: "middle" }}
+              title={cascadingPrioritasTooltipText(
+                item.priorKepda,
+                CASCADING_PRIORITAS_GUB_FIELDS,
+              ).replace(/\n/g, " · ")}
+            >
+              {cascadingPrioritasDisplayLabel(
+                item.priorKepda,
+                CASCADING_PRIORITAS_GUB_FIELDS,
+              ) || "—"}
             </Badge>
           )}
         </div>
@@ -163,6 +206,10 @@ function CascadingTableRow({ item, onEdit, onDelete, onDetail }) {
 export function CascadingList() {
   const navigate = useNavigate();
   const { dokumen, tahun } = useDokumen();
+  const { periode_id, periodeList } = usePeriodeAktif();
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(periode_id),
+  );
 
   const [cascadings, setCascadings] = useState([]);
   const [errorMsg, setErrorMsg] = useState("");
@@ -273,9 +320,15 @@ export function CascadingList() {
     Misi:               c.misi     ? `${c.misi.no_misi} - ${c.misi.isi_misi}` : "",
     Tujuan:             c.tujuan   ? `${c.tujuan.no_tujuan} - ${c.tujuan.isi_tujuan}` : "",
     Sasaran:            c.sasaran  ? `${c.sasaran.nomor} - ${c.sasaran.isi_sasaran}` : "",
-    Prioritas_Nasional: c.priorNasional ? `${c.priorNasional.kode_prionas || ""} - ${c.priorNasional.nama_prionas || ""}` : "",
-    Prioritas_Daerah:   c.priorDaerah   ? `${c.priorDaerah.kode_prioda || ""} - ${c.priorDaerah.nama_prioda || ""}` : "",
-    Prioritas_Gubernur: c.priorKepda    ? `${c.priorKepda.kode_priogub || ""} - ${c.priorKepda.nama_priogub || ""}` : "",
+    Prioritas_Nasional: c.priorNasional
+      ? cascadingPrioritasDisplayLabel(c.priorNasional, CASCADING_PRIORITAS_NASIONAL_FIELDS)
+      : "",
+    Prioritas_Daerah: c.priorDaerah
+      ? cascadingPrioritasDisplayLabel(c.priorDaerah, CASCADING_PRIORITAS_DAERAH_FIELDS)
+      : "",
+    Prioritas_Gubernur: c.priorKepda
+      ? cascadingPrioritasDisplayLabel(c.priorKepda, CASCADING_PRIORITAS_GUB_FIELDS)
+      : "",
     Strategi:           (c.strategis || []).map((s) => s.kode_strategi).join("; "),
     Arah_Kebijakan:     (c.arahKebijakans || []).map((a) => a.kode_arah).join("; "),
     Program:            c.program   ? `${c.program.kode_program} - ${c.program.nama_program}` : "",
@@ -324,7 +377,9 @@ export function CascadingList() {
     return (
       <div className="container my-5 text-center">
         <Alert variant="warning">
-          Silakan pilih <strong>Dokumen</strong> dan <strong>Tahun</strong> terlebih dahulu untuk melihat data cascading.
+          {isDokumenLevelPeriode(dokumen)
+            ? "Atur jenis dokumen di header. RPJMD/Renstra memakai periode lima tahun (acuan internal otomatis)."
+            : "Silakan pilih jenis dokumen dan konteks waktu di header terlebih dahulu untuk melihat data cascading."}
         </Alert>
       </div>
     );
@@ -346,7 +401,9 @@ export function CascadingList() {
               {String(dokumen || "").toUpperCase()}
             </Badge>
             <Badge bg="secondary" className="ms-1" style={{ fontSize: "0.75rem" }}>
-              {tahun}
+              {isDokumenLevelPeriode(dokumen) && periodeAktif?.tahun_awal != null
+                ? `Periode ${periodeAktif.tahun_awal}–${periodeAktif.tahun_akhir}`
+                : tahun}
             </Badge>
           </h5>
           <small className="text-muted">

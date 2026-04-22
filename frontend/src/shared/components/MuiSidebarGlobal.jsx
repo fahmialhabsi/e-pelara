@@ -12,7 +12,13 @@ import MenuBookIcon from "@mui/icons-material/MenuBook";
 import AssignmentIcon from "@mui/icons-material/Assignment";
 import TodayIcon from "@mui/icons-material/Today";
 import FolderIcon from "@mui/icons-material/Folder";
+import BusinessIcon from "@mui/icons-material/Business";
+import CardMembershipIcon from "@mui/icons-material/CardMembership";
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import { useDokumen } from "../../hooks/useDokumen";
+import { useAuth } from "../../hooks/useAuth";
+import { isDokumenLevelPeriode } from "../../utils/planningDokumenUtils";
+import { normalizeRole } from "../../utils/roleUtils";
 
 const drawerWidth = 220;
 
@@ -70,7 +76,9 @@ const menuItems = [
 
 export default function MuiSidebarGlobal() {
   const { dokumen, tahun } = useDokumen();
+  const { user } = useAuth();
   const locked = !dokumen || !tahun;
+  const isSuperAdmin = normalizeRole(user?.role) === "SUPER_ADMIN";
 
   return (
     <Drawer
@@ -94,6 +102,64 @@ export default function MuiSidebarGlobal() {
       </div>
       <Divider />
       <List>
+        <ListItemButton
+          component={NavLink}
+          to="/pricing"
+          sx={{
+            "&.active": {
+              background: "#2b81ff33",
+              color: "#2b81ff",
+              fontWeight: "bold",
+              borderLeft: "4px solid #2b81ff",
+            },
+          }}
+        >
+          <ListItemIcon sx={{ color: "inherit" }}>
+            <CardMembershipIcon />
+          </ListItemIcon>
+          <ListItemText primary="Paket & harga" />
+        </ListItemButton>
+      </List>
+      {isSuperAdmin && (
+        <List>
+          <ListItemButton
+            component={NavLink}
+            to="/admin/tenants"
+            sx={{
+              "&.active": {
+                background: "#2b81ff33",
+                color: "#2b81ff",
+                fontWeight: "bold",
+                borderLeft: "4px solid #2b81ff",
+              },
+            }}
+          >
+            <ListItemIcon sx={{ color: "inherit" }}>
+              <BusinessIcon />
+            </ListItemIcon>
+            <ListItemText primary="Tenant (SaaS)" />
+          </ListItemButton>
+          <ListItemButton
+            component={NavLink}
+            to="/admin/subscriptions"
+            sx={{
+              "&.active": {
+                background: "#2b81ff33",
+                color: "#2b81ff",
+                fontWeight: "bold",
+                borderLeft: "4px solid #2b81ff",
+              },
+            }}
+          >
+            <ListItemIcon sx={{ color: "inherit" }}>
+              <AdminPanelSettingsIcon />
+            </ListItemIcon>
+            <ListItemText primary="Langganan tenant" />
+          </ListItemButton>
+        </List>
+      )}
+      {isSuperAdmin && <Divider sx={{ borderColor: "rgba(255,255,255,0.12)" }} />}
+      <List>
         {menuItems.map((item) =>
           locked ? (
             <ListItem
@@ -104,7 +170,11 @@ export default function MuiSidebarGlobal() {
                 pointerEvents: "none",
                 userSelect: "none",
               }}
-              title="Silakan pilih jenis dokumen dan tahun dahulu"
+              title={
+                isDokumenLevelPeriode(dokumen)
+                  ? "Pilih jenis dokumen di header (RPJMD/Renstra: periode otomatis)."
+                  : "Silakan pilih jenis dokumen dan konteks waktu di header dahulu"
+              }
             >
               <ListItemIcon sx={{ color: "inherit" }}>{item.icon}</ListItemIcon>
               <ListItemText primary={item.label} />

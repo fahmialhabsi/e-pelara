@@ -9,6 +9,7 @@ const links = [
   { to: (id) => `/dashboard-renja/v2/dokumen/${id}/rencana-kerja`, label: "BAB IV" },
   { to: (id) => `/dashboard-renja/v2/dokumen/${id}/penutup`, label: "BAB V" },
   { to: (id) => `/dashboard-renja/v2/dokumen/${id}/sinkronisasi`, label: "Sinkronisasi" },
+  { to: (id) => `/dashboard-renja/v2/dokumen/${id}/data-fix`, label: "Data Fix & Mapping" },
   { to: (id) => `/dashboard-renja/v2/dokumen/${id}/validasi`, label: "Validasi" },
   { to: (id) => `/dashboard-renja/v2/dokumen/${id}/versions`, label: "Versi" },
   { to: (id) => `/dashboard-renja/v2/dokumen/${id}/compare`, label: "Compare" },

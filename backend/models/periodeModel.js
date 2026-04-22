@@ -16,6 +16,26 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "periode_id",
         as: "indikatorSasaran",
       });
+      PeriodeRpjmd.hasMany(models.UrusanKinerja20212024, {
+        foreignKey: "periode_rpjmd_id",
+        as: "urusanKinerja20212024",
+      });
+      PeriodeRpjmd.hasMany(models.ApbdProyeksi20262030, {
+        foreignKey: "periode_rpjmd_id",
+        as: "apbdProyeksi20262030",
+      });
+      PeriodeRpjmd.hasMany(models.RpjmdTargetTujuanSasaran20252029, {
+        foreignKey: "periode_rpjmd_id",
+        as: "rpjmdTargetTujuanSasaran20252029",
+      });
+      PeriodeRpjmd.hasMany(models.ArahKebijakanRpjmdPdf, {
+        foreignKey: "periode_rpjmd_id",
+        as: "arahKebijakanRpjmdPdf",
+      });
+      PeriodeRpjmd.hasMany(models.IkuRpjmd, {
+        foreignKey: "periode_rpjmd_id",
+        as: "ikuRpjmd",
+      });
     }
   }
 

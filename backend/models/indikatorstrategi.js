@@ -16,6 +16,7 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "periode_id",
         as: "periode",
       });
+      this.belongsTo(models.Tenant, { foreignKey: "tenant_id", as: "tenant" });
     }
   }
 
@@ -33,6 +34,12 @@ module.exports = (sequelize, DataTypes) => {
         references: { model: "indikators", key: "id" },
       },
       periode_id:  { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+      tenant_id: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: false,
+        defaultValue: 1,
+        references: { model: "tenants", key: "id" },
+      },
       strategi_id: { type: DataTypes.INTEGER,          allowNull: true },
       sasaran_id:  { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
       tujuan_id:   { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },

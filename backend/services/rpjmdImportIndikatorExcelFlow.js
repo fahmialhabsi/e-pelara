@@ -244,8 +244,31 @@ const HEADER_ALIASES = {
   "capaian_(th._ke-5)":     "capaian_tahun_5",
 };
 
+/**
+ * Kolom-kolom Excel yang SELALU diabaikan untuk `indikatortujuans`.
+ * `kode_indikator` HARUS dihasilkan 100% oleh generator backend (allocateKodeTujuanGroup).
+ * Nilai dari Excel tidak pernah boleh mempengaruhi kode_indikator, fingerprint, atau dedup.
+ * Daftar ini mencakup semua bentuk normalisasi yang bisa dihasilkan headerToDataKey():
+ *   "Kode" / "kode" → "kode"
+ *   "Kode Indikator" / "kode indikator" / "kode_indikator" → "kode_indikator"
+ */
+const INDIKATORTUJUAN_IGNORED_EXCEL_KEYS = new Set([
+  "kode",
+  "kode_indikator",
+]);
+
 function normalizeRowForTable(table, body) {
   const b = { ...body };
+
+  /**
+   * Strip kolom kode Excel untuk indikatortujuans — kode_indikator harus dari generator backend.
+   * Lakukan SEBELUM alias agar tidak ada jalan masuk lain.
+   */
+  if (table === "indikatortujuans") {
+    for (const k of INDIKATORTUJUAN_IGNORED_EXCEL_KEYS) {
+      delete b[k];
+    }
+  }
 
   /* Terapkan alias header: jika kunci alias ada dan kunci target kosong/belum ada, pindahkan nilainya */
   for (const [from, to] of Object.entries(HEADER_ALIASES)) {
@@ -323,6 +346,25 @@ function normalizeRowForTable(table, body) {
       b.sub_kegiatan_id = b.periode_id;
     }
   }
+  /**
+   * Default tipe_indikator = "Impact" dan jenis_indikator = "Kuantitatif" untuk
+   * indikatorsasarans / indikatorstrategis / indikatorarahkebijakans jika Excel tidak
+   * menyediakan nilai (termasuk nilai em-dash "—").
+   * Konsisten dengan indikatortujuans yang selalu "Impact" / "Kuantitatif".
+   */
+  if (
+    table === "indikatorsasarans" ||
+    table === "indikatorstrategis" ||
+    table === "indikatorarahkebijakans"
+  ) {
+    const BLANK = ["", "—", "-", null, undefined];
+    if (BLANK.includes(b.tipe_indikator) || !String(b.tipe_indikator || "").trim()) {
+      b.tipe_indikator = "Impact";
+    }
+    if (BLANK.includes(b.jenis_indikator) || !String(b.jenis_indikator || "").trim()) {
+      b.jenis_indikator = "Kuantitatif";
+    }
+  }
   return b;
 }
 
@@ -343,6 +385,8 @@ function emptyRelationMaps() {
     tujuanOrderedIds: [],
     tujuanByNorm: new Map(),
     sasaranByNorm: new Map(),
+    /** Urutan id sasaran per periode (tujuan_id, lalu nomor) — sheet indikatorsasarans global positional fallback. */
+    sasaranOrderedIds: [],
     /** `tujuan_id` → id sasaran terurut (nomor) untuk pemetaan otomatis dari sheet indikatorsasarans. */
     sasaranIdsByTujuan: new Map(),
     /** Urutan id strategi per periode (sasaran_id, lalu kode) untuk pemetaan posisional sheet indikatorstrategis. */
@@ -529,6 +573,19 @@ async function loadRelationMaps(periodeId, tables) {
         });
         out.sasaranIdsByTujuan.set(tid, sorted.map((x) => x.id));
       }
+      // Urutan global sasaran (tujuan_id, lalu nomor) — fallback posisional sheet indikatorsasarans.
+      const allSas = [...ch.rows].sort((a, b) => {
+        const ta = toInt(a.tujuan_id) || 0;
+        const tb = toInt(b.tujuan_id) || 0;
+        if (ta !== tb) return ta - tb;
+        const ia = firstIntNomor(a);
+        const ib = firstIntNomor(b);
+        if (ia != null && ib != null && ia !== ib) return ia - ib;
+        if (ia != null && ib == null) return -1;
+        if (ia == null && ib != null) return 1;
+        return (toInt(a.id) || 0) - (toInt(b.id) || 0);
+      });
+      out.sasaranOrderedIds = allSas.map((x) => x.id);
     } else if (ch.tag === "strategi") {
       const firstIntKode = (row) => {
         const m = String(row.kode_strategi || "").match(/\d+/);
@@ -894,6 +951,18 @@ function resolveRelationsForRow(table, payload, maps, opts = {}) {
       if (id) p.tujuan_id = id;
       else if (err) errs.push(err);
     }
+
+    // Ekstrak reference_target_code dari kode_indikator (format T{misi}-{no}-{seq}).
+    // Selalu diisi untuk baris indikatortujuans import — bahkan jika tujuan_id tidak ditemukan.
+    // Frontend menggunakan ini untuk filter dropdown referensi tanpa bergantung pada tujuan_id.
+    if (!p.reference_target_code) {
+      const kodeStr = String(p.kode_indikator || "").trim();
+      const mm = kodeStr.match(/^(T\d+-\d+)-\d+$/i);
+      if (mm) {
+        // Normalisasi ke huruf besar: "t1-01" → "T1-01"
+        p.reference_target_code = mm[1].toUpperCase();
+      }
+    }
   } else if (table === "indikatorsasarans") {
     if (!toInt(p.sasaran_id)) {
       const raw = pick(p, ["sasaran_nama", "isi_sasaran", "sasaran_kode", "nomor_sasaran", "nomor"]);
@@ -933,6 +1002,25 @@ function resolveRelationsForRow(table, payload, maps, opts = {}) {
               );
             }
           }
+        }
+      }
+      /**
+       * Tanpa sasaran_id / teks sasaran / tujuan_id: baris ke-(i+1) → sasaran urutan ke-i di periode
+       * (urutan global: tujuan_id, lalu nomor sasaran), seperti pola indikatorstrategis + strategiOrderedIds.
+       * Diisi saat buildResolvedHierarchyMaps override sasaranOrderedIds dari Referensi_Perencanaan.
+       */
+      if (!toInt(p.sasaran_id) && !String(raw || "").trim() && opts.indikatorSasaranRowIndex != null) {
+        const ord = maps.sasaranOrderedIds;
+        const i = opts.indikatorSasaranRowIndex;
+        if (Array.isArray(ord) && i >= 0 && i < ord.length) {
+          p.sasaran_id = ord[i];
+        } else if (Array.isArray(ord) && ord.length === 0) {
+          errs.push("Tidak ada data sasaran di database untuk periode ini (isi RPJMD / sasaran dulu).");
+        } else if (Array.isArray(ord) && i >= ord.length) {
+          errs.push(
+            `${rowRef || `Baris ke-${i + 1}`} melebihi jumlah sasaran di periode (${ord.length} sasaran). ` +
+              `Tambah data sasaran atau kurangi baris / isi sasaran_id atau tujuan_id.`,
+          );
         }
       }
     }
@@ -1344,6 +1432,349 @@ function validatePreviewRow(table, payload) {
   return errs;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Sheet Referensi_Perencanaan — parsing & dedup tujuan
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Nama sheet referensi hierarki perencanaan di template impor. */
+const REFERENSI_PERENCANAAN_SHEET = "Referensi_Perencanaan";
+
+/**
+ * Alias header kolom sheet Referensi_Perencanaan → key internal.
+ * Kolom-kolom ini menggunakan label ramah-pengguna (spasi, huruf kapital).
+ */
+const REFERENSI_PERENCANAAN_COL_ALIASES = {
+  "no misi":        "no_misi",
+  "no_misi":        "no_misi",
+  "kode tujuan":    "kode_tujuan",
+  "kode_tujuan":    "kode_tujuan",
+  "tujuan":         "tujuan",
+  "kode sasaran":   "kode_sasaran",
+  "kode_sasaran":   "kode_sasaran",
+  "sasaran":        "sasaran",
+  "strategi":       "strategi",
+  "arah kebijakan": "arah_kebijakan",
+  "arah_kebijakan": "arah_kebijakan",
+  "program":        "program",
+  "kegiatan":       "kegiatan",
+  "sub kegiatan":   "sub_kegiatan",
+  "sub_kegiatan":   "sub_kegiatan",
+};
+
+function refSheetHeaderToKey(rawHeader) {
+  const lk = explicitLookupKey(rawHeader);
+  return REFERENSI_PERENCANAAN_COL_ALIASES[lk] || normKey(rawHeader);
+}
+
+/**
+ * Baca SEMUA baris mentah dari sheet Referensi_Perencanaan di workbook.
+ * Mengembalikan [] jika sheet tidak ada atau kosong.
+ * Cocok dibaca untuk level Sasaran/Strategi/Program/Kegiatan/Sub Kegiatan
+ * yang memang butuh seluruh baris.
+ *
+ * @param {import('xlsx').WorkBook} wb  Workbook hasil XLSX.read()
+ * @returns {object[]}
+ */
+function readPlanningReferenceSheet(wb) {
+  const sheetName = (wb.SheetNames || []).find(
+    (n) => normKey(n).replace(/-/g, "_") === normKey(REFERENSI_PERENCANAAN_SHEET).replace(/-/g, "_"),
+  );
+  if (!sheetName) return [];
+  const ws = wb.Sheets[sheetName];
+  if (!ws) return [];
+  const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false });
+  if (matrix.length < 2) return [];
+  const header = (matrix[0] || []).map(refSheetHeaderToKey);
+  return matrix
+    .slice(1)
+    .filter((r) => r && r.some((c) => c !== "" && c != null))
+    .map((r) => {
+      const o = {};
+      for (let i = 0; i < header.length; i++) {
+        const k = header[i];
+        if (!k) continue;
+        const v = r[i];
+        o[k] = v === undefined || v === null ? "" : v;
+      }
+      return o;
+    });
+}
+
+/**
+ * Ekstrak daftar tujuan UNIK dari baris mentah sheet Referensi_Perencanaan.
+ *
+ * Masalah bawaan sheet: satu tujuan muncul berulang kali karena setiap baris
+ * mewakili satu sasaran/strategi/program turunannya — bukan satu tujuan.
+ * Contoh: T1-01 muncul 4× (4 sasaran berbeda), T2-01 muncul 3×, dst.
+ *
+ * Kunci dedup yang digunakan:
+ *   - No Misi
+ *   - Kode Tujuan  (dinormalisasi ke huruf besar: "T1-01")
+ *   - Tujuan       (nama/isi tujuan)
+ *
+ * Urutan kemunculan PERTAMA di sheet dipertahankan agar hasil tetap stabil
+ * dan sesuai urutan dokumen asli.
+ *
+ * @param {object[]} rows  Baris mentah dari readPlanningReferenceSheet()
+ * @returns {{ no_misi: string, kode_tujuan: string, isi_tujuan: string }[]}
+ */
+function extractUniqueTujuanFromPlanningReference(rows) {
+  const seen = new Set();
+  const result = [];
+  for (const r of rows) {
+    const noMisi     = String(r.no_misi     ?? "").trim();
+    const kodeTujuan = String(r.kode_tujuan ?? "").trim().toUpperCase(); // "T1-01"
+    const isiTujuan  = String(r.tujuan      ?? "").trim();
+    // Lewati baris tanpa identitas tujuan sama sekali
+    if (!kodeTujuan && !isiTujuan) continue;
+    // Kunci dedup: (no_misi, kode_tujuan_upper, isi_tujuan)
+    const key = `${noMisi}|${kodeTujuan}|${isiTujuan}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push({ no_misi: noMisi, kode_tujuan: kodeTujuan, isi_tujuan: isiTujuan });
+    }
+  }
+  return result;
+}
+
+/**
+ * Tambahkan entri ke `maps.tujuanByNorm` dari sheet Referensi_Perencanaan.
+ *
+ * Berguna sebagai FALLBACK ketika DB tujuan belum terisi atau no_tujuan
+ * di DB tidak cocok dengan kode di kode_indikator (mis. format padding berbeda).
+ * Hanya menambahkan entri yang belum ada — tidak menimpa mapping dari DB.
+ *
+ * @param {import('xlsx').WorkBook} wb   Workbook berisi sheet Referensi_Perencanaan
+ * @param {ReturnType<typeof emptyRelationMaps>} maps  Maps yang sudah diisi dari DB
+ * @param {number} pid  periode_id aktif
+ */
+async function supplementTujuanMapsFromPlanningReference(wb, maps, pid) {
+  const refRows = readPlanningReferenceSheet(wb);
+  if (!refRows.length) return;
+
+  const uniqueTujuans = extractUniqueTujuanFromPlanningReference(refRows);
+  if (!uniqueTujuans.length) return;
+
+  for (const { kode_tujuan, isi_tujuan } of uniqueTujuans) {
+    // Cek apakah sudah ada di peta dari DB — jangan timpa
+    const normKode = normText(kode_tujuan);
+    if (normKode && maps.tujuanByNorm.has(normKode)) continue;
+
+    // Cari tujuan di DB berdasarkan no_tujuan dengan berbagai variasi format
+    let tujuanRow = null;
+    const parts = kode_tujuan.match(/^T(\d+)-(\d+)$/i);
+    if (parts) {
+      const mn = parseInt(parts[1], 10);
+      const tn = parseInt(parts[2], 10);
+      const variants = [
+        kode_tujuan,
+        `T${mn}-${String(tn).padStart(2, "0")}`,
+        `T${mn}-${tn}`,
+        `T${String(mn).padStart(2, "0")}-${String(tn).padStart(2, "0")}`,
+      ].filter((v, i, a) => a.indexOf(v) === i);
+      for (const v of variants) {
+        tujuanRow = await Tujuan.findOne({
+          where: { no_tujuan: v, periode_id: pid },
+          attributes: ["id", "misi_id"],
+          raw: true,
+        });
+        if (tujuanRow) break;
+      }
+    }
+    // Fallback: cocokkan berdasarkan nama tujuan
+    if (!tujuanRow && isi_tujuan) {
+      tujuanRow = await Tujuan.findOne({
+        where: { isi_tujuan, periode_id: pid },
+        attributes: ["id", "misi_id"],
+        raw: true,
+      });
+    }
+    if (!tujuanRow) continue;
+
+    // Tambahkan ke peta (putMap tidak menimpa entri yang sudah ada)
+    if (kode_tujuan)  putMap(maps.tujuanByNorm, kode_tujuan, tujuanRow.id);
+    if (isi_tujuan)   putMap(maps.tujuanByNorm, isi_tujuan,  tujuanRow.id);
+    if (kode_tujuan && isi_tujuan) {
+      putMap(maps.tujuanByNorm, `${kode_tujuan} ${isi_tujuan}`, tujuanRow.id);
+    }
+
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// END Sheet Referensi_Perencanaan helpers
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Referensi_Perencanaan (sasaran / strategi / arah) — buildResolvedHierarchyMaps
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Satu pintu: selesaikan `maps.sasaranOrderedIds`, `maps.strategiOrderedIds`, `maps.arahOrderedIds`
+ * dari sheet Referensi_Perencanaan agar positional fallback tidak terpengaruh duplikat/draft DB.
+ *
+ * Preview (`wb` ada): baca ref sheet → lookup DB → override ordered lists → kembalikan canonical arrays.
+ * Apply (`wb` null): restore canonical arrays yang disimpan saat preview.
+ *
+ * Urutan Referensi_Perencanaan = sumber kebenaran; 16 baris = 16 sasaran unik.
+ *
+ * @param {{
+ *   wb?: import('xlsx').WorkBook|null,
+ *   pid: number,
+ *   maps: ReturnType<typeof emptyRelationMaps>,
+ *   canonicalSasaranOrderedIds?: number[]|null,
+ *   canonicalStrategiOrderedIds?: number[]|null,
+ *   canonicalArahOrderedIds?: number[]|null
+ * }}
+ * @returns {{ canonicalSasaranOrderedIds: number[], canonicalStrategiOrderedIds: number[], canonicalArahOrderedIds: number[] }}
+ */
+async function buildResolvedHierarchyMaps({
+  wb,
+  pid,
+  maps,
+  canonicalSasaranOrderedIds = null,
+  canonicalStrategiOrderedIds = null,
+  canonicalArahOrderedIds = null,
+}) {
+  /* Apply phase: restore saved canonical lists (no workbook). */
+  if (!wb) {
+    if (Array.isArray(canonicalSasaranOrderedIds) && canonicalSasaranOrderedIds.length) {
+      maps.sasaranOrderedIds = canonicalSasaranOrderedIds;
+    }
+    if (Array.isArray(canonicalStrategiOrderedIds) && canonicalStrategiOrderedIds.length) {
+      maps.strategiOrderedIds = canonicalStrategiOrderedIds;
+    }
+    if (Array.isArray(canonicalArahOrderedIds) && canonicalArahOrderedIds.length) {
+      maps.arahOrderedIds = canonicalArahOrderedIds;
+    }
+    return {
+      canonicalSasaranOrderedIds: canonicalSasaranOrderedIds || [],
+      canonicalStrategiOrderedIds: canonicalStrategiOrderedIds || [],
+      canonicalArahOrderedIds: canonicalArahOrderedIds || [],
+    };
+  }
+
+  /* Preview phase: read reference sheet, resolve per-row entity IDs. */
+  const refRows = readPlanningReferenceSheet(wb);
+  if (!refRows.length) {
+    return { canonicalSasaranOrderedIds: [], canonicalStrategiOrderedIds: [], canonicalArahOrderedIds: [] };
+  }
+
+  const sasaranIds = [];
+  const strategiIds = [];
+  const arahIds = [];
+  const seenSasaran = new Set();
+  const seenStrategi = new Set();
+  const seenArah = new Set();
+
+  for (const row of refRows) {
+    const kodeSasaran = String(row.kode_sasaran ?? "").trim();
+    const namaSasaran = String(row.nama_sasaran ?? row.sasaran ?? "").trim();
+    const kodeStrategi = String(row.kode_strategi ?? "").trim();
+    const namaStrategi = String(row.nama_strategi ?? row.strategi ?? "").trim();
+    const kodeArah = String(row.kode_arah_kebijakan ?? "").trim();
+    const namaArah = String(row.nama_arah_kebijakan ?? row.arah_kebijakan ?? "").trim();
+
+    // ── Lookup sasaran ─────────────────────────────────────────────────────
+    let sasaranRow = null;
+    if (kodeSasaran) {
+      sasaranRow = await Sasaran.findOne({
+        where: { nomor: kodeSasaran, periode_id: pid },
+        attributes: ["id"],
+        raw: true,
+      });
+    }
+    if (!sasaranRow && namaSasaran) {
+      sasaranRow = await Sasaran.findOne({
+        where: { isi_sasaran: namaSasaran, periode_id: pid },
+        attributes: ["id"],
+        raw: true,
+      });
+    }
+    if (sasaranRow && !seenSasaran.has(sasaranRow.id)) {
+      seenSasaran.add(sasaranRow.id);
+      sasaranIds.push(sasaranRow.id);
+    }
+
+    // ── Lookup strategi ────────────────────────────────────────────────────
+    let strategiRow = null;
+    if (kodeStrategi) {
+      strategiRow = await Strategi.findOne({
+        where: { kode_strategi: kodeStrategi, periode_id: pid },
+        attributes: ["id"],
+        raw: true,
+      });
+    }
+    if (!strategiRow && namaStrategi) {
+      strategiRow = await Strategi.findOne({
+        where: { deskripsi: namaStrategi, periode_id: pid },
+        attributes: ["id"],
+        raw: true,
+      });
+    }
+    if (!strategiRow && sasaranRow) {
+      // Fallback: strategi id terkecil untuk sasaran canonical ini
+      strategiRow = await Strategi.findOne({
+        where: { sasaran_id: sasaranRow.id, periode_id: pid },
+        order: [["id", "ASC"]],
+        attributes: ["id"],
+        raw: true,
+      });
+    }
+    if (strategiRow && !seenStrategi.has(strategiRow.id)) {
+      seenStrategi.add(strategiRow.id);
+      strategiIds.push(strategiRow.id);
+    }
+
+    // ── Lookup arah kebijakan ──────────────────────────────────────────────
+    let arahRow = null;
+    if (kodeArah) {
+      arahRow = await ArahKebijakan.findOne({
+        where: { kode_arah: kodeArah, periode_id: pid },
+        attributes: ["id"],
+        raw: true,
+      });
+    }
+    if (!arahRow && namaArah) {
+      // Coba truncate seperti arahByNorm (max 400 char)
+      arahRow = await ArahKebijakan.findOne({
+        where: { deskripsi: namaArah.slice(0, 400), periode_id: pid },
+        attributes: ["id"],
+        raw: true,
+      });
+    }
+    if (!arahRow && strategiRow) {
+      // Fallback: arah id terkecil untuk strategi canonical ini
+      arahRow = await ArahKebijakan.findOne({
+        where: { strategi_id: strategiRow.id, periode_id: pid },
+        order: [["id", "ASC"]],
+        attributes: ["id"],
+        raw: true,
+      });
+    }
+    if (arahRow && !seenArah.has(arahRow.id)) {
+      seenArah.add(arahRow.id);
+      arahIds.push(arahRow.id);
+    }
+  }
+
+  // Override ordered lists dengan urutan canonical dari Referensi_Perencanaan.
+  // Mencegah positional fallback memilih duplikat/draft dari tabel DB.
+  if (sasaranIds.length) maps.sasaranOrderedIds = sasaranIds;
+  if (strategiIds.length) maps.strategiOrderedIds = strategiIds;
+  if (arahIds.length) maps.arahOrderedIds = arahIds;
+
+  return {
+    canonicalSasaranOrderedIds: sasaranIds,
+    canonicalStrategiOrderedIds: strategiIds,
+    canonicalArahOrderedIds: arahIds,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// END Referensi_Perencanaan (sasaran/strategi/arah) — buildResolvedHierarchyMaps
+// ═══════════════════════════════════════════════════════════════════════════
+
 /**
  * Parse workbook → preview (tanpa insert DB).
  * @param {{ tables?: string[] }} [opts] — `tables`: tepat satu nama tabel (mis. indikatortujuans), selaras tab dashboard.
@@ -1364,6 +1795,36 @@ async function buildPreview(periodeId, buffer, opts = {}) {
   const importTable = tables[0];
   const maps = await loadRelationMaps(pid, tables);
   const wb = XLSX.read(buffer, { type: "buffer" });
+
+  // Jika sheet indikatortujuans diimpor, perkaya tujuanByNorm dengan data dari
+  // sheet Referensi_Perencanaan (jika ada dalam workbook yang sama).
+  // Ini membantu resolusi tujuan_id ketika DB belum lengkap atau format kode berbeda.
+  // Dedup tujuan dilakukan di dalam supplementTujuanMapsFromPlanningReference.
+  if (tables.includes("indikatortujuans")) {
+    await supplementTujuanMapsFromPlanningReference(wb, maps, pid).catch((err) => {
+      console.warn("[rpjmd-import] supplementTujuanMapsFromPlanningReference:", err.message);
+    });
+  }
+
+  let canonicalSasaranOrderedIds = [];
+  let canonicalStrategiOrderedIds = [];
+  let canonicalArahOrderedIds = [];
+  if (
+    tables.includes("indikatorsasarans") ||
+    tables.includes("indikatorstrategis") ||
+    tables.includes("indikatorarahkebijakans")
+  ) {
+    try {
+      ({ canonicalSasaranOrderedIds, canonicalStrategiOrderedIds, canonicalArahOrderedIds } =
+        await buildResolvedHierarchyMaps({ wb, pid, maps }));
+    } catch (err) {
+      console.warn("[rpjmd-import] buildResolvedHierarchyMaps:", err?.message || err);
+      canonicalSasaranOrderedIds = [];
+      canonicalStrategiOrderedIds = [];
+      canonicalArahOrderedIds = [];
+    }
+  }
+
   const sheets = [];
   const seenKeys = new Map();
   const allowed = new Set(tables);
@@ -1533,10 +1994,29 @@ async function applyPreview(periodeId, previewId, opts = {}) {
 
   /** Peta relasi terkini (Tn dari kode IKU = urutan tujuan, bukan PK). */
   const maps = await loadRelationMaps(pid, tableOrder);
+  if (
+    tableOrder.includes("indikatorsasarans") ||
+    tableOrder.includes("indikatorstrategis") ||
+    tableOrder.includes("indikatorarahkebijakans")
+  ) {
+    try {
+      await buildResolvedHierarchyMaps({
+        wb: null,
+        pid,
+        maps,
+        canonicalSasaranOrderedIds: entry.canonicalSasaranOrderedIds || [],
+        canonicalStrategiOrderedIds: entry.canonicalStrategiOrderedIds || [],
+        canonicalArahOrderedIds: entry.canonicalArahOrderedIds || [],
+      });
+    } catch (err) {
+      console.warn("[rpjmd-import] buildResolvedHierarchyMaps (apply):", err?.message || err);
+    }
+  }
   for (const table of tableOrder) {
     const sh = sheetByTable.get(table);
     if (!sh) continue;
     let tujuanRowIdx = 0;
+    let sasaranRowIdx = 0;
     let strategiRowIdx = 0;
     let arahRowIdx = 0;
     let programRowIdx = 0;
@@ -1555,6 +2035,7 @@ async function applyPreview(periodeId, previewId, opts = {}) {
       const payload = normalizeRowForTable(table, { ...row.payload });
       const relErrs = resolveRelationsForRow(table, payload, maps, {
         indikatorTujuanRowIndex: table === "indikatortujuans" ? tujuanRowIdx : undefined,
+        indikatorSasaranRowIndex: table === "indikatorsasarans" ? sasaranRowIdx : undefined,
         sasaranCounterByTujuan: table === "indikatorsasarans" ? sasaranCounterByTujuan : undefined,
         indikatorStrategiRowIndex: table === "indikatorstrategis" ? strategiRowIdx : undefined,
         strategiCounterBySasaran: table === "indikatorstrategis" ? strategiCounterBySasaran : undefined,
@@ -1569,6 +2050,7 @@ async function applyPreview(periodeId, previewId, opts = {}) {
         subGlobalFallbackState: table === "indikatorsubkegiatans" ? subGlobalFallbackState : undefined,
       });
       if (table === "indikatortujuans") tujuanRowIdx += 1;
+      if (table === "indikatorsasarans") sasaranRowIdx += 1;
       if (table === "indikatorstrategis") strategiRowIdx += 1;
       if (table === "indikatorarahkebijakans") arahRowIdx += 1;
       if (table === "indikatorprograms") programRowIdx += 1;
@@ -1782,4 +2264,9 @@ module.exports = {
   buildPreview,
   applyPreview,
   RPJMD_INDIKATOR_IMPORT_TABLES,
+  // Referensi_Perencanaan helpers — bisa dipakai di modul lain
+  readPlanningReferenceSheet,
+  extractUniqueTujuanFromPlanningReference,
+  supplementTujuanMapsFromPlanningReference,
+  buildResolvedHierarchyMaps,
 };

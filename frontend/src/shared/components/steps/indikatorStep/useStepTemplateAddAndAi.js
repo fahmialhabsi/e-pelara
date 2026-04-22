@@ -6,6 +6,11 @@ import {
   TIPE_INDIKATOR_MAP,
 } from "@/shared/components/constants/indikatorFields";
 import { isNumeric, normalizeNumber } from "./indikatorStepNumeric";
+import { extrapolateCapaianTahun5FromFour } from "@/features/rpjmd/utils/urusanKinerja228Picklists";
+import {
+  getRpjmdIndikatorDraftDedupeKey,
+  upsertRpjmdIndikatorDraftRow,
+} from "../wizardIndikatorStepUtils";
 
 /**
  * Tambah item ke list indikator + alur rekomendasi AI (state & handler).
@@ -44,14 +49,26 @@ export default function useStepTemplateAddAndAi({
       return;
     }
 
+    const valuesToUse = { ...values };
+    const cap5Raw = valuesToUse.capaian_tahun_5;
+    if (cap5Raw == null || String(cap5Raw).trim() === "") {
+      const projected = extrapolateCapaianTahun5FromFour(
+        valuesToUse.capaian_tahun_1,
+        valuesToUse.capaian_tahun_2,
+        valuesToUse.capaian_tahun_3,
+        valuesToUse.capaian_tahun_4,
+      );
+      if (projected) valuesToUse.capaian_tahun_5 = projected;
+    }
+
     for (let i = 1; i <= 5; i++) {
-      const valCapaian = values[`capaian_tahun_${i}`];
-      const valTarget = values[`target_tahun_${i}`];
+      const valCapaian = valuesToUse[`capaian_tahun_${i}`];
+      const valTarget = valuesToUse[`target_tahun_${i}`];
 
       if (!isNumeric(valCapaian)) {
         setMessage({
           variant: "danger",
-          text: `Capaian Tahun ${i} harus berupa angka yang valid.`,
+          text: `Capaian (th. ke-${i}) harus berupa angka yang valid.`,
         });
         return;
       }
@@ -59,31 +76,40 @@ export default function useStepTemplateAddAndAi({
       if (!isNumeric(valTarget)) {
         setMessage({
           variant: "danger",
-          text: `Target Tahun ${i} harus berupa angka yang valid.`,
+          text: `Target (th. ke-${i}) harus berupa angka yang valid.`,
         });
         return;
       }
     }
 
-    const normalizedValues = { ...values };
+    const normalizedValues = { ...valuesToUse };
     for (let i = 1; i <= 5; i++) {
       normalizedValues[`capaian_tahun_${i}`] = normalizeNumber(
-        values[`capaian_tahun_${i}`]
+        valuesToUse[`capaian_tahun_${i}`]
       );
       normalizedValues[`target_tahun_${i}`] = normalizeNumber(
-        values[`target_tahun_${i}`]
+        valuesToUse[`target_tahun_${i}`]
       );
     }
 
-    const newItem = buildIndikatorItem({
-      ...normalizedValues,
-      tipe_indikator: TIPE_INDIKATOR_MAP[stepKey] || values.tipe_indikator,
-      misi_id: values.misi_id,
-      tujuan_id: values.tujuan_id,
-      sasaran_id: values.sasaran_id,
-      program_id: values.program_id,
-      indikator_program_id: values.indikator_program_id,
-    });
+    const newItem = buildIndikatorItem(
+      {
+        ...normalizedValues,
+        jenis_dokumen: normalizedValues.jenis_dokumen ?? values.jenis_dokumen,
+        periode_id: normalizedValues.periode_id ?? values.periode_id,
+        tujuan_id: normalizedValues.tujuan_id ?? values.tujuan_id,
+        misi_id: normalizedValues.misi_id ?? values.misi_id,
+      },
+      {
+        tipe_indikator: TIPE_INDIKATOR_MAP[stepKey] ?? values.tipe_indikator,
+        jenis_indikator: values.jenis_indikator,
+        misi_id: values.misi_id,
+        tujuan_id: values.tujuan_id,
+        sasaran_id: values.sasaran_id,
+        program_id: values.program_id,
+        indikator_program_id: values.indikator_program_id,
+      }
+    );
 
     if (
       !Number(values.misi_id) ||
@@ -100,7 +126,36 @@ export default function useStepTemplateAddAndAi({
       return;
     }
 
-    setFieldValue(stepKey, [...list, newItem]);
+    const currentList = Array.isArray(values[stepKey])
+      ? values[stepKey]
+      : [];
+
+    console.log("[DEBUG] preview rows before add:", currentList);
+    console.log("[DEBUG] incoming preview row:", newItem);
+    currentList.forEach((r, i) => {
+      console.log(
+        `[DEBUG] row[${i}] dedupe key=`,
+        getRpjmdIndikatorDraftDedupeKey(r, values)
+      );
+    });
+    const keyNew = getRpjmdIndikatorDraftDedupeKey(newItem, values);
+    console.log("[DEBUG] incoming dedupe key=", keyNew);
+
+    const existed = currentList.some(
+      (row) => getRpjmdIndikatorDraftDedupeKey(row, values) === keyNew
+    );
+    const next = upsertRpjmdIndikatorDraftRow(currentList, newItem, values);
+    console.log("[DEBUG] preview rows after upsert:", next);
+    setFieldValue(stepKey, next);
+
+    if (existed) {
+      setMessage({
+        variant: "success",
+        text: "Kolom kosong pada pratinjau dilengkapi; data yang sudah ada tidak diubah.",
+      });
+      return;
+    }
+
     resetFields(setFieldValue);
     setMessage({ variant: "success", text: "Indikator berhasil ditambahkan." });
   }, [
@@ -111,7 +166,6 @@ export default function useStepTemplateAddAndAi({
     values,
     stepKey,
     buildIndikatorItem,
-    list,
     resetFields,
   ]);
 

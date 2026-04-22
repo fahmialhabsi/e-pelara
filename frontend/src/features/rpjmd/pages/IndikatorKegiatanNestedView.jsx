@@ -31,9 +31,9 @@ const IndikatorKegiatanNestedView = ({ data, loading, refetch }) => {
           <th rowSpan={2}>Tolok Ukur</th>
           <th rowSpan={2}>Satuan</th>
           <th rowSpan={2}>Penanggung Jawab</th>
-          <th colSpan={5}>Capaian Tahun Ke-</th>
+          <th colSpan={5}>Capaian (th. ke-)</th>
           <th rowSpan={2}>Baseline</th>
-          <th colSpan={5}>Target Tahun Ke-</th>
+          <th colSpan={5}>Target (th. ke-)</th>
           <th rowSpan={2}>Aksi</th>
         </tr>
         <tr>

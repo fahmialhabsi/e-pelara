@@ -1,6 +1,8 @@
 // WizardContextPanel.jsx — Sidebar konteks hierarki wizard Indikator RPJMD
 
-import React from "react";
+import React, { useMemo } from "react";
+import { usePeriodeAktif } from "@/features/rpjmd/hooks/usePeriodeAktif";
+import { konteksBannerRows } from "@/utils/planningDokumenUtils";
 
 const HIERARCHY = [
   { key: "misi",           icon: "🏛",  label: "MISI",           stepIdx: 0 },
@@ -120,6 +122,18 @@ export default function WizardContextPanel({
   dokumen,
   tahun,
 }) {
+  const { periode_id, periodeList } = usePeriodeAktif();
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(periode_id),
+  );
+  const konteksLine = useMemo(
+    () =>
+      konteksBannerRows(dokumen, tahun, periodeAktif)
+        .map((r) => `${r.label}: ${r.value}`)
+        .join(" · "),
+    [dokumen, tahun, periodeAktif],
+  );
+
   const misiLabel =
     values.no_misi && values.isi_misi
       ? `${values.no_misi} – ${values.isi_misi}`
@@ -176,11 +190,9 @@ export default function WizardContextPanel({
         <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 2 }}>
           📋 Konteks Pengisian
         </div>
-        {(dokumen || tahun) && (
-          <div style={{ fontSize: 10, opacity: 0.75 }}>
-            {[dokumen, tahun].filter(Boolean).join(" · ")}
-          </div>
-        )}
+        {konteksLine ? (
+          <div style={{ fontSize: 10, opacity: 0.75 }}>{konteksLine}</div>
+        ) : null}
 
         {/* Progress bar */}
         <div

@@ -79,7 +79,7 @@ const IndikatorUmumRenstraListPage = () => {
       key: "satuan",
     },
     {
-      title: "Target Tahun 1",
+      title: "Target (th. ke-1)",
       dataIndex: "target_tahun_1",
       key: "target_tahun_1",
     },

@@ -9,11 +9,16 @@ import { useDokumen } from "../../../hooks/useDokumen";
 import { useAuth } from "../../../hooks/useAuth";
 import { toast } from "react-toastify";
 import { extractListData } from "../../../utils/apiResponse";
+import {
+  isDokumenLevelPeriode,
+  pickAnchorPeriodeFromList,
+  tahunDalamPeriode,
+} from "../../../utils/planningDokumenUtils";
 
 const PeriodeAktifContext = createContext();
 
 export const PeriodeAktifProvider = ({ children }) => {
-  const { dokumen, tahun, loading: docLoading } = useDokumen();
+  const { dokumen, tahun, loading: docLoading, setTahun } = useDokumen();
   const { user } = useAuth();
 
   const [periodeId, setPeriodeId] = useState(null);
@@ -22,7 +27,15 @@ export const PeriodeAktifProvider = ({ children }) => {
 
   useEffect(() => {
     const fetchPeriode = async () => {
-      if (!dokumen || !tahun) {
+      if (!dokumen) {
+        setPeriodeList([]);
+        setLoadingPeriode(false);
+        return;
+      }
+
+      const periodeLevel = isDokumenLevelPeriode(dokumen);
+      if (!periodeLevel && !tahun) {
+        setPeriodeList([]);
         setLoadingPeriode(false);
         return;
       }
@@ -30,7 +43,18 @@ export const PeriodeAktifProvider = ({ children }) => {
       try {
         setLoadingPeriode(true);
         const res = await api.get("/periode-rpjmd");
-        setPeriodeList(extractListData(res.data));
+        const list = extractListData(res.data);
+        setPeriodeList(list);
+
+        if (periodeLevel) {
+          const pick = pickAnchorPeriodeFromList(list, user);
+          if (pick?.tahun_awal != null) {
+            const sudahSelaras = tahunDalamPeriode(tahun, pick);
+            if (!tahun || !sudahSelaras) {
+              setTahun(String(pick.tahun_awal));
+            }
+          }
+        }
       } catch (error) {
         console.error("Gagal memuat daftar periode:", error);
         toast.error("Gagal memuat daftar periode.");
@@ -40,7 +64,7 @@ export const PeriodeAktifProvider = ({ children }) => {
     };
 
     fetchPeriode();
-  }, [dokumen, tahun]);
+  }, [dokumen, tahun, user?.periode_id, setTahun]);
 
   useEffect(() => {
     if (
@@ -70,7 +94,12 @@ export const PeriodeAktifProvider = ({ children }) => {
     setPeriodeId(fallbackId);
 
     if (!fallbackId) {
-      toast.warn(`Tidak dapat menemukan periode aktif untuk tahun ${tahun}.`);
+      const periodeLevel = isDokumenLevelPeriode(dokumen);
+      toast.warn(
+        periodeLevel
+          ? "Tidak dapat menemukan periode RPJMD yang selaras dengan konteks dokumen Anda."
+          : `Tidak dapat menemukan periode aktif untuk konteks saat ini (${tahun}).`,
+      );
     }
   }, [dokumen, tahun, periodeList, loadingPeriode, user]);
 

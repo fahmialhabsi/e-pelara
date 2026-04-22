@@ -29,6 +29,23 @@ import {
 
 const API_READY = true;
 
+/** PJ dari langkah induk (strategi / tujuan) bila baris arah belum punya FK OPD. */
+function firstPenanggungJawabFromWizardContext(values) {
+  const fromRows = (rows) => {
+    if (!Array.isArray(rows)) return null;
+    for (const r of rows) {
+      if (!r || typeof r !== "object") continue;
+      const pj = r.penanggung_jawab ?? r.penanggungJawab;
+      if (pj != null && String(pj).trim() !== "") return pj;
+      const nested = r.opdPenanggungJawab ?? r.opd_penanggung_jawab;
+      if (nested && typeof nested === "object" && nested.id != null)
+        return nested.id;
+    }
+    return null;
+  };
+  return fromRows(values.strategi) ?? fromRows(values.tujuan) ?? null;
+}
+
 export default function ArahKebijakanStep({ options, tabKey, setTabKey, onNext }) {
   const stepKey = "arah_kebijakan";
   const { values, setFieldValue, resetForm } = useFormikContext();
@@ -83,6 +100,11 @@ export default function ArahKebijakanStep({ options, tabKey, setTabKey, onNext }
     }
     prevStrategiRef.current = cur;
   }, [values.strategi_id, setFieldValue]);
+
+  const indukPenanggungJawabKey = useMemo(() => {
+    const v = firstPenanggungJawabFromWizardContext(values);
+    return v != null && String(v).trim() !== "" ? String(v).trim() : "";
+  }, [values.strategi, values.tujuan]);
 
   const fetchArahKebijakan = useCallback(
     debounce(async () => {
@@ -157,8 +179,23 @@ export default function ArahKebijakanStep({ options, tabKey, setTabKey, onNext }
           jenis_dokumen: values.jenis_dokumen,
         });
         if (cancelled) return;
-        const raw = normalizeListItems(res.data);
-        const mapped = raw.map(mapApiIndikatorToListRow);
+        let raw = normalizeListItems(res.data);
+        if (raw.length === 0 && values.tahun && !cancelled) {
+          const res2 = await fetchIndikatorArahByArahKebijakan(values.arah_kebijakan_id, {
+            tahun: values.tahun,
+          });
+          if (!cancelled) raw = normalizeListItems(res2.data);
+        }
+        if (cancelled) return;
+        const pjFallback = firstPenanggungJawabFromWizardContext(values);
+        let mapped = raw.map(mapApiIndikatorToListRow);
+        if (pjFallback != null && String(pjFallback).trim() !== "") {
+          mapped = mapped.map((r) => {
+            const cur = r?.penanggung_jawab ?? r?.penanggungJawab;
+            const empty = cur == null || String(cur).trim() === "";
+            return empty ? { ...r, penanggung_jawab: pjFallback } : r;
+          });
+        }
         setFieldValue("arah_kebijakan", mapped);
         if (mapped.length > 0) {
           hydrateDraftFromIndikatorRow(mapped[0], setFieldValue);
@@ -175,7 +212,13 @@ export default function ArahKebijakanStep({ options, tabKey, setTabKey, onNext }
     return () => {
       cancelled = true;
     };
-  }, [values.arah_kebijakan_id, values.tahun, values.jenis_dokumen, setFieldValue]);
+  }, [
+    values.arah_kebijakan_id,
+    values.tahun,
+    values.jenis_dokumen,
+    indukPenanggungJawabKey,
+    setFieldValue,
+  ]);
 
   const handleTambahArahSameStep = async () => {
     if (!values.strategi_id) return toast.error("Strategi belum dipilih.");

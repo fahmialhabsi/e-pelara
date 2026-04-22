@@ -140,8 +140,8 @@ export default function useIndikatorFields(
       ...[1, 2, 3, 4, 5].map((i) =>
         buildTextField({
           name: `capaian_tahun_${i}`,
-          label: `Capaian Tahun ${i}`,
-          tooltip: `Capaian aktual untuk tahun ke-${i}.`,
+          label: `Capaian (th. ke-${i})`,
+          tooltip: `Capaian aktual untuk slot ke-${i} dalam periode.`,
         })
       ),
       buildTextField({
@@ -152,8 +152,8 @@ export default function useIndikatorFields(
       ...[1, 2, 3, 4, 5].map((i) =>
         buildTextField({
           name: `target_tahun_${i}`,
-          label: `Target Tahun ${i}`,
-          tooltip: `Target indikator untuk tahun ke-${i}.`,
+          label: `Target (th. ke-${i})`,
+          tooltip: `Target indikator untuk slot ke-${i} dalam periode.`,
         })
       ),
       buildTextField({
@@ -171,26 +171,26 @@ export default function useIndikatorFields(
     5: [
       buildTextField({
         name: "tahun_awal",
-        label: "Tahun Awal",
-        tooltip: "Tahun awal dari Periode RPJMD",
+        label: "Awal periode RPJMD",
+        tooltip: "Angka awal rentang periode (readonly, dari sistem).",
         readOnly: true,
       }),
       buildTextField({
         name: "tahun_akhir",
-        label: "Tahun Akhir",
-        tooltip: "Tahun akhir dari Periode RPJMD",
+        label: "Akhir periode RPJMD",
+        tooltip: "Angka akhir rentang periode (readonly, dari sistem).",
         readOnly: true,
       }),
       buildTextField({
         name: "target_awal",
         label: "Target Awal",
-        tooltip: "Otomatis dari target tahun 1",
+        tooltip: "Otomatis dari target (th. ke-1)",
         readOnly: true,
       }),
       buildTextField({
         name: "target_akhir",
         label: "Target Akhir",
-        tooltip: "Otomatis dari target tahun 5",
+        tooltip: "Otomatis dari target (th. ke-5)",
         readOnly: true,
       }),
     ],

@@ -1,5 +1,8 @@
 // src/components/ReportRPJMDPage.js
 import React, { useState, useEffect, useMemo } from "react";
+import { useDokumen } from "../../../hooks/useDokumen";
+import { usePeriodeAktif } from "../hooks/usePeriodeAktif";
+import { isDokumenLevelPeriode } from "@/utils/planningDokumenUtils";
 import {
   Form,
   Button,
@@ -16,12 +19,27 @@ import api from "../../../services/api";
 import { extractSingleData, normalizeListItems } from "@/utils/apiResponse";
 
 const ReportRPJMDPage = () => {
+  const { dokumen, tahun: ctxTahun } = useDokumen();
+  const { periode_id, periodeList } = usePeriodeAktif();
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(periode_id),
+  );
+
   const [opds, setOpds] = useState([]);
   const [opdId, setOpdId] = useState("");
-  const [year, setYear] = useState(new Date().getFullYear());
+  const [year, setYear] = useState(() => new Date().getFullYear());
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (isDokumenLevelPeriode(dokumen) && periodeAktif?.tahun_awal != null) {
+      setYear(Number(periodeAktif.tahun_awal));
+    } else if (ctxTahun) {
+      const n = parseInt(String(ctxTahun), 10);
+      if (Number.isFinite(n)) setYear(n);
+    }
+  }, [dokumen, ctxTahun, periodeAktif]);
 
   // Fetch OPD list once
   useEffect(() => {
@@ -46,7 +64,7 @@ const ReportRPJMDPage = () => {
       const res = await api.get(`/laporan/rpjmd?opdId=${opdId}&tahun=${year}`);
       const payload = extractSingleData(res.data);
       if (!payload || !payload.programs) {
-        setError("Data laporan tidak tersedia untuk OPD/tahun yang dipilih.");
+        setError("Data laporan tidak tersedia untuk OPD / acuan yang dipilih.");
       } else {
         setReport(payload);
       }
@@ -205,13 +223,23 @@ const ReportRPJMDPage = () => {
           </Col>
           <Col md={3}>
             <Form.Group controlId="formYear">
-              <Form.Label>Tahun</Form.Label>
+              <Form.Label>Periode laporan</Form.Label>
               <Form.Control
-                type="number"
-                value={year}
-                onChange={(e) => setYear(e.target.value)}
-                required
+                type="text"
+                readOnly
+                disabled
+                className="bg-light small"
+                value={
+                  isDokumenLevelPeriode(dokumen) && periodeAktif?.tahun_awal
+                    ? `${periodeAktif.tahun_awal}–${periodeAktif.tahun_akhir}`
+                    : String(year)
+                }
               />
+              {isDokumenLevelPeriode(dokumen) ? (
+                <Form.Text className="text-muted">
+                  Parameter laporan mengikuti periode aktif secara otomatis.
+                </Form.Text>
+              ) : null}
             </Form.Group>
           </Col>
           <Col md={4} className="d-flex align-items-end">
@@ -255,7 +283,9 @@ const ReportRPJMDPage = () => {
       {!loading && report && reportView}
 
       {!loading && !report && !error && (
-        <Alert variant="info">Pilih OPD dan tahun, lalu klik "Generate".</Alert>
+        <Alert variant="info">
+          Pilih OPD, lalu klik &quot;Generate&quot; (rentang mengikuti periode aktif).
+        </Alert>
       )}
     </Container>
   );

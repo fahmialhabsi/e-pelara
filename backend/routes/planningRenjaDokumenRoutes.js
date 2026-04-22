@@ -196,6 +196,144 @@ router.post(
   },
   govCtrl.workflowAction,
 );
+router.post("/v2/:id/validate", verifyToken, allowRoles(READ_ROLES), govCtrl.validateDokumen);
+router.get("/v2/:id/readiness", verifyToken, allowRoles(READ_ROLES), govCtrl.getReadiness);
+router.post("/v2/:id/recompute-mismatch", verifyToken, allowRoles(WRITE_ROLES), govCtrl.recomputeMismatch);
+// Data Fix & Mapping Engine
+router.get("/v2/:id/data-fix/summary", verifyToken, allowRoles(READ_ROLES), govCtrl.getDataFixSummary);
+router.post(
+  "/v2/:id/data-fix/generate-mapping",
+  verifyToken,
+  allowRoles(WRITE_ROLES),
+  schemas.validate(schemas.renjaDataFixGenerateMapping),
+  govCtrl.generateDataFixMapping,
+);
+router.get(
+  "/v2/:id/data-fix/mapping-suggestions",
+  verifyToken,
+  allowRoles(READ_ROLES),
+  govCtrl.getDataFixMappingSuggestions,
+);
+router.post(
+  "/v2/:id/data-fix/preview-mapping",
+  verifyToken,
+  allowRoles(READ_ROLES),
+  schemas.validate(schemas.renjaDataFixPreviewMapping),
+  govCtrl.previewDataFixMapping,
+);
+router.post(
+  "/v2/:id/data-fix/preview-impact",
+  verifyToken,
+  allowRoles(READ_ROLES),
+  schemas.validate(schemas.renjaDataFixPreviewImpact),
+  govCtrl.previewDataFixImpact,
+);
+router.get(
+  "/v2/:id/data-fix/quality-score",
+  verifyToken,
+  allowRoles(READ_ROLES),
+  govCtrl.getDataFixQualityScore,
+);
+router.get(
+  "/v2/:id/data-fix/batch-history",
+  verifyToken,
+  allowRoles(READ_ROLES),
+  govCtrl.getDataFixBatchHistory,
+);
+router.get(
+  "/v2/:id/data-fix/batch-detail/:batchId",
+  verifyToken,
+  allowRoles(READ_ROLES),
+  govCtrl.getDataFixBatchDetail,
+);
+router.post(
+  "/v2/:id/data-fix/lock",
+  verifyToken,
+  allowRoles(WRITE_ROLES),
+  schemas.validate(schemas.renjaDataFixLockAcquire),
+  govCtrl.acquireDataFixLock,
+);
+router.delete("/v2/:id/data-fix/lock", verifyToken, allowRoles(WRITE_ROLES), govCtrl.releaseDataFixLock);
+router.get("/v2/:id/data-fix/lock", verifyToken, allowRoles(READ_ROLES), govCtrl.getDataFixDocLock);
+router.get(
+  "/v2/:id/data-fix/mapping-apply-batches",
+  verifyToken,
+  allowRoles(READ_ROLES),
+  govCtrl.listMappingApplyBatches,
+);
+router.post(
+  "/v2/:id/data-fix/apply-mapping",
+  verifyToken,
+  allowRoles(WRITE_ROLES),
+  schemas.validate(schemas.renjaDataFixApply),
+  requireChangeReason,
+  govCtrl.applyDataFixMapping,
+);
+router.post(
+  "/v2/:id/data-fix/rollback-mapping",
+  verifyToken,
+  allowRoles(WRITE_ROLES),
+  schemas.validate(schemas.renjaDataFixRollbackMapping),
+  requireChangeReason,
+  govCtrl.rollbackMappingApplyBatch,
+);
+router.post(
+  "/v2/:id/data-fix/generate-indicator-suggestions",
+  verifyToken,
+  allowRoles(WRITE_ROLES),
+  schemas.validate(schemas.renjaDataFixGenerateIndicator),
+  govCtrl.generateIndicatorSuggestions,
+);
+router.get(
+  "/v2/:id/data-fix/indicator-suggestions",
+  verifyToken,
+  allowRoles(READ_ROLES),
+  govCtrl.getIndicatorSuggestions,
+);
+router.post(
+  "/v2/:id/data-fix/apply-indicator-mapping",
+  verifyToken,
+  allowRoles(WRITE_ROLES),
+  schemas.validate(schemas.renjaDataFixApply),
+  requireChangeReason,
+  govCtrl.applyIndicatorMapping,
+);
+router.post(
+  "/v2/:id/data-fix/autofill-targets",
+  verifyToken,
+  allowRoles(WRITE_ROLES),
+  schemas.validate(schemas.renjaDataFixAutofillTargets),
+  requireChangeReason,
+  govCtrl.autofillTargets,
+);
+router.get(
+  "/v2/:id/data-fix/target-suggestions",
+  verifyToken,
+  allowRoles(READ_ROLES),
+  govCtrl.getTargetSuggestions,
+);
+router.post(
+  "/v2/:id/data-fix/resolve-policy-conflicts",
+  verifyToken,
+  allowRoles(WRITE_ROLES),
+  schemas.validate(schemas.renjaDataFixResolvePolicy),
+  requireChangeReason,
+  govCtrl.resolvePolicyConflicts,
+);
+router.get(
+  "/v2/:id/data-fix/policy-conflicts",
+  verifyToken,
+  allowRoles(READ_ROLES),
+  govCtrl.getPolicyConflicts,
+);
+router.post(
+  "/v2/:id/data-fix/apply-all-high-confidence",
+  verifyToken,
+  allowRoles(WRITE_ROLES),
+  schemas.validate(schemas.renjaDataFixApplyAllHigh),
+  requireChangeReason,
+  govCtrl.applyAllHighConfidence,
+);
 router.post(
   "/v2/:id/create-revision",
   verifyToken,
@@ -229,6 +367,8 @@ router.post(
   requireChangeReason,
   govCtrl.createItem,
 );
+router.post("/v2/:id/items/validate", verifyToken, allowRoles(WRITE_ROLES), govCtrl.validateItem);
+router.post("/v2/:id/items/bulk-validate", verifyToken, allowRoles(WRITE_ROLES), govCtrl.bulkValidateItems);
 router.put(
   "/v2/:id/items/:itemId",
   verifyToken,

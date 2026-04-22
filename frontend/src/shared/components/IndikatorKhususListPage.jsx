@@ -18,7 +18,7 @@ function filterIndikatorRowsByMisi(rows, misiId) {
   const list = rows || [];
   const mid = String(misiId);
   const hasAnyMisi = list.some(
-    (r) => r.misi_id != null && String(r.misi_id).trim() !== ""
+    (r) => r.misi_id != null && String(r.misi_id).trim() !== "",
   );
   if (!hasAnyMisi) return list;
   return list.filter((r) => String(r.misi_id ?? "") === mid);
@@ -76,15 +76,15 @@ export default function IndikatorKhususListPage() {
         const kegiatanList = normalizeListItems(bundle.kegiatan.data);
         const strategiList = filterIndikatorRowsByMisi(
           normalizeListItems(bundle.strategi.data),
-          selectedMisi
+          selectedMisi,
         );
         const arahList = filterIndikatorRowsByMisi(
           normalizeListItems(bundle.arahKebijakan.data),
-          selectedMisi
+          selectedMisi,
         );
         const subKegiatanList = filterIndikatorRowsByMisi(
           normalizeListItems(bundle.subKegiatan.data),
-          selectedMisi
+          selectedMisi,
         );
 
         setIndikatorData({
@@ -112,7 +112,7 @@ export default function IndikatorKhususListPage() {
         indikatorData[kategori].map((i) => ({
           id: i.id,
           label: `${i.kode_indikator} - ${i.nama_indikator}`,
-        }))
+        })),
       );
     } else {
       setIndikatorList([]);
@@ -123,7 +123,7 @@ export default function IndikatorKhususListPage() {
     ? {
         [kategori]:
           indikatorData[kategori]?.filter(
-            (i) => String(i.id) === String(selectedIndikatorId)
+            (i) => String(i.id) === String(selectedIndikatorId),
           ) || [],
       }
     : { [kategori]: indikatorData[kategori] || [] };

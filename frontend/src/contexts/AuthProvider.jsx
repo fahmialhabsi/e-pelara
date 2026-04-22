@@ -5,6 +5,7 @@ import api from "../services/api";
 import AuthContext from "./authContext";
 import { refreshToken } from "../services/authService";
 import { normalizeRole } from "../utils/roleUtils";
+import { ACTIVE_TENANT_LS_KEY } from "../constants/tenantStorage";
 import { useDokumen } from "../hooks/useDokumen";
 
 // Cek status token (valid atau tidak)
@@ -86,6 +87,7 @@ const AuthProvider = ({
 
   const logout = () => {
     localStorage.removeItem("token");
+    localStorage.removeItem(ACTIVE_TENANT_LS_KEY);
     sessionStorage.removeItem("dokumenTujuan");
     sessionStorage.removeItem("tahun");
     sessionStorage.removeItem("periode_id");
@@ -160,7 +162,12 @@ const AuthProvider = ({
             const isSSO = !!sessionStorage.getItem("_epelara_sso");
             if (!isSSO) {
               try {
-                await refreshToken();
+                const refreshRes = await refreshToken();
+                if (refreshRes?.data?.user) {
+                  setUser((prev) =>
+                    prev ? { ...prev, ...refreshRes.data.user } : prev,
+                  );
+                }
               } catch {
                 console.warn("Refresh token gagal, logout otomatis...");
                 logout();
@@ -191,7 +198,12 @@ const AuthProvider = ({
           // Skip auto-refresh untuk sesi SSO
           if (sessionStorage.getItem("_epelara_sso")) return;
           try {
-            await refreshToken();
+            const refreshRes = await refreshToken();
+            if (refreshRes?.data?.user) {
+              setUser((prev) =>
+                prev ? { ...prev, ...refreshRes.data.user } : prev,
+              );
+            }
             console.log("[Auto Refresh] Token berhasil diperbarui");
           } catch (err) {
             console.warn("[Auto Refresh] Gagal refresh, logout...");

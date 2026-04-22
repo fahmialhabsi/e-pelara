@@ -18,8 +18,10 @@ import {
   fetchIndikatorRpjmdList,
 } from "@/features/rpjmd/services/indikatorRpjmdApi";
 import { useDokumen } from "@/hooks/useDokumen";
+import { isDokumenLevelPeriode } from "@/utils/planningDokumenUtils";
 import { useDarkMode } from "../../hooks/useDarkMode";
 import * as XLSX from "xlsx";
+import IndikatorEditModal from "./IndikatorEditModal";
 import IndikatorRPJMDForm from "./IndikatorRPJMDForm";
 import {
   LEVEL_DOKUMEN_OPTIONS,
@@ -89,16 +91,16 @@ const INDIKATOR_EXPORT_COLUMNS = [
   { header: "Tolok Ukur Kinerja", key: "tolok_ukur_kinerja" },
   { header: "Target Kinerja", key: "target_kinerja" },
   { header: "Baseline", key: "baseline" },
-  { header: "Target Tahun I", key: "target_tahun_1" },
-  { header: "Target Tahun II", key: "target_tahun_2" },
-  { header: "Target Tahun III", key: "target_tahun_3" },
-  { header: "Target Tahun IV", key: "target_tahun_4" },
-  { header: "Target Tahun V", key: "target_tahun_5" },
-  { header: "Capaian Tahun I", key: "capaian_tahun_1" },
-  { header: "Capaian Tahun II", key: "capaian_tahun_2" },
-  { header: "Capaian Tahun III", key: "capaian_tahun_3" },
-  { header: "Capaian Tahun IV", key: "capaian_tahun_4" },
-  { header: "Capaian Tahun V", key: "capaian_tahun_5" },
+  { header: "Target (th. ke-1)", key: "target_tahun_1" },
+  { header: "Target (th. ke-2)", key: "target_tahun_2" },
+  { header: "Target (th. ke-3)", key: "target_tahun_3" },
+  { header: "Target (th. ke-4)", key: "target_tahun_4" },
+  { header: "Target (th. ke-5)", key: "target_tahun_5" },
+  { header: "Capaian (th. ke-1)", key: "capaian_tahun_1" },
+  { header: "Capaian (th. ke-2)", key: "capaian_tahun_2" },
+  { header: "Capaian (th. ke-3)", key: "capaian_tahun_3" },
+  { header: "Capaian (th. ke-4)", key: "capaian_tahun_4" },
+  { header: "Capaian (th. ke-5)", key: "capaian_tahun_5" },
   { header: "Definisi Operasional", key: "definisi_operasional" },
   { header: "Metode Penghitungan", key: "metode_penghitungan" },
   { header: "Kriteria Kuantitatif", key: "kriteria_kuantitatif" },
@@ -113,7 +115,7 @@ const INDIKATOR_EXPORT_COLUMNS = [
   },
   { header: "Keterangan", key: "keterangan" },
   { header: "Rekomendasi AI", key: "rekomendasi_ai" },
-  { header: "Tahun", key: "tahun" },
+  { header: "Acuan (kalender)", key: "tahun" },
   { header: "Jenis Dokumen", key: "jenis_dokumen" },
   { header: "Misi ID", key: "misi_id" },
   { header: "Tujuan ID", key: "tujuan_id" },
@@ -173,9 +175,12 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
   const [errorMsg, setErrorMsg] = useState("");
   const [darkMode, setDarkMode] = useDarkMode();
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editData, setEditData] = useState(null);
+  // Modal tambah (wizard)
+  const [showAddForm, setShowAddForm] = useState(false);
   const [formKey, setFormKey] = useState(0);
+  // Modal edit (IndikatorEditModal — FIX bug data tidak terisi)
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editData, setEditData] = useState(null);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
@@ -191,7 +196,9 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
     setErrorMsg("");
     if (!dokumen || !tahun) {
       setErrorMsg(
-        "Tahun dan jenis dokumen belum dipilih. Atur konteks dokumen (header / pengaturan RPJMD) lalu muat ulang halaman ini."
+        isDokumenLevelPeriode(dokumen)
+          ? "Jenis dokumen belum lengkap. Atur konteks dokumen di header (RPJMD/Renstra = satu periode; acuan otomatis)."
+          : "Konteks waktu dan jenis dokumen belum dipilih. Atur di header lalu muat ulang halaman ini.",
       );
       setItems([]);
       setTotalPages(1);
@@ -271,15 +278,17 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
   }, [fetchItems]);
 
   const handleAdd = () => {
-    setEditData(null);
     setFormKey((k) => k + 1);
-    setShowForm(true);
+    setShowAddForm(true);
   };
 
+  /**
+   * FIX BUG: handleEdit kini membuka IndikatorEditModal yang benar-benar
+   * mengisi form dari data baris yang dipilih (bukan wizard dari localStorage).
+   */
   const handleEdit = (row) => {
     setEditData(row);
-    setFormKey((k) => k + 1);
-    setShowForm(true);
+    setShowEditModal(true);
   };
 
   const handleDelete = async (id) => {
@@ -300,7 +309,9 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
   const handleExportExcel = async () => {
     if (!dokumen || !tahun) {
       setErrorMsg(
-        "Tahun dan jenis dokumen wajib dipilih sebelum mengekspor data."
+        isDokumenLevelPeriode(dokumen)
+          ? "Jenis dokumen / periode belum lengkap — selesaikan konteks di header sebelum mengekspor."
+          : "Konteks waktu dan jenis dokumen wajib dipilih sebelum mengekspor data.",
       );
       return;
     }
@@ -330,22 +341,79 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
     }
   };
 
-  return (
-    <div className={`container ${darkMode ? "dark-mode" : ""}`}>
-      <Breadcrumb className="mt-3">
-        <Breadcrumb.Item href="/">Home</Breadcrumb.Item>
-        <Breadcrumb.Item active>Indikator</Breadcrumb.Item>
-      </Breadcrumb>
-      <Card className="mt-2 mb-4">
-        <Card.Body>
-          <Card.Title>
-            Daftar {types.find((t) => t.value === selectedType)?.label}
-          </Card.Title>
+  const selectedTypeLabel = types.find((t) => t.value === selectedType)?.label || "";
 
-          <div className="d-flex flex-wrap align-items-center mb-3">
+  return (
+    <div className={`container-fluid px-3 ${darkMode ? "dark-mode" : ""}`}>
+      {/* ── Page header ── */}
+      <div
+        style={{
+          background: "linear-gradient(135deg,#1a237e 0%,#283593 100%)",
+          color: "#fff",
+          padding: "14px 20px",
+          borderRadius: 10,
+          marginTop: 12,
+          marginBottom: 16,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          boxShadow: "0 2px 10px rgba(26,35,126,.2)",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: 0.3 }}>
+            📋 {selectedTypeLabel}
+          </div>
+          <div style={{ fontSize: 11, opacity: 0.72, marginTop: 2 }}>
+            Manajemen data indikator RPJMD
+          </div>
+        </div>
+        <div className="d-flex gap-2 align-items-center">
+          <Button
+            size="sm"
+            variant="light"
+            style={{ fontWeight: 700, color: "#1a237e" }}
+            onClick={handleAdd}
+          >
+            <FaPlus className="me-1" /> Tambah
+          </Button>
+          <Button
+            size="sm"
+            variant="outline-light"
+            onClick={() => navigate("/dashboard-rpjmd")}
+          >
+            ✕ Tutup
+          </Button>
+          <Button
+            size="sm"
+            variant={darkMode ? "dark" : "outline-light"}
+            onClick={() => setDarkMode((d) => !d)}
+          >
+            {darkMode ? "☀" : "🌙"}
+          </Button>
+        </div>
+      </div>
+
+      <Card
+        className="mb-4"
+        style={{
+          border: "1px solid #e0e0e0",
+          borderRadius: 10,
+          boxShadow: "0 1px 8px rgba(0,0,0,.06)",
+        }}
+      >
+        {/* ── Toolbar filter ── */}
+        <Card.Header
+          style={{
+            background: "#f8f9fa",
+            borderBottom: "1px solid #e9ecef",
+            padding: "12px 16px",
+          }}
+        >
+          <div className="d-flex flex-wrap align-items-center gap-2">
             <Form.Select
-              className="me-2 mb-2"
-              style={{ maxWidth: 240 }}
+              size="sm"
+              style={{ maxWidth: 220 }}
               aria-label="Jenis daftar indikator"
               value={selectedType}
               onChange={(e) => {
@@ -360,9 +428,10 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
                 </option>
               ))}
             </Form.Select>
+
             <Form.Select
-              className="me-2 mb-2"
-              style={{ maxWidth: 150 }}
+              size="sm"
+              style={{ maxWidth: 140 }}
               value={filterLevelDokumen}
               onChange={(e) => {
                 setFilterLevelDokumen(e.target.value);
@@ -378,8 +447,8 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
             </Form.Select>
 
             <Form.Select
-              className="me-2 mb-2"
-              style={{ maxWidth: 150 }}
+              size="sm"
+              style={{ maxWidth: 140 }}
               value={filterJenisIKU}
               onChange={(e) => {
                 setFilterJenisIKU(e.target.value);
@@ -394,9 +463,9 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
               ))}
             </Form.Select>
 
-            <InputGroup style={{ maxWidth: 300 }} className="me-2 mb-2">
+            <InputGroup size="sm" style={{ maxWidth: 280 }}>
               <Form.Control
-                placeholder="Cari kode atau nama..."
+                placeholder="Cari kode atau nama…"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && setPage(1)}
@@ -406,12 +475,9 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
               </Button>
             </InputGroup>
 
-            <Button variant="success" className="mb-2 me-2" onClick={handleAdd}>
-              <FaPlus /> Tambah
-            </Button>
             <Button
-              variant="secondary"
-              className="mb-2 me-2"
+              size="sm"
+              variant="outline-secondary"
               disabled={exporting || loading}
               onClick={() => void handleExportExcel()}
             >
@@ -421,54 +487,56 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
                   Mengekspor…
                 </>
               ) : (
-                "Ekspor Excel"
+                "⬇ Excel"
               )}
             </Button>
-            <Button
-              variant="outline-dark"
-              className="mb-2 me-2"
-              onClick={() => navigate("/dashboard-rpjmd")}
-            >
-              Tutup
-            </Button>
-            <Button
-              variant={darkMode ? "dark" : "light"}
-              className="mb-2"
-              onClick={() => setDarkMode((d) => !d)}
-            >
-              {darkMode ? "Light Mode" : "Dark Mode"}
-            </Button>
           </div>
+        </Card.Header>
 
-          {errorMsg && <Alert variant="danger">{errorMsg}</Alert>}
+        <Card.Body className="p-0">
+
+          {errorMsg && (
+            <Alert variant="danger" className="mx-3 mt-3" style={{ fontSize: 13 }}>
+              {errorMsg}
+            </Alert>
+          )}
           {loading ? (
-            <div className="text-center my-5">
-              <Spinner animation="border" role="status" />
+            <div className="text-center my-5 py-4">
+              <Spinner animation="border" variant="primary" />
+              <div className="mt-2 text-muted" style={{ fontSize: 13 }}>
+                Memuat data…
+              </div>
             </div>
           ) : (
-            <>
-              <Table striped bordered hover responsive className="small">
-                <thead>
+            <div className="px-3 pt-3">
+              <Table
+                bordered
+                hover
+                responsive
+                className="small"
+                style={{ fontSize: 12, borderRadius: 6, overflow: "hidden" }}
+              >
+                <thead style={{ background: "#f1f3f9" }}>
                   <tr>
-                    <th>No</th>
-                    <th>Kode</th>
-                    <th>Nama</th>
-                    <th>Satuan</th>
-                    <th>Target kinerja</th>
-                    <th>Baseline</th>
-                    <th className="text-center">C.I</th>
-                    <th className="text-center">C.II</th>
-                    <th className="text-center">C.III</th>
-                    <th className="text-center">C.IV</th>
-                    <th className="text-center">C.V</th>
-                    <th className="text-center">T.I</th>
-                    <th className="text-center">T.II</th>
-                    <th className="text-center">T.III</th>
-                    <th className="text-center">T.IV</th>
-                    <th className="text-center">T.V</th>
-                    <th>Tipe</th>
-                    <th>Detail</th>
-                    <th>Aksi</th>
+                    <th style={{ whiteSpace: "nowrap" }}>No</th>
+                    <th style={{ whiteSpace: "nowrap" }}>Kode</th>
+                    <th>Nama Indikator</th>
+                    <th style={{ whiteSpace: "nowrap" }}>Satuan</th>
+                    <th style={{ whiteSpace: "nowrap" }}>Target</th>
+                    <th style={{ whiteSpace: "nowrap" }}>Baseline</th>
+                    <th className="text-center" style={{ whiteSpace: "nowrap" }} title="Capaian Th. I">C.I</th>
+                    <th className="text-center" style={{ whiteSpace: "nowrap" }} title="Capaian Th. II">C.II</th>
+                    <th className="text-center" style={{ whiteSpace: "nowrap" }} title="Capaian Th. III">C.III</th>
+                    <th className="text-center" style={{ whiteSpace: "nowrap" }} title="Capaian Th. IV">C.IV</th>
+                    <th className="text-center" style={{ whiteSpace: "nowrap" }} title="Capaian Th. V">C.V</th>
+                    <th className="text-center" style={{ whiteSpace: "nowrap" }} title="Target Th. I">T.I</th>
+                    <th className="text-center" style={{ whiteSpace: "nowrap" }} title="Target Th. II">T.II</th>
+                    <th className="text-center" style={{ whiteSpace: "nowrap" }} title="Target Th. III">T.III</th>
+                    <th className="text-center" style={{ whiteSpace: "nowrap" }} title="Target Th. IV">T.IV</th>
+                    <th className="text-center" style={{ whiteSpace: "nowrap" }} title="Target Th. V">T.V</th>
+                    <th style={{ whiteSpace: "nowrap" }}>Tipe</th>
+                    <th style={{ whiteSpace: "nowrap" }}>Detail</th>
+                    <th style={{ whiteSpace: "nowrap" }}>Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -497,32 +565,37 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
                             </td>
                           ))}
                           <td>{scalarCell(i.tipe_indikator)}</td>
-                          <td>
+                          <td className="text-center">
                             <Button
                               size="sm"
-                              variant="outline-secondary"
+                              variant={expandedRowId === i.id ? "secondary" : "outline-info"}
+                              style={{ padding: "2px 8px", fontSize: 11 }}
                               onClick={() =>
                                 setExpandedRowId((id) =>
                                   id === i.id ? null : i.id
                                 )
                               }
                             >
-                              {expandedRowId === i.id ? "Tutup" : "Buka"}
+                              {expandedRowId === i.id ? "▲" : "▼"}
                             </Button>
                           </td>
-                          <td>
+                          <td className="text-center" style={{ whiteSpace: "nowrap" }}>
                             <Button
                               size="sm"
                               variant="warning"
+                              title="Edit indikator ini"
                               onClick={() => handleEdit(i)}
-                              className="me-2"
+                              className="me-1"
+                              style={{ padding: "2px 7px" }}
                             >
                               <FaEdit />
                             </Button>
                             <Button
                               size="sm"
                               variant="danger"
+                              title="Hapus indikator ini"
                               onClick={() => handleDelete(i.id)}
+                              style={{ padding: "2px 7px" }}
                             >
                               <FaTrash />
                             </Button>
@@ -530,55 +603,43 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
                         </tr>
                         {expandedRowId === i.id && (
                           <tr>
-                            <td colSpan={19} className="bg-light">
-                              <div className="p-3 rounded small">
-                                <p className="mb-1">
-                                  <strong>Jenis (uraian):</strong>{" "}
-                                  {scalarCell(i.jenis) || "—"}
-                                </p>
-                                <p className="mb-1">
-                                  <strong>Jenis indikator:</strong>{" "}
-                                  {scalarCell(i.jenis_indikator) || "—"}
-                                </p>
-                                <p className="mb-1">
-                                  <strong>Tolok ukur:</strong>{" "}
-                                  {scalarCell(i.tolok_ukur_kinerja) || "—"}
-                                </p>
-                                <p className="mb-1">
-                                  <strong>Definisi operasional:</strong>{" "}
-                                  {scalarCell(i.definisi_operasional) || "—"}
-                                </p>
-                                <p className="mb-1">
-                                  <strong>Metode penghitungan:</strong>{" "}
-                                  {scalarCell(i.metode_penghitungan) || "—"}
-                                </p>
-                                <p className="mb-1">
-                                  <strong>Kriteria kuantitatif:</strong>{" "}
-                                  {scalarCell(i.kriteria_kuantitatif) || "—"}
-                                </p>
-                                <p className="mb-1">
-                                  <strong>Kriteria kualitatif:</strong>{" "}
-                                  {scalarCell(i.kriteria_kualitatif) || "—"}
-                                </p>
-                                <p className="mb-1">
-                                  <strong>Sumber data:</strong>{" "}
-                                  {scalarCell(i.sumber_data) || "—"}
-                                </p>
-                                <p className="mb-1">
-                                  <strong>OPD penanggung jawab:</strong>{" "}
-                                  {scalarCell(i.opdPenanggungJawab?.nama_opd) ||
+                            <td colSpan={19} style={{ background: "#f8f9fa", padding: 0 }}>
+                              <div
+                                style={{
+                                  padding: "12px 20px",
+                                  borderTop: "2px solid #e3e8ff",
+                                  display: "grid",
+                                  gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                                  gap: "8px 20px",
+                                  fontSize: 12,
+                                }}
+                              >
+                                {[
+                                  ["Jenis (uraian)", scalarCell(i.jenis)],
+                                  ["Jenis indikator", scalarCell(i.jenis_indikator)],
+                                  ["Tipe", scalarCell(i.tipe_indikator)],
+                                  ["Tolok ukur kinerja", scalarCell(i.tolok_ukur_kinerja)],
+                                  ["Definisi operasional", scalarCell(i.definisi_operasional)],
+                                  ["Metode penghitungan", scalarCell(i.metode_penghitungan)],
+                                  ["Kriteria kuantitatif", scalarCell(i.kriteria_kuantitatif)],
+                                  ["Kriteria kualitatif", scalarCell(i.kriteria_kualitatif)],
+                                  ["Sumber data", scalarCell(i.sumber_data)],
+                                  ["OPD penanggung jawab",
+                                    scalarCell(i.opdPenanggungJawab?.nama_opd) ||
                                     scalarCell(i.nama_opd_penanggung) ||
-                                    scalarCell(i.penanggung_jawab) ||
-                                    "—"}
-                                </p>
-                                <p className="mb-1">
-                                  <strong>Keterangan:</strong>{" "}
-                                  {scalarCell(i.keterangan) || "—"}
-                                </p>
-                                <p className="mb-0">
-                                  <strong>Rekomendasi AI:</strong>{" "}
-                                  {scalarCell(i.rekomendasi_ai) || "—"}
-                                </p>
+                                    scalarCell(i.penanggung_jawab)],
+                                  ["Keterangan", scalarCell(i.keterangan)],
+                                  ["Rekomendasi AI", scalarCell(i.rekomendasi_ai)],
+                                ].map(([label, val]) => (
+                                  <div key={label}>
+                                    <span style={{ fontWeight: 600, color: "#495057" }}>
+                                      {label}:
+                                    </span>{" "}
+                                    <span style={{ color: val ? "#212529" : "#adb5bd" }}>
+                                      {val || "—"}
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
                             </td>
                           </tr>
@@ -587,66 +648,89 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={19} className="text-center">
-                        Tidak ada data.
+                      <td colSpan={19} className="text-center py-4" style={{ color: "#adb5bd" }}>
+                        Tidak ada data yang sesuai filter.
                       </td>
                     </tr>
                   )}
                 </tbody>
               </Table>
 
-              <Pagination className="justify-content-center">
-                <Pagination.First
-                  disabled={page === 1}
-                  onClick={() => setPage(1)}
-                />
-                <Pagination.Prev
-                  disabled={page === 1}
-                  onClick={() => setPage((p) => Math.max(p - 1, 1))}
-                />
-                {Array.from({ length: totalPages }, (_, i) => (
-                  <Pagination.Item
-                    key={i + 1}
-                    active={i + 1 === page}
-                    onClick={() => setPage(i + 1)}
-                  >
-                    {i + 1}
-                  </Pagination.Item>
-                ))}
-                <Pagination.Next
-                  disabled={page === totalPages}
-                  onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
-                />
-                <Pagination.Last
-                  disabled={page === totalPages}
-                  onClick={() => setPage(totalPages)}
-                />
-              </Pagination>
-            </>
+              <div className="d-flex justify-content-center pb-3">
+                <Pagination size="sm">
+                  <Pagination.First
+                    disabled={page === 1}
+                    onClick={() => setPage(1)}
+                  />
+                  <Pagination.Prev
+                    disabled={page === 1}
+                    onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                  />
+                  {Array.from({ length: totalPages }, (_, i) => (
+                    <Pagination.Item
+                      key={i + 1}
+                      active={i + 1 === page}
+                      onClick={() => setPage(i + 1)}
+                    >
+                      {i + 1}
+                    </Pagination.Item>
+                  ))}
+                  <Pagination.Next
+                    disabled={page === totalPages}
+                    onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+                  />
+                  <Pagination.Last
+                    disabled={page === totalPages}
+                    onClick={() => setPage(totalPages)}
+                  />
+                </Pagination>
+              </div>
+            </div>
           )}
         </Card.Body>
       </Card>
 
+      {/* ── Modal TAMBAH: pakai wizard IndikatorRPJMD ── */}
       <Modal
-        show={showForm}
-        onHide={() => setShowForm(false)}
-        size="lg"
+        show={showAddForm}
+        onHide={() => setShowAddForm(false)}
+        size="xl"
         centered
+        scrollable
       >
-        <Modal.Header closeButton>
-          <Modal.Title>{editData ? "Edit" : "Tambah"} Indikator</Modal.Title>
+        <Modal.Header
+          closeButton
+          style={{
+            background: "linear-gradient(135deg,#1a237e 0%,#283593 100%)",
+            color: "#fff",
+            padding: "14px 22px",
+          }}
+        >
+          <Modal.Title style={{ color: "#fff", fontWeight: 800, fontSize: 16 }}>
+            ➕ Tambah Indikator Baru — Wizard
+          </Modal.Title>
         </Modal.Header>
-        <Modal.Body>
-          <IndikatorRPJMDForm
-            key={formKey}
-            existingData={editData}
-            onSubmitSuccess={() => {
-              setShowForm(false);
-              fetchItems();
-            }}
-          />
+        <Modal.Body style={{ padding: "20px 24px", background: "#fafbff" }}>
+          {/* Wizard untuk tambah data baru */}
+          <IndikatorRPJMDForm key={formKey} />
         </Modal.Body>
       </Modal>
+
+      {/* ── Modal EDIT: pakai IndikatorEditModal (FIX bug data tidak terisi) ── */}
+      <IndikatorEditModal
+        show={showEditModal}
+        onHide={() => {
+          setShowEditModal(false);
+          setEditData(null);
+        }}
+        existingData={editData}
+        selectedType={selectedType}
+        onSuccess={() => {
+          setShowEditModal(false);
+          setEditData(null);
+          fetchItems();
+        }}
+      />
     </div>
   );
 }

@@ -14,12 +14,16 @@ import Select from "react-select";
 import api from "../../services/api";
 import { useDokumen } from "../../hooks/useDokumen";
 import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
+import { konteksBannerRows } from "../../utils/planningDokumenUtils";
 
 export default function PrioritasDaerahForm({ existingData, onSubmitSuccess }) {
   const navigate = useNavigate();
   const isEdit = Boolean(existingData?.id);
   const { dokumen, tahun } = useDokumen();
-  const { periode_id } = usePeriodeAktif();
+  const { periode_id, periodeList } = usePeriodeAktif();
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(periode_id),
+  );
 
   const initialForm = {
     kode_prioda: "",
@@ -138,8 +142,11 @@ export default function PrioritasDaerahForm({ existingData, onSubmitSuccess }) {
       </Breadcrumb>
 
       <div className="mb-3">
-        <strong>Dokumen Aktif:</strong> {dokumen || "-"} <br />
-        <strong>Tahun:</strong> {tahun || "-"}
+        {konteksBannerRows(dokumen, tahun, periodeAktif).map((r) => (
+          <span key={r.key} className="d-block">
+            <strong>{r.label}:</strong> {r.value}
+          </span>
+        ))}
       </div>
 
       <Card className="shadow-sm border-0">

@@ -19,11 +19,17 @@ import { useNavigate, useParams } from "react-router-dom";
 import api from "@/services/api";
 import useSubKegiatanFormLogic from "@/features/rpjmd/hooks/useSubKegiatanFormLogic";
 import { useDokumen } from "@/hooks/useDokumen";
+import { usePeriodeAktif } from "@/features/rpjmd/hooks/usePeriodeAktif";
+import { konteksBannerRows } from "@/utils/planningDokumenUtils";
 
 export default function SubKegiatanForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { dokumen, tahun } = useDokumen();
+  const { periode_id, periodeList } = usePeriodeAktif();
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(periode_id),
+  );
 
   const [existingData, setExistingData] = useState(null);
   const [initialLoading, setInitialLoading] = useState(!!id);
@@ -103,8 +109,11 @@ export default function SubKegiatanForm() {
       </Breadcrumb>
 
       <div className="mb-3">
-        <strong>Dokumen Aktif:</strong> {dokumen || "-"} <br />
-        <strong>Tahun:</strong> {tahun || "-"}
+        {konteksBannerRows(dokumen, tahun, periodeAktif).map((r) => (
+          <span key={r.key} className="d-block">
+            <strong>{r.label}:</strong> {r.value}
+          </span>
+        ))}
       </div>
 
       {message && (

@@ -28,6 +28,9 @@ const RenjaPlanningSidebar = () => {
           Buat RENJA Baru
         </ListGroup.Item>
         <ListGroup.Item action as={Link} to="/dashboard-renja" className="small">
+          Data Fix & Mapping
+        </ListGroup.Item>
+        <ListGroup.Item action as={Link} to="/dashboard-renja" className="small">
           RENJA Perubahan
         </ListGroup.Item>
         <ListGroup.Item action as={Link} to="/dashboard-renja" className="small">

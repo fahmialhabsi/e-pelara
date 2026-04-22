@@ -45,6 +45,7 @@ export const refreshToken = async () => {
   if (newToken) {
     localStorage.setItem("token", newToken);
     axios.defaults.headers.common.Authorization = `Bearer ${newToken}`;
+    API.defaults.headers.common.Authorization = `Bearer ${newToken}`;
   }
   return res;
 };

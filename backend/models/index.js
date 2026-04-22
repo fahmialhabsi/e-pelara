@@ -98,6 +98,9 @@ uniqueModels.forEach((model) => {
 
 console.log("Available models:", Object.keys(db));
 
+const { installTenantIsolation } = require("../lib/tenantSequelizeHooks");
+installTenantIsolation(sequelize, db);
+
 db.sequelize = sequelize;
 db.Sequelize = Sequelize;
 
