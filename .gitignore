@@ -31,3 +31,7 @@ Thumbs.db
 
 # Editor
 .vscode/
+
+# Pratinjau impor RPJMD (cache disk)
+backend/tmp/
+frontend/.env.production
