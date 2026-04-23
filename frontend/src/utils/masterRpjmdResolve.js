@@ -37,3 +37,33 @@ export function findMasterKegiatanRow(masterKegiatans, rpjmdKegiatan) {
     }) ?? null
   );
 }
+
+/** Pasangan transaksi RPJMD untuk satu baris master program (cocokkan kode). */
+export function findRpjmdProgramRowForMaster(programList, masterProgramRow) {
+  if (!masterProgramRow || !Array.isArray(programList) || !programList.length) {
+    return null;
+  }
+  const mk = normalizeProgramKodeForDisplay(
+    masterProgramRow.kode_program_full ?? masterProgramRow.kode_program,
+  );
+  if (!mk) return null;
+  return (
+    programList.find(
+      (p) => normalizeProgramKodeForDisplay(p.kode_program) === mk,
+    ) ?? null
+  );
+}
+
+/** Pasangan transaksi RPJMD untuk satu baris master kegiatan. */
+export function findRpjmdKegiatanRowForMaster(kegiatanList, masterKegiatanRow) {
+  if (!masterKegiatanRow || !Array.isArray(kegiatanList) || !kegiatanList.length) {
+    return null;
+  }
+  const mk = norm(
+    masterKegiatanRow.kode_kegiatan_full ?? masterKegiatanRow.kode_kegiatan,
+  );
+  if (!mk) return null;
+  return (
+    kegiatanList.find((k) => norm(k.kode_kegiatan) === mk) ?? null
+  );
+}

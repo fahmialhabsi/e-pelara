@@ -7,6 +7,8 @@ const {
   Tujuan,
   OpdPenanggungJawab,
   PeriodeRpjmd,
+  MasterSubKegiatan,
+  MasterKegiatan,
 } = require("../models");
 
 const { Op } = require("sequelize");
@@ -32,6 +34,125 @@ const {
 } = require("../utils/paguHelper");
 
 const MAX_LIMIT = 100;
+
+function parsePositiveIntLocal(val) {
+  if (val === undefined || val === null || val === "") return null;
+  const n = Number.parseInt(String(val).trim(), 10);
+  return Number.isInteger(n) && n >= 1 ? n : null;
+}
+
+/**
+ * Verifikasi DB: master_sub milik master_kegiatan; payload master_* tidak boleh kontra DB.
+ * Melengkapi assertSubKegiatanMasterPayload dengan kode MASTER_HIERARCHY_INVALID yang eksplisit.
+ * @returns {Promise<ReturnType<structuredErrorResponse>|null>}
+ */
+async function masterHierarchyCrossCheck(res, prep, reqBody) {
+  if (!prep || prep.input_mode !== "MASTER") return null;
+  const sid = parsePositiveIntLocal(prep.merged?.master_sub_kegiatan_id);
+  if (sid == null) return null;
+
+  const subRow = await MasterSubKegiatan.findByPk(sid, {
+    attributes: ["id", "master_kegiatan_id"],
+  });
+  if (!subRow) {
+    return structuredErrorResponse(res, 400, {
+      code: "MASTER_HIERARCHY_INVALID",
+      message:
+        "Sub kegiatan tidak sesuai dengan kegiatan: baris master_sub_kegiatan tidak ditemukan.",
+      field: "master_sub_kegiatan_id",
+      details: null,
+    });
+  }
+
+  const derivedKid = Number(subRow.master_kegiatan_id);
+  const bodyKid = parsePositiveIntLocal(
+    reqBody?.master_kegiatan_id ?? reqBody?.masterKegiatanId,
+  );
+  if (bodyKid != null && bodyKid !== derivedKid) {
+    return structuredErrorResponse(res, 400, {
+      code: "MASTER_HIERARCHY_INVALID",
+      message:
+        "Sub kegiatan tidak sesuai dengan kegiatan: master_kegiatan_id tidak cocok dengan induk sub di basis data.",
+      field: "master_kegiatan_id",
+      details: null,
+    });
+  }
+
+  const bodyPid = parsePositiveIntLocal(
+    reqBody?.master_program_id ?? reqBody?.masterProgramId,
+  );
+  if (bodyPid != null) {
+    const kegRow = await MasterKegiatan.findByPk(derivedKid, {
+      attributes: ["id", "master_program_id"],
+    });
+    if (!kegRow || Number(kegRow.master_program_id) !== bodyPid) {
+      return structuredErrorResponse(res, 400, {
+        code: "MASTER_HIERARCHY_INVALID",
+        message:
+          "Sub kegiatan tidak sesuai dengan kegiatan: master_program_id tidak cocok dengan rantai master.",
+        field: "master_program_id",
+        details: null,
+      });
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Guard tambahan mode MASTER (tidak mengubah flow LEGACY).
+ * @returns {ReturnType<structuredErrorResponse>|null}
+ */
+function masterModeStructuredError(res, prep, reqBody) {
+  if (!prep || prep.input_mode !== "MASTER") return null;
+  const msid = prep.merged?.master_sub_kegiatan_id;
+  const msidNum = Number.parseInt(String(msid ?? ""), 10);
+  if (
+    msid == null ||
+    String(msid).trim() === "" ||
+    !Number.isInteger(msidNum) ||
+    msidNum < 1
+  ) {
+    return structuredErrorResponse(res, 400, {
+      code: "MASTER_SUB_REQUIRED",
+      message:
+        "Input mode MASTER wajib disertai master_sub_kegiatan_id yang valid (referensi sub kegiatan master).",
+      field: "master_sub_kegiatan_id",
+      details: null,
+    });
+  }
+  const kid = reqBody?.kegiatan_id;
+  if (
+    kid == null ||
+    String(kid).trim() === "" ||
+    Number.isNaN(Number.parseInt(String(kid), 10))
+  ) {
+    return structuredErrorResponse(res, 400, {
+      code: "MASTER_MAPPING_INCOMPLETE",
+      message:
+        "Mode MASTER memerlukan mapping RPJMD: kegiatan_id transaksi wajib diisi.",
+      field: "kegiatan_id",
+      details: null,
+    });
+  }
+  if (Object.prototype.hasOwnProperty.call(reqBody, "program_id")) {
+    const pid = reqBody.program_id;
+    if (
+      pid == null ||
+      String(pid).trim() === "" ||
+      Number.isNaN(Number.parseInt(String(pid), 10))
+    ) {
+      return structuredErrorResponse(res, 400, {
+        code: "MASTER_MAPPING_INCOMPLETE",
+        message:
+          "Mode MASTER: program_id transaksi tidak boleh kosong jika dikirim; isi mapping RPJMD yang valid.",
+        field: "program_id",
+        details: null,
+      });
+    }
+  }
+  return null;
+}
 
 const subKegiatanController = {
   async create(req, res) {
@@ -112,6 +233,12 @@ const subKegiatanController = {
           details: prep.details,
         });
       }
+
+      const masterErr = masterModeStructuredError(res, prep, req.body);
+      if (masterErr) return masterErr;
+
+      const hierErr = await masterHierarchyCrossCheck(res, prep, req.body);
+      if (hierErr) return hierErr;
 
       console.log("[ENFORCEMENT]", {
         mode: modeEffective,
@@ -509,6 +636,12 @@ const subKegiatanController = {
           details: prep.details,
         });
       }
+
+      const masterErrUpd = masterModeStructuredError(res, prep, req.body);
+      if (masterErrUpd) return masterErrUpd;
+
+      const hierErrUpd = await masterHierarchyCrossCheck(res, prep, req.body);
+      if (hierErrUpd) return hierErrUpd;
 
       console.log("[ENFORCEMENT]", {
         mode: modeEffective,

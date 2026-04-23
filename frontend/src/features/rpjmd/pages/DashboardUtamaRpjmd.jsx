@@ -15,6 +15,7 @@ import {
   BsBuildings,
   BsListUl,
   BsFileEarmarkText,
+  BsCloudDownload,
 } from "react-icons/bs";
 
 import {
@@ -80,6 +81,7 @@ import RpjmdDokumenImporPanel from "@/features/rpjmd/components/RpjmdDokumenImpo
 import RpjmdMonitoringIndikator from "@/features/rpjmd/pages/RpjmdMonitoringIndikator";
 import RpjmdMonitoringOPD from "@/features/rpjmd/pages/RpjmdMonitoringOPD";
 import RpjmdMonitoringHeatmap from "@/features/rpjmd/pages/RpjmdMonitoringHeatmap";
+import RpjmdBulkMasterImportPage from "@/features/rpjmd/pages/RpjmdBulkMasterImportPage";
 import {
   extractListData,
   extractListMeta,
@@ -152,6 +154,11 @@ const groupedMenuList = [
         key: "sub_kegiatan",
         icon: <BsLayers size={18} />,
         label: "Sub Kegiatan",
+      },
+      {
+        key: "bulk_master_import_rpjmd",
+        icon: <BsCloudDownload size={18} />,
+        label: "Impor massal (master → RPJMD)",
       },
     ],
   },
@@ -603,6 +610,8 @@ export default function DashboardUtamaRpjmd() {
         return <SubKegiatanForm />;
       case "sub_kegiatan_list":
         return <SubKegiatanList />;
+      case "bulk_master_import_rpjmd":
+        return <RpjmdBulkMasterImportPage />;
       case "indikator":
         return <Indikator />;
       case "indikator_khusus_list":

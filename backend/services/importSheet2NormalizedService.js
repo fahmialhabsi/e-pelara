@@ -21,7 +21,86 @@ const REQUIRED_FIELDS = [
 
 function trimStr(v) {
   if (v === null || v === undefined) return "";
+  /* Nilai tanggal dari SheetJS (cellDates) membuat kode seperti 01.02.02 jadi Date → "1/2/02". */
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return "";
   return String(v).trim();
+}
+
+/**
+ * Titik sebagai pemisah rekening.
+ * Jangan ganti slash secara membabi buta: "1/2/02" (tanggal) jadi "1.2.02" salah vs "01.02.02".
+ */
+function normalizeDottedKodeFull(s) {
+  const t = trimStr(s);
+  if (!t) return "";
+  if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(t)) return "";
+  return t.replace(/\//g, ".");
+}
+
+function pad2Seg(v) {
+  const s = trimStr(v);
+  if (!s) return "";
+  const n = parseInt(s, 10);
+  if (!Number.isFinite(n) || String(n) !== s.replace(/^0+/, "") || s === "0")
+    return s;
+  return String(n).padStart(2, "0");
+}
+
+/**
+ * Pakai kolom *full* dari CSV bila terisi; hanya jika kosong, turunkan dari segmen dengan pemisah titik.
+ */
+function deriveFullCodesIfEmpty(r) {
+  const out = { ...r };
+  if (!out.kode_program_full && out.kode_urusan !== "" && out.kode_bidang_urusan !== "" && out.kode_program !== "") {
+    out.kode_program_full = [pad2Seg(out.kode_urusan), pad2Seg(out.kode_bidang_urusan), pad2Seg(out.kode_program)].join(".");
+  }
+  const kegSeg = trimStr(out.kode_kegiatan);
+  if (!out.kode_kegiatan_full && out.kode_program_full && kegSeg) {
+    out.kode_kegiatan_full = `${out.kode_program_full}.${kegSeg}`;
+  }
+  const subSeg = trimStr(out.kode_sub_kegiatan);
+  if (!out.kode_sub_kegiatan_full && out.kode_kegiatan_full && subSeg !== "") {
+    const last = /^\d+$/.test(subSeg) ? subSeg.padStart(4, "0") : subSeg;
+    out.kode_sub_kegiatan_full = `${out.kode_kegiatan_full}.${last}`;
+  }
+  return out;
+}
+
+const __sheet2DebugOnce = new Set();
+
+function debugLogRowIfRequested(rawRow, normalizedRow, index) {
+  const n = parseInt(process.env.IMPORT_SHEET2_DEBUG_ROW || "", 10);
+  if (!Number.isFinite(n) || n < 2) return;
+  const rowIndex = index + 2;
+  if (rowIndex !== n) return;
+  if (__sheet2DebugOnce.has(rowIndex)) return;
+  __sheet2DebugOnce.add(rowIndex);
+  const keys = [
+    "kode_program_full",
+    "kode_kegiatan_full",
+    "kode_sub_kegiatan_full",
+    "kode_program",
+    "kode_kegiatan",
+    "kode_sub_kegiatan",
+  ];
+  const pick = (o) =>
+    keys.reduce((acc, k) => {
+      acc[k] = o[k];
+      return acc;
+    }, {});
+  // eslint-disable-next-line no-console
+  console.error(
+    "[IMPORT_SHEET2_DEBUG_ROW]",
+    JSON.stringify(
+      {
+        spreadsheetRow: rowIndex,
+        raw: pick(rawRow || {}),
+        normalized: pick(normalizedRow || {}),
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 /**
@@ -72,9 +151,17 @@ function resolveSourcePath(options) {
 
 /**
  * Baca baris dari .xlsx / .xls / .csv (SheetJS).
+ * CSV: baca buffer + raw:true — jika tidak, nilai "01.02.02" di-parse sebagai tanggal → "1/2/02".
  */
 function readRowsFromFile(filePath, sheetName = DEFAULT_SHEET) {
-  const wb = XLSX.readFile(filePath, { cellDates: true, raw: false });
+  const isCsv = filePath.toLowerCase().endsWith(".csv");
+  const wb = isCsv
+    ? XLSX.read(fs.readFileSync(filePath), {
+        type: "buffer",
+        cellDates: false,
+        raw: true,
+      })
+    : XLSX.readFile(filePath, { cellDates: false, raw: false });
   let name = sheetName;
   if (!wb.SheetNames.includes(name)) {
     if (wb.SheetNames.length === 1) {
@@ -86,7 +173,10 @@ function readRowsFromFile(filePath, sheetName = DEFAULT_SHEET) {
     }
   }
   const sheet = wb.Sheets[name];
-  const raw = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+  const raw = XLSX.utils.sheet_to_json(sheet, {
+    defval: "",
+    raw: isCsv,
+  });
   return raw.map((r) => normalizeRowKeys(r));
 }
 
@@ -111,8 +201,13 @@ function normalizeBusinessRow(row, index) {
   ]) {
     o[f] = trimStr(row[f]);
   }
-  o._rowIndex = index + 2;
-  return o;
+  o.kode_program_full = normalizeDottedKodeFull(o.kode_program_full);
+  o.kode_kegiatan_full = normalizeDottedKodeFull(o.kode_kegiatan_full);
+  o.kode_sub_kegiatan_full = normalizeDottedKodeFull(o.kode_sub_kegiatan_full);
+  const merged = deriveFullCodesIfEmpty(o);
+  merged._rowIndex = index + 2;
+  debugLogRowIfRequested(row, merged, index);
+  return merged;
 }
 
 function validateParentChild(row) {
@@ -422,6 +517,8 @@ async function importSheet2Normalized(options = {}) {
   if (!sequelize || !models) {
     throw new Error("importSheet2Normalized membutuhkan sequelize dan models");
   }
+
+  __sheet2DebugOnce.clear();
 
   const datasetKey = options.datasetKey || DEFAULT_DATASET_KEY;
   const sheetName = options.sheetName || DEFAULT_SHEET;

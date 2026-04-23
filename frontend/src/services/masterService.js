@@ -1,11 +1,22 @@
 /**
  * API master referensi (Program → Kegiatan → Sub Kegiatan → Indikator).
- * - Cache per datasetKey + parent id (mengurangi request berulang).
- * - Siap regulasi: datasetKey = pemisah sementara hingga regulasi_versi di backend.
+ * - Cache modul: Map per dataset + parent id (program / kegiatan / sub); hindari refetch berulang.
+ * - invalidateMasterCache() untuk kosongkan setelah impor ulang / ganti dataset.
  */
 import api from "./api";
 import { extractListData } from "../utils/apiResponse";
-import { formatProgramOptionLabel } from "../utils/programDisplayLabel.js";
+import {
+  normalizeProgramKodeForDisplay,
+} from "../utils/programDisplayLabel.js";
+
+/** Default dataset untuk GET /api/master-program (sinkron backend masterReferensiController). */
+export const MASTER_REFERENSI_DATASET_DEFAULT = "kepmendagri_provinsi_900_2024";
+
+/** Label badge UI untuk mode input dari referensi Kepmendagri. */
+export const MASTER_REFERENSI_BADGE_LABEL =
+  "MASTER · Kepmendagri 900/2024";
+
+export const MANUAL_INPUT_BADGE_LABEL = "MANUAL";
 
 const withSignal = (config = {}, signal) =>
   signal ? { ...config, signal } : config;
@@ -64,22 +75,41 @@ export function invalidateMasterCache(scope = {}) {
 
 export const SNAPSHOT_LABEL_SEP = " - ";
 
+/** Dropdown master: selalu kode + pemisah + nama (tidak nama saja). */
 export function formatMasterProgramLabel(row, sep = " - ") {
-  return formatProgramOptionLabel(row, sep);
+  if (!row) return "";
+  const rawK =
+    row.kode_program_full != null && String(row.kode_program_full).trim() !== ""
+      ? row.kode_program_full
+      : row.kode_program;
+  const k = normalizeProgramKodeForDisplay(rawK || "");
+  const n = String(row.nama_program ?? "").trim();
+  if (k && n) return `${k}${sep}${n}`;
+  if (k) return k;
+  if (n) return `[${row.id ?? "?"}]${sep}${n}`;
+  return String(row.id ?? "");
 }
 
-export function formatMasterKegiatanLabel(row, sep = " — ") {
+export function formatMasterKegiatanLabel(row, sep = " - ") {
   if (!row) return "";
-  const k = row.kode_kegiatan_full || "";
-  const n = row.nama_kegiatan || "";
-  return [k, n].filter(Boolean).join(sep).trim() || String(row.id ?? "");
+  const k = String(row.kode_kegiatan_full ?? row.kode_kegiatan ?? "").trim();
+  const n = String(row.nama_kegiatan ?? "").trim();
+  if (k && n) return `${k}${sep}${n}`;
+  if (k) return k;
+  if (n) return `[${row.id ?? "?"}]${sep}${n}`;
+  return String(row.id ?? "");
 }
 
-export function formatMasterSubKegiatanLabel(row, sep = " — ") {
+export function formatMasterSubKegiatanLabel(row, sep = " - ") {
   if (!row) return "";
-  const k = row.kode_sub_kegiatan_full || "";
-  const n = row.nama_sub_kegiatan || "";
-  return [k, n].filter(Boolean).join(sep).trim() || String(row.id ?? "");
+  const k = String(
+    row.kode_sub_kegiatan_full ?? row.kode_sub_kegiatan ?? "",
+  ).trim();
+  const n = String(row.nama_sub_kegiatan ?? "").trim();
+  if (k && n) return `${k}${sep}${n}`;
+  if (k) return k;
+  if (n) return `[${row.id ?? "?"}]${sep}${n}`;
+  return String(row.id ?? "");
 }
 
 /** Label untuk audit / export / snapshot transaksi (pemisah " - "). */
@@ -102,15 +132,23 @@ export function snapshotSubKegiatanLabel(row) {
  */
 export async function fetchMasterPrograms(datasetKey, opts = {}) {
   const { signal, bypassCache, allDatasets } = opts;
-  const key = allDatasets ? "__all_datasets__" : programCacheKey(datasetKey);
+  const explicit =
+    datasetKey != null && String(datasetKey).trim() !== ""
+      ? String(datasetKey).trim()
+      : null;
+  const requestDataset = allDatasets
+    ? MASTER_REFERENSI_DATASET_DEFAULT
+    : (explicit ?? MASTER_REFERENSI_DATASET_DEFAULT);
+  const cacheKeyStr = allDatasets
+    ? `_retry_${explicit ?? "none"}`
+    : (explicit ?? MASTER_REFERENSI_DATASET_DEFAULT);
+  const key = programCacheKey(cacheKeyStr);
   if (!bypassCache && cache.program.has(key)) {
     return { data: cloneRows(cache.program.get(key)), warning: undefined };
   }
 
-  const params = {};
-  if (allDatasets) params.allDatasets = "1";
-  else if (datasetKey) params.datasetKey = datasetKey;
-  const res = await api.get("/master/program", withSignal({ params }, signal));
+  const params = { dataset_key: requestDataset };
+  const res = await api.get("/master-program", withSignal({ params }, signal));
   const rows = extractListData(res.data);
   const warning = res.data?.meta?.warning;
   if (!signal?.aborted) {
@@ -129,14 +167,17 @@ export async function fetchMasterKegiatanByProgram(programId, opts = {}) {
     return { data: [], warning: undefined };
   }
   const { datasetKey, signal, bypassCache } = opts;
-  const ckey = kegiatanCacheKey(datasetKey, programId);
+  const dkResolved =
+    datasetKey != null && String(datasetKey).trim() !== ""
+      ? String(datasetKey).trim()
+      : MASTER_REFERENSI_DATASET_DEFAULT;
+  const ckey = kegiatanCacheKey(dkResolved, programId);
   if (!bypassCache && cache.kegiatan.has(ckey)) {
     return { data: cloneRows(cache.kegiatan.get(ckey)), warning: undefined };
   }
 
-  const params = { programId };
-  if (datasetKey) params.datasetKey = datasetKey;
-  const res = await api.get("/master/kegiatan", withSignal({ params }, signal));
+  const params = { program_id: programId, dataset_key: dkResolved };
+  const res = await api.get("/master-kegiatan", withSignal({ params }, signal));
   const rows = extractListData(res.data);
   const warning = res.data?.meta?.warning;
   if (!signal?.aborted && !warning) {
@@ -150,14 +191,17 @@ export async function fetchMasterSubKegiatanByKegiatan(kegiatanId, opts = {}) {
     return { data: [], warning: undefined };
   }
   const { datasetKey, signal, bypassCache } = opts;
-  const ckey = subCacheKey(datasetKey, kegiatanId);
+  const dkResolved =
+    datasetKey != null && String(datasetKey).trim() !== ""
+      ? String(datasetKey).trim()
+      : MASTER_REFERENSI_DATASET_DEFAULT;
+  const ckey = subCacheKey(dkResolved, kegiatanId);
   if (!bypassCache && cache.subKegiatan.has(ckey)) {
     return { data: cloneRows(cache.subKegiatan.get(ckey)), warning: undefined };
   }
 
-  const params = { kegiatanId };
-  if (datasetKey) params.datasetKey = datasetKey;
-  const res = await api.get("/master/sub-kegiatan", withSignal({ params }, signal));
+  const params = { kegiatan_id: kegiatanId, dataset_key: dkResolved };
+  const res = await api.get("/master-sub-kegiatan", withSignal({ params }, signal));
   const rows = extractListData(res.data);
   const warning = res.data?.meta?.warning;
   if (!signal?.aborted && !warning) {

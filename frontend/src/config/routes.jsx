@@ -55,6 +55,7 @@ import IndikatorTujuanListPage from "@/features/rpjmd/pages/IndikatorTujuanListP
 import RpjmdMonitoringIndikator from "@/features/rpjmd/pages/RpjmdMonitoringIndikator";
 import RpjmdMonitoringOPD from "@/features/rpjmd/pages/RpjmdMonitoringOPD";
 import RpjmdMonitoringHeatmap from "@/features/rpjmd/pages/RpjmdMonitoringHeatmap";
+import RpjmdBulkMasterImportPage from "@/features/rpjmd/pages/RpjmdBulkMasterImportPage";
 import CascadingDetail from "@/pages/CascadingDetail";
 
 const routes = [
@@ -275,6 +276,11 @@ const routes = [
     path: "/sub-kegiatan-list",
     element: <SubKegiatanList />,
     role: ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"],
+  },
+  {
+    path: "/rpjmd/bulk-master-import",
+    element: <RpjmdBulkMasterImportPage />,
+    role: ["SUPER_ADMIN", "ADMINISTRATOR"],
   },
 
   // Redirect OPD

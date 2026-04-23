@@ -9,6 +9,7 @@ const fs = require("fs");
 const cookieParser = require("cookie-parser");
 const logger = require("./utils/logger");
 const connectRedis = require("./utils/redisClient"); // versi retry otomatis
+const masterReferensiRoutes = require("./routes/masterReferensiRoutes");
 
 // === HUBUNGKAN REDIS CLIENT ===
 (async () => {
@@ -130,6 +131,8 @@ const targetsRoutes = require("./routes/targetsRoutes");
 const rpjmdRoutes = require("./routes/rpjmdRoutes");
 const rpjmdImportRoutes = require("./routes/rpjmdImportRoutes");
 const rpjmdMonitoringRoutes = require("./routes/rpjmdMonitoringRoutes");
+const rpjmdBulkFromMasterRoutes = require("./routes/rpjmdBulkFromMasterRoutes");
+const rpjmdBackfillRoutes = require("./routes/rpjmdBackfillRoutes");
 const realisasiRoutes = require("./routes/realisasiIndikatorRoutes");
 const evaluasiRoutes = require("./routes/evaluasiRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
@@ -280,6 +283,8 @@ app.use("/api/targets", targetsRoutes);
 app.use("/api/rpjmd", rpjmdRoutes);
 app.use("/api/rpjmd-import", rpjmdImportRoutes);
 app.use("/api/rpjmd-monitoring", rpjmdMonitoringRoutes);
+app.use("/api/rpjmd/bulk-from-master", rpjmdBulkFromMasterRoutes);
+app.use("/api/rpjmd/backfill", rpjmdBackfillRoutes);
 app.use("/api/realisasi-indikator", realisasiRoutes);
 app.use("/api/evaluasi", evaluasiRoutes);
 app.use("/api", dashboardRoutes);
@@ -388,6 +393,7 @@ app.use("/api/v1/migration", migrationRoutes);
 app.use("/api/v1/app-policy", appPolicyRoutes);
 app.use("/api/regulasi", regulasiRoutes);
 app.use("/api", lkAccountingRoutes);
+app.use("/api", masterReferensiRoutes);
 
 app.use((err, req, res, next) => {
   console.error("🔥 ERROR CAUGHT:", err.stack);
