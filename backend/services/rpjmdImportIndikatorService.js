@@ -1408,6 +1408,7 @@ async function updateIndikatorProgram(periodeId, id, body, opts = {}) {
     "tahun",
     ...TARGET_KEYS,
   ]);
+  Object.assign(data, pickIndikatorTujuanExtra(body));
   if (body.program_id !== undefined) data.program_id = toInt(body.program_id) || null;
   if (body.indikator_sasaran_id !== undefined) {
     const sid = toInt(body.indikator_sasaran_id);
@@ -1436,6 +1437,37 @@ async function upsertIndikatorProgramImport(periodeId, body, opts = {}) {
   const pid = assertPeriodeId(periodeId);
   const kode = str(body?.kode_indikator, 100);
   if (!kode || !String(kode).trim()) {
+    // Idempotent import: bila kode tidak diisi (auto-generate), coba update baris existing berbasis parent + nama indikator.
+    const core = pickIndikatorCore(body);
+    const variants = jenisDokumenVariants(core.jenis_dokumen);
+    const indSid = toInt(body.indikator_sasaran_id);
+    const nama = str(body?.nama_indikator, 65535);
+    if (indSid && nama && String(nama).trim()) {
+      const foundByName = await IndikatorProgram.findOne({
+        where: {
+          sasaran_id: indSid,
+          nama_indikator: String(nama).trim(),
+          jenis_dokumen: { [Op.in]: variants },
+          tahun: core.tahun,
+        },
+        transaction: tx,
+        subQuery: false,
+        include: [
+          {
+            model: IndikatorSasaran,
+            as: "indikatorSasaran",
+            attributes: ["id", "periode_id"],
+            where: { periode_id: pid },
+            required: true,
+          },
+        ],
+        order: [["id", "ASC"]],
+      });
+      if (foundByName) {
+        const row0 = await updateIndikatorProgram(periodeId, foundByName.id, body, opts);
+        return attachImportMeta(row0, "update", { matchedBy: "parent+nama" });
+      }
+    }
     const row = await createIndikatorProgram(periodeId, body, opts);
     return attachImportMeta(row, "create");
   }
@@ -1622,7 +1654,9 @@ async function updateIndikatorKegiatan(periodeId, id, body, opts = {}) {
     "tahun",
     ...TARGET_KEYS,
   ]);
+  Object.assign(data, pickIndikatorTujuanExtra(body));
   data.tipe_indikator = "Proses";
+  if (body.penanggung_jawab !== undefined) data.penanggung_jawab = toInt(body.penanggung_jawab) || null;
   const mergedJenis = data.jenis_dokumen !== undefined ? data.jenis_dokumen : row.get("jenis_dokumen");
   const mergedKode = data.kode_indikator !== undefined ? data.kode_indikator : row.get("kode_indikator");
   if (data.kode_indikator !== undefined || data.jenis_dokumen !== undefined) {
@@ -1637,6 +1671,45 @@ async function upsertIndikatorKegiatanImport(periodeId, body, opts = {}) {
   const pid = assertPeriodeId(periodeId);
   const kode = str(body?.kode_indikator, 100);
   if (!kode || !String(kode).trim()) {
+    // Idempotent import: bila kode tidak diisi (auto-generate), coba update baris existing berbasis parent + nama indikator.
+    const core = pickIndikatorCore(body);
+    const variants = jenisDokumenVariants(core.jenis_dokumen);
+    const ipid = toInt(body.indikator_program_id);
+    const nama = str(body?.nama_indikator, 65535);
+    if (ipid && nama && String(nama).trim()) {
+      const foundByName = await IndikatorKegiatan.findOne({
+        where: {
+          indikator_program_id: ipid,
+          nama_indikator: String(nama).trim(),
+          jenis_dokumen: { [Op.in]: variants },
+          tahun: core.tahun,
+        },
+        transaction: tx,
+        subQuery: false,
+        include: [
+          {
+            model: IndikatorProgram,
+            as: "indikatorProgram",
+            required: true,
+            attributes: [],
+            include: [
+              {
+                model: IndikatorSasaran,
+                as: "indikatorSasaran",
+                attributes: ["id"],
+                where: { periode_id: pid },
+                required: true,
+              },
+            ],
+          },
+        ],
+        order: [["id", "ASC"]],
+      });
+      if (foundByName) {
+        const row0 = await updateIndikatorKegiatan(periodeId, foundByName.id, body, opts);
+        return attachImportMeta(row0, "update", { matchedBy: "parent+nama" });
+      }
+    }
     const row = await createIndikatorKegiatan(periodeId, body, opts);
     return attachImportMeta(row, "create");
   }
@@ -1721,6 +1794,7 @@ async function createIndikatorSubKegiatan(periodeId, body, opts = {}) {
   const allowed = ["Outcome", "Output", "Impact", "Process", "Input"];
   const tipe_indikator = allowed.includes(tipeRaw) ? tipeRaw : "Output";
   return runInOptionalTransaction(opts.transaction, async (tx) => {
+    const extra = pickIndikatorTujuanExtra(b);
     let sub_kegiatan_id = toInt(b.sub_kegiatan_id);
     if (!sub_kegiatan_id && toInt(b.kegiatan_id)) {
       const kid = toInt(b.kegiatan_id);
@@ -1802,6 +1876,7 @@ async function createIndikatorSubKegiatan(periodeId, body, opts = {}) {
     const row = await IndikatorSubKegiatan.create(
       {
         ...core,
+        ...extra,
         periode_id: pid,
         indikator_id: String(master.id),
         sub_kegiatan_id,
@@ -1811,6 +1886,7 @@ async function createIndikatorSubKegiatan(periodeId, body, opts = {}) {
         tujuan_id,
         misi_id,
         tipe_indikator: tipe_indikator,
+        penanggung_jawab: toInt(b.penanggung_jawab) || null,
       },
       { transaction: tx },
     );
@@ -1832,9 +1908,11 @@ async function updateIndikatorSubKegiatan(periodeId, id, body, opts = {}) {
     "tahun",
     ...TARGET_KEYS,
   ]);
+  Object.assign(data, pickIndikatorTujuanExtra(b));
   const tipe = str(b.tipe_indikator, 32);
   const allowed = ["Outcome", "Output", "Impact", "Process", "Input"];
   if (tipe) data.tipe_indikator = allowed.includes(tipe) ? tipe : "Output";
+  if (b.penanggung_jawab !== undefined) data.penanggung_jawab = toInt(b.penanggung_jawab) || null;
   const mergedJenis = data.jenis_dokumen !== undefined ? data.jenis_dokumen : row.get("jenis_dokumen");
   const mergedKode = data.kode_indikator !== undefined ? data.kode_indikator : row.get("kode_indikator");
   if (data.kode_indikator !== undefined || data.jenis_dokumen !== undefined) {
@@ -1865,6 +1943,28 @@ async function upsertIndikatorSubKegiatanImport(periodeId, body, opts = {}) {
   const pid = assertPeriodeId(periodeId);
   const kode = str(body?.kode_indikator, 100);
   if (!kode || !String(kode).trim()) {
+    // Idempotent import: bila kode tidak diisi (auto-generate), coba update baris existing berbasis sub_kegiatan_id + nama indikator.
+    const core = pickIndikatorCore(body);
+    const variants = jenisDokumenVariants(core.jenis_dokumen);
+    const skid = toInt(body.sub_kegiatan_id);
+    const nama = str(body?.nama_indikator, 65535);
+    if (skid && nama && String(nama).trim()) {
+      const foundByName = await IndikatorSubKegiatan.findOne({
+        where: {
+          sub_kegiatan_id: skid,
+          periode_id: pid,
+          nama_indikator: String(nama).trim(),
+          jenis_dokumen: { [Op.in]: variants },
+          tahun: core.tahun,
+        },
+        transaction: tx,
+        order: [["id", "ASC"]],
+      });
+      if (foundByName) {
+        const row0 = await updateIndikatorSubKegiatan(periodeId, foundByName.id, body, opts);
+        return attachImportMeta(row0, "update", { matchedBy: "sub_kegiatan_id+nama" });
+      }
+    }
     const row = await createIndikatorSubKegiatan(periodeId, body, opts);
     return attachImportMeta(row, "create");
   }

@@ -5,6 +5,7 @@ import {
 } from "@/utils/apiResponse";
 import {
   fetchIndikatorProgramOptions,
+  fetchIndikatorKegiatanByKegiatan,
   fetchIndikatorTujuanContext,
   fetchOpdPenanggungJawabDropdown,
   fetchRekomendasiAiStatus,
@@ -20,6 +21,9 @@ export default function useStepTemplateData({
   tahun,
   dokumen,
   programId,
+  kegiatanId,
+  indikatorProgramId,
+  kegiatanKodeIndikator,
   setFieldValue,
   penanggungJawabRef,
   options,
@@ -35,6 +39,7 @@ export default function useStepTemplateData({
   const [arahKebijakanOptions, setArahKebijakanOptions] = useState([]);
   const [subKegiatanOptions, setSubKegiatanOptions] = useState([]);
   const [programIndikatorOptions, setProgramIndikatorOptions] = useState([]);
+  const [kegiatanIndikatorOptions, setKegiatanIndikatorOptions] = useState([]);
   const [contextData, setContextData] = useState(null);
   const [loadingContext, setLoadingContext] = useState(false);
   const [penanggungJawabOptions, setPenanggungJawabOptions] = useState([]);
@@ -60,7 +65,13 @@ export default function useStepTemplateData({
   }, []);
 
   useEffect(() => {
-    if (stepKey !== "kegiatan" || !programId || !dokumen || !tahun) return;
+    if (
+      (stepKey !== "kegiatan" && stepKey !== "sub_kegiatan") ||
+      !programId ||
+      !dokumen ||
+      !tahun
+    )
+      return;
 
     const fetchIndikatorProgram = async () => {
       try {
@@ -70,10 +81,31 @@ export default function useStepTemplateData({
           tahun,
         });
 
-        const opts = normalizeListItems(res.data).map((item) => ({
-          value: item.id,
-          label: `${item.kode_indikator} - ${item.nama_indikator}`,
-        }));
+        const rows = normalizeListItems(res.data);
+
+        // Prioritaskan baris indikator program yang benar-benar terikat ke program (program_id != null).
+        // Baris legacy hasil impor sering program_id NULL tetapi masih ikut ter-return untuk kompatibilitas.
+        const hasConcrete = rows.some(
+          (r) => r?.program_id != null && String(r.program_id).trim() !== "",
+        );
+        const effective = hasConcrete
+          ? rows.filter(
+              (r) =>
+                r?.program_id != null && String(r.program_id).trim() !== "",
+            )
+          : rows;
+
+        const opts = effective
+          .map((item) => ({
+            value: item.id,
+            label: `${item.kode_indikator} - ${item.nama_indikator}`,
+            penanggung_jawab:
+              item?.penanggung_jawab != null &&
+              String(item.penanggung_jawab).trim() !== ""
+                ? String(item.penanggung_jawab)
+                : "",
+          }))
+          .filter((o) => o.value != null && String(o.value).trim() !== "");
 
         setProgramIndikatorOptions(opts);
       } catch (err) {
@@ -84,6 +116,88 @@ export default function useStepTemplateData({
 
     fetchIndikatorProgram();
   }, [stepKey, programId, dokumen, tahun]);
+
+  useEffect(() => {
+    // Step Sub Kegiatan: dropdown acuan indikator kegiatan (terikat ke indikator program + kegiatan).
+    if (stepKey !== "sub_kegiatan" || !dokumen || !tahun) {
+      setKegiatanIndikatorOptions([]);
+      return;
+    }
+    if (!kegiatanId || !indikatorProgramId) {
+      setKegiatanIndikatorOptions([]);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchIndikatorKegiatanByKegiatan(String(kegiatanId), {
+          indikator_program_id: String(indikatorProgramId),
+          jenis_dokumen: dokumen,
+          tahun,
+        });
+        if (cancelled) return;
+        const rows = normalizeListItems(res.data);
+
+        const snapKode =
+          kegiatanKodeIndikator != null
+            ? String(kegiatanKodeIndikator).trim()
+            : "";
+        const snapIsStd = snapKode.toUpperCase().startsWith("IPK-");
+
+        // Prefer indikator kegiatan yang sudah standar (IPK-...). Data impor lama sering masih IK-...
+        const hasStd = rows.some((r) =>
+          String(r?.kode_indikator ?? "")
+            .trim()
+            .toUpperCase()
+            .startsWith("IPK-")
+        );
+        const effectiveRows = hasStd
+          ? rows.filter((r) =>
+              String(r?.kode_indikator ?? "")
+                .trim()
+                .toUpperCase()
+                .startsWith("IPK-")
+            )
+          : rows;
+
+        const toStdKode = (raw) => {
+          const s = raw != null ? String(raw).trim() : "";
+          if (s.toUpperCase().startsWith("IPK-")) return s;
+          if (snapIsStd) return snapKode;
+          return s;
+        };
+
+        const opts = effectiveRows
+          .map((item) => ({
+            value: item.id,
+            label: `${toStdKode(item.kode_indikator)} - ${item.nama_indikator}`,
+            kode_indikator: toStdKode(item.kode_indikator),
+            penanggung_jawab:
+              item?.penanggung_jawab != null &&
+              String(item.penanggung_jawab).trim() !== ""
+                ? String(item.penanggung_jawab)
+                : "",
+          }))
+          .filter((o) => o.value != null && String(o.value).trim() !== "");
+        setKegiatanIndikatorOptions(opts);
+      } catch (err) {
+        console.error("Gagal fetch indikator kegiatan:", err);
+        if (!cancelled) setKegiatanIndikatorOptions([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    stepKey,
+    dokumen,
+    tahun,
+    kegiatanId,
+    indikatorProgramId,
+    kegiatanKodeIndikator,
+  ]);
 
   const fetchContext = useCallback(async (noTujuan) => {
     if (!noTujuan) return;
@@ -239,6 +353,7 @@ export default function useStepTemplateData({
     arahKebijakanOptions,
     subKegiatanOptions,
     programIndikatorOptions,
+    kegiatanIndikatorOptions,
     penanggungJawabOptions,
     contextData,
     loadingContext,

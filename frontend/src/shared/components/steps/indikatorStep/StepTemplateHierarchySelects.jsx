@@ -13,9 +13,11 @@ export default function StepTemplateHierarchySelects({
   programOptions,
   strategiOptions = [],
   arahKebijakanOptions = [],
+  arahKebijakanIndikatorOptions = [],
   subKegiatanOptions = [],
   kegiatanOptions,
   programIndikatorOptions,
+  kegiatanIndikatorOptions = [],
   contextData,
   loadingContext,
   handleTujuanChange,
@@ -84,20 +86,62 @@ export default function StepTemplateHierarchySelects({
       )}
 
       {stepKey === "program" && (
-        <BootstrapForm.Group className="mb-3">
-          <BootstrapForm.Label>Pilih Program</BootstrapForm.Label>
-          <Select
-            options={programOptions}
-            value={
-              programOptions.find(
-                (opt) => String(opt.value) === String(values.program_id ?? "")
-              ) || null
-            }
-            onChange={handleProgramChange}
-            placeholder="Pilih Program"
-            isClearable
-          />
-        </BootstrapForm.Group>
+        <>
+          {arahKebijakanIndikatorOptions.length > 0 && (
+            <BootstrapForm.Group className="mb-3">
+              <BootstrapForm.Label>Pilih Indikator Arah Kebijakan</BootstrapForm.Label>
+              <Select
+                options={arahKebijakanIndikatorOptions}
+                value={
+                  arahKebijakanIndikatorOptions.find(
+                    (opt) =>
+                      String(opt.value) ===
+                      String(values.program_ref_ar_kode_indikator ?? values.arah_kebijakan_kode_indikator ?? "")
+                  ) || null
+                }
+                onChange={(opt) => {
+                  const v = opt?.value ?? "";
+                  setFieldValue("program_ref_ar_kode_indikator", v);
+                  setFieldValue("arah_kebijakan_kode_indikator", v);
+                  const pj =
+                    opt?.penanggung_jawab != null &&
+                    String(opt.penanggung_jawab).trim() !== ""
+                      ? String(opt.penanggung_jawab)
+                      : values?.arah_kebijakan_penanggung_jawab != null &&
+                          String(values.arah_kebijakan_penanggung_jawab).trim() !== ""
+                        ? String(values.arah_kebijakan_penanggung_jawab)
+                        : "";
+                  if (pj) {
+                    // Auto isi OPD PJ program mengikuti indikator arah kebijakan yang dipilih.
+                    setFieldValue("penanggung_jawab", pj);
+                  }
+                  // Kode indikator program akan di-fetch ulang (next-kode) ketika basis berubah.
+                  setFieldValue("kode_indikator", "");
+                }}
+                placeholder="Pilih Indikator Arah Kebijakan (kode AR...)"
+                isClearable
+              />
+              <div className="mt-1 text-muted small">
+                Kode indikator Program akan dibentuk dari kode indikator Arah Kebijakan yang dipilih.
+              </div>
+            </BootstrapForm.Group>
+          )}
+
+          <BootstrapForm.Group className="mb-3">
+            <BootstrapForm.Label>Pilih Program</BootstrapForm.Label>
+            <Select
+              options={programOptions}
+              value={
+                programOptions.find(
+                  (opt) => String(opt.value) === String(values.program_id ?? "")
+                ) || null
+              }
+              onChange={handleProgramChange}
+              placeholder="Pilih Program"
+              isClearable
+            />
+          </BootstrapForm.Group>
+        </>
       )}
 
       {stepKey === "strategi" && (
@@ -136,21 +180,111 @@ export default function StepTemplateHierarchySelects({
       )}
 
       {stepKey === "sub_kegiatan" && (
-        <BootstrapForm.Group className="mb-3">
-          <BootstrapForm.Label>Pilih Sub Kegiatan</BootstrapForm.Label>
-          <Select
-            options={subKegiatanOptions}
-            value={
-              subKegiatanOptions.find(
-                (opt) =>
-                  String(opt.value) === String(values.sub_kegiatan_id ?? "")
-              ) || null
-            }
-            onChange={handleSubKegiatanChange}
-            placeholder="Pilih Sub Kegiatan"
-            isClearable
-          />
-        </BootstrapForm.Group>
+        <>
+          <BootstrapForm.Group className="mb-3">
+            <BootstrapForm.Label>Pilih Indikator Program (Acuan)</BootstrapForm.Label>
+            <Select
+              options={programIndikatorOptions}
+              value={
+                programIndikatorOptions.find(
+                  (opt) =>
+                    String(opt.value) === String(values.indikator_program_id ?? "")
+                ) || null
+              }
+              onChange={(opt) => {
+                setFieldValue("indikator_program_id", opt?.value ?? null);
+                setFieldValue("indikator_kegiatan_id", "");
+                // Kode indikator sub kegiatan dibentuk dari kode indikator kegiatan (IPK-...).
+                setFieldValue("kegiatan_kode_indikator", "");
+                setFieldValue("kode_indikator", "");
+                const pj = opt?.penanggung_jawab;
+                if (
+                  (values?.penanggung_jawab == null ||
+                    String(values.penanggung_jawab).trim() === "") &&
+                  pj != null &&
+                  String(pj).trim() !== ""
+                ) {
+                  setFieldValue("penanggung_jawab", String(pj));
+                }
+              }}
+              placeholder="Pilih indikator program sebagai acuan"
+              isClearable
+            />
+            <div className="mt-1 text-muted small">
+              Gunakan untuk memastikan indikator Sub Kegiatan terhubung konsisten ke indikator Program.
+            </div>
+          </BootstrapForm.Group>
+
+          <BootstrapForm.Group className="mb-3">
+            <BootstrapForm.Label>Pilih Indikator Kegiatan (Acuan)</BootstrapForm.Label>
+            <Select
+              options={kegiatanIndikatorOptions}
+              value={
+                kegiatanIndikatorOptions.find(
+                  (opt) =>
+                    String(opt.value) === String(values.indikator_kegiatan_id ?? "")
+                ) || null
+              }
+              onChange={(opt) => {
+                setFieldValue("indikator_kegiatan_id", opt?.value ?? "");
+                const kode = opt?.kode_indikator ?? "";
+                const kodeStr = kode != null ? String(kode).trim() : "";
+                // Basis IPSK wajib memakai kode indikator kegiatan pola "IPK-...".
+                // Data impor lama kadang masih memakai "IK-..."; dalam kasus itu, gunakan snapshot
+                // dari Step Kegiatan (values.kegiatan_kode_indikator) agar kode IPSK tetap benar.
+                const fallback =
+                  values?.kegiatan_kode_indikator != null
+                    ? String(values.kegiatan_kode_indikator).trim()
+                    : "";
+                const effectiveBase = kodeStr.toUpperCase().startsWith("IPK-")
+                  ? kodeStr
+                  : fallback;
+                if (effectiveBase) {
+                  setFieldValue("kegiatan_kode_indikator", effectiveBase);
+                } else {
+                  setFieldValue("kegiatan_kode_indikator", "");
+                }
+                // Trigger re-fetch next-kode IPSK-... ketika basis (kode kegiatan indikator) berubah.
+                setFieldValue("kode_indikator", "");
+                const pj = opt?.penanggung_jawab;
+                if (
+                  (values?.penanggung_jawab == null ||
+                    String(values.penanggung_jawab).trim() === "") &&
+                  pj != null &&
+                  String(pj).trim() !== ""
+                ) {
+                  setFieldValue("penanggung_jawab", String(pj));
+                }
+              }}
+              placeholder={
+                !values.indikator_program_id
+                  ? "Pilih indikator program terlebih dahulu"
+                  : "Pilih indikator kegiatan sebagai basis kode IPSK-..."
+              }
+              isDisabled={!values.indikator_program_id}
+              isClearable
+            />
+            <div className="mt-1 text-muted small">
+              Kode indikator Sub Kegiatan akan dibentuk dari kode indikator Kegiatan yang dipilih.
+            </div>
+          </BootstrapForm.Group>
+
+          <BootstrapForm.Group className="mb-3">
+            <BootstrapForm.Label>Pilih Sub Kegiatan</BootstrapForm.Label>
+            <Select
+              options={subKegiatanOptions}
+              value={
+                subKegiatanOptions.find(
+                  (opt) =>
+                    String(opt.value) === String(values.sub_kegiatan_id ?? "")
+                ) || null
+              }
+              onChange={handleSubKegiatanChange}
+              placeholder="Pilih Sub Kegiatan"
+              isClearable
+            />
+          </BootstrapForm.Group>
+        </>
       )}
 
       {stepKey === "kegiatan" && (
@@ -180,9 +314,18 @@ export default function StepTemplateHierarchySelects({
                     String(opt.value) === String(values.indikator_program_id)
                 ) || null
               }
-              onChange={(opt) =>
-                setFieldValue("indikator_program_id", opt?.value ?? null)
-              }
+              onChange={(opt) => {
+                setFieldValue("indikator_program_id", opt?.value ?? null);
+                const pj = opt?.penanggung_jawab;
+                if (
+                  (values?.penanggung_jawab == null ||
+                    String(values.penanggung_jawab).trim() === "") &&
+                  pj != null &&
+                  String(pj).trim() !== ""
+                ) {
+                  setFieldValue("penanggung_jawab", String(pj));
+                }
+              }}
               placeholder="Pilih Indikator Program"
               isClearable
             />

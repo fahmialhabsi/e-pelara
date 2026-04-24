@@ -20,6 +20,66 @@ const {
   fromSequelizeValidationError,
 } = require("../utils/validationErrorResponse");
 
+async function buildJenisDokumenClause({ model, jenis_dokumen, tahun }) {
+  const jd = String(jenis_dokumen ?? "").trim();
+  const tahunStr = String(tahun ?? "").trim();
+  if (!jd || !tahunStr) return jd;
+
+  const variants = new Set([jd, jd.toUpperCase(), jd.toLowerCase()]);
+
+  // Khusus RPJMD: data bisa tersimpan sebagai label periode (mis. "RPJMD 2025-2029").
+  if (jd.toUpperCase() === "RPJMD") {
+    const periode =
+      (await getPeriodeFromTahun(tahunStr)) || (await getPeriodeAktif());
+    const periodeNama = String(periode?.nama ?? "").trim();
+    if (
+      periodeNama &&
+      /^RPJMD\b/i.test(periodeNama) &&
+      periodeNama.toUpperCase() !== "RPJMD"
+    ) {
+      const count = await model.count({
+        where: { tahun: tahunStr, jenis_dokumen: periodeNama },
+      });
+      if (count > 0) variants.add(periodeNama);
+    }
+    variants.add("RPJMD");
+  }
+
+  return variants.size > 1 ? { [Op.in]: [...variants] } : jd;
+}
+
+function fillBaselineFallback(rows) {
+  for (const r of rows) {
+    if (!r) continue;
+    const baseline = r.baseline ?? r.get?.("baseline");
+    if (baseline == null || String(baseline).trim() === "") {
+      const c5 = r.capaian_tahun_5 ?? r.get?.("capaian_tahun_5");
+      if (c5 != null && String(c5).trim() !== "") {
+        if (typeof r.setDataValue === "function") r.setDataValue("baseline", c5);
+        else r.baseline = c5;
+      }
+    }
+  }
+}
+
+function fillPenanggungJawabFallbackFromPrograms(rows) {
+  for (const r of rows) {
+    if (!r) continue;
+    const pj = r.penanggung_jawab ?? r.get?.("penanggung_jawab");
+    if (pj != null && String(pj).trim() !== "") continue;
+    const programs = r.programs ?? r.get?.("programs");
+    if (!Array.isArray(programs) || programs.length === 0) continue;
+    for (const p of programs) {
+      const ppj = p?.penanggung_jawab ?? p?.get?.("penanggung_jawab");
+      if (ppj != null && String(ppj).trim() !== "") {
+        if (typeof r.setDataValue === "function") r.setDataValue("penanggung_jawab", ppj);
+        else r.penanggung_jawab = ppj;
+        break;
+      }
+    }
+  }
+}
+
 const applyDefaultsAndNormalize = (data, periode) => {
   if (!periode?.id && !data.periode_id) {
     throw new Error("Periode tidak ditemukan. Tidak dapat menyimpan data.");
@@ -175,12 +235,25 @@ exports.findAll = async (req, res) => {
   const limit = Math.min(parseInt(perPage), MAX_LIMIT),
     offset = (page - 1) * limit;
 
-  const where = { jenis_dokumen, tahun };
+  const tahunStr = String(tahun).trim();
+  const jenisClause = await buildJenisDokumenClause({
+    model: IndikatorSasaran,
+    jenis_dokumen,
+    tahun: tahunStr,
+  });
+
+  const where = { jenis_dokumen: jenisClause, tahun: tahunStr };
   if (sasaran_id) where.sasaran_id = sasaran_id;
 
   const { count, rows } = await IndikatorSasaran.findAndCountAll({
     where,
     include: [
+      {
+        model: OpdPenanggungJawab,
+        as: "opdPenanggungJawab",
+        attributes: ["id", "nama_opd", "nama_bidang_opd"],
+        required: false,
+      },
       {
         model: IndikatorProgram,
         as: "programs",
@@ -205,6 +278,10 @@ exports.findAll = async (req, res) => {
     order: [["id", "ASC"]],
     distinct: true,
   });
+
+  fillBaselineFallback(rows);
+  fillPenanggungJawabFallbackFromPrograms(rows);
+
   return res.json({
     status: "success",
     data: rows,
@@ -222,6 +299,12 @@ exports.findOne = async (req, res) => {
     const indikator = await IndikatorSasaran.findByPk(req.params.id, {
       attributes: { exclude: ["createdAt", "updatedAt"] },
       include: [
+        {
+          model: OpdPenanggungJawab,
+          as: "opdPenanggungJawab",
+          attributes: ["id", "nama_opd", "nama_bidang_opd"],
+          required: false,
+        },
         {
           model: IndikatorProgram,
           as: "programs",
@@ -242,6 +325,9 @@ exports.findOne = async (req, res) => {
         .status(404)
         .json({ status: "error", message: "Data tidak ditemukan." });
     }
+
+    fillBaselineFallback([indikator]);
+    fillPenanggungJawabFallbackFromPrograms([indikator]);
 
     return res.status(200).json({ status: "success", data: indikator });
   } catch (err) {
@@ -266,12 +352,24 @@ exports.findByTujuan = async (req, res) => {
     const offset = (parseInt(page, 10) - 1) * limit;
 
     const where = { tujuan_id };
-    if (tahun) where.tahun = tahun;
-    if (jenis_dokumen) where.jenis_dokumen = jenis_dokumen;
+    if (tahun) where.tahun = String(tahun).trim();
+    if (jenis_dokumen) {
+      where.jenis_dokumen = await buildJenisDokumenClause({
+        model: IndikatorSasaran,
+        jenis_dokumen,
+        tahun: where.tahun || tahun,
+      });
+    }
 
     const { count, rows } = await IndikatorSasaran.findAndCountAll({
       where,
       include: [
+        {
+          model: OpdPenanggungJawab,
+          as: "opdPenanggungJawab",
+          attributes: ["id", "nama_opd", "nama_bidang_opd"],
+          required: false,
+        },
         {
           model: IndikatorProgram,
           as: "programs",
@@ -291,6 +389,9 @@ exports.findByTujuan = async (req, res) => {
       order: [["id", "ASC"]],
       distinct: true,
     });
+
+    fillBaselineFallback(rows);
+    fillPenanggungJawabFallbackFromPrograms(rows);
 
     return res.json({
       status: "success",

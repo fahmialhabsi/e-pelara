@@ -3,6 +3,7 @@ import {
   fetchNextKodeIndikatorKegiatan,
   fetchNextKodeIndikatorProgram,
   fetchNextKodeIndikatorSasaran,
+  fetchNextKodeIndikatorSubKegiatan,
   fetchNextKodeIndikatorTujuan,
 } from "@/features/rpjmd/services/indikatorRpjmdApi";
 import { listLooksPersistedFromServer } from "@/shared/components/steps/wizardIndikatorStepUtils";
@@ -81,12 +82,23 @@ export default function useIndikatorStepEffects({
         const response = await fetchNextKodeIndikatorProgram(programId, {
           jenis_dokumen: dokumen,
           tahun,
+          // Basis kode indikator program mengikuti kode indikator Arah Kebijakan (jika tersedia).
+          arah_kebijakan_kode_indikator:
+            values?.program_ref_ar_kode_indikator ||
+            values?.arah_kebijakan_kode_indikator ||
+            "",
         });
         const { next_kode } = response.data;
         const list = Array.isArray(latestValuesRef.current.program)
           ? latestValuesRef.current.program
           : [];
-        if (listLooksPersistedFromServer(list)) return;
+        // Baris "referensi" legacy sering punya id numerik tapi program_id NULL.
+        // Di Step Program, baris seperti itu tidak boleh mengunci next-kode (harus tetap generate IP-...).
+        const hasConcreteFk = list.some((it) => {
+          const fk = it?.program_id ?? it?.programId;
+          return fk != null && String(fk).trim() !== "" && String(fk) !== "null";
+        });
+        if (listLooksPersistedFromServer(list) && hasConcreteFk) return;
         if (next_kode) {
           setFieldValue("kode_indikator", next_kode);
         }
@@ -94,7 +106,13 @@ export default function useIndikatorStepEffects({
         console.error("Gagal fetch next kode program:", error);
       }
     },
-    [setFieldValue, dokumen, tahun],
+    [
+      setFieldValue,
+      dokumen,
+      tahun,
+      values?.arah_kebijakan_kode_indikator,
+      values?.program_ref_ar_kode_indikator,
+    ],
   );
 
   const fetchNextKodeKegiatan = useCallback(
@@ -110,15 +128,53 @@ export default function useIndikatorStepEffects({
         const list = Array.isArray(latestValuesRef.current.kegiatan)
           ? latestValuesRef.current.kegiatan
           : [];
-        if (listLooksPersistedFromServer(list)) return;
+        // Jangan biarkan data legacy (mis. kode "IK-...") mengunci next-kode.
+        const hasConcreteKode = list.some((it) => {
+          const k = it?.kode_indikator ?? it?.kodeIndikator ?? "";
+          return String(k).trim().toUpperCase().startsWith("IPK-");
+        });
+        if (listLooksPersistedFromServer(list) && hasConcreteKode) return;
         if (next_kode) {
-          setFieldValue("kode_indikator", next_kode);
+          const raw = String(next_kode).trim();
+          // Fallback defensif: jika backend lama belum prefix IPK-, tambahkan.
+          const effective =
+            raw && !raw.toUpperCase().startsWith("IPK-") ? `IPK-${raw}` : raw;
+          setFieldValue("kode_indikator", effective);
         }
       } catch (error) {
         console.error("Gagal fetch next kode kegiatan:", error);
       }
     },
     [setFieldValue, dokumen, tahun],
+  );
+
+  const fetchNextKodeSubKegiatan = useCallback(
+    async (subKegiatanId) => {
+      if (!subKegiatanId || !dokumen || !tahun) return;
+
+      try {
+        const response = await fetchNextKodeIndikatorSubKegiatan(subKegiatanId, {
+          jenis_dokumen: dokumen,
+          tahun,
+          // Basis kode indikator sub kegiatan mengikuti kode indikator kegiatan (IPK-... -> IPSK-...).
+          indikator_kegiatan_kode_indikator:
+            values?.kegiatan_kode_indikator || values?.indikator_kegiatan_kode_indikator || "",
+        });
+        const { next_kode } = response.data;
+        const list = Array.isArray(latestValuesRef.current.sub_kegiatan)
+          ? latestValuesRef.current.sub_kegiatan
+          : [];
+        const hasConcreteKode = list.some((it) => {
+          const k = it?.kode_indikator ?? it?.kodeIndikator ?? "";
+          return String(k).trim().toUpperCase().startsWith("IPSK-");
+        });
+        if (listLooksPersistedFromServer(list) && hasConcreteKode) return;
+        if (next_kode) setFieldValue("kode_indikator", String(next_kode).trim());
+      } catch (error) {
+        console.error("Gagal fetch next kode sub kegiatan:", error);
+      }
+    },
+    [setFieldValue, dokumen, tahun, values?.kegiatan_kode_indikator, values?.indikator_kegiatan_kode_indikator],
   );
 
   useEffect(() => {
@@ -136,16 +192,49 @@ export default function useIndikatorStepEffects({
   useEffect(() => {
     if (stepKey !== "program" || !values.program_id) return;
     const list = Array.isArray(values.program) ? values.program : [];
-    if (listLooksPersistedFromServer(list)) return;
+    const hasConcreteFk = list.some((it) => {
+      const fk = it?.program_id ?? it?.programId;
+      return fk != null && String(fk).trim() !== "" && String(fk) !== "null";
+    });
+    if (listLooksPersistedFromServer(list) && hasConcreteFk) return;
     fetchNextKodeProgram(values.program_id);
-  }, [values.program_id, values.program, stepKey, fetchNextKodeProgram]);
+  }, [
+    values.program_id,
+    values.program,
+    values.program_ref_ar_kode_indikator,
+    values.arah_kebijakan_kode_indikator,
+    stepKey,
+    fetchNextKodeProgram,
+  ]);
 
   useEffect(() => {
     if (stepKey !== "kegiatan" || !values.kegiatan_id) return;
     const list = Array.isArray(values.kegiatan) ? values.kegiatan : [];
-    if (listLooksPersistedFromServer(list)) return;
+    const hasConcreteKode = list.some((it) => {
+      const k = it?.kode_indikator ?? it?.kodeIndikator ?? "";
+      return String(k).trim().toUpperCase().startsWith("IPK-");
+    });
+    if (listLooksPersistedFromServer(list) && hasConcreteKode) return;
     fetchNextKodeKegiatan(values.kegiatan_id);
   }, [values.kegiatan_id, values.kegiatan, stepKey, fetchNextKodeKegiatan]);
+
+  useEffect(() => {
+    if (stepKey !== "sub_kegiatan" || !values.sub_kegiatan_id) return;
+    const list = Array.isArray(values.sub_kegiatan) ? values.sub_kegiatan : [];
+    const hasConcreteKode = list.some((it) => {
+      const k = it?.kode_indikator ?? it?.kodeIndikator ?? "";
+      return String(k).trim().toUpperCase().startsWith("IPSK-");
+    });
+    if (listLooksPersistedFromServer(list) && hasConcreteKode) return;
+    fetchNextKodeSubKegiatan(values.sub_kegiatan_id);
+  }, [
+    values.sub_kegiatan_id,
+    values.sub_kegiatan,
+    values.kegiatan_kode_indikator,
+    values.indikator_kegiatan_kode_indikator,
+    stepKey,
+    fetchNextKodeSubKegiatan,
+  ]);
 
   useEffect(() => {
     /* Hanya step Tujuan: jangan fetch next-kode T… di Sasaran/Strategi/dll. */

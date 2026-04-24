@@ -15,6 +15,7 @@ const {
   Program,
   Kegiatan,
   SubKegiatan,
+  Rkpd,
   PeriodeRpjmd,
 } = require("../models");
 const {
@@ -27,6 +28,38 @@ const {
   recalcProgramTotal,
 } = require("../utils/paguHelper");
 
+let RKPD_COLUMN_SET_CACHE = null;
+async function getRkpdColumnSet() {
+  if (RKPD_COLUMN_SET_CACHE) return RKPD_COLUMN_SET_CACHE;
+  try {
+    const tableInfo = await sequelize.getQueryInterface().describeTable("rkpd");
+    RKPD_COLUMN_SET_CACHE = new Set(Object.keys(tableInfo || {}));
+  } catch {
+    RKPD_COLUMN_SET_CACHE = new Set();
+  }
+  return RKPD_COLUMN_SET_CACHE;
+}
+
+function pickKeys(obj, keySet) {
+  const out = {};
+  if (!obj || typeof obj !== "object") return out;
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === undefined) continue;
+    if (keySet.has(k)) out[k] = v;
+  }
+  return out;
+}
+
+async function buildRkpdPeriodeWhere(targetPeriodeId) {
+  const cols = await getRkpdColumnSet();
+  const clauses = [];
+  if (cols.has("periode_id")) clauses.push({ periode_id: targetPeriodeId });
+  if (cols.has("periode_rpjmd_id")) clauses.push({ periode_rpjmd_id: targetPeriodeId });
+  if (clauses.length === 1) return clauses[0];
+  if (clauses.length > 1) return { [Op.or]: clauses };
+  return {};
+}
+
 const SYNC_CAT = Object.freeze({
   READY: "ready",
   DUPLICATE_MAPPED: "duplicate_mapped",
@@ -34,9 +67,10 @@ const SYNC_CAT = Object.freeze({
   DUPLICATE_BY_NAME: "duplicate_by_name",
   HIERARCHY_CONFLICT: "hierarchy_conflict",
   OWNERSHIP_CONFLICT: "ownership_conflict",
-  LEGACY_SOURCE_UNMAPPED: "legacy_source_unmapped",
+  SOURCE_UNMAPPED: "source_unmapped",
   TARGET_PARENT_MISSING: "target_parent_missing",
   TARGET_PARENT_CONFLICT: "target_parent_conflict",
+  CROSS_DOCUMENT_PROGRAM_SLOT: "cross_document_program_slot",
   CROSS_DOCUMENT_SUB_SLOT: "cross_document_sub_slot",
   FATAL_VALIDATION_ERROR: "fatal_validation_error",
 });
@@ -71,11 +105,61 @@ function summarizeCommitBlockedReasons(data) {
     messages.push(`${summary.error_row_count} baris error`);
   }
   const top_categories = Object.entries(cc)
-    .filter(([, v]) => v > 0 && v > 0)
+    .filter(([, v]) => v > 0)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
-    .map(([category, count]) => ({ category, count }));
+    .map(([category, count]) => ({
+      category,
+      label: syncCategoryLabel(category),
+      next_action: syncNextAction(category),
+      count,
+    }));
   return { messages, top_categories };
+}
+
+function syncCategoryLabel(category) {
+  const m = {
+    ready: "Siap diproses",
+    duplicate_mapped: "Duplikat yang sudah termapping",
+    duplicate_by_code: "Kode yang sama sudah ada di target",
+    duplicate_by_name: "Nama serupa sudah ada di target",
+    hierarchy_conflict: "Struktur parent-child tidak sesuai",
+    ownership_conflict: "Konteks OPD tidak sesuai",
+    source_unmapped: "Data sumber belum terhubung ke master",
+    target_parent_missing: "Parent tujuan belum tersedia",
+    target_parent_conflict: "Parent tujuan bertentangan dengan mapping sumber",
+    cross_document_program_slot:
+      "Slot program lintas dokumen sudah dipakai",
+    cross_document_sub_slot: "Slot sub kegiatan lintas dokumen sudah dipakai",
+    fatal_validation_error: "Validasi fatal",
+  };
+  return m[category] || category;
+}
+
+function syncNextAction(category) {
+  const m = {
+    source_unmapped:
+      "Lakukan auto mapping/backfill terlebih dahulu, lalu jalankan preview ulang.",
+    target_parent_missing:
+      "Aktifkan opsi pembuatan parent tujuan atau buat parent tujuan secara manual.",
+    target_parent_conflict:
+      "Periksa kesesuaian parent tujuan dan mapping master sebelum commit.",
+    hierarchy_conflict:
+      "Periksa struktur parent sumber dan target agar berada pada cabang yang sama.",
+    ownership_conflict:
+      "Periksa filter OPD dan nonaktifkan validasi OPD ketat bila tidak diperlukan.",
+    duplicate_by_name:
+      "Periksa data target yang memiliki nama serupa, lalu putuskan apakah perlu merge manual.",
+    duplicate_by_code:
+      "Periksa data target dengan kode yang sama, lalu hindari insert ganda.",
+    cross_document_program_slot:
+      "Gunakan periode target berbeda atau rapikan kode program lintas dokumen.",
+    cross_document_sub_slot:
+      "Gunakan periode target berbeda atau rapikan kode/nama sub lintas dokumen.",
+    fatal_validation_error:
+      "Selesaikan validasi fatal pada preview sebelum commit.",
+  };
+  return m[category] || "Tinjau detail preview sebelum melanjutkan commit.";
 }
 
 function parsePositiveInt(v) {
@@ -156,22 +240,32 @@ function classifySubCollision(existing, srcSub, skipDup, matchField = "kode") {
           category: SYNC_CAT.DUPLICATE_MAPPED,
           severity: SEVERITY.WARNING,
           action: ACTION.SKIP,
-          reason: "Sub RKPD sudah ada dengan master_sub_kegiatan_id yang sama.",
+          reason:
+            matchField === "nama"
+              ? "Sub RKPD sudah ada (nama sama) dengan master_sub_kegiatan_id yang sama."
+              : "Sub RKPD sudah ada dengan master_sub_kegiatan_id yang sama.",
         }),
       };
     }
     const sev = skipDup ? SEVERITY.WARNING : SEVERITY.ERROR;
     const act = skipDup ? ACTION.SKIP : ACTION.FAIL;
+    const cat =
+      matchField === "nama"
+        ? SYNC_CAT.DUPLICATE_BY_NAME
+        : SYNC_CAT.DUPLICATE_BY_CODE;
     return {
       status: skipDup ? "skipped" : "error",
       classification: buildClassification({
-        category: SYNC_CAT.DUPLICATE_BY_CODE,
+        category: cat,
         severity: sev,
         action: act,
         reason: skipDup
-          ? "Sub RKPD ada dengan kode sama tetapi master berbeda — dilewati (skip_duplicates)."
-          : "Sub RKPD ada dengan kode sama tetapi master berbeda.",
-        code: "sync_dup_sub_rkpd_code",
+          ? `Sub RKPD ada (${matchField} bentrok) tetapi master berbeda — dilewati (skip_duplicates).`
+          : `Sub RKPD ada (${matchField} bentrok) tetapi master berbeda.`,
+        code:
+          matchField === "nama"
+            ? "sync_dup_sub_rkpd_nama"
+            : "sync_dup_sub_rkpd_code",
       }),
     };
   }
@@ -183,7 +277,9 @@ function classifySubCollision(existing, srcSub, skipDup, matchField = "kode") {
       severity: SEVERITY.ERROR,
       action: ACTION.FAIL,
       reason:
-        "Kode sub sudah dipakai baris non-RKPD pada periode yang sama (unique periode+kode). Tidak dapat menambah baris RKPD tanpa konflik skema.",
+        matchField === "nama"
+          ? "Nama sub kegiatan target sudah dipakai dokumen non-RKPD pada periode yang sama."
+          : "Kode sub kegiatan target sudah dipakai dokumen non-RKPD pada periode yang sama.",
       code: "sync_sub_slot_occupied",
     }),
   };
@@ -234,6 +330,12 @@ function validateAndBuildContext(body) {
   const filterMasterProgramIds = Array.isArray(filters.master_program_ids)
     ? filters.master_program_ids.map((x) => parseInt(x, 10)).filter((n) => n >= 1)
     : [];
+  const filterMasterKegiatanIds = Array.isArray(filters.master_kegiatan_ids)
+    ? filters.master_kegiatan_ids.map((x) => parseInt(x, 10)).filter((n) => n >= 1)
+    : [];
+  const filterMasterSubKegiatanIds = Array.isArray(filters.master_sub_kegiatan_ids)
+    ? filters.master_sub_kegiatan_ids.map((x) => parseInt(x, 10)).filter((n) => n >= 1)
+    : [];
 
   return {
     ok: true,
@@ -245,6 +347,8 @@ function validateAndBuildContext(body) {
         kegiatan_ids: filterKegiatanIds,
         sub_kegiatan_ids: filterSubIds,
         master_program_ids: filterMasterProgramIds,
+        master_kegiatan_ids: filterMasterKegiatanIds,
+        master_sub_kegiatan_ids: filterMasterSubKegiatanIds,
       },
       options,
       opd_penanggung_jawab_id: opd_penanggung_jawab_id || null,
@@ -283,6 +387,9 @@ async function loadSourceTree(ctx) {
   if (ctx.filters.kegiatan_ids.length) {
     kegWhere.id = { [Op.in]: ctx.filters.kegiatan_ids };
   }
+  if (ctx.filters.master_kegiatan_ids?.length) {
+    kegWhere.master_kegiatan_id = { [Op.in]: ctx.filters.master_kegiatan_ids };
+  }
 
   const subWhere = {
     periode_id: ctx.source.periode_id,
@@ -291,6 +398,11 @@ async function loadSourceTree(ctx) {
   };
   if (ctx.filters.sub_kegiatan_ids.length) {
     subWhere.id = { [Op.in]: ctx.filters.sub_kegiatan_ids };
+  }
+  if (ctx.filters.master_sub_kegiatan_ids?.length) {
+    subWhere.master_sub_kegiatan_id = {
+      [Op.in]: ctx.filters.master_sub_kegiatan_ids,
+    };
   }
 
   return Program.unscoped().findAll({
@@ -326,6 +438,37 @@ async function findTargetProgram(ctx, srcProg) {
   });
 }
 
+async function findTargetProgramByName(ctx, srcProg) {
+  return Program.unscoped().findOne({
+    where: {
+      periode_id: ctx.target.periode_id,
+      tahun: ctx.target.tahun,
+      jenis_dokumen: { [Op.in]: jenisOrList("rkpd") },
+      nama_program: srcProg.nama_program,
+    },
+  });
+}
+
+async function findProgramAnyJenisByCode(ctx, kodeProgram) {
+  return Program.unscoped().findOne({
+    where: {
+      periode_id: ctx.target.periode_id,
+      kode_program: String(kodeProgram || "").trim(),
+    },
+    order: [["id", "ASC"]],
+  });
+}
+
+async function findProgramAnyJenisByName(ctx, namaProgram) {
+  return Program.unscoped().findOne({
+    where: {
+      periode_id: ctx.target.periode_id,
+      nama_program: String(namaProgram || "").trim(),
+    },
+    order: [["id", "ASC"]],
+  });
+}
+
 async function findTargetKegiatan(ctx, targetProgramId, srcKeg) {
   return Kegiatan.unscoped().findOne({
     where: {
@@ -335,6 +478,29 @@ async function findTargetKegiatan(ctx, targetProgramId, srcKeg) {
       jenis_dokumen: { [Op.in]: jenisOrList("rkpd") },
       kode_kegiatan: srcKeg.kode_kegiatan,
     },
+  });
+}
+
+async function findTargetKegiatanByName(ctx, targetProgramId, srcKeg) {
+  const where = {
+    periode_id: ctx.target.periode_id,
+    tahun: ctx.target.tahun,
+    jenis_dokumen: { [Op.in]: jenisOrList("rkpd") },
+    nama_kegiatan: srcKeg.nama_kegiatan,
+  };
+  if (targetProgramId != null) where.program_id = targetProgramId;
+  return Kegiatan.unscoped().findOne({ where, order: [["id", "ASC"]] });
+}
+
+async function findTargetKegiatanByNameAnyProgram(ctx, srcKeg) {
+  return Kegiatan.unscoped().findOne({
+    where: {
+      periode_id: ctx.target.periode_id,
+      tahun: ctx.target.tahun,
+      jenis_dokumen: { [Op.in]: jenisOrList("rkpd") },
+      nama_kegiatan: srcKeg.nama_kegiatan,
+    },
+    order: [["id", "ASC"]],
   });
 }
 
@@ -348,6 +514,11 @@ async function findSubAnyJenis(ctxTargetPeriode, kodeSub) {
 }
 
 async function buildPlans(ctx, programs) {
+  // Patch governance: RKPD adalah dokumen tahunan (tabel `rkpd`), bukan salinan struktur
+  // program/kegiatan/sub_kegiatan ke jenis_dokumen RKPD. Implementasi lama disisakan
+  // untuk referensi, tetapi tidak lagi dipakai.
+  return buildPlansRkpdRows(ctx, programs);
+
   const plans = [];
   const warnings = [];
   const errors = [];
@@ -366,7 +537,7 @@ async function buildPlans(ctx, programs) {
   for (const sp of programs) {
     if (ctx.options.strict_parent_mapping && sp.master_program_id == null) {
       const cl = buildClassification({
-        category: SYNC_CAT.LEGACY_SOURCE_UNMAPPED,
+        category: SYNC_CAT.SOURCE_UNMAPPED,
         severity: SEVERITY.ERROR,
         action: ACTION.FAIL,
         reason:
@@ -402,13 +573,94 @@ async function buildPlans(ctx, programs) {
     let tgtProg = await findTargetProgram(ctx, sp);
     let programAction = "use_existing";
     if (!tgtProg) {
+      const anyByCode = await findProgramAnyJenisByCode(ctx, sp.kode_program);
+      if (anyByCode && normJenisDoc(anyByCode.jenis_dokumen) !== "rkpd") {
+        const cl = buildClassification({
+          category: SYNC_CAT.CROSS_DOCUMENT_PROGRAM_SLOT,
+          severity: SEVERITY.ERROR,
+          action: ACTION.FAIL,
+          reason:
+            "Kode program target sudah dipakai dokumen non-RKPD pada periode yang sama.",
+          code: "sync_program_slot_code_occupied",
+        });
+        pushPlan({
+          entity_type: "program",
+          source_id: sp.id,
+          status: "error",
+          classification: cl,
+          reason: cl.reason,
+          sample: {
+            program_id: sp.id,
+            occupied_program_id: anyByCode.id,
+            occupied_jenis_dokumen: anyByCode.jenis_dokumen,
+          },
+        });
+        continue;
+      }
+
+      const rkpdByName = await findTargetProgramByName(ctx, sp);
+      if (rkpdByName) {
+        const sameMaster =
+          rkpdByName.master_program_id != null &&
+          sp.master_program_id != null &&
+          Number(rkpdByName.master_program_id) === Number(sp.master_program_id);
+        const severity = ctx.options.skip_duplicates ? SEVERITY.WARNING : SEVERITY.ERROR;
+        const action = ctx.options.skip_duplicates ? ACTION.SKIP : ACTION.FAIL;
+        const status = ctx.options.skip_duplicates ? "skipped" : "error";
+        const cl = buildClassification({
+          category: sameMaster ? SYNC_CAT.DUPLICATE_MAPPED : SYNC_CAT.DUPLICATE_BY_NAME,
+          severity,
+          action,
+          reason: sameMaster
+            ? "Nama program serupa sudah ada di target RKPD dengan master yang sama."
+            : "Nama program serupa sudah ada di target RKPD, tetapi kodenya berbeda.",
+          code: sameMaster
+            ? "sync_program_name_duplicate_mapped"
+            : "sync_program_name_duplicate_conflict",
+        });
+        pushPlan({
+          entity_type: "program",
+          source_id: sp.id,
+          status,
+          classification: cl,
+          reason: cl.reason,
+          sample: { program_id: sp.id, target_program_id: rkpdByName.id },
+        });
+        continue;
+      }
+
+      const anyByName = await findProgramAnyJenisByName(ctx, sp.nama_program);
+      if (anyByName && normJenisDoc(anyByName.jenis_dokumen) !== "rkpd") {
+        const cl = buildClassification({
+          category: SYNC_CAT.CROSS_DOCUMENT_PROGRAM_SLOT,
+          severity: SEVERITY.ERROR,
+          action: ACTION.FAIL,
+          reason:
+            "Nama program target sudah dipakai dokumen non-RKPD pada periode yang sama.",
+          code: "sync_program_slot_name_occupied",
+        });
+        pushPlan({
+          entity_type: "program",
+          source_id: sp.id,
+          status: "error",
+          classification: cl,
+          reason: cl.reason,
+          sample: {
+            program_id: sp.id,
+            occupied_program_id: anyByName.id,
+            occupied_jenis_dokumen: anyByName.jenis_dokumen,
+          },
+        });
+        continue;
+      }
+
       if (!ctx.options.allow_create_missing_parents) {
         const cl = buildClassification({
           category: SYNC_CAT.TARGET_PARENT_MISSING,
           severity: SEVERITY.ERROR,
           action: ACTION.FAIL,
           reason:
-            "Program RKPD belum ada untuk kode yang sama; allow_create_missing_parents tidak aktif.",
+            "Program tujuan belum tersedia. Aktifkan opsi 'Buat parent tujuan jika belum ada' atau buat program tujuan terlebih dahulu.",
           code: "sync_target_program_missing",
         });
         pushPlan({
@@ -464,7 +716,10 @@ async function buildPlans(ctx, programs) {
         }),
         reason: "Program RKPD existing",
         sample: { program_id: sp.id, target_program_id: tgtProg.id },
-        payload: { target_program_id: tgtProg.id },
+        payload: {
+          target_program_id: tgtProg.id,
+          source_program_id: sp.id,
+        },
       });
     } else {
       pushPlan({
@@ -505,7 +760,7 @@ async function buildPlans(ctx, programs) {
 
       if (ctx.options.strict_parent_mapping && sk.master_kegiatan_id == null) {
         const cl = buildClassification({
-          category: SYNC_CAT.LEGACY_SOURCE_UNMAPPED,
+          category: SYNC_CAT.SOURCE_UNMAPPED,
           severity: SEVERITY.ERROR,
           action: ACTION.FAIL,
           reason: "Kegiatan RPJMD belum memiliki master_kegiatan_id.",
@@ -529,12 +784,44 @@ async function buildPlans(ctx, programs) {
       let kegAction = tgtKeg ? "use_existing" : null;
 
       if (!tgtKeg) {
+        const byNameAny = await findTargetKegiatanByNameAnyProgram(ctx, sk);
+        if (byNameAny) {
+          const sameMaster =
+            byNameAny.master_kegiatan_id != null &&
+            sk.master_kegiatan_id != null &&
+            Number(byNameAny.master_kegiatan_id) === Number(sk.master_kegiatan_id);
+          const severity = ctx.options.skip_duplicates ? SEVERITY.WARNING : SEVERITY.ERROR;
+          const action = ctx.options.skip_duplicates ? ACTION.SKIP : ACTION.FAIL;
+          const status = ctx.options.skip_duplicates ? "skipped" : "error";
+          const cl = buildClassification({
+            category: sameMaster ? SYNC_CAT.DUPLICATE_MAPPED : SYNC_CAT.DUPLICATE_BY_NAME,
+            severity,
+            action,
+            reason: sameMaster
+              ? "Nama kegiatan serupa sudah ada di target RKPD dengan master yang sama."
+              : "Nama kegiatan serupa sudah ada di target RKPD, tetapi kodenya berbeda.",
+            code: sameMaster
+              ? "sync_kegiatan_name_duplicate_mapped"
+              : "sync_kegiatan_name_duplicate_conflict",
+          });
+          pushPlan({
+            entity_type: "kegiatan",
+            source_id: sk.id,
+            status,
+            classification: cl,
+            reason: cl.reason,
+            sample: { kegiatan_id: sk.id, target_kegiatan_id: byNameAny.id },
+          });
+          continue;
+        }
+
         if (!ctx.options.allow_create_missing_parents) {
           const cl = buildClassification({
             category: SYNC_CAT.TARGET_PARENT_MISSING,
             severity: SEVERITY.ERROR,
             action: ACTION.FAIL,
-            reason: "Kegiatan RKPD belum ada; allow_create_missing_parents tidak aktif.",
+            reason:
+              "Parent tujuan belum tersedia untuk kegiatan. Aktifkan opsi 'Buat parent tujuan jika belum ada' atau lengkapi parent tujuan terlebih dahulu.",
             code: "sync_target_kegiatan_missing",
           });
           pushPlan({
@@ -625,7 +912,7 @@ async function buildPlans(ctx, programs) {
       for (const sub of subs) {
         if (ctx.options.strict_parent_mapping && sub.master_sub_kegiatan_id == null) {
           const cl = buildClassification({
-            category: SYNC_CAT.LEGACY_SOURCE_UNMAPPED,
+            category: SYNC_CAT.SOURCE_UNMAPPED,
             severity: SEVERITY.ERROR,
             action: ACTION.FAIL,
             reason: "Sub RPJMD belum memiliki master_sub_kegiatan_id.",
@@ -642,18 +929,28 @@ async function buildPlans(ctx, programs) {
           continue;
         }
 
-        if (targetKegiatanId == null && kegAction === "create") {
-          /* kegiatan baru — sub mengikuti setelah kegiatan dibuat */
-        }
-
-        const existingSlot = await findSubAnyJenis(
+        let existingSlot = await findSubAnyJenis(
           ctx.target.periode_id,
           sub.kode_sub_kegiatan,
         );
+        let matchField = "kode";
+        if (!existingSlot) {
+          const byNama = await SubKegiatan.unscoped().findOne({
+            where: {
+              periode_id: ctx.target.periode_id,
+              nama_sub_kegiatan: sub.nama_sub_kegiatan,
+            },
+          });
+          if (byNama) {
+            existingSlot = byNama;
+            matchField = "nama";
+          }
+        }
         const subCl = classifySubCollision(
           existingSlot,
           sub,
           ctx.options.skip_duplicates,
+          matchField,
         );
 
         if (subCl.status === "would_import") {
@@ -672,7 +969,7 @@ async function buildPlans(ctx, programs) {
               source_kegiatan_id: sk.id,
               source_program_id: sp.id,
               target_kegiatan_id: targetKegiatanId,
-              target_program_ref: targetProgramId,
+              target_program_id: targetProgramId,
               source_kegiatan_create: kegAction === "create",
               source_program_create: programAction === "create",
             },
@@ -690,6 +987,257 @@ async function buildPlans(ctx, programs) {
             },
           });
         }
+      }
+    }
+  }
+
+  return { plans, warnings, errors };
+}
+
+async function buildPlansRkpdRows(ctx, programs) {
+  const plans = [];
+  const warnings = [];
+  const errors = [];
+
+  const pushPlan = (p) => {
+    plans.push(p);
+    if (p.status === "skipped" && p.classification?.severity === SEVERITY.WARNING) {
+      if (warnings.length < 40) warnings.push(p);
+    }
+    if (p.status === "error" || p.classification?.severity === SEVERITY.ERROR) {
+      if (errors.length < 40) errors.push(p);
+    }
+  };
+
+  const periodeWhere = await buildRkpdPeriodeWhere(ctx.target.periode_id);
+  const tgtWhereBase = {
+    tahun: ctx.target.tahun,
+    ...periodeWhere,
+  };
+
+  for (const sp of programs) {
+    if (ctx.options.strict_parent_mapping && sp.master_program_id == null) {
+      const cl = buildClassification({
+        category: SYNC_CAT.SOURCE_UNMAPPED,
+        severity: SEVERITY.ERROR,
+        action: ACTION.FAIL,
+        reason:
+          "Program RPJMD belum memiliki master_program_id - strict_parent_mapping aktif.",
+        code: "sync_program_master_missing",
+      });
+      pushPlan({
+        entity_type: "program",
+        source_id: sp.id,
+        status: "error",
+        classification: cl,
+        reason: cl.reason,
+        sample: { program_id: sp.id, kode_program: sp.kode_program },
+      });
+      continue;
+    }
+
+    if (ctx.options.strict_opd_validation) {
+      const op = assertProgramOpdStrict(sp, ctx.opd_penanggung_jawab_id);
+      if (!op.ok) {
+        pushPlan({
+          entity_type: "program",
+          source_id: sp.id,
+          status: "error",
+          classification: op.classification,
+          reason: op.classification.reason,
+          sample: { program_id: sp.id },
+        });
+        continue;
+      }
+    }
+
+    const kegiatans = sp.kegiatan || [];
+    for (const sk of kegiatans) {
+      if (ctx.options.strict_opd_validation) {
+        const ok = assertKegiatanOpdStrict(sk, ctx.opd_penanggung_jawab_id);
+        if (!ok.ok) {
+          pushPlan({
+            entity_type: "kegiatan",
+            source_id: sk.id,
+            status: "error",
+            classification: ok.classification,
+            reason: ok.classification.reason,
+            sample: { kegiatan_id: sk.id },
+          });
+          continue;
+        }
+      }
+
+      if (ctx.options.strict_parent_mapping && sk.master_kegiatan_id == null) {
+        const cl = buildClassification({
+          category: SYNC_CAT.SOURCE_UNMAPPED,
+          severity: SEVERITY.ERROR,
+          action: ACTION.FAIL,
+          reason: "Kegiatan RPJMD belum memiliki master_kegiatan_id.",
+          code: "sync_kegiatan_master_missing",
+        });
+        pushPlan({
+          entity_type: "kegiatan",
+          source_id: sk.id,
+          status: "error",
+          classification: cl,
+          reason: cl.reason,
+          sample: { kegiatan_id: sk.id },
+        });
+        continue;
+      }
+
+      const subs = sk.sub_kegiatan || [];
+      for (const sub of subs) {
+        if (ctx.options.strict_parent_mapping && sub.master_sub_kegiatan_id == null) {
+          const cl = buildClassification({
+            category: SYNC_CAT.SOURCE_UNMAPPED,
+            severity: SEVERITY.ERROR,
+            action: ACTION.FAIL,
+            reason: "Sub kegiatan RPJMD belum memiliki master_sub_kegiatan_id.",
+            code: "sync_sub_master_missing",
+          });
+          pushPlan({
+            entity_type: "sub_kegiatan",
+            source_id: sub.id,
+            status: "error",
+            classification: cl,
+            reason: cl.reason,
+            sample: { sub_kegiatan_id: sub.id },
+          });
+          continue;
+        }
+
+        // Duplikat RKPD tahunan: existing baris pada tahun target + periode target.
+        const existingExact = await Rkpd.unscoped().findOne({
+          where: { ...tgtWhereBase, sub_kegiatan_id: sub.id },
+          // Hardening: beberapa tenant/DB lama belum memiliki semua kolom RKPD refactor
+          // (mis. "indikator"). Hindari SELECT * agar tidak gagal pada kolom yang belum ada.
+          attributes: ["id"],
+          order: [["id", "ASC"]],
+        });
+        if (existingExact) {
+          const sev = ctx.options.skip_duplicates ? SEVERITY.WARNING : SEVERITY.ERROR;
+          const act = ctx.options.skip_duplicates ? ACTION.SKIP : ACTION.FAIL;
+          const status = ctx.options.skip_duplicates ? "skipped" : "error";
+          const cl = buildClassification({
+            category: SYNC_CAT.DUPLICATE_MAPPED,
+            severity: sev,
+            action: act,
+            reason: ctx.options.skip_duplicates
+              ? "Baris RKPD untuk sub kegiatan ini sudah ada pada tahun target - dilewati (skip_duplicates)."
+              : "Baris RKPD untuk sub kegiatan ini sudah ada pada tahun target.",
+            code: "sync_rkpd_row_duplicate",
+          });
+          pushPlan({
+            entity_type: "sub_kegiatan",
+            source_id: sub.id,
+            status,
+            classification: cl,
+            reason: cl.reason,
+            sample: { sub_kegiatan_id: sub.id, rkpd_id: existingExact.id },
+          });
+          continue;
+        }
+
+        const kodeSub = String(sub.kode_sub_kegiatan || "").trim();
+        if (kodeSub) {
+          const existingByCode = await Rkpd.unscoped().findOne({
+            where: { ...tgtWhereBase, kode_sub_kegiatan: kodeSub },
+            attributes: ["id"],
+            order: [["id", "ASC"]],
+          });
+          if (existingByCode) {
+            const sev = ctx.options.skip_duplicates ? SEVERITY.WARNING : SEVERITY.ERROR;
+            const act = ctx.options.skip_duplicates ? ACTION.SKIP : ACTION.FAIL;
+            const status = ctx.options.skip_duplicates ? "skipped" : "error";
+            const cl = buildClassification({
+              category: SYNC_CAT.DUPLICATE_BY_CODE,
+              severity: sev,
+              action: act,
+              reason: ctx.options.skip_duplicates
+                ? "Kode sub kegiatan sudah ada di RKPD tahun target - dilewati (skip_duplicates)."
+                : "Kode sub kegiatan sudah ada di RKPD tahun target.",
+              code: "sync_rkpd_code_duplicate",
+            });
+            pushPlan({
+              entity_type: "sub_kegiatan",
+              source_id: sub.id,
+              status,
+              classification: cl,
+              reason: cl.reason,
+              sample: { sub_kegiatan_id: sub.id, rkpd_id: existingByCode.id },
+            });
+            continue;
+          }
+        }
+
+        const namaSub = String(sub.nama_sub_kegiatan || "").trim();
+        if (namaSub) {
+          const existingByName = await Rkpd.unscoped().findOne({
+            where: { ...tgtWhereBase, nama_sub_kegiatan: namaSub },
+            attributes: ["id"],
+            order: [["id", "ASC"]],
+          });
+          if (existingByName) {
+            const sev = ctx.options.skip_duplicates ? SEVERITY.WARNING : SEVERITY.ERROR;
+            const act = ctx.options.skip_duplicates ? ACTION.SKIP : ACTION.FAIL;
+            const status = ctx.options.skip_duplicates ? "skipped" : "error";
+            const cl = buildClassification({
+              category: SYNC_CAT.DUPLICATE_BY_NAME,
+              severity: sev,
+              action: act,
+              reason: ctx.options.skip_duplicates
+                ? "Nama sub kegiatan serupa sudah ada di RKPD tahun target - dilewati (skip_duplicates)."
+                : "Nama sub kegiatan serupa sudah ada di RKPD tahun target.",
+              code: "sync_rkpd_name_duplicate",
+            });
+            pushPlan({
+              entity_type: "sub_kegiatan",
+              source_id: sub.id,
+              status,
+              classification: cl,
+              reason: cl.reason,
+              sample: { sub_kegiatan_id: sub.id, rkpd_id: existingByName.id },
+            });
+            continue;
+          }
+        }
+
+        pushPlan({
+          entity_type: "sub_kegiatan",
+          source_id: sub.id,
+          status: "would_import",
+          classification: buildClassification({
+            category: SYNC_CAT.READY,
+            severity: SEVERITY.INFO,
+            action: ACTION.INSERT,
+            reason:
+              "Akan membuat baris RKPD tahunan yang mereferensikan program/kegiatan/sub kegiatan sumber.",
+          }),
+          reason: "create rkpd row",
+          sample: { program_id: sp.id, kegiatan_id: sk.id, sub_kegiatan_id: sub.id },
+          payload: {
+            rkpd_create: {
+              tahun: ctx.target.tahun,
+              periode_id: ctx.target.periode_id,
+              periode_rpjmd_id: ctx.target.periode_id,
+              jenis_dokumen: "rkpd",
+              opd_id: ctx.opd_penanggung_jawab_id || sp.opd_penanggung_jawab || null,
+              program_id: sp.id,
+              kegiatan_id: sk.id,
+              sub_kegiatan_id: sub.id,
+              kode_program: sp.kode_program,
+              nama_program: sp.nama_program,
+              kode_kegiatan: sk.kode_kegiatan,
+              nama_kegiatan: sk.nama_kegiatan,
+              kode_sub_kegiatan: sub.kode_sub_kegiatan,
+              nama_sub_kegiatan: sub.nama_sub_kegiatan,
+              dibuat_oleh: ctx.actor_user_id || null,
+              sinkronisasi_status: "belum_sinkron",
+            },
+          },
+        });
       }
     }
   }
@@ -841,21 +1389,18 @@ async function runCommit(body, userId) {
 
   const v = validateAndBuildContext(body);
   const { ctx } = v;
+  ctx.actor_user_id = userId || null;
   const programs = await loadSourceTree(ctx);
   const { plans } = await buildPlans(ctx, programs);
 
-  const programMap = new Map();
-  const kegiatanMap = new Map();
-  const inserted_program_ids = [];
-  const inserted_kegiatan_ids = [];
-  const inserted_sub_kegiatan_ids = [];
+  const inserted_rkpd_ids = [];
   const details = [];
-  const kegiatanTouched = new Set();
-  const programsTouched = new Set();
 
   const summary = {
     inserted_programs: 0,
     inserted_kegiatans: 0,
+    // Kompatibilitas response: sebelumnya dihitung sebagai insert sub_kegiatan RKPD.
+    // Sekarang dihitung sebagai jumlah baris RKPD (tabel `rkpd`) yang dibuat.
     inserted_sub_kegiatans: 0,
     skipped: 0,
     failed: 0,
@@ -881,135 +1426,58 @@ async function runCommit(body, userId) {
         continue;
       }
 
-      if (p.entity_type === "program" && p.payload.create) {
-        const sp = await Program.unscoped().findByPk(p.payload.source_program_id, {
-          transaction: t,
-        });
-        if (!sp) {
-          summary.failed += 1;
-          continue;
+      if (p.entity_type === "sub_kegiatan" && p.payload?.rkpd_create) {
+        const createPayload = p.payload.rkpd_create;
+        const subId = createPayload?.sub_kegiatan_id;
+        if (!subId) {
+          throw new Error("Payload rkpd_create tidak memuat sub_kegiatan_id.");
         }
-        const np = await Program.unscoped().create(
-          {
-            sasaran_id: sp.sasaran_id,
-            periode_id: ctx.target.periode_id,
-            nama_program: sp.nama_program,
-            kode_program: sp.kode_program,
-            locked_pagu: sp.locked_pagu || false,
-            pagu_anggaran: sp.pagu_anggaran ?? 0,
-            total_pagu_anggaran: sp.total_pagu_anggaran ?? 0,
-            rpjmd_id: sp.rpjmd_id,
-            prioritas: sp.prioritas,
-            opd_penanggung_jawab: sp.opd_penanggung_jawab,
-            bidang_opd_penanggung_jawab: sp.bidang_opd_penanggung_jawab,
-            jenis_dokumen: ctx.target.jenis_dokumen,
-            tahun: ctx.target.tahun,
-            master_program_id: sp.master_program_id,
-            regulasi_versi_id: sp.regulasi_versi_id,
-            input_mode: sp.input_mode,
-            migrated_by: userId || null,
-          },
-          { transaction: t },
-        );
-        programMap.set(sp.id, np.id);
-        inserted_program_ids.push(np.id);
-        summary.inserted_programs += 1;
-        programsTouched.add(np.id);
-        details.push({ entity: "program", source_id: sp.id, inserted_id: np.id });
-        continue;
-      }
 
-      if (p.entity_type === "kegiatan" && p.payload.create) {
-        const sk = await Kegiatan.unscoped().findByPk(p.payload.source_kegiatan_id, {
-          transaction: t,
-        });
-        if (!sk) {
-          summary.failed += 1;
-          continue;
-        }
-        let tProgId = p.payload.target_program_id;
-        if (tProgId == null) {
-          tProgId = programMap.get(p.payload.source_program_id);
-        }
-        if (!tProgId) {
-          summary.failed += 1;
-          continue;
-        }
-        const nk = await Kegiatan.unscoped().create(
-          {
-            program_id: tProgId,
-            periode_id: ctx.target.periode_id,
-            kode_kegiatan: sk.kode_kegiatan,
-            nama_kegiatan: sk.nama_kegiatan,
-            pagu_anggaran: sk.pagu_anggaran ?? 0,
-            total_pagu_anggaran: sk.total_pagu_anggaran ?? 0,
-            jenis_dokumen: ctx.target.jenis_dokumen,
+        // Guard idempotent: jangan overwrite/duplikasi bila sudah ada.
+        const periodeWhere = await buildRkpdPeriodeWhere(ctx.target.periode_id);
+        const exists = await Rkpd.unscoped().findOne({
+          where: {
             tahun: ctx.target.tahun,
-            opd_penanggung_jawab: sk.opd_penanggung_jawab,
-            bidang_opd_penanggung_jawab: sk.bidang_opd_penanggung_jawab,
-            master_kegiatan_id: sk.master_kegiatan_id,
-            regulasi_versi_id: sk.regulasi_versi_id,
-            input_mode: sk.input_mode,
-            migrated_by: userId || null,
+            sub_kegiatan_id: subId,
+            ...periodeWhere,
           },
-          { transaction: t },
-        );
-        kegiatanMap.set(sk.id, nk.id);
-        inserted_kegiatan_ids.push(nk.id);
-        summary.inserted_kegiatans += 1;
-        kegiatanTouched.add(nk.id);
-        programsTouched.add(tProgId);
-        details.push({ entity: "kegiatan", source_id: sk.id, inserted_id: nk.id });
-        continue;
-      }
+          attributes: ["id"],
+          transaction: t,
+          lock: t.LOCK?.UPDATE,
+        });
+        if (exists) {
+          summary.skipped += 1;
+          summary.duplicates += 1;
+          details.push({
+            entity: "rkpd",
+            source_id: subId,
+            status: "skipped_already_exists",
+            existing_id: exists.id,
+          });
+          continue;
+        }
 
-      if (p.entity_type === "sub_kegiatan") {
-        const sub = await SubKegiatan.unscoped().findByPk(p.payload.source_sub_id, {
-          transaction: t,
-        });
-        if (!sub) {
-          summary.failed += 1;
-          continue;
+        const cols = await getRkpdColumnSet();
+        const safePayload = pickKeys(createPayload, cols);
+        // Minimal guard: selalu wajib ada tahun
+        if (!safePayload.tahun) {
+          throw new Error("Gagal membuat RKPD: kolom tahun tidak tersedia/invalid.");
         }
-        let tKegId = p.payload.target_kegiatan_id;
-        if (tKegId == null) {
-          tKegId = kegiatanMap.get(p.payload.source_kegiatan_id);
+        // Pastikan periode terisi pada salah satu kolom yang tersedia
+        if (cols.has("periode_id") && safePayload.periode_id == null) {
+          safePayload.periode_id = ctx.target.periode_id;
         }
-        if (!tKegId) {
-          summary.failed += 1;
-          continue;
+        if (cols.has("periode_rpjmd_id") && safePayload.periode_rpjmd_id == null) {
+          safePayload.periode_rpjmd_id = ctx.target.periode_id;
         }
-        const ns = await SubKegiatan.unscoped().create(
-          {
-            kegiatan_id: tKegId,
-            periode_id: ctx.target.periode_id,
-            kode_sub_kegiatan: sub.kode_sub_kegiatan,
-            nama_sub_kegiatan: sub.nama_sub_kegiatan,
-            pagu_anggaran: sub.pagu_anggaran ?? 0,
-            total_pagu_anggaran: sub.total_pagu_anggaran ?? 0,
-            nama_opd: sub.nama_opd,
-            nama_bidang_opd: sub.nama_bidang_opd,
-            sub_bidang_opd: sub.sub_bidang_opd,
-            jenis_dokumen: ctx.target.jenis_dokumen,
-            tahun: ctx.target.tahun,
-            master_sub_kegiatan_id: sub.master_sub_kegiatan_id,
-            regulasi_versi_id: sub.regulasi_versi_id,
-            input_mode: sub.input_mode,
-            migrated_by: userId || null,
-          },
-          { transaction: t },
-        );
-        inserted_sub_kegiatan_ids.push(ns.id);
+        const row = await Rkpd.unscoped().create(safePayload, { transaction: t });
+        inserted_rkpd_ids.push(row.id);
         summary.inserted_sub_kegiatans += 1;
-        kegiatanTouched.add(tKegId);
-        const progId = await Kegiatan.unscoped()
-          .findByPk(tKegId, { attributes: ["program_id"], transaction: t })
-          .then((r) => r?.program_id);
-        if (progId) programsTouched.add(progId);
         details.push({
-          entity: "sub_kegiatan",
-          source_id: sub.id,
-          inserted_id: ns.id,
+          entity: "rkpd",
+          source_id: subId,
+          inserted_id: row.id,
+          status: "inserted",
         });
       }
     }
@@ -1017,14 +1485,11 @@ async function runCommit(body, userId) {
     await t.commit();
   } catch (err) {
     await t.rollback();
-    throw err;
-  }
-
-  for (const kid of kegiatanTouched) {
-    await recalcKegiatanTotal(kid);
-  }
-  for (const pid of programsTouched) {
-    await recalcProgramTotal(pid);
+    return {
+      ok: false,
+      error: err?.message || String(err),
+      data: { rolled_back: true, summary },
+    };
   }
 
   return {
@@ -1033,9 +1498,11 @@ async function runCommit(body, userId) {
       summary,
       classification_counts: pre.data.classification_counts,
       inserted_ids: {
-        program_ids: inserted_program_ids,
-        kegiatan_ids: inserted_kegiatan_ids,
-        sub_kegiatan_ids: inserted_sub_kegiatan_ids,
+        rkpd_ids: inserted_rkpd_ids,
+        // Kompatibilitas lama (agar consumer yang belum diubah tidak error).
+        program_ids: [],
+        kegiatan_ids: [],
+        sub_kegiatan_ids: [],
       },
       details: details.slice(0, 200),
     },
@@ -1050,4 +1517,6 @@ module.exports = {
   emptySyncClassificationCounts,
   summarizeCommitBlockedReasons,
   classifySubCollision,
+  syncCategoryLabel,
+  syncNextAction,
 };

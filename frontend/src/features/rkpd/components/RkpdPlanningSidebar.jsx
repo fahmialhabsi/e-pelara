@@ -1,5 +1,7 @@
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Card, ListGroup } from "react-bootstrap";
+import { useAuth } from "../../../hooks/useAuth";
+import { mapRoleToEpelara } from "../../../utils/roleUtils";
 
 /**
  * Sidebar ringkas RKPD — pola mirip Renstra (nav + konteks), tanpa bab panjang.
@@ -8,7 +10,10 @@ import { Card, ListGroup } from "react-bootstrap";
  */
 const RkpdPlanningSidebar = () => {
   const location = useLocation();
-  const navigate = useNavigate();
+  const { user } = useAuth();
+  const canRpjmdRkpdSync = ["SUPER_ADMIN", "ADMINISTRATOR"].includes(
+    mapRoleToEpelara(user?.role),
+  );
 
   const onRingkasanClick = (e) => {
     if (location.pathname === "/dashboard-rkpd") {
@@ -39,6 +44,11 @@ const RkpdPlanningSidebar = () => {
       <ListGroup.Item action as={Link} to="/dashboard-rkpd/form" className="small">
         📎 Entri RKPD klasik (legacy)
       </ListGroup.Item>
+      {canRpjmdRkpdSync ? (
+        <ListGroup.Item action as={Link} to="/rkpd/rpjmd-sync" className="small">
+          🔁 Sync dari RPJMD (preview & commit)
+        </ListGroup.Item>
+      ) : null}
     </ListGroup>
     <Card.Body className="small text-muted border-top">
       <strong>v2</strong> = <code>rkpd_dokumen</code> / <code>rkpd_item</code>.{" "}

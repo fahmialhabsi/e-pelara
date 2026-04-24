@@ -56,6 +56,8 @@ import RpjmdMonitoringIndikator from "@/features/rpjmd/pages/RpjmdMonitoringIndi
 import RpjmdMonitoringOPD from "@/features/rpjmd/pages/RpjmdMonitoringOPD";
 import RpjmdMonitoringHeatmap from "@/features/rpjmd/pages/RpjmdMonitoringHeatmap";
 import RpjmdBulkMasterImportPage from "@/features/rpjmd/pages/RpjmdBulkMasterImportPage";
+import RpjmdRkpdSyncPage from "@/features/rkpd/pages/RpjmdRkpdSyncPage";
+import PlanningAuditDashboardPage from "@/features/audit/pages/PlanningAuditDashboardPage";
 import CascadingDetail from "@/pages/CascadingDetail";
 
 const routes = [
@@ -281,6 +283,16 @@ const routes = [
     path: "/rpjmd/bulk-master-import",
     element: <RpjmdBulkMasterImportPage />,
     role: ["SUPER_ADMIN", "ADMINISTRATOR"],
+  },
+  {
+    path: "/rkpd/rpjmd-sync",
+    element: <RpjmdRkpdSyncPage />,
+    role: ["SUPER_ADMIN", "ADMINISTRATOR"],
+  },
+  {
+    path: "/audit/planning-compliance",
+    element: <PlanningAuditDashboardPage />,
+    role: ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS"],
   },
 
   // Redirect OPD

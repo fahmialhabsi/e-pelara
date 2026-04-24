@@ -658,6 +658,16 @@ const IndikatorRPJMD = () => {
     strategi_id: "",
     arah_kebijakan_id: "",
     sub_kegiatan_id: "",
+    /** Dipakai oleh Step Sub Kegiatan untuk membentuk kode indikator sub kegiatan berbasis kode indikator kegiatan. */
+    kegiatan_kode_indikator: "",
+    /** Dipilih di Step Sub Kegiatan (acuan) untuk menghubungkan indikator sub kegiatan ke indikator kegiatan. */
+    indikator_kegiatan_id: "",
+    /** Snapshot kode indikator Arah Kebijakan (untuk pembentukan kode indikator program berbasis arah). */
+    arah_kebijakan_kode_indikator: "",
+    /** Snapshot OPD penanggung jawab dari indikator arah kebijakan (untuk auto-isi penanggung_jawab di step Program). */
+    arah_kebijakan_penanggung_jawab: "",
+    /** Dipilih di Step Program untuk menentukan basis kode indikator program (IP-...). */
+    program_ref_ar_kode_indikator: "",
     /* misi fields */
     no_misi: "",
     isi_misi: "",

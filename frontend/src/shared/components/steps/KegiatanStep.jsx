@@ -5,6 +5,7 @@ import {
   createIndikatorKegiatanBatch,
   fetchIndikatorKegiatanByKegiatan,
   fetchKegiatanByProgram,
+  updateIndikatorKegiatan,
 } from "@/features/rpjmd/services/indikatorRpjmdApi";
 import useIndikatorBuilder from "../hooks/useIndikatorBuilder";
 import useSetPreviewFields from "@/hooks/useSetPreviewFields";
@@ -31,10 +32,45 @@ import {
   RPJMD_INDIKATOR_DRAFT_KEYS,
 } from "./wizardIndikatorStepUtils";
 
+// Pada Step Kegiatan, `penanggung_jawab` sebaiknya tetap mengikuti konteks dari Step sebelumnya
+// (indikator program/arah kebijakan). Jangan dihapus hanya karena indikator kegiatan belum ada di DB.
 const KEGIATAN_DRAFT_CLEAR_KEYS = [
-  ...RPJMD_INDIKATOR_DRAFT_KEYS,
+  ...RPJMD_INDIKATOR_DRAFT_KEYS.filter((k) => k !== "penanggung_jawab"),
   ...KEGIATAN_EXTRA_DRAFT_KEYS,
 ];
+
+function isLegacyKodeIndikatorKegiatan(kode) {
+  const s = kode == null ? "" : String(kode).trim().toUpperCase();
+  if (!s) return true;
+  // Data impor lama sering pakai pola "IK-..." (legacy) bukan "IPK-...".
+  if (s.startsWith("IK-")) return true;
+  if (!s.startsWith("IPK-")) return true;
+  return false;
+}
+
+function firstPenanggungJawabFromWizardContext(values) {
+  const fromRows = (rows) => {
+    if (!Array.isArray(rows)) return null;
+    for (const r of rows) {
+      if (!r || typeof r !== "object") continue;
+      const pj = r.penanggung_jawab ?? r.penanggungJawab;
+      if (pj != null && String(pj).trim() !== "") return pj;
+      const nested = r.opdPenanggungJawab ?? r.opd_penanggung_jawab;
+      if (nested && typeof nested === "object" && nested.id != null)
+        return nested.id;
+    }
+    return null;
+  };
+  return (
+    values?.penanggung_jawab ??
+    values?.arah_kebijakan_penanggung_jawab ??
+    fromRows(values?.program) ??
+    fromRows(values?.arah_kebijakan) ??
+    fromRows(values?.strategi) ??
+    fromRows(values?.tujuan) ??
+    null
+  );
+}
 
 export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
   const stepKey = "kegiatan";
@@ -43,6 +79,7 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
   const [kegiatanOptions, setKegiatanOptions] = useState([]);
   const navigate = useNavigate();
   const [restored, setRestored] = useState(false);
+  const restoredOnceRef = React.useRef(false);
 
   useSetPreviewFields(values, setFieldValue);
   useAutoIsiTahunDanTarget(values, setFieldValue);
@@ -52,6 +89,9 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
       localStorage.getItem("form_rpjmd") ||
       sessionStorage.getItem("form_rpjmd");
 
+    if (restoredOnceRef.current) return;
+    restoredOnceRef.current = true;
+
     if (!saved) {
       setRestored(true);
       return;
@@ -59,13 +99,30 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
 
     const parsed = JSON.parse(saved);
     Object.entries(parsed).forEach(([key, val]) => {
+      const cur = values?.[key];
+      const curEmpty =
+        cur == null || (typeof cur === "string" && cur.trim() === "");
+      if (!curEmpty) return;
       setFieldValue(key, val, false);
     });
 
     validateForm().finally(() => {
       setRestored(true);
     });
-  }, [setFieldValue, validateForm]);
+  }, [setFieldValue, validateForm, values]);
+
+  // Step Kegiatan: pastikan Penanggung Jawab tetap terisi dari konteks wizard (Arah Kebijakan/Program),
+  // agar tab Target + Preview tidak menampilkan "-" hanya karena baris indikator kegiatan dari impor punya PJ NULL.
+  useEffect(() => {
+    if (!restored) return;
+    const cur = values?.penanggung_jawab;
+    const empty = cur == null || String(cur).trim() === "";
+    if (!empty) return;
+    const pjFallback = firstPenanggungJawabFromWizardContext(values);
+    if (pjFallback != null && String(pjFallback).trim() !== "") {
+      setFieldValue("penanggung_jawab", String(pjFallback), false);
+    }
+  }, [restored, setFieldValue, values]);
 
   useEffect(() => {
     if (!restored || !values.program_id || !options?.program?.length) return;
@@ -147,6 +204,7 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
         const rawRows = extractIndikatorKegiatanListFromResponseBody(res.data);
         const kSel = values.kode_kegiatan || "";
         const nSel = values.nama_kegiatan || "";
+        const pjFallback = firstPenanggungJawabFromWizardContext(values);
         const mapped = rawRows.map((r) => {
           const row = mapIndikatorKegiatanApiRowToWizard(r);
           const rid = r?.id ?? row?.id;
@@ -158,6 +216,17 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
             ...base,
             kode_kegiatan: base.kode_kegiatan || kSel,
             nama_kegiatan: base.nama_kegiatan || nSel,
+            // Jangan biarkan kode legacy (IK-...) mengunci wizard.
+            // Wizard harus tetap generate kode baru via next-kode (IPK-...).
+            ...(isLegacyKodeIndikatorKegiatan(base.kode_indikator)
+              ? { kode_indikator: "" }
+              : null),
+            // Samakan pola Step Program/Arah Kebijakan: jika PJ baris kosong, isi dari konteks wizard.
+            ...((pjFallback != null && String(pjFallback).trim() !== "") &&
+            ((base.penanggung_jawab ?? base.penanggungJawab) == null ||
+              String(base.penanggung_jawab ?? base.penanggungJawab).trim() === "")
+              ? { penanggung_jawab: String(pjFallback).trim() }
+              : null),
           };
         });
         setFieldValue("kegiatan", mapped);
@@ -167,6 +236,15 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
             setFieldValue,
             KEGIATAN_EXTRA_DRAFT_KEYS
           );
+          // Letakkan setelah hydrate agar nilai hydrate tidak menimpa fallback.
+          const pjFallback2 = firstPenanggungJawabFromWizardContext(values);
+          if (pjFallback2 != null && String(pjFallback2).trim() !== "") {
+            const curPj = values?.penanggung_jawab;
+            const emptyPj = curPj == null || String(curPj).trim() === "";
+            if (emptyPj) {
+              setFieldValue("penanggung_jawab", String(pjFallback2), false);
+            }
+          }
         } else {
           clearIndikatorDraftScalars(setFieldValue, KEGIATAN_DRAFT_CLEAR_KEYS);
         }
@@ -222,7 +300,60 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
 
     try {
       setErrors({});
-      if (!listLooksPersistedFromServer(list)) {
+      const first = list[0] || {};
+      const firstId = first?.id != null ? String(first.id).trim() : "";
+      const firstKode = first?.kode_indikator ?? first?.kodeIndikator ?? "";
+      const shouldUpgradeLegacy =
+        listLooksPersistedFromServer(list) &&
+        firstId &&
+        /^\d+$/.test(firstId) &&
+        isLegacyKodeIndikatorKegiatan(firstKode) &&
+        values?.kode_indikator &&
+        String(values.kode_indikator).trim().toUpperCase().startsWith("IPK-");
+
+      if (shouldUpgradeLegacy) {
+        // Upgrade data legacy (hasil impor) agar:
+        // 1) kode indikator mengikuti standar IPK-...,
+        // 2) penanggung_jawab tidak kosong,
+        // 3) data tidak menjadi duplikat (id tetap).
+        await updateIndikatorKegiatan(firstId, {
+          ...first,
+          program_id: values.program_id ? Number(values.program_id) : null,
+          indikator_program_id: values.indikator_program_id
+            ? Number(values.indikator_program_id)
+            : null,
+          jenis_dokumen: values.jenis_dokumen,
+          tahun: values.tahun,
+          kode_indikator: String(values.kode_indikator).trim(),
+          nama_indikator:
+            values.nama_indikator != null && String(values.nama_indikator).trim() !== ""
+              ? String(values.nama_indikator).trim()
+              : first?.nama_indikator ?? null,
+          // Simpan PJ dari konteks wizard jika tersedia.
+          penanggung_jawab:
+            values.penanggung_jawab != null &&
+            String(values.penanggung_jawab).trim() !== ""
+              ? Number(values.penanggung_jawab)
+              : first?.penanggung_jawab ?? null,
+          // baseline akan di-auto-fill oleh backend dari capaian_tahun_5 jika tersedia,
+          // tetapi kita kirim baseline draft juga untuk konsistensi.
+          baseline:
+            values.baseline != null && String(values.baseline).trim() !== ""
+              ? String(values.baseline).trim()
+              : first?.baseline ?? null,
+          capaian_tahun_1: values.capaian_tahun_1 ?? first?.capaian_tahun_1 ?? null,
+          capaian_tahun_2: values.capaian_tahun_2 ?? first?.capaian_tahun_2 ?? null,
+          capaian_tahun_3: values.capaian_tahun_3 ?? first?.capaian_tahun_3 ?? null,
+          capaian_tahun_4: values.capaian_tahun_4 ?? first?.capaian_tahun_4 ?? null,
+          capaian_tahun_5: values.capaian_tahun_5 ?? first?.capaian_tahun_5 ?? null,
+          target_tahun_1: values.target_tahun_1 ?? first?.target_tahun_1 ?? null,
+          target_tahun_2: values.target_tahun_2 ?? first?.target_tahun_2 ?? null,
+          target_tahun_3: values.target_tahun_3 ?? first?.target_tahun_3 ?? null,
+          target_tahun_4: values.target_tahun_4 ?? first?.target_tahun_4 ?? null,
+          target_tahun_5: values.target_tahun_5 ?? first?.target_tahun_5 ?? null,
+        });
+        toast.success("Data indikator kegiatan berhasil disimpan (upgrade dari data impor).");
+      } else if (!listLooksPersistedFromServer(list)) {
         const payload = buildKegiatanIndikatorPayload(values);
         await createIndikatorKegiatanBatch(payload);
         toast.success("Data indikator kegiatan berhasil disimpan.");
@@ -237,6 +368,9 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
         program_id: values.program_id,
         kegiatan_id: values.kegiatan_id,
         indikator_program_id: values.indikator_program_id,
+        // Dipakai oleh Step Sub Kegiatan untuk membentuk kode indikator berbasis kode indikator kegiatan (IPK-... -> IPSK-...).
+        kegiatan_kode_indikator:
+          values.kode_indikator != null ? String(values.kode_indikator).trim() : "",
         no_misi: values.no_misi,
         isi_misi: values.isi_misi,
         periode_id: values.periode_id,

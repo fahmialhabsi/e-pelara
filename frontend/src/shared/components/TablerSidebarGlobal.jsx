@@ -8,7 +8,11 @@ import {
   IconFolder,
   IconClipboard,
   IconLayoutDashboard,
+  IconArrowsExchange,
+  IconFileSearch,
 } from "@tabler/icons-react";
+import { useAuth } from "../../hooks/useAuth";
+import { normalizeRole } from "../../utils/roleUtils";
 
 const menu = [
   { label: "RPJMD", icon: <IconBook size={22} />, path: "/dashboard-rpjmd" },
@@ -22,6 +26,18 @@ const menu = [
     icon: <IconCalendarStats size={22} />,
     path: "/dashboard-rkpd",
   },
+  {
+    label: "Sync RPJMD → RKPD",
+    icon: <IconArrowsExchange size={22} />,
+    path: "/rkpd/rpjmd-sync",
+    roles: ["SUPER_ADMIN", "ADMINISTRATOR"],
+  },
+  {
+    label: "Audit compliance",
+    icon: <IconFileSearch size={22} />,
+    path: "/audit/planning-compliance",
+    roles: ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS"],
+  },
   { label: "Renja", icon: <IconFolder size={22} />, path: "/dashboard-renja" },
   {
     label: "DPA",
@@ -31,6 +47,13 @@ const menu = [
 ];
 
 export default function TablerSidebarGlobal() {
+  const { user } = useAuth();
+  const roleNorm = normalizeRole(user?.role);
+  const visible = menu.filter((item) => {
+    if (!item.roles?.length) return true;
+    return item.roles.includes(roleNorm);
+  });
+
   return (
     <div
       style={{
@@ -49,7 +72,7 @@ export default function TablerSidebarGlobal() {
         DISPANG MALUT
       </div>
       <div>
-        {menu.map((item) => (
+        {visible.map((item) => (
           <NavLink
             key={item.label}
             to={item.path}

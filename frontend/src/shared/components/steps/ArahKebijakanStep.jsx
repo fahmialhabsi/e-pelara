@@ -318,6 +318,25 @@ export default function ArahKebijakanStep({ options, tabKey, setTabKey, onNext }
       strategi_label: values.strategi_label,
       arah_kebijakan_id: values.arah_kebijakan_id,
       arah_kebijakan_label: values.arah_kebijakan_label,
+      // Dipakai oleh step Program untuk membentuk kode indikator berbasis kode indikator arah kebijakan.
+      // Ambil dari draft saat ini; fallback ke baris pertama jika draft kosong.
+      arah_kebijakan_kode_indikator:
+        (values.kode_indikator && String(values.kode_indikator).trim()) ||
+        (arahList?.[0]?.kode_indikator && String(arahList[0].kode_indikator).trim()) ||
+        "",
+      // Snapshot OPD PJ indikator arah kebijakan agar step Program bisa auto-isi PJ walau baris referensi legacy (ST...) ber-PJ NULL.
+      arah_kebijakan_penanggung_jawab: (() => {
+        const v =
+          values.penanggung_jawab ??
+          arahList?.[0]?.penanggung_jawab ??
+          firstPenanggungJawabFromWizardContext(values);
+        return v != null && String(v).trim() !== "" ? String(v) : "";
+      })(),
+      // Mirror agar Step Program bisa langsung pakai tanpa ambiguity nama field.
+      program_ref_ar_kode_indikator:
+        (values.kode_indikator && String(values.kode_indikator).trim()) ||
+        (arahList?.[0]?.kode_indikator && String(arahList[0].kode_indikator).trim()) ||
+        "",
       no_misi: values.no_misi,
       isi_misi: values.isi_misi,
       periode_id: values.periode_id,

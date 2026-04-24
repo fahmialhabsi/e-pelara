@@ -14,6 +14,7 @@ export default defineConfig({
     environment: "node",
     include: [
       "src/features/rpjmd/services/**/*.test.js",
+      "src/features/audit/**/*.test.js",
       "src/utils/mapBackendErrorsToFormik.test.js",
       "src/validations/indikatorSchemas.test.js",
     ],

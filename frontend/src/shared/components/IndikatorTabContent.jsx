@@ -524,7 +524,6 @@ export default function IndikatorTabContent({
                       return;
                     }
                     if (opt._src === "itk") {
-                      if (wizardStepKey !== "tujuan") return;
                       const kodeWizard = values.kode_indikator;
                       setFieldValue("rpjmd_import_indikator_strategi_id", "");
                       setFieldValue(
@@ -532,20 +531,31 @@ export default function IndikatorTabContent({
                         opt._rowKey ?? opt.row.id,
                       );
                       hydrateDraftFromIndikatorRow(opt.row, setFieldValue);
-                      // Pakai kode dari baris yang dipilih jika tersedia (misal: T1-01-01 dari DB).
-                      // Fallback ke kode wizard (next-kode otomatis) hanya jika baris belum punya kode.
-                      const rowKode = String(
-                        opt.row?.kode_indikator ?? "",
-                      ).trim();
-                      setFieldValue(
-                        "kode_indikator",
-                        rowKode ||
-                          (kodeWizard == null ? "" : String(kodeWizard).trim()),
-                      );
-                      const mapped = { ...mapApiIndikatorToListRow(opt.row) };
-                      delete mapped.id;
-                      delete mapped.indikator_id;
-                      setFieldValue("tujuan", [mapped]);
+
+                      // Hanya step Tujuan yang boleh mengadopsi kode indikator dari baris impor (T1-...).
+                      // Step lain (Sasaran/Strategi/Arah/Program/Kegiatan/Sub) memakai kode otomatis masing-masing.
+                      if (wizardStepKey === "tujuan") {
+                        // Pakai kode dari baris yang dipilih jika tersedia (misal: T1-01-01 dari DB).
+                        // Fallback ke kode wizard (next-kode otomatis) hanya jika baris belum punya kode.
+                        const rowKode = String(
+                          opt.row?.kode_indikator ?? "",
+                        ).trim();
+                        setFieldValue(
+                          "kode_indikator",
+                          rowKode ||
+                            (kodeWizard == null ? "" : String(kodeWizard).trim()),
+                        );
+                        const mapped = { ...mapApiIndikatorToListRow(opt.row) };
+                        delete mapped.id;
+                        delete mapped.indikator_id;
+                        setFieldValue("tujuan", [mapped]);
+                      } else {
+                        // Pastikan kode indikator wizard tidak tertimpa oleh baris referensi impor.
+                        setFieldValue(
+                          "kode_indikator",
+                          kodeWizard == null ? "" : String(kodeWizard).trim(),
+                        );
+                      }
                       return;
                     }
                     if (opt._src === "t31") {

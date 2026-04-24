@@ -19,6 +19,30 @@ const {
 
 const MAX_LIMIT = 200;
 
+async function preferPeriodeNamaIfExists({
+  model,
+  jenis_dokumen,
+  tahun,
+}) {
+  const jd = String(jenis_dokumen ?? "").trim();
+  const tahunStr = String(tahun ?? "").trim();
+  if (!jd || !tahunStr) return jd;
+
+  // UI list mengirim "RPJMD", sementara beberapa flow menyimpan label periode "RPJMD 2025-2029".
+  if (jd.toUpperCase() !== "RPJMD") return jd;
+
+  const periode = (await getPeriodeFromTahun(tahunStr)) || (await getPeriodeAktif());
+  const periodeNama = String(periode?.nama ?? "").trim();
+  if (!periodeNama) return jd;
+  if (!/^RPJMD\b/i.test(periodeNama) || periodeNama.toUpperCase() === "RPJMD")
+    return jd;
+
+  const count = await model.count({
+    where: { tahun: tahunStr, jenis_dokumen: periodeNama },
+  });
+  return count > 0 ? periodeNama : jd;
+}
+
 /**
  * Filter jenis_dokumen untuk GET by-strategi: wizard sering mengirim label panjang
  * (mis. nama periode) sedangkan baris DB menyimpan "RPJMD".
@@ -122,8 +146,15 @@ exports.findAll = async (req, res) => {
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const offset = (pageNum - 1) * limit;
 
+    const tahunStr = String(tahun).trim();
+    const effectiveJenisDokumen = await preferPeriodeNamaIfExists({
+      model: IndikatorStrategi,
+      jenis_dokumen,
+      tahun: tahunStr,
+    });
+
     const { count, rows } = await IndikatorStrategi.findAndCountAll({
-      where: { jenis_dokumen, tahun },
+      where: { jenis_dokumen: effectiveJenisDokumen, tahun: tahunStr },
       include: [
         {
           model: Strategi,

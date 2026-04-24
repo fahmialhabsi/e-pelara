@@ -4,6 +4,7 @@ const {
   IndikatorSubKegiatan,
   SubKegiatan,
   OpdPenanggungJawab,
+  Program,
 } = require("../models");
 const { Op, fn, col, where: sqlWhere } = require("sequelize");
 const { normalizeDecimalFields } = require("../utils/normalizeDecimal");
@@ -18,6 +19,91 @@ const {
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
 
 const MAX_LIMIT = 200;
+
+function buildDocJenisClause(jdRaw) {
+  const jenisLc = String(jdRaw ?? "").trim().toLowerCase();
+  const left = fn("LOWER", fn("TRIM", col("jenis_dokumen")));
+  if (!jenisLc) return null;
+  if (jenisLc === "rpjmd") return sqlWhere(left, { [Op.like]: "rpjmd%" });
+  return sqlWhere(left, jenisLc);
+}
+
+function fillBaselineFallback(rows) {
+  for (const r of rows) {
+    if (!r) continue;
+    const baseline = r.baseline ?? r.get?.("baseline");
+    if (baseline == null || String(baseline).trim() === "") {
+      const c5 = r.capaian_tahun_5 ?? r.get?.("capaian_tahun_5");
+      if (c5 != null && String(c5).trim() !== "") {
+        if (typeof r.setDataValue === "function") r.setDataValue("baseline", c5);
+        else r.baseline = c5;
+      }
+    }
+  }
+}
+
+async function fillPenanggungJawabFallbackFromProgram(rows) {
+  const programIds = new Set();
+  for (const r of rows) {
+    const pj = r?.penanggung_jawab ?? r?.get?.("penanggung_jawab");
+    const pid = r?.program_id ?? r?.get?.("program_id");
+    if ((pj == null || String(pj).trim() === "") && pid != null && String(pid).trim() !== "") {
+      const n = Number.parseInt(String(pid), 10);
+      if (Number.isFinite(n)) programIds.add(n);
+    }
+  }
+  const ids = [...programIds];
+  if (ids.length === 0) return;
+
+  const programs = await Program.findAll({
+    where: { id: { [Op.in]: ids } },
+    attributes: ["id", "opd_penanggung_jawab"],
+    raw: true,
+  });
+  const opdByProgram = new Map(
+    programs
+      .filter((p) => p.opd_penanggung_jawab != null)
+      .map((p) => [Number(p.id), p.opd_penanggung_jawab]),
+  );
+
+  const opdIds = new Set();
+  for (const r of rows) {
+    const pj = r?.penanggung_jawab ?? r?.get?.("penanggung_jawab");
+    if (pj != null && String(pj).trim() !== "") opdIds.add(Number(pj));
+
+    if (pj == null || String(pj).trim() === "") {
+      const pid = Number.parseInt(String(r?.program_id ?? r?.get?.("program_id") ?? ""), 10);
+      if (!Number.isFinite(pid)) continue;
+      const fill = opdByProgram.get(pid);
+      if (fill == null || String(fill).trim() === "") continue;
+      if (typeof r.setDataValue === "function") r.setDataValue("penanggung_jawab", fill);
+      else r.penanggung_jawab = fill;
+      opdIds.add(Number(fill));
+    }
+  }
+
+  const opdIdList = [...opdIds].filter((n) => Number.isFinite(n) && n >= 1);
+  if (opdIdList.length === 0) return;
+  const opdRows = await OpdPenanggungJawab.findAll({
+    where: { id: { [Op.in]: opdIdList } },
+    attributes: ["id", "nama_opd", "nama_bidang_opd"],
+    raw: true,
+  });
+  const opdById = new Map(opdRows.map((o) => [Number(o.id), o]));
+
+  for (const r of rows) {
+    const assoc =
+      r?.opdPenanggungJawab ?? r?.get?.("opdPenanggungJawab") ?? null;
+    if (assoc != null) continue;
+    const pj = r?.penanggung_jawab ?? r?.get?.("penanggung_jawab");
+    const id = Number(pj);
+    if (!Number.isFinite(id)) continue;
+    const opd = opdById.get(id);
+    if (!opd) continue;
+    if (typeof r.setDataValue === "function") r.setDataValue("opdPenanggungJawab", opd);
+    else r.opdPenanggungJawab = opd;
+  }
+}
 
 /**
  * Filter opsional (sama pola indikator-program): baris terikat sub_kegiatan_id,
@@ -187,14 +273,11 @@ exports.findAll = async (req, res) => {
 
     await ensureClonedOnce(jdRaw, tahunStr);
 
-    const docJenisClause = sqlWhere(
-      fn("LOWER", fn("TRIM", col("jenis_dokumen"))),
-      jenisLc
-    );
+    const docJenisClause = buildDocJenisClause(jdRaw);
     const tahunClause = await buildTahunClause(tahunStr);
 
     const scopeClause = await buildScopeFilter(subQ, kegQ);
-    const baseAndParts = [docJenisClause, tahunClause];
+    const baseAndParts = [docJenisClause, tahunClause].filter(Boolean);
     if (scopeClause) baseAndParts.push(scopeClause);
 
     const baseWhere = () => ({ [Op.and]: baseAndParts });
@@ -213,10 +296,7 @@ exports.findAll = async (req, res) => {
 
     /* Data legacy / clone: sama pola indikator-kegiatan — coba sumber RPJMD */
     if (count === 0 && jenisLc !== "rpjmd") {
-      const fbParts = [
-        sqlWhere(fn("LOWER", fn("TRIM", col("jenis_dokumen"))), "rpjmd"),
-        tahunClause,
-      ];
+      const fbParts = [buildDocJenisClause("rpjmd"), tahunClause].filter(Boolean);
       if (scopeClause) fbParts.push(scopeClause);
       const fb = await runList({ [Op.and]: fbParts });
       count = fb.count;
@@ -232,7 +312,7 @@ exports.findAll = async (req, res) => {
           {
             model: SubKegiatan,
             as: "subKegiatan",
-            attributes: ["id", "kode_sub_kegiatan", "nama_sub_kegiatan"],
+            attributes: ["id", "kegiatan_id", "kode_sub_kegiatan", "nama_sub_kegiatan"],
             required: false,
           },
           {
@@ -250,6 +330,9 @@ exports.findAll = async (req, res) => {
     }
 
     const totalPages = Math.max(1, Math.ceil(count / limit));
+
+    fillBaselineFallback(rows);
+    await fillPenanggungJawabFallbackFromProgram(rows);
     return res.json({
       status: "success",
       data: rows,
@@ -322,24 +405,93 @@ exports.getNextKode = async (req, res) => {
     const subKegiatan = await SubKegiatan.findByPk(sub_kegiatan_id);
     if (!subKegiatan) return res.status(404).json({ message: "Sub Kegiatan tidak ditemukan." });
 
-    const prefix = subKegiatan.kode_sub_kegiatan || `SK-${sub_kegiatan_id}`;
+    const { tahun, jenis_dokumen, indikator_kegiatan_kode_indikator } = req.query;
 
-    const result = await IndikatorSubKegiatan.findOne({
+    const tahunStr =
+      tahun != null && String(tahun).trim() !== ""
+        ? String(tahun).trim()
+        : String(new Date().getFullYear());
+    const jenisLc =
+      jenis_dokumen != null && String(jenis_dokumen).trim() !== ""
+        ? String(jenis_dokumen).trim().toLowerCase()
+        : null;
+
+    // Basis IPSK: ambil dari kode indikator kegiatan (IPK-... -> ...), lalu tambahkan .NN
+    const rawKegKode =
+      indikator_kegiatan_kode_indikator != null
+        ? String(indikator_kegiatan_kode_indikator).trim()
+        : "";
+    const kegBase = rawKegKode.toUpperCase().startsWith("IPK-")
+      ? rawKegKode.slice(4).trim()
+      : rawKegKode;
+
+    const useIpsk = kegBase && kegBase.length > 0;
+    const prefix = useIpsk
+      ? `IPSK-${kegBase}`
+      : subKegiatan.kode_sub_kegiatan || `SK-${sub_kegiatan_id}`;
+
+    if (!useIpsk) {
+      const result = await IndikatorSubKegiatan.findOne({
+        where: {
+          sub_kegiatan_id,
+          ...(tahunStr ? { tahun: tahunStr } : {}),
+          ...(jenisLc
+            ? {
+                [Op.and]: [
+                  sqlWhere(fn("LOWER", fn("TRIM", col("jenis_dokumen"))), jenisLc),
+                ],
+              }
+            : {}),
+          kode_indikator: { [Op.like]: `${prefix}-%` },
+        },
+        attributes: [
+          [
+            sequelize.fn(
+              "MAX",
+              sequelize.literal(
+                "CAST(SUBSTRING_INDEX(kode_indikator,'-',-1) AS UNSIGNED)",
+              ),
+            ),
+            "maxNumber",
+          ],
+        ],
+        raw: true,
+      });
+      const next = (result?.maxNumber || 0) + 1;
+      return res.json({
+        status: "success",
+        next_kode: `${prefix}-${String(next).padStart(2, "0")}`,
+      });
+    }
+
+    // Untuk IPSK-... gunakan suffix .NN (2 digit) agar kode tetap mudah dibaca.
+    const dotResult = await IndikatorSubKegiatan.findOne({
       where: {
-        sub_kegiatan_id,
-        kode_indikator: { [Op.like]: `${prefix}-%` },
+        ...(tahunStr ? { tahun: tahunStr } : {}),
+        ...(jenisLc
+          ? { [Op.and]: [sqlWhere(fn("LOWER", fn("TRIM", col("jenis_dokumen"))), jenisLc)] }
+          : {}),
+        kode_indikator: { [Op.like]: `${prefix}.%` },
       },
       attributes: [
         [
-          sequelize.fn("MAX", sequelize.literal("CAST(SUBSTRING_INDEX(kode_indikator,'-',-1) AS UNSIGNED)")),
+          sequelize.fn(
+            "MAX",
+            sequelize.literal(
+              "CAST(SUBSTRING_INDEX(kode_indikator,'.',-1) AS UNSIGNED)",
+            ),
+          ),
           "maxNumber",
         ],
       ],
       raw: true,
     });
 
-    const next = (result?.maxNumber || 0) + 1;
-    return res.json({ status: "success", next_kode: `${prefix}-${String(next).padStart(2, "0")}` });
+    const next = (dotResult?.maxNumber || 0) + 1;
+    return res.json({
+      status: "success",
+      next_kode: `${prefix}.${String(next).padStart(2, "0")}`,
+    });
   } catch (err) {
     return res.status(500).json({ status: "error", message: err.message });
   }
@@ -350,11 +502,14 @@ exports.findOne = async (req, res) => {
   try {
     const record = await IndikatorSubKegiatan.findByPk(req.params.id, {
       include: [
-        { model: SubKegiatan, as: "subKegiatan", attributes: ["id", "kode_sub_kegiatan", "nama_sub_kegiatan"] },
-        { model: OpdPenanggungJawab, as: "opdPenanggungJawab", attributes: ["id", "nama_opd"] },
+        { model: SubKegiatan, as: "subKegiatan", attributes: ["id", "kegiatan_id", "kode_sub_kegiatan", "nama_sub_kegiatan"] },
+        { model: OpdPenanggungJawab, as: "opdPenanggungJawab", attributes: ["id", "nama_opd", "nama_bidang_opd"] },
       ],
     });
     if (!record) return res.status(404).json({ message: "Indikator tidak ditemukan." });
+
+    fillBaselineFallback([record]);
+    await fillPenanggungJawabFallbackFromProgram([record]);
     return res.json({ status: "success", data: record });
   } catch (err) {
     return res.status(500).json({ status: "error", message: err.message });

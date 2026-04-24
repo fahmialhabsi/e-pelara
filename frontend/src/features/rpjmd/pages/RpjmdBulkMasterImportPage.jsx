@@ -13,21 +13,24 @@ import {
   Modal,
 } from "react-bootstrap";
 import api from "@/services/api";
-import { MASTER_REFERENSI_DATASET_DEFAULT } from "@/services/masterService";
-
-function parseIdList(text) {
-  if (!text || !String(text).trim()) return [];
-  return [
-    ...new Set(
-      String(text)
-        .split(/[\s,;]+/)
-        .map((s) => s.trim())
-        .filter(Boolean)
-        .map((x) => parseInt(x, 10))
-        .filter((n) => Number.isInteger(n) && n >= 1),
-    ),
-  ];
-}
+import {
+  MASTER_REFERENSI_DATASET_DEFAULT,
+  fetchMasterPrograms,
+  fetchMasterKegiatanByProgram,
+  fetchMasterSubKegiatanByKegiatan,
+  formatMasterProgramLabel,
+  formatMasterKegiatanLabel,
+  formatMasterSubKegiatanLabel,
+} from "@/services/masterService";
+import { extractListData } from "@/utils/apiResponse";
+import {
+  buildBulkMasterImportPayload,
+  buildHumanPreviewSummary,
+  deriveMasterFilters,
+  isCommitReady,
+  isSerializablePlainJson,
+  parseIdList,
+} from "@/features/rpjmd/services/rpjmdBulkMasterImportUi";
 
 /** Dari baris kandidat preview impor — untuk backfill helper (satu per satu). */
 function inferBackfillFromCandidate(c) {
@@ -59,13 +62,19 @@ function inferBackfillFromCandidate(c) {
 }
 
 export default function RpjmdBulkMasterImportPage() {
+  const PREVIEW_FAIL_MESSAGE =
+    "Pratinjau impor belum dapat diproses. Data belum dikirim dan tidak ada perubahan pada sistem. Silakan coba kembali. Jika kendala berulang, hubungi admin aplikasi.";
+
   const [datasetKey, setDatasetKey] = useState(MASTER_REFERENSI_DATASET_DEFAULT);
   const [periodeId, setPeriodeId] = useState("");
-  const [tahun, setTahun] = useState(new Date().getFullYear());
+  const [tahun, setTahun] = useState(String(new Date().getFullYear()));
   const [jenisDokumen, setJenisDokumen] = useState("rpjmd");
   const [filterProgram, setFilterProgram] = useState("");
   const [filterKegiatan, setFilterKegiatan] = useState("");
   const [filterSub, setFilterSub] = useState("");
+  const [selectedMasterProgramId, setSelectedMasterProgramId] = useState("");
+  const [selectedMasterKegiatanId, setSelectedMasterKegiatanId] = useState("");
+  const [selectedMasterSubId, setSelectedMasterSubId] = useState("");
   const [anchorProgramId, setAnchorProgramId] = useState("");
   const [createMissingKegiatan, setCreateMissingKegiatan] = useState(false);
   const [skipDuplicates, setSkipDuplicates] = useState(true);
@@ -78,6 +87,15 @@ export default function RpjmdBulkMasterImportPage() {
 
   const [periodeList, setPeriodeList] = useState([]);
   const [programAnchorList, setProgramAnchorList] = useState([]);
+  const [opdList, setOpdList] = useState([]);
+  const [opdLoading, setOpdLoading] = useState(false);
+  const [masterProgramList, setMasterProgramList] = useState([]);
+  const [masterKegiatanList, setMasterKegiatanList] = useState([]);
+  const [masterSubList, setMasterSubList] = useState([]);
+  const [masterProgramLoading, setMasterProgramLoading] = useState(false);
+  const [masterKegiatanLoading, setMasterKegiatanLoading] = useState(false);
+  const [masterSubLoading, setMasterSubLoading] = useState(false);
+  const [masterProgramWarning, setMasterProgramWarning] = useState("");
 
   const [previewLoading, setPreviewLoading] = useState(false);
   const [commitLoading, setCommitLoading] = useState(false);
@@ -85,6 +103,15 @@ export default function RpjmdBulkMasterImportPage() {
   const [previewData, setPreviewData] = useState(null);
   const [commitData, setCommitData] = useState(null);
   const [lastPreviewPayload, setLastPreviewPayload] = useState(null);
+  const [autoMapProgramIdsInput, setAutoMapProgramIdsInput] = useState("");
+  const [autoMapPreviewLoading, setAutoMapPreviewLoading] = useState(false);
+  const [autoMapExecuteLoading, setAutoMapExecuteLoading] = useState(false);
+  const [autoMapPreviewData, setAutoMapPreviewData] = useState(null);
+  const [autoMapExecuteData, setAutoMapExecuteData] = useState(null);
+  const [autoMapLastPreviewPayload, setAutoMapLastPreviewPayload] = useState(null);
+  const [autoMapConfirm, setAutoMapConfirm] = useState(false);
+  const [autoMapMassScanMode, setAutoMapMassScanMode] = useState(false);
+  const [autoMapMessage, setAutoMapMessage] = useState("");
 
   const [backfillModalOpen, setBackfillModalOpen] = useState(false);
   const [backfillPreview, setBackfillPreview] = useState(null);
@@ -98,45 +125,61 @@ export default function RpjmdBulkMasterImportPage() {
 
   const previewCommitBlocked = Boolean(previewData?.summary?.commit_blocked);
   const previewNeedsFollowUp = (previewData?.summary?.requires_backfill ?? 0) > 0;
-  const previewOk = Boolean(
-    previewData?.summary &&
-      lastPreviewPayload &&
-      !previewLoading &&
-      !previewCommitBlocked,
+  const previewOk = isCommitReady({
+    previewData,
+    lastPreviewPayload,
+    previewLoading,
+  });
+  const masterFilterState = useMemo(
+    () =>
+      deriveMasterFilters({
+        selectedMasterProgramId,
+        selectedMasterKegiatanId,
+        selectedMasterSubKegiatanId: selectedMasterSubId,
+        manualProgramIdsText: filterProgram,
+        manualKegiatanIdsText: filterKegiatan,
+        manualSubKegiatanIdsText: filterSub,
+      }),
+    [
+      selectedMasterProgramId,
+      selectedMasterKegiatanId,
+      selectedMasterSubId,
+      filterProgram,
+      filterKegiatan,
+      filterSub,
+    ],
   );
 
   const buildPayload = useCallback(() => {
-    const filters = {
-      master_program_ids: parseIdList(filterProgram),
-      master_kegiatan_ids: parseIdList(filterKegiatan),
-      master_sub_kegiatan_ids: parseIdList(filterSub),
-    };
-    const body = {
-      dataset_key: datasetKey.trim() || MASTER_REFERENSI_DATASET_DEFAULT,
-      periode_id: parseInt(periodeId, 10),
-      tahun: parseInt(tahun, 10),
-      jenis_dokumen: jenisDokumen,
-      filters,
-      options: {
-        create_missing_kegiatans: createMissingKegiatan,
-        skip_duplicates: skipDuplicates,
-        strict_parent_mapping: strictParentMapping,
-        enforce_anchor_context: enforceAnchorContext,
-      },
-      default_nama_opd: defaultNamaOpd,
-      default_nama_bidang_opd: defaultNamaBidang,
-      default_sub_bidang_opd: defaultSubBidang,
-    };
-    const ap = parseIdList(anchorProgramId)[0];
-    if (ap) body.anchor_program_id = ap;
-    const opdId = parseIdList(opdPenanggungJawabId)[0];
-    if (opdId) body.opd_penanggung_jawab_id = opdId;
-    return body;
+    return buildBulkMasterImportPayload({
+      datasetKey,
+      periodeId,
+      tahun,
+      jenisDokumen,
+      selectedMasterProgramId,
+      selectedMasterKegiatanId,
+      selectedMasterSubKegiatanId: selectedMasterSubId,
+      manualProgramIdsText: filterProgram,
+      manualKegiatanIdsText: filterKegiatan,
+      manualSubKegiatanIdsText: filterSub,
+      createMissingKegiatan,
+      skipDuplicates,
+      strictParentMapping,
+      enforceAnchorContext,
+      defaultNamaOpd,
+      defaultNamaBidang,
+      defaultSubBidang,
+      anchorProgramId,
+      opdPenanggungJawabId,
+    });
   }, [
     datasetKey,
     periodeId,
     tahun,
     jenisDokumen,
+    selectedMasterProgramId,
+    selectedMasterKegiatanId,
+    selectedMasterSubId,
     filterProgram,
     filterKegiatan,
     filterSub,
@@ -155,50 +198,249 @@ export default function RpjmdBulkMasterImportPage() {
     api
       .get("/periode-rpjmd")
       .then((res) => {
-        const raw = res.data?.data ?? res.data;
-        setPeriodeList(Array.isArray(raw) ? raw : []);
+        setPeriodeList(extractListData(res.data));
       })
       .catch(() => setPeriodeList([]));
   }, []);
+
+  const selectedPeriode = useMemo(
+    () => periodeList.find((x) => String(x.id) === String(periodeId)),
+    [periodeList, periodeId],
+  );
+  const tahunOptions = useMemo(() => {
+    if (!selectedPeriode) return [];
+    const start = parseInt(String(selectedPeriode.tahun_awal), 10);
+    const end = parseInt(String(selectedPeriode.tahun_akhir), 10);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) {
+      return [];
+    }
+    const rows = [];
+    for (let y = start; y <= end; y += 1) rows.push(y);
+    return rows;
+  }, [selectedPeriode]);
+
+  useEffect(() => {
+    if (!tahunOptions.length) return;
+    setTahun((cur) => {
+      const n = parseInt(String(cur), 10);
+      if (tahunOptions.includes(n)) return String(n);
+      return String(tahunOptions[0]);
+    });
+  }, [tahunOptions]);
 
   useEffect(() => {
     if (!tahun || !jenisDokumen) {
       setProgramAnchorList([]);
       return;
     }
+    const tahunInt = parseInt(String(tahun), 10);
+    if (!Number.isInteger(tahunInt)) {
+      setProgramAnchorList([]);
+      return;
+    }
+    let cancelled = false;
     api
       .get("/programs/all", {
-        params: { tahun, jenis_dokumen: jenisDokumen },
+        params: { tahun: tahunInt, jenis_dokumen: jenisDokumen },
       })
       .then((res) => {
-        const raw = res.data?.data ?? res.data;
-        setProgramAnchorList(Array.isArray(raw) ? raw : []);
+        const rows = extractListData(res.data)
+          .filter((p) =>
+            periodeId ? String(p.periode_id) === String(periodeId) : true,
+          )
+          .sort((a, b) =>
+            String(a.kode_program || "").localeCompare(
+              String(b.kode_program || ""),
+              "id",
+            ),
+          );
+        if (!cancelled) setProgramAnchorList(rows);
       })
-      .catch(() => setProgramAnchorList([]));
+      .catch(() => {
+        if (!cancelled) setProgramAnchorList([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tahun, jenisDokumen, periodeId]);
+
+  useEffect(() => {
+    const tahunInt = parseInt(String(tahun), 10);
+    if (!Number.isInteger(tahunInt) || !jenisDokumen) {
+      setOpdList([]);
+      return;
+    }
+    let cancelled = false;
+    setOpdLoading(true);
+    api
+      .get("/opd-penanggung-jawab/dropdown", {
+        params: {
+          tahun: tahunInt,
+          jenis_dokumen: jenisDokumen,
+        },
+      })
+      .then((res) => {
+        const rows = extractListData(res.data).sort((a, b) =>
+          String(a.nama_opd || a.nama || "").localeCompare(
+            String(b.nama_opd || b.nama || ""),
+            "id",
+          ),
+        );
+        if (!cancelled) setOpdList(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setOpdList([]);
+      })
+      .finally(() => {
+        if (!cancelled) setOpdLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [tahun, jenisDokumen]);
 
-  const handlePreview = async (reusePayload = null) => {
+  useEffect(() => {
+    let cancelled = false;
+    setMasterProgramLoading(true);
+    setMasterProgramWarning("");
+    fetchMasterPrograms(datasetKey)
+      .then(({ data, warning }) => {
+        if (cancelled) return;
+        const rows = Array.isArray(data)
+          ? [...data].sort((a, b) =>
+              String(a.kode_program_full || a.kode_program || "").localeCompare(
+                String(b.kode_program_full || b.kode_program || ""),
+                "id",
+              ),
+            )
+          : [];
+        setMasterProgramList(rows);
+        setMasterProgramWarning(
+          warning?.message
+            ? String(warning.message)
+            : warning
+              ? "Referensi master memakai fallback dataset."
+              : "",
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setMasterProgramList([]);
+          setMasterProgramWarning("");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setMasterProgramLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [datasetKey]);
+
+  useEffect(() => {
+    setSelectedMasterKegiatanId("");
+    setSelectedMasterSubId("");
+    if (!selectedMasterProgramId) {
+      setMasterKegiatanList([]);
+      setMasterSubList([]);
+      return;
+    }
+    let cancelled = false;
+    setMasterKegiatanLoading(true);
+    fetchMasterKegiatanByProgram(selectedMasterProgramId, { datasetKey })
+      .then(({ data }) => {
+        if (!cancelled) {
+          const rows = Array.isArray(data)
+            ? [...data].sort((a, b) =>
+                String(a.kode_kegiatan_full || a.kode_kegiatan || "").localeCompare(
+                  String(b.kode_kegiatan_full || b.kode_kegiatan || ""),
+                  "id",
+                ),
+              )
+            : [];
+          setMasterKegiatanList(rows);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setMasterKegiatanList([]);
+      })
+      .finally(() => {
+        if (!cancelled) setMasterKegiatanLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMasterProgramId, datasetKey]);
+
+  useEffect(() => {
+    setSelectedMasterSubId("");
+    if (!selectedMasterKegiatanId) {
+      setMasterSubList([]);
+      return;
+    }
+    let cancelled = false;
+    setMasterSubLoading(true);
+    fetchMasterSubKegiatanByKegiatan(selectedMasterKegiatanId, { datasetKey })
+      .then(({ data }) => {
+        if (!cancelled) {
+          const rows = Array.isArray(data)
+            ? [...data].sort((a, b) =>
+                String(
+                  a.kode_sub_kegiatan_full || a.kode_sub_kegiatan || "",
+                ).localeCompare(
+                  String(b.kode_sub_kegiatan_full || b.kode_sub_kegiatan || ""),
+                  "id",
+                ),
+              )
+            : [];
+          setMasterSubList(rows);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setMasterSubList([]);
+      })
+      .finally(() => {
+        if (!cancelled) setMasterSubLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMasterKegiatanId, datasetKey]);
+
+  const handlePreview = async (maybePayload = null) => {
+    if (
+      maybePayload &&
+      typeof maybePayload === "object" &&
+      typeof maybePayload.preventDefault === "function"
+    ) {
+      maybePayload.preventDefault();
+      maybePayload = null;
+    }
     setMessage("");
-    setPreviewData(null);
-    setCommitData(null);
-    if (reusePayload == null) setLastPreviewPayload(null);
+    setLastPreviewPayload(null);
     setPreviewLoading(true);
     try {
-      const body = reusePayload != null ? reusePayload : buildPayload();
+      const body = maybePayload != null ? maybePayload : buildPayload();
+      if (!isSerializablePlainJson(body)) {
+        console.error(
+          "[RpjmdBulkMasterImportPage] Preview payload tidak serializable",
+          body,
+        );
+        throw new Error("PAYLOAD_NOT_SERIALIZABLE");
+      }
       const res = await api.post("/rpjmd/bulk-from-master/preview", body);
       if (res.data?.success) {
         setPreviewData(res.data.data);
+        setCommitData(null);
         setLastPreviewPayload(body);
-        setMessage("Preview selesai — tidak ada penulisan ke database.");
+        setMessage("Preview selesai - tidak ada penulisan ke database.");
       } else {
-        setMessage(res.data?.message || "Preview gagal.");
+        console.error("[RpjmdBulkMasterImportPage] Preview gagal", res.data);
+        setMessage(PREVIEW_FAIL_MESSAGE);
       }
     } catch (e) {
-      setMessage(
-        e?.response?.data?.message ||
-          e?.message ||
-          "Preview gagal (cek filter dan periode).",
-      );
+      console.error("[RpjmdBulkMasterImportPage] Preview error", e);
+      setMessage(PREVIEW_FAIL_MESSAGE);
     } finally {
       setPreviewLoading(false);
     }
@@ -343,12 +585,118 @@ export default function RpjmdBulkMasterImportPage() {
     }
   };
 
+  const autoMapScopeProgramIds = useMemo(
+    () => parseIdList(autoMapProgramIdsInput),
+    [autoMapProgramIdsInput],
+  );
+
+  const buildAutoMapPayload = useCallback(() => {
+    const body = {
+      dataset_key:
+        String(datasetKey || "").trim() || MASTER_REFERENSI_DATASET_DEFAULT,
+      periode_id: parseInt(String(periodeId), 10),
+      tahun: parseInt(String(tahun), 10),
+      jenis_dokumen: jenisDokumen || "rpjmd",
+    };
+    if (autoMapScopeProgramIds.length) {
+      body.program_ids = autoMapScopeProgramIds;
+    }
+    return body;
+  }, [datasetKey, periodeId, tahun, jenisDokumen, autoMapScopeProgramIds]);
+
+  const handleAutoMapPreview = async () => {
+    setAutoMapMessage("");
+    setAutoMapExecuteData(null);
+    setAutoMapConfirm(false);
+    setAutoMapPreviewLoading(true);
+    try {
+      const body = buildAutoMapPayload();
+      if (!isSerializablePlainJson(body)) {
+        console.error(
+          "[RpjmdBulkMasterImportPage] Auto-map preview payload tidak serializable",
+          body,
+        );
+        throw new Error("AUTOMAP_PAYLOAD_NOT_SERIALIZABLE");
+      }
+      const isMassScan = !Array.isArray(body.program_ids) || !body.program_ids.length;
+      setAutoMapMassScanMode(isMassScan);
+
+      const res = await api.post("/rpjmd/program-auto-map/preview", body);
+      if (res.data?.success) {
+        setAutoMapPreviewData(res.data.data);
+        setAutoMapLastPreviewPayload(body);
+        setAutoMapMessage("Preview auto mapping selesai.");
+      } else {
+        console.error(
+          "[RpjmdBulkMasterImportPage] Auto-map preview gagal",
+          res.data,
+        );
+        setAutoMapMessage(
+          res.data?.message || "Preview auto mapping program gagal.",
+        );
+      }
+    } catch (e) {
+      console.error("[RpjmdBulkMasterImportPage] Auto-map preview error", e);
+      setAutoMapMessage(
+        e?.response?.data?.message ||
+          e?.message ||
+          "Preview auto mapping program gagal.",
+      );
+    } finally {
+      setAutoMapPreviewLoading(false);
+    }
+  };
+
+  const handleAutoMapExecute = async () => {
+    if (!autoMapLastPreviewPayload) return;
+    const readyCount = Number(autoMapSummary?.ready_exact_match ?? 0);
+    if (!Number.isFinite(readyCount) || readyCount <= 0) return;
+    const executeConfirmed =
+      typeof window === "undefined"
+        ? true
+        : window.confirm(
+            `Sistem akan memetakan ${readyCount} program berdasarkan kecocokan kode yang identik. Program lain tidak akan diubah.`,
+          );
+    if (!executeConfirmed) {
+      setAutoMapMessage("Eksekusi auto mapping dibatalkan.");
+      return;
+    }
+    setAutoMapExecuteLoading(true);
+    try {
+      const res = await api.post("/rpjmd/program-auto-map/execute", {
+        ...autoMapLastPreviewPayload,
+        confirm: true,
+      });
+      if (res.data?.success) {
+        setAutoMapExecuteData(res.data.data);
+        setAutoMapMessage("Eksekusi auto mapping program selesai.");
+      } else {
+        setAutoMapMessage(
+          res.data?.message || "Eksekusi auto mapping program ditolak.",
+        );
+      }
+    } catch (e) {
+      setAutoMapMessage(
+        e?.response?.data?.message ||
+          e?.message ||
+          "Eksekusi auto mapping program gagal.",
+      );
+    } finally {
+      setAutoMapExecuteLoading(false);
+    }
+  };
+
   const summary = previewData?.summary;
   const warnings = previewData?.warnings || [];
   const errors = previewData?.errors || [];
   const sample = previewData?.sample || [];
   const classificationCounts = previewData?.classification_counts || {};
   const backfillCandidates = previewData?.backfill_candidates || [];
+  const humanPreviewSummary = useMemo(
+    () => buildHumanPreviewSummary(summary, classificationCounts),
+    [summary, classificationCounts],
+  );
+  const manualDisabled = masterFilterState.manualDisabled;
 
   const categoryLabel = (k) => {
     const m = {
@@ -368,12 +716,41 @@ export default function RpjmdBulkMasterImportPage() {
   };
 
   const commitSummary = commitData?.summary;
+  const autoMapSummary = autoMapPreviewData?.summary;
+  const autoMapReadyCount = Number(autoMapSummary?.ready_exact_match ?? 0);
+  const autoMapAmbiguousCount = Number(autoMapSummary?.ambiguous ?? 0);
+  const autoMapNotFoundCount = Number(autoMapSummary?.not_found ?? 0);
+  const currentAutoMapPayload = useMemo(
+    () => buildAutoMapPayload(),
+    [buildAutoMapPayload],
+  );
+  const autoMapPreviewFresh = useMemo(
+    () =>
+      Boolean(autoMapLastPreviewPayload) &&
+      JSON.stringify(autoMapLastPreviewPayload) ===
+        JSON.stringify(currentAutoMapPayload),
+    [autoMapLastPreviewPayload, currentAutoMapPayload],
+  );
+  const autoMapReadyItems = Array.isArray(autoMapPreviewData?.ready_items)
+    ? autoMapPreviewData.ready_items
+    : [];
+  const autoMapExecuteSummary = autoMapExecuteData?.summary;
+  const autoMapExecuteDetails = Array.isArray(autoMapExecuteData?.details)
+    ? autoMapExecuteData.details
+    : [];
+  const autoMapExecuteReady = Boolean(
+    autoMapLastPreviewPayload &&
+      autoMapPreviewFresh &&
+      autoMapSummary &&
+      autoMapReadyCount > 0 &&
+      !autoMapPreviewLoading &&
+      !autoMapExecuteLoading,
+  );
 
   const periodeLabel = useMemo(() => {
-    const p = periodeList.find((x) => String(x.id) === String(periodeId));
-    if (!p) return "";
-    return `${p.tahun_awal}–${p.tahun_akhir}`;
-  }, [periodeList, periodeId]);
+    if (!selectedPeriode) return "";
+    return `${selectedPeriode.tahun_awal}-${selectedPeriode.tahun_akhir}`;
+  }, [selectedPeriode]);
 
   return (
     <Container className="my-4">
@@ -399,15 +776,33 @@ export default function RpjmdBulkMasterImportPage() {
 
       <Row>
         <Col lg={6}>
+          <Card className="mb-3 border-info shadow-sm">
+            <Card.Body>
+              <Card.Title className="h6 mb-2">Cara Pakai Singkat</Card.Title>
+              <ol className="small mb-0 ps-3">
+                <li>Pilih Program RPJMD tujuan import.</li>
+                <li>Pilih sumber Master Program / Kegiatan / Sub Kegiatan.</li>
+                <li>Gunakan Filter OPD jika perlu.</li>
+                <li>Klik Preview.</li>
+                <li>Tinjau hasil klasifikasi.</li>
+                <li>Klik Commit jika aman.</li>
+              </ol>
+            </Card.Body>
+          </Card>
+
           <Card className="mb-3 shadow-sm">
             <Card.Body>
-              <Card.Title className="h6">Parameter</Card.Title>
+              <Card.Title className="h6">Pengaturan Dasar</Card.Title>
               <Form.Group className="mb-2">
                 <Form.Label>dataset_key</Form.Label>
                 <Form.Control
                   value={datasetKey}
-                  onChange={(e) => setDatasetKey(e.target.value)}
+                  readOnly
                 />
+                <Form.Text className="text-muted">
+                  Nilai default dipakai untuk operasi normal. Ubah hanya jika
+                  diperlukan di Mode Lanjutan.
+                </Form.Text>
               </Form.Group>
               <Form.Group className="mb-2">
                 <Form.Label>Periode RPJMD</Form.Label>
@@ -415,10 +810,10 @@ export default function RpjmdBulkMasterImportPage() {
                   value={periodeId}
                   onChange={(e) => setPeriodeId(e.target.value)}
                 >
-                  <option value="">— pilih —</option>
+                  <option value="">- pilih periode -</option>
                   {periodeList.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.tahun_awal}–{p.tahun_akhir} (id {p.id})
+                      {p.tahun_awal}-{p.tahun_akhir} (id {p.id})
                     </option>
                   ))}
                 </Form.Select>
@@ -428,11 +823,26 @@ export default function RpjmdBulkMasterImportPage() {
               </Form.Group>
               <Form.Group className="mb-2">
                 <Form.Label>Tahun anggaran</Form.Label>
-                <Form.Control
-                  type="number"
-                  value={tahun}
-                  onChange={(e) => setTahun(e.target.value)}
-                />
+                {tahunOptions.length ? (
+                  <Form.Select
+                    value={String(tahun)}
+                    onChange={(e) => setTahun(e.target.value)}
+                    disabled={!periodeId}
+                  >
+                    {tahunOptions.map((y) => (
+                      <option key={y} value={String(y)}>
+                        {y}
+                      </option>
+                    ))}
+                  </Form.Select>
+                ) : (
+                  <Form.Control
+                    type="number"
+                    value={tahun}
+                    onChange={(e) => setTahun(e.target.value)}
+                    placeholder="Masukkan tahun anggaran"
+                  />
+                )}
               </Form.Group>
               <Form.Group className="mb-2">
                 <Form.Label>jenis_dokumen</Form.Label>
@@ -443,128 +853,294 @@ export default function RpjmdBulkMasterImportPage() {
                   <option value="rpjmd">rpjmd</option>
                 </Form.Select>
               </Form.Group>
+              <Alert variant="light" className="small py-2 mt-3 mb-2">
+                Preview = simulasi tanpa menulis DB. Commit aktif setelah preview
+                aman (tidak <code>commit_blocked</code>).
+              </Alert>
 
               <hr />
-              <Card.Title className="h6">Filter master (ID, pisah koma)</Card.Title>
+              <Card.Title className="h6">Program RPJMD Tujuan Import</Card.Title>
               <Form.Group className="mb-2">
-                <Form.Label>master_program_ids</Form.Label>
-                <Form.Control
-                  as="textarea"
-                  rows={2}
-                  value={filterProgram}
-                  onChange={(e) => setFilterProgram(e.target.value)}
-                  placeholder="contoh: 1, 2, 5"
-                />
-              </Form.Group>
-              <Form.Group className="mb-2">
-                <Form.Label>master_kegiatan_ids</Form.Label>
-                <Form.Control
-                  as="textarea"
-                  rows={2}
-                  value={filterKegiatan}
-                  onChange={(e) => setFilterKegiatan(e.target.value)}
-                />
-              </Form.Group>
-              <Form.Group className="mb-2">
-                <Form.Label>master_sub_kegiatan_ids</Form.Label>
-                <Form.Control
-                  as="textarea"
-                  rows={2}
-                  value={filterSub}
-                  onChange={(e) => setFilterSub(e.target.value)}
-                />
-              </Form.Group>
-
-              <hr />
-              <Form.Check
-                type="checkbox"
-                id="createKeg"
-                label="create_missing_kegiatans (butuh program induk transaksi)"
-                checked={createMissingKegiatan}
-                onChange={(e) => setCreateMissingKegiatan(e.target.checked)}
-              />
-              <Form.Group className="mb-2 mt-2">
-                <Form.Label>anchor_program_id (program transaksi)</Form.Label>
+                <Form.Label>Program RPJMD Tujuan Import</Form.Label>
                 <Form.Select
                   value={anchorProgramId}
                   onChange={(e) => setAnchorProgramId(e.target.value)}
-                  disabled={!createMissingKegiatan}
+                  disabled={!tahun || !jenisDokumen}
                 >
-                  <option value="">— pilih program RPJMD —</option>
+                  <option value="">- pilih program RPJMD -</option>
                   {programAnchorList.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.kode_program} — {p.nama_program}
+                      {p.kode_program} - {p.nama_program}
+                    </option>
+                  ))}
+                </Form.Select>
+                <Form.Text className="d-block text-muted">
+                  Pilih program RPJMD tempat hasil impor akan dimasukkan.
+                </Form.Text>
+                <Form.Text
+                  className={`d-block ${createMissingKegiatan ? "text-warning" : "text-muted"}`}
+                >
+                  Wajib jika kegiatan transaksi boleh dibuat otomatis.
+                </Form.Text>
+              </Form.Group>
+
+              <hr />
+              <Card.Title className="h6">Sumber Data Master</Card.Title>
+              <Form.Group className="mb-2">
+                <Form.Label>Master Program</Form.Label>
+                <Form.Select
+                  value={selectedMasterProgramId}
+                  onChange={(e) => setSelectedMasterProgramId(e.target.value)}
+                  disabled={masterProgramLoading}
+                >
+                  <option value="">
+                    {masterProgramLoading
+                      ? "Memuat master program..."
+                      : masterProgramList.length
+                        ? "Pilih master program"
+                        : "Tidak ada master program"}
+                  </option>
+                  {masterProgramList.map((p) => (
+                    <option key={p.id} value={String(p.id)}>
+                      {formatMasterProgramLabel(p)}
+                    </option>
+                  ))}
+                </Form.Select>
+                {masterProgramWarning ? (
+                  <Alert variant="warning" className="small py-2 mt-2 mb-0">
+                    {masterProgramWarning}
+                  </Alert>
+                ) : null}
+              </Form.Group>
+              <Form.Group className="mb-2">
+                <Form.Label>Master Kegiatan (Opsional)</Form.Label>
+                <Form.Select
+                  value={selectedMasterKegiatanId}
+                  onChange={(e) => setSelectedMasterKegiatanId(e.target.value)}
+                  disabled={!selectedMasterProgramId || masterKegiatanLoading}
+                >
+                  <option value="">
+                    {!selectedMasterProgramId
+                      ? "Pilih master program terlebih dahulu"
+                      : masterKegiatanLoading
+                        ? "Memuat master kegiatan..."
+                        : masterKegiatanList.length
+                          ? "Pilih master kegiatan (opsional)"
+                          : "Tidak ada master kegiatan untuk program ini"}
+                  </option>
+                  {masterKegiatanList.map((k) => (
+                    <option key={k.id} value={String(k.id)}>
+                      {formatMasterKegiatanLabel(k)}
                     </option>
                   ))}
                 </Form.Select>
               </Form.Group>
-              <Form.Check
-                type="checkbox"
-                id="skipDup"
-                label="skip_duplicates"
-                checked={skipDuplicates}
-                onChange={(e) => setSkipDuplicates(e.target.checked)}
-              />
-              <Form.Check
-                type="checkbox"
-                id="strictParent"
-                className="mt-2"
-                label="strict_parent_mapping (program transaksi harus punya master_program_id yang cocok)"
-                checked={strictParentMapping}
-                onChange={(e) => setStrictParentMapping(e.target.checked)}
-              />
-              <Form.Check
-                type="checkbox"
-                id="enforceAnchor"
-                label="enforce_anchor_context (tahun & jenis dokumen program = konteks impor)"
-                checked={enforceAnchorContext}
-                onChange={(e) => setEnforceAnchorContext(e.target.checked)}
-              />
-              <Form.Group className="mb-2 mt-2">
-                <Form.Label>
-                  opd_penanggung_jawab_id (opsional — validasi ke program anchor / rantai)
-                </Form.Label>
-                <Form.Control
-                  type="number"
-                  min={1}
-                  placeholder="ID OPD penanggung jawab"
-                  value={opdPenanggungJawabId}
-                  onChange={(e) => setOpdPenanggungJawabId(e.target.value)}
-                />
+              <Form.Group className="mb-2">
+                <Form.Label>Master Sub Kegiatan (Opsional)</Form.Label>
+                <Form.Select
+                  value={selectedMasterSubId}
+                  onChange={(e) => setSelectedMasterSubId(e.target.value)}
+                  disabled={!selectedMasterKegiatanId || masterSubLoading}
+                >
+                  <option value="">
+                    {!selectedMasterKegiatanId
+                      ? "Pilih master kegiatan terlebih dahulu"
+                      : masterSubLoading
+                        ? "Memuat master sub kegiatan..."
+                        : masterSubList.length
+                          ? "Pilih master sub kegiatan (opsional)"
+                          : "Tidak ada master sub kegiatan untuk kegiatan ini"}
+                  </option>
+                  {masterSubList.map((s) => (
+                    <option key={s.id} value={String(s.id)}>
+                      {formatMasterSubKegiatanLabel(s)}
+                    </option>
+                  ))}
+                </Form.Select>
+                <Form.Text className="text-muted">
+                  Pilih salah satu level saja sudah valid. Jika level bawah dipilih,
+                  backend tetap menerima ID filter seperti kontrak lama.
+                </Form.Text>
               </Form.Group>
 
               <hr />
+              <Card.Title className="h6">Filter OPD (Opsional)</Card.Title>
               <Form.Group className="mb-2">
-                <Form.Label>default nama OPD (wajib di sub)</Form.Label>
-                <Form.Control
-                  value={defaultNamaOpd}
-                  onChange={(e) => setDefaultNamaOpd(e.target.value)}
-                />
+                <Form.Label>Filter OPD (Opsional)</Form.Label>
+                <Form.Select
+                  value={opdPenanggungJawabId}
+                  onChange={(e) => setOpdPenanggungJawabId(e.target.value)}
+                  disabled={opdLoading}
+                >
+                  <option value="">
+                    {opdLoading
+                      ? "Memuat daftar OPD..."
+                      : "- tidak difilter berdasarkan OPD -"}
+                  </option>
+                  {opdList.map((o) => (
+                    <option key={String(o.id)} value={String(o.id)}>
+                      {o.nama_opd || o.nama || "OPD"} (id {o.id})
+                    </option>
+                  ))}
+                </Form.Select>
+                <Form.Text className="d-block text-muted">
+                  Gunakan jika ingin membatasi impor ke konteks OPD tertentu.
+                </Form.Text>
+                <Form.Text className="d-block text-muted">
+                  Jika tidak dipilih, impor tidak difilter berdasarkan OPD.
+                </Form.Text>
               </Form.Group>
-              <Form.Group className="mb-2">
-                <Form.Label>default nama bidang OPD</Form.Label>
-                <Form.Control
-                  value={defaultNamaBidang}
-                  onChange={(e) => setDefaultNamaBidang(e.target.value)}
-                />
-              </Form.Group>
-              <Form.Group className="mb-2">
-                <Form.Label>default sub bidang</Form.Label>
-                <Form.Control
-                  value={defaultSubBidang}
-                  onChange={(e) => setDefaultSubBidang(e.target.value)}
-                />
-              </Form.Group>
+
+              <hr />
+              <details className="mb-3">
+                <summary className="fw-semibold">Pengaturan Lanjutan</summary>
+                <div className="border rounded p-3 mt-2 bg-light">
+                  <Form.Check
+                    type="checkbox"
+                    id="createKeg"
+                    className="mb-2"
+                    label="Buat kegiatan transaksi jika belum ada"
+                    checked={createMissingKegiatan}
+                    onChange={(e) => setCreateMissingKegiatan(e.target.checked)}
+                  />
+                  <Form.Text className="d-block mb-2 text-muted">
+                    Aktifkan jika impor boleh membuat kegiatan transaksi baru sesuai
+                    struktur master.
+                  </Form.Text>
+
+                  <Form.Check
+                    type="checkbox"
+                    id="skipDup"
+                    className="mb-2"
+                    label="Lewati baris duplikat (skip_duplicates)"
+                    checked={skipDuplicates}
+                    onChange={(e) => setSkipDuplicates(e.target.checked)}
+                  />
+
+                  <Form.Check
+                    type="checkbox"
+                    id="strictParent"
+                    className="mb-2"
+                    label="Hanya gunakan struktur yang sesuai dengan master"
+                    checked={strictParentMapping}
+                    onChange={(e) => setStrictParentMapping(e.target.checked)}
+                  />
+                  <Form.Text className="d-block mb-2 text-muted">
+                    Default aman aktif. Membatasi impor agar parent mapping tetap
+                    konsisten.
+                  </Form.Text>
+
+                  <Form.Check
+                    type="checkbox"
+                    id="enforceAnchor"
+                    className="mb-2"
+                    label="Pastikan program tujuan sesuai tahun dan jenis dokumen"
+                    checked={enforceAnchorContext}
+                    onChange={(e) => setEnforceAnchorContext(e.target.checked)}
+                  />
+                  <Form.Text className="d-block mb-2 text-muted">
+                    Default aman aktif. Validasi konteks program tujuan sebelum
+                    commit.
+                  </Form.Text>
+
+                  <Form.Group className="mb-2">
+                    <Form.Label>default_nama_opd</Form.Label>
+                    <Form.Control
+                      value={defaultNamaOpd}
+                      onChange={(e) => setDefaultNamaOpd(e.target.value)}
+                    />
+                  </Form.Group>
+                  <Form.Group className="mb-2">
+                    <Form.Label>default_nama_bidang_opd</Form.Label>
+                    <Form.Control
+                      value={defaultNamaBidang}
+                      onChange={(e) => setDefaultNamaBidang(e.target.value)}
+                    />
+                  </Form.Group>
+                  <Form.Group className="mb-0">
+                    <Form.Label>default_sub_bidang_opd</Form.Label>
+                    <Form.Control
+                      value={defaultSubBidang}
+                      onChange={(e) => setDefaultSubBidang(e.target.value)}
+                    />
+                  </Form.Group>
+                </div>
+              </details>
+
+              <details className="mb-3">
+                <summary className="fw-semibold">
+                  Mode Lanjutan: Input ID Manual
+                </summary>
+                <div className="border rounded p-3 mt-2 bg-light">
+                  <Alert variant="warning" className="small py-2">
+                    Gunakan hanya jika Anda memahami ID referensi yang dimasukkan.
+                  </Alert>
+                  <Form.Group className="mb-2">
+                    <Form.Label>dataset_key</Form.Label>
+                    <Form.Control
+                      value={datasetKey}
+                      onChange={(e) => setDatasetKey(e.target.value)}
+                    />
+                  </Form.Group>
+                  <Form.Group className="mb-2">
+                    <Form.Label>master_program_ids</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={2}
+                      value={filterProgram}
+                      onChange={(e) => setFilterProgram(e.target.value)}
+                      placeholder="contoh: 1, 2, 5"
+                      disabled={manualDisabled.master_program_ids}
+                    />
+                    {manualDisabled.master_program_ids ? (
+                      <Form.Text className="text-muted">
+                        Dinonaktifkan karena Master Program dipilih dari dropdown.
+                      </Form.Text>
+                    ) : null}
+                  </Form.Group>
+                  <Form.Group className="mb-2">
+                    <Form.Label>master_kegiatan_ids</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={2}
+                      value={filterKegiatan}
+                      onChange={(e) => setFilterKegiatan(e.target.value)}
+                      disabled={manualDisabled.master_kegiatan_ids}
+                    />
+                    {manualDisabled.master_kegiatan_ids ? (
+                      <Form.Text className="text-muted">
+                        Dinonaktifkan karena Master Kegiatan dipilih dari dropdown.
+                      </Form.Text>
+                    ) : null}
+                  </Form.Group>
+                  <Form.Group className="mb-0">
+                    <Form.Label>master_sub_kegiatan_ids</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={2}
+                      value={filterSub}
+                      onChange={(e) => setFilterSub(e.target.value)}
+                      disabled={manualDisabled.master_sub_kegiatan_ids}
+                    />
+                    {manualDisabled.master_sub_kegiatan_ids ? (
+                      <Form.Text className="text-muted">
+                        Dinonaktifkan karena Master Sub Kegiatan dipilih dari
+                        dropdown.
+                      </Form.Text>
+                    ) : null}
+                  </Form.Group>
+                </div>
+              </details>
 
               <Button
                 variant="primary"
                 className="me-2"
-                onClick={handlePreview}
+                onClick={() => handlePreview()}
                 disabled={previewLoading || !periodeId}
               >
                 {previewLoading ? (
                   <>
-                    <Spinner size="sm" className="me-2" /> Preview…
+                    <Spinner size="sm" className="me-2" /> Preview...
                   </>
                 ) : (
                   "Preview (dry-run)"
@@ -577,7 +1153,7 @@ export default function RpjmdBulkMasterImportPage() {
               >
                 {commitLoading ? (
                   <>
-                    <Spinner size="sm" className="me-2" /> Commit…
+                    <Spinner size="sm" className="me-2" /> Commit...
                   </>
                 ) : (
                   "Commit import"
@@ -593,6 +1169,275 @@ export default function RpjmdBulkMasterImportPage() {
         </Col>
 
         <Col lg={6}>
+          <Card className="mb-3 border-primary shadow-sm">
+            <Card.Body>
+              <Card.Title className="h6">
+                Auto Mapping Program RPJMD ke Master
+              </Card.Title>
+              <p className="small text-muted mb-1">
+                Program yang cocok tepat berdasarkan kode siap dipetakan.
+              </p>
+              <p className="small text-muted mb-2">
+                Program yang ambigu atau tidak ditemukan tidak akan diproses
+                otomatis.
+              </p>
+
+              <Form.Group className="mb-2">
+                <Form.Label className="small mb-0">
+                  ID Program RPJMD (opsional, pisahkan koma/spasi)
+                </Form.Label>
+                <Form.Control
+                  size="sm"
+                  value={autoMapProgramIdsInput}
+                  onChange={(e) => setAutoMapProgramIdsInput(e.target.value)}
+                  placeholder="Contoh: 13, 14, 29"
+                />
+                <Form.Text className="text-muted">
+                  Kosongkan untuk memeriksa semua program RPJMD yang belum
+                  termapping pada konteks periode/tahun/dokumen terpilih.
+                </Form.Text>
+              </Form.Group>
+
+              {autoMapMessage ? (
+                <Alert
+                  variant={
+                    /gagal|ditolak|error/i.test(autoMapMessage)
+                      ? "danger"
+                      : "info"
+                  }
+                  className="small py-2 mb-2"
+                >
+                  {autoMapMessage}
+                </Alert>
+              ) : null}
+
+              <div className="d-flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline-primary"
+                  onClick={() => handleAutoMapPreview()}
+                  disabled={autoMapPreviewLoading || !periodeId || !tahun}
+                >
+                  {autoMapPreviewLoading ? (
+                    <>
+                      <Spinner size="sm" className="me-2" /> Preview Auto Mapping...
+                    </>
+                  ) : (
+                    "Preview Auto Mapping Program"
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={handleAutoMapExecute}
+                  disabled={
+                    !autoMapExecuteReady || !autoMapConfirm || autoMapExecuteLoading
+                  }
+                >
+                  {autoMapExecuteLoading ? (
+                    <>
+                      <Spinner size="sm" className="me-2" /> Menjalankan...
+                    </>
+                  ) : (
+                    "Terapkan Auto Mapping"
+                  )}
+                </Button>
+              </div>
+              <Form.Text className="d-block text-muted mt-2">
+                Sistem akan memetakan <strong>{autoMapReadyCount || 0}</strong>{" "}
+                program berdasarkan kecocokan kode yang identik. Program lain
+                tidak akan diubah.
+              </Form.Text>
+
+              <Form.Check
+                type="checkbox"
+                id="autoMapConfirm"
+                className="mt-2 mb-0 small"
+                checked={autoMapConfirm}
+                onChange={(e) => setAutoMapConfirm(e.target.checked)}
+                disabled={!autoMapExecuteReady || autoMapExecuteLoading}
+                label="Saya mengonfirmasi eksekusi auto mapping sesuai hasil preview."
+              />
+              {!autoMapPreviewFresh && autoMapLastPreviewPayload ? (
+                <Form.Text className="text-muted d-block">
+                  Parameter berubah setelah preview. Jalankan preview ulang
+                  sebelum eksekusi.
+                </Form.Text>
+              ) : null}
+
+              {autoMapPreviewData ? (
+                <>
+                  {autoMapMassScanMode ? (
+                    <Alert variant="warning" className="small py-2 mt-3 mb-2">
+                      Pratinjau ini memeriksa semua program RPJMD yang belum
+                      termapping pada konteks terpilih.
+                    </Alert>
+                  ) : null}
+
+                  {autoMapPreviewData.correlation_id ? (
+                    <p className="small text-muted mb-2 mt-2">
+                      correlation_id: <code>{autoMapPreviewData.correlation_id}</code>
+                    </p>
+                  ) : null}
+                  <div className="d-flex flex-wrap gap-2 mb-2">
+                    <Badge bg="success">
+                      Exact match (100%): {autoMapReadyCount || 0}
+                    </Badge>
+                    <Badge
+                      bg={autoMapAmbiguousCount > 0 ? "warning" : "secondary"}
+                      text={autoMapAmbiguousCount > 0 ? "dark" : undefined}
+                    >
+                      Ambiguous: {autoMapAmbiguousCount || 0}
+                    </Badge>
+                    <Badge bg={autoMapNotFoundCount > 0 ? "danger" : "secondary"}>
+                      Tidak ditemukan: {autoMapNotFoundCount || 0}
+                    </Badge>
+                  </div>
+
+                  <Table size="sm" bordered responsive className="small mt-2">
+                    <tbody>
+                      <tr>
+                        <td>Total program discan</td>
+                        <td>{autoMapSummary?.total_programs_scanned ?? 0}</td>
+                      </tr>
+                      <tr>
+                        <td>Siap dipetakan (exact code)</td>
+                        <td>{autoMapSummary?.ready_exact_match ?? 0}</td>
+                      </tr>
+                      <tr>
+                        <td>Ambigu</td>
+                        <td>{autoMapSummary?.ambiguous ?? 0}</td>
+                      </tr>
+                      <tr>
+                        <td>Tidak ditemukan</td>
+                        <td>{autoMapSummary?.not_found ?? 0}</td>
+                      </tr>
+                      <tr>
+                        <td>Sudah termapping</td>
+                        <td>{autoMapSummary?.already_mapped ?? 0}</td>
+                      </tr>
+                    </tbody>
+                  </Table>
+
+                  {autoMapReadyItems.length ? (
+                    <>
+                      <div className="small fw-bold mb-1">
+                        Sample kandidat siap dipetakan
+                      </div>
+                      <Table size="sm" striped bordered responsive className="small">
+                        <thead>
+                          <tr>
+                            <th>program_id</th>
+                            <th>kode_program</th>
+                            <th>nama_program</th>
+                            <th>candidate_master_program_id</th>
+                            <th>candidate_kode_program_full</th>
+                            <th>candidate_nama_program</th>
+                            <th>match_type</th>
+                            <th>confidence</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {autoMapReadyItems.slice(0, 20).map((r) => (
+                            <tr key={r.program_id}>
+                              <td>{r.program_id}</td>
+                              <td>{r.kode_program}</td>
+                              <td>{r.nama_program || "-"}</td>
+                              <td>{r.candidate_master_program_id}</td>
+                              <td>{r.candidate_kode_program_full || "-"}</td>
+                              <td>{r.candidate_nama_program || "-"}</td>
+                              <td>
+                                {r.match_type === "exact_code" &&
+                                Number(r.confidence) >= 1 ? (
+                                  <Badge bg="success">Exact match (100%)</Badge>
+                                ) : (
+                                  r.match_type || "-"
+                                )}
+                              </td>
+                              <td>
+                                {Number(r.confidence) >= 1
+                                  ? "100%"
+                                  : (r.confidence ?? "-")}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </Table>
+                    </>
+                  ) : (
+                    <p className="small text-muted mb-0">
+                      Tidak ada kandidat exact match yang siap dieksekusi.
+                    </p>
+                  )}
+                </>
+              ) : null}
+
+              {autoMapExecuteData ? (
+                <>
+                  {autoMapExecuteData.correlation_id ? (
+                    <p className="small text-muted mt-3 mb-2">
+                      correlation_id execute:{" "}
+                      <code>{autoMapExecuteData.correlation_id}</code>
+                    </p>
+                  ) : null}
+                  <Table size="sm" bordered responsive className="small">
+                    <tbody>
+                      <tr>
+                        <td>Berhasil dipetakan</td>
+                        <td>{autoMapExecuteSummary?.mapped ?? 0}</td>
+                      </tr>
+                      <tr>
+                        <td>Dilewati karena sudah termapping</td>
+                        <td>
+                          {autoMapExecuteSummary?.already_mapped_count ??
+                            autoMapExecuteSummary?.noop_count ??
+                            autoMapExecuteSummary?.skipped ??
+                            0}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>Gagal</td>
+                        <td>{autoMapExecuteSummary?.failed ?? 0}</td>
+                      </tr>
+                    </tbody>
+                  </Table>
+
+                  {autoMapExecuteDetails.length ? (
+                    <>
+                      <div className="small fw-bold mb-1">
+                        Detail hasil eksekusi (sample)
+                      </div>
+                      <Table size="sm" bordered responsive className="small mb-0">
+                        <thead>
+                          <tr>
+                            <th>program_id</th>
+                            <th>kode_program</th>
+                            <th>nama_program</th>
+                            <th>status</th>
+                            <th>candidate_master_program_id</th>
+                            <th>reason</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {autoMapExecuteDetails.slice(0, 20).map((r, i) => (
+                            <tr key={`${r.program_id || "x"}-${i}`}>
+                              <td>{r.program_id}</td>
+                              <td>{r.kode_program || "-"}</td>
+                              <td>{r.nama_program || "-"}</td>
+                              <td>{r.status || "-"}</td>
+                              <td>{r.candidate_master_program_id || "-"}</td>
+                              <td>{r.reason || "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </Table>
+                    </>
+                  ) : null}
+                </>
+              ) : null}
+            </Card.Body>
+          </Card>
+
           {previewData ? (
             <Card className="mb-3 shadow-sm">
               <Card.Body>
@@ -650,6 +1495,16 @@ export default function RpjmdBulkMasterImportPage() {
                     <code>{previewData.correlation_id}</code>
                   </p>
                 ) : null}
+                <Alert variant="secondary" className="small py-2">
+                  <div className="fw-semibold mb-1">Ringkasan cepat</div>
+                  <ul className="mb-0 ps-3">
+                    {humanPreviewSummary.map((item) => (
+                      <li key={item.key}>
+                        {item.label}: {item.value}
+                      </li>
+                    ))}
+                  </ul>
+                </Alert>
                 <Table size="sm" bordered responsive>
                   <tbody>
                     <tr>
@@ -1141,3 +1996,4 @@ export default function RpjmdBulkMasterImportPage() {
     </Container>
   );
 }
+

@@ -132,6 +132,10 @@ exports.getDropdownOPD = async (req, res) => {
     const withBidang = include_bidang === "true";
     const attributes = [
       [sequelize.fn("MIN", sequelize.col("id")), "id"],
+      // Daftar seluruh id opd_penanggung_jawab yang tergabung pada entri dropdown ini.
+      // Dibutuhkan oleh UI untuk memetakan pilihan OPD (grouped) ke id yang dipakai di transaksi,
+      // misalnya program.opd_penanggung_jawab.
+      [sequelize.fn("GROUP_CONCAT", sequelize.col("id")), "opd_penanggung_jawab_ids"],
       "nama_opd",
     ];
     const group = ["nama_opd"];

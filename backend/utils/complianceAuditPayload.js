@@ -1,14 +1,17 @@
-"use strict";
+﻿"use strict";
 
 /**
  * Konvensi payload audit compliance (disimpan di tenant_audit_logs.payload, JSON).
- * Tidak mengubah skema DB — hanya struktur isi payload.
+ * Tidak mengubah skema DB â€” hanya struktur isi payload.
  */
 
 const CHANGE_ORIGIN = Object.freeze({
   API_RPJMD_BACKFILL: "api:rpjmd:backfill",
   API_RPJMD_BULK_MASTER: "api:rpjmd:bulk-from-master",
-  /** Sync RPJMD → RKPD (preview atau commit) */
+  API_RPJMD_PROGRAM_AUTO_MAP: "api:rpjmd:program-auto-map",
+  API_RPJMD_KEGIATAN_AUTO_MAP: "api:rpjmd:kegiatan-auto-map",
+  API_RPJMD_SUB_AUTO_MAP: "api:rpjmd:sub-auto-map",
+  /** Sync RPJMD â†’ RKPD (preview atau commit) */
   API_RPJMD_RKPD_SYNC: "api:rpjmd-rkpd:sync",
   /** alias rencana lama */
   API_RKPD_SYNC: "api:rkpd:sync",

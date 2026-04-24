@@ -75,6 +75,11 @@ function TujuanPreviewRichCell({ row, col, opdMap }) {
     const resolved = resolveOpdDisplayName(opdMap, raw);
     if (resolved) displayRaw = resolved;
   }
+  // Placeholder dash dari Excel dianggap kosong (agar tidak tampil sebagai nilai literal).
+  if (typeof displayRaw === "string") {
+    const t = displayRaw.trim();
+    if (t === "—" || t === "–" || t === "-") displayRaw = "";
+  }
   const isEmpty =
     displayRaw === undefined || displayRaw === null || String(displayRaw).trim() === "";
   const full = isEmpty
@@ -224,9 +229,8 @@ const INDIKATOR_ARAH_KEBIJAKAN_GRID_COLS = [
 /** `indikatorprograms` — pola selaras indikator sasaran (relasi acuan + indikator). */
 const INDIKATOR_PROGRAM_GRID_COLS = [
   { key: "indikator_sasaran_id", label: "Indik. Sasaran ID", truncate: 10 },
-  ...INDIKATOR_SASARAN_GRID_COLS,
-  { key: "jenis_dokumen", label: "jenis_dokumen", truncate: 20 },
-  { key: "tahun", label: "tahun", truncate: 10 },
+  // Sembunyikan kolom yang tidak diperlukan operator pada daftar (penanggung_jawab, keterangan, jenis_dokumen, tahun).
+  ...INDIKATOR_SASARAN_GRID_COLS.filter((c) => c.key !== "penanggung_jawab" && c.key !== "keterangan"),
 ];
 
 /** `indikatorkegiatans` — acuan indikator sasaran + isi indikator (tanpa kode / FK hierarki / program_id di pratinjau). */
@@ -235,8 +239,6 @@ const INDIKATOR_KEGIATAN_GRID_COLS = [
   { key: "nama_indikator", label: "Nama Indikator", truncate: 72 },
   ...GRID_INDIKATOR_JENIS_THROUGH_CAPAIAN,
   { key: "sumber_data", label: "Sumber Data", truncate: 36 },
-  { key: "penanggung_jawab", label: "Penanggung Jawab", truncate: 48 },
-  { key: "keterangan", label: "keterangan", truncate: 40 },
   { key: "tipe_indikator", label: "Tipe Indikator", truncate: 10 },
 ];
 
@@ -255,9 +257,6 @@ const INDIKATOR_SUB_KEGIATAN_GRID_COLS = [
   { key: "definisi_operasional", label: "Definisi Operasional", truncate: 40 },
   { key: "metode_penghitungan", label: "Metode Penghitungan", truncate: 40 },
   { key: "baseline", label: "Baseline", truncate: 20 },
-  ...GRID_INDIKATOR_TARGET_AWAL_AKHIR,
-  { key: "realisasi", label: "realisasi", truncate: 14 },
-  { key: "anggaran", label: "anggaran", truncate: 14 },
   { key: "target_tahun_1", label: "Target Tahun 1", truncate: 14 },
   { key: "target_tahun_2", label: "Target Tahun 2", truncate: 14 },
   { key: "target_tahun_3", label: "Target Tahun 3", truncate: 14 },
@@ -269,8 +268,6 @@ const INDIKATOR_SUB_KEGIATAN_GRID_COLS = [
   { key: "capaian_tahun_4", label: "capaian_tahun_4", truncate: 14 },
   { key: "capaian_tahun_5", label: "capaian_tahun_5", truncate: 14 },
   { key: "sumber_data", label: "Sumber Data", truncate: 36 },
-  { key: "penanggung_jawab", label: "Penanggung Jawab", truncate: 24 },
-  { key: "keterangan", label: "keterangan", truncate: 40 },
   { key: "tipe_indikator", label: "Tipe Indikator", truncate: 10 },
 ];
 
@@ -370,7 +367,8 @@ const INDIKATOR_PROGRAM_PREVIEW_RICH_COLS = [
 
 /** Pratinjau kaya Indikator Kegiatan — acuan sasaran + indikator. */
 const INDIKATOR_KEGIATAN_PREVIEW_RICH_COLS = [
-  { key: "indikator_sasaran_id", label: "Indikator Sasaran (acuan)", maxW: 72, cellType: "mono" },
+  { key: "indikator_program_id", label: "Indikator Program (acuan)", maxW: 72, cellType: "mono" },
+  { key: "indikator_sasaran_id", label: "Indikator Sasaran (opsional)", maxW: 72, cellType: "mono" },
   ...INDIKATOR_SASARAN_PREVIEW_RICH_COLS,
 ];
 
@@ -879,6 +877,48 @@ function RpjmdIndikatorExcelImportCard({
               ? INDIKATOR_SUB_KEGIATAN_PREVIEW_RICH_COLS
               : INDIKATOR_TUJUAN_PREVIEW_RICH_COLS;
 
+  // Untuk indikatorprograms: sembunyikan kolom yang seluruhnya kosong pada hasil pratinjau,
+  // agar tampilannya selaras dengan tab Strategi/Arah Kebijakan (operator tidak melihat banyak "—").
+  const effectiveRichCols = React.useMemo(() => {
+    if (!isIndikatorProgramTab && !isIndikatorKegiatanTab && !isIndikatorSubKegiatanTab) return richCols;
+    if (!Array.isArray(richPreviewRows) || richPreviewRows.length === 0) return richCols;
+
+    const baseAlwaysShow = [
+      "nama_indikator",
+      "satuan",
+      "tolok_ukur_kinerja",
+      "target_kinerja",
+      "baseline",
+      "target_tahun_1",
+      "target_tahun_2",
+      "target_tahun_3",
+      "target_tahun_4",
+      "target_tahun_5",
+      "sumber_data",
+      "penanggung_jawab",
+    ];
+
+    const alwaysShow = new Set([
+      ...(isIndikatorProgramTab
+        ? ["indikator_sasaran_id"]
+        : isIndikatorKegiatanTab
+          ? ["indikator_program_id"]
+          : ["sub_kegiatan_id"]),
+      ...baseAlwaysShow,
+    ]);
+
+    const isBlank = (val) => {
+      if (val === undefined || val === null) return true;
+      const s = String(val).trim();
+      return s === "" || s === "—" || s === "–" || s === "-";
+    };
+
+    const hasAnyValue = (key) =>
+      richPreviewRows.some((row) => !isBlank(indikatortujuansCellRaw(row, key)));
+
+    return (richCols || []).filter((c) => alwaysShow.has(c.key) || hasAnyValue(c.key));
+  }, [isIndikatorProgramTab, isIndikatorKegiatanTab, isIndikatorSubKegiatanTab, richCols, richPreviewRows]);
+
   return (
     <Alert variant="light" className="border small mb-3">
       <div className="fw-semibold mb-2">Impor Excel — indikator (pratinjau → konfirmasi → sisipkan)</div>
@@ -914,6 +954,11 @@ function RpjmdIndikatorExcelImportCard({
         >
           <div className="mb-1">
             Selesai: <strong>{applyRes.inserted ?? applyRes.ok ?? 0}</strong> baris disisipkan,{" "}
+            {applyRes.updated != null ? (
+              <>
+                <strong>{applyRes.updated}</strong> baris diperbarui,{" "}
+              </>
+            ) : null}
             <strong>{applyRes.failed ?? applyRes.fail ?? 0}</strong> tidak disisipkan (gagal pratinjau / validasi
             sebelum sisip)
             {applyRes.attempted != null ? (
@@ -1012,7 +1057,7 @@ function RpjmdIndikatorExcelImportCard({
                       <th className="text-muted small" style={{ width: 56 }}>Baris</th>
                     </>
                   ) : null}
-                  {richCols.map((c) => (
+                  {effectiveRichCols.map((c) => (
                     <th
                       key={c.key}
                       className="small text-secondary"
@@ -1037,7 +1082,7 @@ function RpjmdIndikatorExcelImportCard({
                         <td className="text-muted font-monospace">{row._xlsxRowIndex ?? "—"}</td>
                       </>
                     ) : null}
-                    {richCols.map((c) => (
+                    {effectiveRichCols.map((c) => (
                       <td
                         key={c.key}
                         className="align-top py-2"
@@ -1386,10 +1431,40 @@ export default function RpjmdDokumenImporPanel({ periodeId }) {
     return <td className="text-nowrap" style={{ width: 1 }}>{buttons}</td>;
   };
 
+  // Adapter ringan untuk tabel hasil impor: beberapa tabel indikator memakai nama FK berbeda di DB.
+  // UI tetap menampilkan kolom "Indik. Sasaran ID" agar operator bisa melacak relasi acuan.
+  const indikatorProgramSasaranById = React.useMemo(() => {
+    const m = new Map();
+    for (const r of iprog || []) {
+      const pid = r?.id;
+      const sid = r?.sasaran_id ?? r?.indikator_sasaran_id;
+      if (pid == null || sid == null) continue;
+      const pidNum = Number(pid);
+      const sidNum = Number(sid);
+      if (Number.isFinite(pidNum) && Number.isFinite(sidNum)) m.set(pidNum, sidNum);
+    }
+    return m;
+  }, [iprog]);
+
   const indikatorTable = (tableKey, rows) => {
     const cols = gridColsForIndikatorTable(tableKey);
     /* opdMap tersedia dari closure parent component */
     const colCount = cols.length + 1;
+    const displayRows =
+      tableKey === "indikator_program"
+        ? (Array.isArray(rows) ? rows : []).map((r) => {
+            if (!r || r.indikator_sasaran_id != null) return r;
+            return r.sasaran_id != null ? { ...r, indikator_sasaran_id: r.sasaran_id } : r;
+          })
+        : tableKey === "indikator_kegiatan"
+          ? (Array.isArray(rows) ? rows : []).map((r) => {
+              if (!r || r.indikator_sasaran_id != null) return r;
+              const pid = Number(r.indikator_program_id);
+              if (!Number.isFinite(pid)) return r;
+              const sid = indikatorProgramSasaranById.get(pid);
+              return sid != null ? { ...r, indikator_sasaran_id: sid } : r;
+            })
+          : (Array.isArray(rows) ? rows : []);
     return (
       <>
         {tabToolbar(tableKey)}
@@ -1434,14 +1509,14 @@ export default function RpjmdDokumenImporPanel({ periodeId }) {
               </tr>
             </thead>
             <tbody>
-              {!rows.length ? (
+              {!displayRows.length ? (
                 <tr>
                   <td colSpan={colCount} className="text-muted text-center py-3">
                     Belum ada data.
                   </td>
                 </tr>
               ) : (
-                rows.map((r) => (
+                displayRows.map((r) => (
                   <tr key={r.id}>
                     {cols.map((c) => (
                       <td

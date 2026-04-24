@@ -15,6 +15,8 @@ import FolderIcon from "@mui/icons-material/Folder";
 import BusinessIcon from "@mui/icons-material/Business";
 import CardMembershipIcon from "@mui/icons-material/CardMembership";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
+import SyncAltIcon from "@mui/icons-material/SyncAlt";
+import FactCheckIcon from "@mui/icons-material/FactCheck";
 import { useDokumen } from "../../hooks/useDokumen";
 import { useAuth } from "../../hooks/useAuth";
 import { isDokumenLevelPeriode } from "../../utils/planningDokumenUtils";
@@ -29,6 +31,18 @@ const menuItems = [
   { label: "RPJMD", icon: <MenuBookIcon />, path: "/dashboard-rpjmd" },
   { label: "Renstra", icon: <AssignmentIcon />, path: "/dashboard-renstra" },
   { label: "RKPD", icon: <TodayIcon />, path: "/dashboard-rkpd" },
+  {
+    label: "Sync RPJMD → RKPD",
+    icon: <SyncAltIcon />,
+    path: "/rkpd/rpjmd-sync",
+    roles: ["SUPER_ADMIN", "ADMINISTRATOR"],
+  },
+  {
+    label: "Audit compliance",
+    icon: <FactCheckIcon />,
+    path: "/audit/planning-compliance",
+    roles: ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS"],
+  },
   { label: "Renja", icon: <FolderIcon />, path: "/dashboard-renja" },
   { label: "RKA", icon: <DashboardIcon />, path: "/dashboard-rka" },
   { label: "DPA", icon: <DashboardIcon />, path: "/dashboard-dpa" },
@@ -79,6 +93,11 @@ export default function MuiSidebarGlobal() {
   const { user } = useAuth();
   const locked = !dokumen || !tahun;
   const isSuperAdmin = normalizeRole(user?.role) === "SUPER_ADMIN";
+  const roleNorm = normalizeRole(user?.role);
+  const visibleMenuItems = menuItems.filter((item) => {
+    if (!item.roles?.length) return true;
+    return item.roles.includes(roleNorm);
+  });
 
   return (
     <Drawer
@@ -160,7 +179,7 @@ export default function MuiSidebarGlobal() {
       )}
       {isSuperAdmin && <Divider sx={{ borderColor: "rgba(255,255,255,0.12)" }} />}
       <List>
-        {menuItems.map((item) =>
+        {visibleMenuItems.map((item) =>
           locked ? (
             <ListItem
               key={item.label}

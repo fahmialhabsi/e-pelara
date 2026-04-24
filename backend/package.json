@@ -18,6 +18,7 @@
     "test:renja-data-fix-hardening": "node scripts/renjaDataFixHardeningTest.js",
     "test:rpjmd-bulk-master-hardening": "node scripts/rpjmdBulkFromMasterHardeningTest.js",
     "test:rpjmd-bulk-master-integration": "node scripts/rpjmdBulkFromMaster.integration.test.js",
+    "test:planning-audit-dashboard": "node scripts/planningAuditDashboard.selfTest.js",
     "db:migrate": "sequelize-cli db:migrate",
     "db:migrate:status": "sequelize-cli db:migrate:status",
     "job:compliance-record": "node scripts/recordComplianceSnapshotJob.js",

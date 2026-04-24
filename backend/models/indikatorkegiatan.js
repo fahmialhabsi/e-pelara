@@ -48,6 +48,7 @@ module.exports = (sequelize, DataTypes) => {
       nama_indikator: { type: DataTypes.TEXT, allowNull: false },
       tipe_indikator: { type: DataTypes.ENUM("Proses"), allowNull: false },
       jenis: DataTypes.STRING(100),
+      indikator_kinerja: DataTypes.TEXT,
       tolok_ukur_kinerja: DataTypes.TEXT,
       target_kinerja: DataTypes.TEXT,
       jenis_indikator: {

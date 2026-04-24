@@ -1,9 +1,10 @@
-const {
+﻿const {
   sequelize,
   Program,
   IndikatorProgram,
   IndikatorKegiatan,
   IndikatorSasaran,
+  OpdPenanggungJawab,
 } = require("../models");
 const { Op, fn, col, where: sqlWhere } = require("sequelize");
 const { generateKodeIndikator } = require("../helpers/generateKodeIndikator");
@@ -23,6 +24,7 @@ const allowedFields = [
   "nama_indikator",
   "tipe_indikator",
   "jenis",
+  "indikator_kinerja",
   "tolok_ukur_kinerja",
   "target_kinerja",
   "jenis_indikator",
@@ -53,9 +55,54 @@ const allowedFields = [
   "sasaran_id",
   "indikator_id",
   "program_id",
+  "arah_kebijakan_id",
 ];
 
 const MAX_LIMIT = 200;
+
+// Fallback aman untuk field default pada controller ini.
+// Catatan: secara ideal default mengikuti periode aktif; namun controller ini
+// menggunakan default hanya saat request tidak menyertakan nilai.
+const defaultDokumen = {
+  jenis_dokumen: "RPJMD",
+  tahun: String(new Date().getFullYear()),
+};
+
+function buildDocJenisClause(jenis_dokumen, tableAlias = null) {
+  const jenisLc = String(jenis_dokumen ?? "").trim().toLowerCase();
+  if (!jenisLc) return null;
+  const colName = tableAlias ? `${tableAlias}.jenis_dokumen` : "jenis_dokumen";
+  const left = fn("LOWER", fn("TRIM", col(colName)));
+  // RPJMD bisa tersimpan sebagai "RPJMD 2025-2029" → match prefix.
+  if (jenisLc === "rpjmd") return sqlWhere(left, { [Op.like]: "rpjmd%" });
+  return sqlWhere(left, jenisLc);
+}
+
+function extractProgramBaseFromArahKodeIndikator(kode) {
+  const raw = kode == null ? "" : String(kode).trim();
+  if (!raw) return "";
+
+  // Target pola basis:
+  //   AR1-01-01-01 -> 1.01.01.01
+  //   ASST1-01-01.1.1 (jika dipakai) -> 1.01.01.1.1 (tetap deterministik)
+  const segs = raw
+    .split("-")
+    .map((s) => String(s).trim())
+    .filter(Boolean);
+
+  const out = [];
+  for (const seg of segs) {
+    // Jika segmen sudah berupa angka bertitik (01.1.1), pertahankan.
+    if (/^\d+(?:\.\d+)+$/.test(seg)) {
+      out.push(seg);
+      continue;
+    }
+    const m = seg.match(/\d+/g);
+    if (m && m.length > 0) out.push(m[m.length - 1]);
+  }
+
+  return out.join(".");
+}
 
 function applyAutoBaseline(row) {
   if (row.target_tahun_5) {
@@ -121,7 +168,7 @@ exports.create = async (req, res) => {
         message: err.message,
       });
     }
-    console.error("❌ CREATE ERROR:", err);
+    console.error("âŒ CREATE ERROR:", err);
     return res.status(500).json({ message: err.message });
   }
 };
@@ -194,7 +241,7 @@ exports.bulkCreateDetail = async (req, res) => {
         message: err.message,
       });
     }
-    console.error("❌ BULK CREATE DETAIL ERROR:", err);
+    console.error("âŒ BULK CREATE DETAIL ERROR:", err);
     return res.status(500).json({ message: err.message });
   }
 };
@@ -215,11 +262,15 @@ exports.findAll = async (req, res) => {
     const limit = Math.min(parseInt(perPage, 10) || 50, MAX_LIMIT);
     const offset = (parseInt(page, 10) - 1) * limit;
 
-    const jenisLc = String(jenis_dokumen).trim().toLowerCase();
-    const tahunStr = String(tahun);
+    const docJenisClause = buildDocJenisClause(jenis_dokumen, "IndikatorProgram");
+    const docJenisClauseSasaran = buildDocJenisClause(
+      jenis_dokumen,
+      "IndikatorSasaran",
+    );
+    const tahunStr = String(tahun).trim();
     const andParts = [
       { tahun: tahunStr },
-      sqlWhere(fn("LOWER", col("jenis_dokumen")), jenisLc),
+      ...(docJenisClause ? [docJenisClause] : []),
     ];
 
     let pid = null;
@@ -236,7 +287,7 @@ exports.findAll = async (req, res) => {
               sasaran_id: prog.sasaran_id,
               tahun: tahunStr,
               [Op.and]: [
-                sqlWhere(fn("LOWER", col("jenis_dokumen")), jenisLc),
+                ...(docJenisClauseSasaran ? [docJenisClauseSasaran] : []),
               ],
             },
             attributes: ["id", "sasaran_id"],
@@ -247,9 +298,9 @@ exports.findAll = async (req, res) => {
         const uniqSasaran = [...new Set(sasaranKeys.filter((n) => Number.isFinite(n)))];
         /**
          * Hook duplicate (beforeCreate) hanya cek kode_indikator + jenis_dokumen + tahun,
-         * tanpa program_id — data lama sering program_id NULL.
+         * tanpa program_id â€” data lama sering program_id NULL.
          * GET harus mengembalikan baris yang sama konteks program:
-         *   (program_id = :pid) OR (program_id IS NULL AND sasaran_id ∈ {FK indikator sasaran, sasaran RPJMD}).
+         *   (program_id = :pid) OR (program_id IS NULL AND sasaran_id âˆˆ {FK indikator sasaran, sasaran RPJMD}).
          */
         if (uniqSasaran.length > 0) {
           andParts.push({
@@ -274,6 +325,12 @@ exports.findAll = async (req, res) => {
     const { count, rows } = await IndikatorProgram.findAndCountAll({
       where,
       include: [
+        {
+          model: OpdPenanggungJawab,
+          as: "opdPenanggungJawab",
+          attributes: ["id", "nama_opd", "nama_bidang_opd"],
+          required: false,
+        },
         {
           model: IndikatorKegiatan,
           as: "kegiatans",
@@ -312,7 +369,7 @@ exports.findAll = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("❌ FIND ALL ERROR:", err.message);
+    console.error("âŒ FIND ALL ERROR:", err.message);
     return res.status(500).json({ message: err.message });
   }
 };
@@ -347,7 +404,7 @@ exports.findOne = async (req, res) => {
 
     return res.status(200).json(indikatorProgram);
   } catch (err) {
-    console.error("❌ FIND ONE ERROR:", err);
+    console.error("âŒ FIND ONE ERROR:", err);
     return res.status(500).json({ message: err.message });
   }
 };
@@ -355,6 +412,7 @@ exports.findOne = async (req, res) => {
 exports.getNextKode = async (req, res) => {
   try {
     const { program_id } = req.params;
+    const { tahun, jenis_dokumen, arah_kebijakan_kode_indikator } = req.query;
 
     if (!program_id) {
       return res.status(400).json({ message: "program_id wajib diisi." });
@@ -367,17 +425,53 @@ exports.getNextKode = async (req, res) => {
       });
     }
 
-    const prefix = `IP-${program.kode_program}`;
-    const nextKode = await generateKodeIndikator(
-      program_id,
-      prefix,
-      IndikatorProgram,
-      "program_id"
+    const tahunStr =
+      tahun != null && String(tahun).trim() !== ""
+        ? String(tahun).trim()
+        : String(new Date().getFullYear());
+    const jenisLc =
+      jenis_dokumen != null && String(jenis_dokumen).trim() !== ""
+        ? String(jenis_dokumen).trim().toLowerCase()
+        : null;
+
+    // Basis kode indikator program mengikuti kode indikator Arah Kebijakan jika tersedia.
+    // Jika tidak ada, fallback ke kode program (masih deterministik dan mudah diaudit).
+    const baseFromArah = extractProgramBaseFromArahKodeIndikator(
+      arah_kebijakan_kode_indikator
     );
+    const base = baseFromArah || String(program.kode_program).trim();
+    const prefix = `IP-${base}`;
+
+    const andParts = [
+      { tahun: tahunStr },
+      ...(jenisLc
+        ? [sqlWhere(fn("LOWER", col("jenis_dokumen")), jenisLc)]
+        : []),
+      { kode_indikator: { [Op.like]: `${prefix}.%` } },
+    ];
+
+    const result = await IndikatorProgram.findOne({
+      where: { [Op.and]: andParts },
+      attributes: [
+        [
+          sequelize.fn(
+            "MAX",
+            sequelize.literal(
+              "CAST(SUBSTRING_INDEX(kode_indikator,'.',-1) AS UNSIGNED)"
+            )
+          ),
+          "maxNumber",
+        ],
+      ],
+      raw: true,
+    });
+
+    const next = (result?.maxNumber || 0) + 1;
+    const nextKode = `${prefix}.${String(next).padStart(2, "0")}`;
 
     return res.json({ next_kode: nextKode });
   } catch (err) {
-    console.error("❌ GET NEXT KODE ERROR:", err);
+    console.error("âŒ GET NEXT KODE ERROR:", err);
     return res.status(500).json({ message: err.message });
   }
 };
@@ -393,11 +487,15 @@ exports.update = async (req, res) => {
 
     const updateData = {
       ...req.body,
-      jenis_dokumen: req.body.jenis_dokumen || defaultDokumen.jenis_dokumen,
-      tahun: req.body.tahun || defaultDokumen.tahun,
+      // Jangan ganti konteks baris jika client (modal edit) tidak mengirim tahun/jenis_dokumen.
+      jenis_dokumen:
+        req.body.jenis_dokumen ||
+        indikatorProgram.jenis_dokumen ||
+        defaultDokumen.jenis_dokumen,
+      tahun: req.body.tahun || indikatorProgram.tahun || defaultDokumen.tahun,
     };
 
-    // 🔄 Ikuti nilai capaian_tahun_5 jika tersedia
+    // ðŸ”„ Ikuti nilai capaian_tahun_5 jika tersedia
     if (updateData.capaian_tahun_5) {
       updateData.baseline = updateData.capaian_tahun_5;
       updateData.target_awal = updateData.capaian_tahun_5;
@@ -411,7 +509,7 @@ exports.update = async (req, res) => {
     await indikatorProgram.update(updateData);
     return res.status(200).json(indikatorProgram);
   } catch (err) {
-    console.error("❌ UPDATE ERROR:", err);
+    console.error("âŒ UPDATE ERROR:", err);
     if (err.name === "SequelizeValidationError") {
       return sendValidationErrors(res, 400, fromSequelizeValidationError(err), {
         message: err.message,
@@ -441,7 +539,8 @@ exports.delete = async (req, res) => {
     await indikatorProgram.destroy();
     return res.status(204).json();
   } catch (err) {
-    console.error("❌ DELETE ERROR:", err);
+    console.error("âŒ DELETE ERROR:", err);
     return res.status(500).json({ message: err.message });
   }
 };
+

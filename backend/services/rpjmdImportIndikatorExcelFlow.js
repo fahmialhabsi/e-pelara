@@ -147,6 +147,9 @@ const EXPLICIT_HEADER_ALIASES = {
   "tipe indikator": "tipe_indikator",
   "jenis indikator": "jenis_indikator",
   jenis: "jenis",
+  // Template user-facing sering memakai header ini; tanpa alias, key menjadi "jenis_(iku/ikk)" dan tidak terbaca.
+  "jenis (iku/ikk)": "jenis",
+  "jenis (iku / ikk)": "jenis",
   "tujuan id": "tujuan_id",
   "misi id": "misi_id",
   "metode penghitungan": "metode_penghitungan",
@@ -259,6 +262,14 @@ const INDIKATORTUJUAN_IGNORED_EXCEL_KEYS = new Set([
 
 function normalizeRowForTable(table, body) {
   const b = { ...body };
+
+  // Sanitasi placeholder Excel yang sering dipakai sebagai "kosong" agar tidak tersimpan sebagai nilai literal.
+  // Contoh di template: "—" untuk kolom opsional (tipe_indikator, jenis_indikator, jenis, dst).
+  for (const [k, v] of Object.entries(b)) {
+    if (typeof v !== "string") continue;
+    const t = v.trim();
+    if (t === "—" || t === "–" || t === "-") b[k] = "";
+  }
 
   /**
    * Strip kolom kode Excel untuk indikatortujuans — kode_indikator harus dari generator backend.
@@ -1383,8 +1394,9 @@ function stripIndikatorKegiatanImportPayload(table, payload, opts = {}) {
     "periode_id",
   ];
   for (const k of keys) delete payload[k];
-  if (opts.forPreview) delete payload.indikator_program_id;
-  else delete payload.indikator_sasaran_id;
+  // Preview perlu menampilkan acuan (indikator_program_id) agar operator dapat memverifikasi baris.
+  // Saat apply/insert, indikator_sasaran_id hanya kolom bantu resolver; hapus agar payload tetap bersih.
+  if (!opts.forPreview) delete payload.indikator_sasaran_id;
 }
 
 /** Pratinjau / Terapkan: kolom denormal sub kegiatan & timestamp tidak dikirim; `kegiatan_id` hanya bantu resolver (hapus sebelum insert). */

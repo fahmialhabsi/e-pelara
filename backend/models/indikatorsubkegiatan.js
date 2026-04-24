@@ -55,6 +55,7 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
       jenis:           { type: DataTypes.STRING(100), allowNull: true },
+      indikator_kinerja: { type: DataTypes.TEXT, allowNull: true },
       jenis_indikator: {
         type: DataTypes.ENUM("Kuantitatif", "Kualitatif"),
         allowNull: true,

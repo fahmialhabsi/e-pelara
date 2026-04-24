@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Tab, Nav, Row, Button, Alert } from "react-bootstrap";
 import IndikatorTabContent from "../../IndikatorTabContent";
 import PreviewList from "@/shared/components/components/PreviewList";
@@ -6,6 +6,7 @@ import {
   TAB_LABELS,
   MAX_INDIKATOR,
 } from "@/shared/components/constants/indikatorFields";
+import { getRpjmdIndikatorDraftDedupeKey } from "../wizardIndikatorStepUtils";
 
 /**
  * Satu Tab.Container untuk tab 1–5 (form + preview/AI) — wajib satu root agar Bootstrap tabs valid.
@@ -64,6 +65,83 @@ export default function IndikatorFormTabsPanel({
 }) {
   const saveHint = SAVE_FLOW_HINT[stepKey] || "";
   const [savingInProgress, setSavingInProgress] = useState(false);
+
+  /**
+   * UX hardening:
+   * Preview (tab 5) menampilkan list `values[stepKey]`. Saat pengguna mengisi baseline di tab Target,
+   * nilainya ada di draft scalar `values.baseline` tetapi baris list bisa masih kosong (mis. data hasil impor/DB).
+   *
+   * Agar operator tidak melihat "Baseline kosong" padahal sudah diisi, saat masuk tab Preview kita isi
+   * baseline pada baris yang matching (dedupe key sama) hanya jika baseline baris tsb masih kosong.
+   *
+   * Catatan: ini tidak menulis ke DB dan tidak overwrite baseline yang sudah terisi pada baris list.
+   */
+  useEffect(() => {
+    if (activeInnerTab !== 5) return;
+    const list = values?.[stepKey];
+    if (!Array.isArray(list) || list.length === 0) return;
+
+    const draftBaseline = values?.baseline;
+    const draftPj = values?.penanggung_jawab;
+    const draftKode = values?.kode_indikator;
+
+    const hasAnyDraft =
+      (draftBaseline != null && String(draftBaseline).trim() !== "") ||
+      (draftPj != null && String(draftPj).trim() !== "") ||
+      (draftKode != null && String(draftKode).trim() !== "");
+    if (!hasAnyDraft) return;
+
+    const draftKey = getRpjmdIndikatorDraftDedupeKey(values, values);
+
+    // Match utama: dedupeKey (berbasis kode_indikator).
+    let idx =
+      draftKey
+        ? list.findIndex(
+            (row) => getRpjmdIndikatorDraftDedupeKey(row, values) === draftKey,
+          )
+        : -1;
+
+    // Fallback Step Program: baris legacy sering kode ST... dan program_id NULL.
+    // Saat operator sudah memilih program_id, kita anggap baris pertama = kandidat yang sedang di-edit.
+    if (idx < 0 && stepKey === "program" && list.length === 1) {
+      idx = 0;
+    }
+
+    if (idx < 0) return;
+
+    const cur = list[idx] || {};
+    const patch = {};
+
+    if (
+      (cur.baseline == null || String(cur.baseline).trim() === "") &&
+      draftBaseline != null &&
+      String(draftBaseline).trim() !== ""
+    ) {
+      patch.baseline = String(draftBaseline);
+    }
+
+    if (
+      (cur.penanggung_jawab == null || String(cur.penanggung_jawab).trim() === "") &&
+      draftPj != null &&
+      String(draftPj).trim() !== ""
+    ) {
+      patch.penanggung_jawab = String(draftPj);
+    }
+
+    if (
+      (cur.kode_indikator == null || String(cur.kode_indikator).trim() === "") &&
+      draftKode != null &&
+      String(draftKode).trim() !== ""
+    ) {
+      patch.kode_indikator = String(draftKode);
+    }
+
+    if (Object.keys(patch).length === 0) return;
+
+    const next = [...list];
+    next[idx] = { ...cur, ...patch };
+    setFieldValue(stepKey, next);
+  }, [activeInnerTab, stepKey, setFieldValue, values]);
 
   const handleSaveClick = async () => {
     if (savingInProgress) return;

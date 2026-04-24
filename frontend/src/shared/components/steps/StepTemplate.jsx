@@ -153,6 +153,7 @@ const StepTemplate = ({
     arahKebijakanOptions,
     subKegiatanOptions,
     programIndikatorOptions,
+    kegiatanIndikatorOptions,
     penanggungJawabOptions,
     contextData,
     loadingContext,
@@ -162,6 +163,9 @@ const StepTemplate = ({
     tahun,
     dokumen,
     programId: values.program_id,
+    kegiatanId: values.kegiatan_id,
+    indikatorProgramId: values.indikator_program_id,
+    kegiatanKodeIndikator: values.kegiatan_kode_indikator,
     setFieldValue,
     penanggungJawabRef,
     options,
@@ -340,9 +344,11 @@ const StepTemplate = ({
         programOptions={programOptions}
         strategiOptions={strategiOptions}
         arahKebijakanOptions={arahKebijakanOptions}
+        arahKebijakanIndikatorOptions={options?.arah_kebijakan_indikator || []}
         subKegiatanOptions={subKegiatanOptions}
         kegiatanOptions={kegiatanOptions}
         programIndikatorOptions={programIndikatorOptions}
+        kegiatanIndikatorOptions={kegiatanIndikatorOptions}
         contextData={contextData}
         loadingContext={loadingContext}
         handleTujuanChange={handleTujuanChange}
