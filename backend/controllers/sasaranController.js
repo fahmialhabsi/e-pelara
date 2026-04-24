@@ -2,6 +2,131 @@ const { Sasaran, Tujuan, Misi, Indikator } = require("../models");
 const { getPeriodeFromTahun } = require("../utils/periodeHelper");
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
 const { Op } = require("sequelize");
+const { listResponse } = require("../utils/responseHelper");
+
+const parseId = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+/** Untuk regex prefix nomor sasaran (S{no_tujuan}-NN). */
+const escapeRegExp = (s) => String(s ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const applyTujuanFilter = (where, tujuanIds = []) => {
+  if (!Array.isArray(tujuanIds) || !tujuanIds.length) return;
+  where.tujuan_id = tujuanIds.length === 1 ? tujuanIds[0] : { [Op.in]: tujuanIds };
+};
+
+const resolveTujuanIdsForDokumen = async ({
+  tujuanId,
+  jenisDokumen,
+  tahun,
+  periodeId,
+}) => {
+  const parsedTujuanId = parseId(tujuanId);
+  if (!parsedTujuanId) return [];
+
+  const sourceTujuan = await Tujuan.findByPk(parsedTujuanId, {
+    attributes: [
+      "id",
+      "no_tujuan",
+      "isi_tujuan",
+      "jenis_dokumen",
+      "tahun",
+      "periode_id",
+    ],
+  });
+
+  if (!sourceTujuan) {
+    return [parsedTujuanId];
+  }
+
+  const isSameScope =
+    String(sourceTujuan.jenis_dokumen || "").toLowerCase() ===
+      String(jenisDokumen || "").toLowerCase() &&
+    String(sourceTujuan.tahun || "") === String(tahun) &&
+    Number(sourceTujuan.periode_id || 0) === Number(periodeId || 0);
+
+  if (isSameScope) {
+    return [sourceTujuan.id];
+  }
+
+  const usePeriodeFilter = String(jenisDokumen || "").toLowerCase() !== "rpjmd";
+  const byNoTujuan = await Tujuan.findAll({
+    where: {
+      no_tujuan: sourceTujuan.no_tujuan,
+      jenis_dokumen: jenisDokumen,
+      tahun: String(tahun),
+      ...(usePeriodeFilter ? { periode_id: periodeId } : {}),
+    },
+    attributes: ["id"],
+    order: [["id", "ASC"]],
+  });
+
+  if (byNoTujuan.length) {
+    return byNoTujuan.map((item) => item.id);
+  }
+
+  const isiTujuan = String(sourceTujuan.isi_tujuan || "").trim();
+  if (isiTujuan) {
+    const byIsiTujuan = await Tujuan.findAll({
+      where: {
+        isi_tujuan: isiTujuan,
+        jenis_dokumen: jenisDokumen,
+        tahun: String(tahun),
+        ...(usePeriodeFilter ? { periode_id: periodeId } : {}),
+      },
+      attributes: ["id"],
+      order: [["id", "ASC"]],
+    });
+
+    if (byIsiTujuan.length) {
+      return byIsiTujuan.map((item) => item.id);
+    }
+  }
+
+  return [sourceTujuan.id];
+};
+
+const fetchSasaranRows = async ({
+  where,
+  pageSize,
+  pageOffset,
+  jenisDokumen,
+  tahun,
+}) => {
+  const data = await Sasaran.findAll({
+    where,
+    attributes: ["id", "nomor", "isi_sasaran", "tujuan_id"],
+    include: [
+      {
+        model: Tujuan,
+        as: "Tujuan",
+        attributes: ["id", "no_tujuan", "isi_tujuan", "misi_id"],
+        include: [
+          {
+            model: Misi,
+            as: "Misi",
+            attributes: ["id", "no_misi", "isi_misi"],
+          },
+        ],
+      },
+      {
+        model: Indikator,
+        as: "Indikator",
+        where: { jenis_dokumen: jenisDokumen, tahun: String(tahun) },
+        required: false,
+        attributes: ["id", "kode_indikator", "nama_indikator"],
+      },
+    ],
+    order: [["nomor", "ASC"]],
+    limit: pageSize,
+    offset: pageOffset,
+  });
+
+  const totalItems = await Sasaran.count({ where });
+  return { data, totalItems };
+};
 
 const sasaranController = {
   async create(req, res) {
@@ -96,44 +221,80 @@ const sasaranController = {
         return res.status(400).json({ message: "Periode tidak ditemukan." });
       const periode_id = periode.id;
 
-      const where = { periode_id, jenis_dokumen, tahun };
-      if (tujuan_id) where.tujuan_id = tujuan_id;
+      const normalizedDokumen = String(jenis_dokumen).toLowerCase();
+      const where = {
+        jenis_dokumen: normalizedDokumen,
+        tahun: String(tahun),
+        ...(normalizedDokumen === "rpjmd" ? {} : { periode_id }),
+      };
+      const hasTujuanFilter =
+        tujuan_id !== undefined &&
+        tujuan_id !== null &&
+        String(tujuan_id).trim() !== "";
+
+      if (hasTujuanFilter) {
+        const tujuanIds = await resolveTujuanIdsForDokumen({
+          tujuanId: tujuan_id,
+          jenisDokumen: jenis_dokumen,
+          tahun: String(tahun),
+          periodeId: periode_id,
+        });
+        applyTujuanFilter(where, tujuanIds);
+      }
 
       const pageSize = Math.min(parseInt(limit) || 100, 200);
       const pageOffset = parseInt(offset) || 0;
 
-      const data = await Sasaran.findAll({
+      let resolvedDokumen = normalizedDokumen;
+      let { data, totalItems } = await fetchSasaranRows({
         where,
-        attributes: ["id", "nomor", "isi_sasaran", "tujuan_id"],
-        include: [
-          {
-            model: Tujuan,
-            as: "Tujuan",
-            attributes: ["id", "no_tujuan", "isi_tujuan", "misi_id"],
-            include: [
-              {
-                model: Misi,
-                as: "Misi",
-                attributes: ["id", "no_misi", "isi_misi"],
-              },
-            ],
-          },
-          {
-            model: Indikator,
-            as: "Indikator",
-            where: { jenis_dokumen, tahun },
-            required: false,
-            attributes: ["id", "kode_indikator", "nama_indikator"],
-          },
-        ],
-        order: [["nomor", "ASC"]],
-        limit: pageSize,
-        offset: pageOffset,
+        pageSize,
+        pageOffset,
+        jenisDokumen: resolvedDokumen,
+        tahun: String(tahun),
       });
 
-      return res
-        .status(200)
-        .json({ message: "Data sasaran berhasil diambil.", data });
+      if (!data.length && hasTujuanFilter && resolvedDokumen !== "rpjmd") {
+        const fallbackWhere = {
+          jenis_dokumen: "rpjmd",
+          tahun: String(tahun),
+        };
+
+        const fallbackTujuanIds = await resolveTujuanIdsForDokumen({
+          tujuanId: tujuan_id,
+          jenisDokumen: "rpjmd",
+          tahun: String(tahun),
+          periodeId: periode_id,
+        });
+        applyTujuanFilter(fallbackWhere, fallbackTujuanIds);
+
+        const fallbackResult = await fetchSasaranRows({
+          where: fallbackWhere,
+          pageSize,
+          pageOffset,
+          jenisDokumen: "rpjmd",
+          tahun: String(tahun),
+        });
+
+        if (fallbackResult.data.length) {
+          data = fallbackResult.data;
+          totalItems = fallbackResult.totalItems;
+          resolvedDokumen = "rpjmd";
+        }
+      }
+
+      return listResponse(
+        res,
+        200,
+        "Data sasaran berhasil diambil.",
+        data,
+        {
+          totalItems,
+          limit: pageSize,
+          offset: pageOffset,
+          resolvedDokumen,
+        }
+      );
     } catch (err) {
       console.error("Error fetching sasaran:", err);
       return res
@@ -165,7 +326,7 @@ const sasaranController = {
   async getByTujuan(req, res) {
     try {
       const { tujuan_id } = req.params;
-      let { tahun, jenis_dokumen } = req.query;
+      let { tahun, jenis_dokumen, periode_id: periodeQuery } = req.query;
       if (!tahun) tahun = new Date().getFullYear();
 
       if (!tujuan_id) {
@@ -174,35 +335,93 @@ const sasaranController = {
           .json({ message: "Parameter tujuan_id wajib diisi." });
       }
 
-      const periode = await getPeriodeFromTahun(tahun);
-      if (!periode)
-        return res.status(400).json({ message: "Periode tidak ditemukan." });
-      const periode_id = periode.id;
+      /**
+       * Normalisasi tahun agar konsisten dengan cara penyimpanan di DB.
+       * Beberapa controller menyimpan tahun sebagai integer, sebagian sebagai string.
+       * Kita coba keduanya saat filtering.
+       */
+      const tahunNum = parseInt(String(tahun), 10);
+      const tahunNorm = Number.isFinite(tahunNum) ? tahunNum : tahun;
 
-      // Log yang benar: semua variabel sudah terdefinisi
-      console.log({ tujuan_id, tahun, jenis_dokumen, periode_id });
+      const qPid = Number(periodeQuery);
+      let periode_id = null;
+      if (
+        periodeQuery !== undefined &&
+        periodeQuery !== "" &&
+        Number.isFinite(qPid)
+      ) {
+        periode_id = qPid;
+      } else {
+        // Coba resolve periode dari tahun, tapi jangan hard-fail — lihat fallback di bawah
+        try {
+          const periode = await getPeriodeFromTahun(tahun);
+          if (periode) periode_id = periode.id;
+        } catch (_) {
+          // abaikan — akan coba tanpa filter periode_id
+        }
+      }
 
-      const where = { tujuan_id, periode_id };
-      if (jenis_dokumen) where.jenis_dokumen = jenis_dokumen;
+      const commonAttrs = [
+        "id",
+        "tujuan_id",
+        "isi_sasaran",
+        "created_at",
+        "updated_at",
+        "rpjmd_id",
+        "nomor",
+        "periode_id",
+        "jenis_dokumen",
+        "tahun",
+      ];
 
-      const sasarans = await Sasaran.findAll({
+      // Coba query dengan semua filter (termasuk periode_id dan tahun)
+      const where = { tujuan_id };
+      if (periode_id !== null) where.periode_id = periode_id;
+      if (jenis_dokumen) where.jenis_dokumen = String(jenis_dokumen).toLowerCase();
+      if (tahun !== undefined && tahun !== null && String(tahun).trim() !== "") {
+        // Gunakan nilai integer jika tersedia, fallback ke string
+        where.tahun = tahunNorm;
+      }
+
+      let sasarans = await Sasaran.findAll({
         where,
-        attributes: [
-          "id",
-          "tujuan_id",
-          "isi_sasaran",
-          "created_at",
-          "updated_at",
-          "rpjmd_id",
-          "nomor",
-          "periode_id",
-          "jenis_dokumen",
-          "tahun",
-        ],
+        attributes: commonAttrs,
         order: [["nomor", "ASC"]],
       });
 
-      return res.status(200).json(sasarans);
+      /**
+       * Fallback 1: Jika hasil kosong dan kita memakai filter tahun integer,
+       * coba ulang dengan tahun sebagai string (perbedaan tipe kolom antar tabel).
+       */
+      if (sasarans.length === 0 && Number.isFinite(tahunNum)) {
+        const whereStr = { ...where, tahun: String(tahun) };
+        sasarans = await Sasaran.findAll({
+          where: whereStr,
+          attributes: commonAttrs,
+          order: [["nomor", "ASC"]],
+        });
+      }
+
+      /**
+       * Fallback 2: Jika masih kosong dan ada filter periode_id,
+       * coba tanpa periode_id — data lama mungkin belum diisi periode.
+       */
+      if (sasarans.length === 0 && periode_id !== null) {
+        const whereNoPeriode = { tujuan_id };
+        if (jenis_dokumen) whereNoPeriode.jenis_dokumen = String(jenis_dokumen).toLowerCase();
+        sasarans = await Sasaran.findAll({
+          where: whereNoPeriode,
+          attributes: commonAttrs,
+          order: [["nomor", "ASC"]],
+        });
+      }
+
+      return listResponse(
+        res,
+        200,
+        "Daftar sasaran berdasarkan tujuan berhasil diambil",
+        sasarans
+      );
     } catch (err) {
       console.error("Error getByTujuan:", err);
       return res
@@ -309,11 +528,38 @@ const sasaranController = {
         return res.status(400).json({ message: "Periode tidak ditemukan." });
       const periode_id = periode.id;
 
-      const maxNomor = await Sasaran.max("nomor", {
+      const tujuan = await Tujuan.findByPk(tujuan_id, {
+        attributes: ["no_tujuan"],
+      });
+      if (!tujuan) {
+        return res.status(404).json({ message: "Tujuan tidak ditemukan." });
+      }
+      const noTujuan = String(tujuan.no_tujuan ?? "").trim();
+      if (!noTujuan) {
+        return res
+          .status(400)
+          .json({ message: "Tujuan tidak memiliki no_tujuan untuk penomoran." });
+      }
+      const prefix = `S${noTujuan}`;
+
+      const rows = await Sasaran.findAll({
         where: { tujuan_id, jenis_dokumen, tahun, periode_id },
+        attributes: ["nomor"],
+        raw: true,
       });
 
-      const nextNomor = maxNomor ? maxNomor + 1 : 1;
+      let maxSeq = 0;
+      const re = new RegExp(`^${escapeRegExp(prefix)}-(\\d+)$`);
+      for (const row of rows) {
+        const nom = row.nomor != null ? String(row.nomor).trim() : "";
+        const m = nom.match(re);
+        if (m) {
+          const n = Number.parseInt(m[1], 10);
+          if (Number.isFinite(n) && n > maxSeq) maxSeq = n;
+        }
+      }
+
+      const nextNomor = maxSeq + 1;
       return res.status(200).json({ nextNomor });
     } catch (err) {
       console.error("Error fetching next nomor:", err);

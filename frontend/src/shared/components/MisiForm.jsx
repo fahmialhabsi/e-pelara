@@ -14,10 +14,20 @@ import {
 import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { useDokumen } from "../../hooks/useDokumen";
+import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
+import { konteksBannerRows } from "../../utils/planningDokumenUtils";
+import {
+  extractListData,
+  normalizeListItems,
+} from "../../utils/apiResponse";
 
 export default function MisiForm() {
   const { user } = useAuth();
   const { dokumen, tahun } = useDokumen();
+  const { periode_id, periodeList } = usePeriodeAktif();
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(periode_id),
+  );
   const [visiList, setVisiList] = useState([]);
   const [misiList, setMisiList] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -44,7 +54,7 @@ export default function MisiForm() {
         const res = await api.get("/rpjmd", {
           params: { jenis_dokumen: dokumen, tahun },
         });
-        const first = res.data[0];
+        const first = extractListData(res.data)[0];
         if (first?.id) {
           setRpjmdId(first.id);
         }
@@ -65,8 +75,8 @@ export default function MisiForm() {
           api.get("/visi", { params: { jenis_dokumen: dokumen, tahun } }),
           api.get("/misi", { params: { jenis_dokumen: dokumen, tahun } }),
         ]);
-        setVisiList(visiRes.data);
-        setMisiList(misiRes.data);
+        setVisiList(normalizeListItems(visiRes.data));
+        setMisiList(normalizeListItems(misiRes.data));
         setErrorMsg("");
       } catch {
         setErrorMsg("Gagal memuat data, silakan refresh halaman.");
@@ -140,7 +150,7 @@ export default function MisiForm() {
       const misiRes = await api.get("/misi", {
         params: { jenis_dokumen: dokumen, tahun },
       });
-      setMisiList(misiRes.data);
+      setMisiList(normalizeListItems(misiRes.data));
       handleCancel();
       setActiveTab("daftar");
     } catch {
@@ -168,7 +178,7 @@ export default function MisiForm() {
       const misiRes = await api.get("/misi", {
         params: { jenis_dokumen: dokumen, tahun },
       });
-      setMisiList(misiRes.data);
+      setMisiList(normalizeListItems(misiRes.data));
       if (selectedId === id) handleCancel();
     } catch {
       setErrorMsg("Gagal hapus misi.");
@@ -191,8 +201,11 @@ export default function MisiForm() {
       </Breadcrumb>
 
       <div className="mb-3">
-        <strong>Dokumen Aktif:</strong> {dokumen} <br />
-        <strong>Tahun:</strong> {tahun}
+        {konteksBannerRows(dokumen, tahun, periodeAktif).map((r) => (
+          <span key={r.key} className="d-block">
+            <strong>{r.label}:</strong> {r.value}
+          </span>
+        ))}
       </div>
 
       {errorMsg && (

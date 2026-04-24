@@ -55,13 +55,13 @@ const ReadOnlyIndikatorPreview = ({ data }) => {
         </tr>
         {[1, 2, 3, 4, 5].map((i) => (
           <tr key={`target-${i}`}>
-            <th>{`Target Tahun ${i}`}</th>
+            <th>{`Target (th. ke-${i})`}</th>
             <td>{data[`target_tahun_${i}`]}</td>
           </tr>
         ))}
         {[1, 2, 3, 4, 5].map((i) => (
           <tr key={`capaian-${i}`}>
-            <th>{`Capaian Tahun ${i}`}</th>
+            <th>{`Capaian (th. ke-${i})`}</th>
             <td>{data[`capaian_tahun_${i}`] || "-"}</td>
           </tr>
         ))}

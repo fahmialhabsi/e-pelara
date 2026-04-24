@@ -9,7 +9,8 @@ const PreviewList = React.memo(({ data, opdOptions = [] }) => {
     .filter((item) => item && typeof item === "object")
     .map((item) => {
       const matchedOPD = opdOptions.find(
-        (opt) => Number(opt.value) === Number(item.penanggung_jawab)
+        (opt) =>
+          String(opt.value) === String(item.penanggung_jawab ?? "")
       );
 
       return {
@@ -21,7 +22,10 @@ const PreviewList = React.memo(({ data, opdOptions = [] }) => {
   return (
     <>
       {enhancedData.map((item, idx) => (
-        <div key={idx} className="mb-4">
+        <div
+          key={String(item.indikator_id ?? item.kode_indikator ?? idx)}
+          className="mb-4"
+        >
           <h6>Indikator {idx + 1}</h6>
           <ReadOnlyIndikatorPreview data={item} />
         </div>

@@ -1,5 +1,5 @@
 // src/features/renstra/tujuan/components/TujuanRenstraForm.jsx
-import React from "react";
+import React, { useEffect } from "react";
 import { Form, Button, Card, Space } from "antd";
 import { useNavigate } from "react-router-dom";
 import { useTujuanRenstraForm } from "@/hooks/templatesUseRenstra/useTujuanRenstraForm";
@@ -21,10 +21,24 @@ const TujuanRenstraForm = ({ initialData = null, renstraAktif }) => {
 
   const {
     control,
+    setValue,
     formState: { errors },
   } = form;
 
   const tujuanOptions = dropdowns?.["tujuan-rpjmd"] || [];
+
+  // Edit: setelah daftar RPJMD terisi, paksa nilai field = number agar cocok Option (bukan string dari API)
+  useEffect(() => {
+    if (
+      !initialData ||
+      initialData.rpjmd_tujuan_id == null ||
+      !tujuanOptions.length
+    )
+      return;
+    setValue("rpjmd_tujuan_id", Number(initialData.rpjmd_tujuan_id), {
+      shouldValidate: false,
+    });
+  }, [initialData?.id, initialData?.rpjmd_tujuan_id, tujuanOptions.length, setValue]);
 
   return (
     <Card
@@ -62,8 +76,8 @@ const TujuanRenstraForm = ({ initialData = null, renstraAktif }) => {
           required
           loading={isLoading}
           options={tujuanOptions.map((item) => ({
-            value: item.id,
-            label: `${item.no_tujuan} - ${item.isi_tujuan}`,
+            value: Number(item.id),
+            label: `${item.no_tujuan ?? ""} - ${item.isi_tujuan ?? ""}`.trim(),
           }))}
           onChange={handleTujuanChange}
         />

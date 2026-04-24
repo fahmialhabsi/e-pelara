@@ -75,7 +75,8 @@ async function autoCloneMisi({ tahun, periode_id, jenis_dokumen }) {
 const initController = {
   async initAll(req, res) {
     try {
-      const { tahun, jenisDokumen } = req.body;
+      const { tahun } = req.body;
+      const jenisDokumen = req.body.jenisDokumen || req.body.jenis_dokumen;
 
       if (!tahun) {
         return res.status(400).json({ message: "Tahun wajib diisi." });

@@ -4,6 +4,7 @@
     "password": "",
     "database": "db_epelara",
     "host": "localhost",
+    "port": 3306,
     "dialect": "mysql",
     "dialectOptions": {
       "charset": "utf8mb4"

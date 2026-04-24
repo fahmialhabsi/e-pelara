@@ -5,7 +5,7 @@ const RkpdFormModal = ({
   onClose,
   onSave,
   initialData = {},
-  options,
+  options = {},
 }) => {
   const [form, setForm] = useState({ ...initialData });
 
@@ -34,7 +34,7 @@ const RkpdFormModal = ({
             value={form.periode_id || ""}
           >
             <option value="">Pilih Periode</option>
-            {options.periode.map((p) => (
+            {(options.periode || []).map((p) => (
               <option key={p.id} value={p.id}>
                 {p.nama}
               </option>
@@ -47,7 +47,7 @@ const RkpdFormModal = ({
             value={form.opd_id || ""}
           >
             <option value="">Pilih OPD</option>
-            {options.opd.map((o) => (
+            {(options.opd || []).map((o) => (
               <option key={o.id} value={o.id}>
                 {o.nama}
               </option>
@@ -106,10 +106,10 @@ const RkpdFormModal = ({
             placeholder="Satuan"
           />
           <input
-            name="anggaran"
-            value={form.anggaran || ""}
+            name="pagu_anggaran"
+            value={form.pagu_anggaran || ""}
             onChange={handleChange}
-            placeholder="Anggaran"
+            placeholder="Pagu Anggaran"
             type="number"
           />
           <input
@@ -131,9 +131,10 @@ const RkpdFormModal = ({
             value={form.status || ""}
           >
             <option value="">Status</option>
-            <option value="Belum">Belum</option>
-            <option value="Berjalan">Berjalan</option>
-            <option value="Selesai">Selesai</option>
+            <option value="draft">draft</option>
+            <option value="submitted">submitted</option>
+            <option value="approved">approved</option>
+            <option value="rejected">rejected</option>
           </select>
           <textarea
             name="keterangan"

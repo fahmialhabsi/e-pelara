@@ -1,7 +1,14 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
+import { useAuth } from "../../hooks/useAuth";
+import { mapRoleToEpelara } from "../../utils/roleUtils";
 
 export default function SidebarGlobal() {
+  const { user } = useAuth();
+  const canRpjmdRkpdSync = ["SUPER_ADMIN", "ADMINISTRATOR"].includes(
+    mapRoleToEpelara(user?.role),
+  );
+
   return (
     <aside
       style={{
@@ -29,6 +36,11 @@ export default function SidebarGlobal() {
         <NavLink to="/dashboard-rkpd" style={navLinkStyle}>
           RKPD
         </NavLink>
+        {canRpjmdRkpdSync ? (
+          <NavLink to="/rkpd/rpjmd-sync" style={navLinkStyle}>
+            Sync RPJMD → RKPD
+          </NavLink>
+        ) : null}
         <NavLink to="/dashboard-renja" style={navLinkStyle}>
           Renja
         </NavLink>

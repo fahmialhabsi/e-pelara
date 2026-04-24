@@ -1,6 +1,6 @@
 // backend/utils/autoCloneArahKebijakanIfNeeded.js
 
-const { sequelize } = require("../models");
+const { ArahKebijakan, Strategi } = require("../models");
 const { getPeriodeFromTahun } = require("./periodeHelper");
 const redisClient = require("./redisClient");
 const { safeGet, safeSetEx } = require("./safeRedis");
@@ -8,74 +8,107 @@ const { safeGet, safeSetEx } = require("./safeRedis");
 async function autoCloneArahKebijakanIfNeeded({ jenis_dokumen, tahun }) {
   if (!jenis_dokumen || !tahun) return;
 
-  const periode = await getPeriodeFromTahun(tahun);
+  const normalizedTahun = String(tahun);
+  const periode = await getPeriodeFromTahun(normalizedTahun);
   if (!periode) return;
   const periode_id = periode.id;
 
-  const redisKey = `arahkan:cloned:${jenis_dokumen}:${tahun}`;
-  const alreadyCloned = await safeGet(redisClient, redisKey);
-
-  if (alreadyCloned) {
-    console.log("⏩ Skip cloning — data sudah pernah diclone sebelumnya.");
+  const redisKey = `arahkan:cloned:${jenis_dokumen}:${normalizedTahun}`;
+  if (await safeGet(redisClient, redisKey)) {
+    console.log("Skip cloning Arah Kebijakan, data sudah pernah diclone.");
     return;
   }
 
-  console.log("⚙️ [CLONE] Memulai clone ArahKebijakan (SQL optimized)");
-
-  const insertQuery = `
-  INSERT INTO arah_kebijakan (
-    strategi_id,
-    kode_arah,
-    deskripsi,
-    jenis_dokumen,
-    tahun,
-    periode_id,
-    created_at,
-    updated_at
-  )
-  SELECT
-    st_target.id AS strategi_id,
-    ak_rpjmd.kode_arah,
-    ak_rpjmd.deskripsi,
-    :jenis_dokumen,
-    ak_rpjmd.tahun,
-    ak_rpjmd.periode_id,
-    NOW(),
-    NOW()
-  FROM arah_kebijakan ak_rpjmd
-  INNER JOIN strategi st_rpjmd ON ak_rpjmd.strategi_id = st_rpjmd.id
-  INNER JOIN strategi st_target
-    ON st_target.kode_strategi = st_rpjmd.kode_strategi
-    AND st_target.jenis_dokumen = :jenis_dokumen
-    AND st_target.tahun = :tahun
-    AND st_target.periode_id = :periode_id
-  LEFT JOIN arah_kebijakan ak_target
-    ON ak_target.strategi_id = st_target.id
-    AND ak_target.kode_arah = ak_rpjmd.kode_arah
-    AND ak_target.deskripsi = ak_rpjmd.deskripsi
-    AND ak_target.jenis_dokumen = :jenis_dokumen
-    AND ak_target.tahun = :tahun
-    AND ak_target.periode_id = :periode_id
-  WHERE
-    ak_rpjmd.jenis_dokumen = 'rpjmd'
-    AND ak_rpjmd.tahun = :tahun
-    AND ak_rpjmd.periode_id = :periode_id
-    AND ak_target.id IS NULL;
-`;
-
-  const [insertResult] = await sequelize.query(insertQuery, {
-    replacements: { jenis_dokumen, tahun, periode_id },
+  const targetStrategi = await Strategi.findAll({
+    where: { jenis_dokumen, tahun: normalizedTahun, periode_id },
+    attributes: ["id", "kode_strategi"],
+    raw: true,
   });
 
-  // Ambil jumlah row yang diinsert pakai `affectedRows` dari `insertResult`
-  const total = insertResult?.affectedRows || 0;
-  if (total > 0) {
-    console.log(`🎯 Total data berhasil diclone: ${total}`);
-  } else {
-    console.log("ℹ️ Tidak ada data baru yang perlu diclone.");
+  if (!targetStrategi.length) {
+    await safeSetEx(redisClient, redisKey, 86400, "1");
+    return;
   }
 
-  await safeSetEx(redisClient, redisKey, 86400, "1"); // TTL 1 hari
+  const targetStrategiByKode = new Map(
+    targetStrategi.map((item) => [item.kode_strategi, item.id])
+  );
+
+  const sourceStrategi = await Strategi.findAll({
+    where: { jenis_dokumen: "rpjmd", tahun: normalizedTahun },
+    attributes: ["id", "kode_strategi"],
+    raw: true,
+  });
+
+  const sourceToTargetStrategi = new Map();
+  for (const item of sourceStrategi) {
+    const targetId = targetStrategiByKode.get(item.kode_strategi);
+    if (targetId) {
+      sourceToTargetStrategi.set(item.id, targetId);
+    }
+  }
+
+  if (!sourceToTargetStrategi.size) {
+    await safeSetEx(redisClient, redisKey, 86400, "1");
+    return;
+  }
+
+  const existing = await ArahKebijakan.findAll({
+    where: {
+      strategi_id: Array.from(new Set(sourceToTargetStrategi.values())),
+      jenis_dokumen,
+      tahun: normalizedTahun,
+      periode_id,
+    },
+    attributes: ["strategi_id", "kode_arah"],
+    raw: true,
+  });
+
+  const existingKeys = new Set(
+    existing.map((item) => `${item.strategi_id}:${item.kode_arah}`)
+  );
+
+  const sourceArah = await ArahKebijakan.findAll({
+    where: {
+      strategi_id: Array.from(sourceToTargetStrategi.keys()),
+      jenis_dokumen: "rpjmd",
+      tahun: normalizedTahun,
+    },
+    attributes: ["strategi_id", "kode_arah", "deskripsi"],
+    order: [["kode_arah", "ASC"]],
+    raw: true,
+  });
+
+  const toCreate = sourceArah
+    .map((item) => {
+      const targetStrategiId = sourceToTargetStrategi.get(item.strategi_id);
+      if (!targetStrategiId) return null;
+
+      const key = `${targetStrategiId}:${item.kode_arah}`;
+      if (existingKeys.has(key)) return null;
+
+      existingKeys.add(key);
+      return {
+        strategi_id: targetStrategiId,
+        kode_arah: item.kode_arah,
+        deskripsi: item.deskripsi,
+        jenis_dokumen,
+        tahun: normalizedTahun,
+        periode_id,
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+    })
+    .filter(Boolean);
+
+  if (toCreate.length) {
+    await ArahKebijakan.bulkCreate(toCreate, {
+      ignoreDuplicates: true,
+    });
+  }
+
+  console.log(`Total arah kebijakan berhasil diclone: ${toCreate.length}`);
+  await safeSetEx(redisClient, redisKey, 86400, "1");
 }
 
 module.exports = { autoCloneArahKebijakanIfNeeded };

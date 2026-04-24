@@ -33,6 +33,7 @@ exports.getAll = async (req, res) => {
       search = "",
       jenis_dokumen,
       tahun,
+      periode_id,
     } = req.query;
     if (!jenis_dokumen || !tahun)
       return res
@@ -41,17 +42,35 @@ exports.getAll = async (req, res) => {
 
     await ensureClonedOnce(jenis_dokumen, tahun);
 
-    const safeLimit = Math.min(Number(limit) || 20, 100);
+    // Izinkan limit besar (hingga 1000) agar form edit bisa memuat semua pilihan
+    const safeLimit = Math.min(Number(limit) || 20, 1000);
     const offset = (Number(page) - 1) * safeLimit;
 
+    const normalizedDokumen = String(jenis_dokumen || "").toLowerCase();
+    const tahunVal =
+      typeof tahun === "number" ? tahun : parseInt(String(tahun), 10);
+    const q = String(search || "").trim();
+
     const where = {
-      jenis_dokumen,
-      tahun,
-      [Op.or]: [
-        { kode_prionas: { [Op.like]: `%${search.trim()}%` } },
-        { uraian_prionas: { [Op.like]: `%${search.trim()}%` } },
-      ],
+      jenis_dokumen: normalizedDokumen,
+      tahun: Number.isFinite(tahunVal) ? tahunVal : tahun,
     };
+    /**
+     * periode_id bersifat opsional di sini: jika tidak dikirim atau kosong,
+     * kembalikan semua baris untuk jenis_dokumen + tahun tersebut.
+     * Ini agar form edit dapat menemukan pilihan yang tersimpan
+     * meskipun periode_id-nya berbeda dengan periode aktif.
+     */
+    const pid = Number(periode_id);
+    if (periode_id !== undefined && periode_id !== "" && Number.isFinite(pid)) {
+      where.periode_id = pid;
+    }
+    if (q) {
+      where[Op.or] = [
+        { kode_prionas: { [Op.like]: `%${q}%` } },
+        { uraian_prionas: { [Op.like]: `%${q}%` } },
+      ];
+    }
 
     const { rows, count } = await PrioritasNasional.findAndCountAll({
       where,

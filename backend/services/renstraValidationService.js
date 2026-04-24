@@ -38,7 +38,8 @@ async function validateKegiatanAgainstProgram(
 async function validateSubAgainstKegiatan(data, kegiatan_id, excludeId = null) {
   const { kegiatan, totalPagu } = await validasiPaguSubkegiatan(
     kegiatan_id,
-    excludeId
+    excludeId,
+    data.program_id
   );
 
   let warnings = [];
@@ -47,7 +48,7 @@ async function validateSubAgainstKegiatan(data, kegiatan_id, excludeId = null) {
 
   for (let i = 1; i <= 6; i++) {
     const paguBaru = new Decimal(data[`pagu_tahun_${i}`] || 0);
-    const paguKegiatan = new Decimal(kegiatan[`pagu_tahun_${i}`] || 0);
+    const paguKegiatan = new Decimal(kegiatan?.[`pagu_tahun_${i}`] || 0);
     const totalSub = new Decimal(totalPagu[`pagu_tahun_${i}`] || 0).plus(
       paguBaru
     );

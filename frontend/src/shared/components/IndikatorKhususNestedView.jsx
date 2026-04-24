@@ -12,17 +12,28 @@ const exportToExcel = (rows, title) => {
   XLSX.writeFile(wb, `${title}.xlsx`);
 };
 
+/** Judul panel/accordion dari key kategori (selaras dengan IndikatorKhususListPage). */
+const KATEGORI_JUDUL = {
+  tujuan: "Tujuan",
+  sasaran: "Sasaran",
+  strategi: "Strategi",
+  arah_kebijakan: "Arah Kebijakan",
+  program: "Program",
+  kegiatan: "Kegiatan",
+  sub_kegiatan: "Sub Kegiatan",
+};
+
 const exportToPDF = (rows, title) => {
   const doc = new jsPDF();
   const head = [
     [
       "Uraian Indikator",
-      "Capaian Tahun I",
+      "Capaian (th. ke-1)",
       "II",
       "III",
       "IV",
       "V",
-      "Target Tahun I",
+      "Target (th. ke-1)",
       "II",
       "III",
       "IV",
@@ -79,10 +90,10 @@ export default function IndikatorKhususNestedView({ data = {} }) {
           <tr>
             <th rowSpan={2}>Uraian Indikator</th>
             <th colSpan={5} className="text-center">
-              Capaian Tahun Ke
+              Capaian (th. ke-)
             </th>
             <th colSpan={5} className="text-center">
-              Target/Proyeksi Tahun Ke
+              Target / proyeksi (th. ke-)
             </th>
           </tr>
           <tr>
@@ -201,9 +212,11 @@ export default function IndikatorKhususNestedView({ data = {} }) {
     <Accordion defaultActiveKey="0" alwaysOpen>
       {Object.entries(data).map(([key, rows], idx) => (
         <Accordion.Item eventKey={String(idx)} key={key}>
-          <Accordion.Header>Indikator {key}</Accordion.Header>
+          <Accordion.Header>
+            Indikator {KATEGORI_JUDUL[key] || key}
+          </Accordion.Header>
           <Accordion.Body>
-            {renderTable(`Indikator ${key}`, rows)}
+            {renderTable(`Indikator ${KATEGORI_JUDUL[key] || key}`, rows)}
           </Accordion.Body>
         </Accordion.Item>
       ))}

@@ -1,21 +1,21 @@
 // src/features/rpjmd/pages/IndikatorSasaranEditPage.jsx
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import api from "@/services/api";
-import { Formik, Form } from "formik";
-import * as Yup from "yup";
-import StepTemplate from "@/shared/components/steps/StepTemplate";
-import { Spinner, Button, Alert } from "react-bootstrap";
-import useSetPreviewFields from "@/hooks/useSetPreviewFields";
-import useAutoIsiTahunDanTarget from "@/shared/components/hooks/useAutoIsiTahunDanTarget";
+import { Formik } from "formik";
+import { Spinner, Alert, Button } from "react-bootstrap";
+import IndikatorSimpleEditFormBody from "@/features/rpjmd/components/IndikatorSimpleEditFormBody";
+import { editSchemaForLevel } from "@/validations/indikatorSchemas";
+import {
+  mapBackendErrorsToFormik,
+  pickBackendErrorMessage,
+} from "@/utils/mapBackendErrorsToFormik";
+import {
+  getIndikatorSasaranDetail,
+  updateIndikatorSasaran,
+} from "@/features/rpjmd/services/indikatorRpjmdApi";
+import { mapIndikatorSasaranDetailToEditForm } from "@/features/rpjmd/services/indikatorRpjmdMapper";
 
-const validationSchema = Yup.object().shape({
-  tolok_ukur_kinerja: Yup.string().required(),
-  target_kinerja: Yup.string().required(),
-  definisi_operasional: Yup.string().required(),
-  metode_penghitungan: Yup.string().required(),
-  baseline: Yup.string().required(),
-});
+const validationSchema = editSchemaForLevel("sasaran");
 
 export default function IndikatorSasaranEditPage() {
   const { id } = useParams();
@@ -25,47 +25,10 @@ export default function IndikatorSasaranEditPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api
-      .get(`/indikator-sasaran/${id}`)
+    getIndikatorSasaranDetail(id)
       .then((res) => {
         const d = res.data;
-        setInitialValues({
-          indikator_id: d.id,
-          kode_indikator: d.kode_indikator,
-          nama_indikator: d.nama_indikator,
-          tipe_indikator: d.tipe_indikator || "",
-          jenis: d.jenis || "",
-          tolok_ukur_kinerja: d.tolok_ukur_kinerja || "",
-          target_kinerja: d.target_kinerja || "",
-          jenis_indikator: d.jenis_indikator || "",
-          kriteria_kuantitatif: d.kriteria_kuantitatif || "",
-          kriteria_kualitatif: d.kriteria_kualitatif || "",
-          satuan: d.satuan || "",
-          definisi_operasional: d.definisi_operasional || "",
-          metode_penghitungan: d.metode_penghitungan || "",
-          baseline: d.baseline || "",
-          target_tahun_1: d.target_tahun_1 || "",
-          target_tahun_2: d.target_tahun_2 || "",
-          target_tahun_3: d.target_tahun_3 || "",
-          target_tahun_4: d.target_tahun_4 || "",
-          target_tahun_5: d.target_tahun_5 || "",
-          capaian_tahun_1: d.capaian_tahun_1 || "",
-          capaian_tahun_2: d.capaian_tahun_2 || "",
-          capaian_tahun_3: d.capaian_tahun_3 || "",
-          capaian_tahun_4: d.capaian_tahun_4 || "",
-          capaian_tahun_5: d.capaian_tahun_5 || "",
-          sumber_data: d.sumber_data || "",
-          penanggung_jawab: d.penanggung_jawab || "",
-          keterangan: d.keterangan || "",
-          rekomendasi_ai: d.rekomendasi_ai || "",
-          tahun: d.tahun,
-          jenis_dokumen: d.jenis_dokumen,
-          misi_id: d.misi_id,
-          tujuan_id: d.tujuan_id,
-          sasaran_id: d.sasaran_id,
-          nomor: d.sasaran_id,
-          sasaran: [d],
-        });
+        setInitialValues(mapIndikatorSasaranDetailToEditForm(d));
       })
       .catch((err) => {
         console.error(err);
@@ -78,51 +41,61 @@ export default function IndikatorSasaranEditPage() {
   if (error) return <Alert variant="danger">{error}</Alert>;
 
   return (
-    <div className="p-4">
-      <h4>Edit Indikator Sasaran</h4>
+    <div className="p-0">
+      <div
+        style={{
+          background: "linear-gradient(135deg,#1a237e 0%,#283593 100%)",
+          color: "#fff",
+          padding: "16px 24px 14px",
+          marginBottom: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          boxShadow: "0 2px 8px rgba(26,35,126,.18)",
+        }}
+      >
+        <div>
+          <h4 style={{ margin: 0, fontSize: 18, fontWeight: 800, letterSpacing: 0.3, color: "#fff" }}>
+            ✏️ Edit Indikator Sasaran
+          </h4>
+          <div style={{ fontSize: 12, opacity: 0.72, marginTop: 3 }}>
+            Perubahan akan disimpan pada indikator sasaran yang sedang Anda edit.
+          </div>
+        </div>
+        <Button variant="outline-light" size="sm" onClick={() => navigate(-1)} style={{ fontWeight: 600 }}>
+          ✕ Tutup
+        </Button>
+      </div>
+      <div className="p-4 pt-3">
       <Formik
         initialValues={initialValues}
         validationSchema={validationSchema}
-        onSubmit={async (values, { setSubmitting }) => {
+        onSubmit={async (values, { setSubmitting, setErrors }) => {
+          setError("");
+          setErrors({});
           try {
-            await api.put(`/indikator-sasaran/${id}`, values);
+            await updateIndikatorSasaran(id, values);
             navigate("/dashboard-rpjmd");
           } catch (err) {
             console.error(err);
-            setError("Gagal menyimpan perubahan.");
+            const data = err?.response?.data;
+            setError(
+              pickBackendErrorMessage(data, "Gagal menyimpan perubahan.")
+            );
+            setErrors(mapBackendErrorsToFormik(data));
           } finally {
             setSubmitting(false);
           }
         }}
       >
-        {({ values, setFieldValue, isSubmitting }) => {
-          useSetPreviewFields(values, setFieldValue);
-          useAutoIsiTahunDanTarget(values, setFieldValue);
-
-          return (
-            <Form>
-              <StepTemplate
-                stepKey="sasaran"
-                options={{ penanggungJawab: [] }}
-                stepOptions={[]}
-                tabKey={4}
-                setTabKey={() => {}}
-                onSave={() => {}}
-              />
-
-              {error && <Alert variant="danger">{error}</Alert>}
-              <div className="mt-3 d-flex gap-2">
-                <Button variant="secondary" onClick={() => navigate(-1)}>
-                  Batal
-                </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  Simpan Perubahan
-                </Button>
-              </div>
-            </Form>
-          );
-        }}
+        <IndikatorSimpleEditFormBody
+          stepKey="sasaran"
+          stepTemplateOptions={{ penanggungJawab: [] }}
+          error={error}
+          navigate={navigate}
+        />
       </Formik>
+      </div>
     </div>
   );
 }

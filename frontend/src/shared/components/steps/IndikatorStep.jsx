@@ -209,14 +209,14 @@ const IndikatorStep = ({
         </Form.Control.Feedback>
       </Form.Group>
 
-      {/* Target per Tahun */}
-      <Form.Label>Target Tiap Tahun</Form.Label>
+      {/* Target per slot periode (RPJMD) */}
+      <Form.Label>Target periode (th. ke-1 s/d ke-5)</Form.Label>
       <div className="mb-3 d-flex gap-2 flex-wrap">
         {[1, 2, 3, 4, 5].map((i) => (
           <Form.Control
             key={i}
             style={{ width: "18%" }}
-            placeholder={`Tahun ${i}`}
+            placeholder={`Th. ke-${i}`}
             name={`target_tahun_${i}`}
             value={form[`target_tahun_${i}`]}
             onChange={handleChange}

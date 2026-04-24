@@ -88,12 +88,19 @@ exports.findAll = async (req, res) => {
     console.log("🔍 [FIND ALL Tujuan] called with query:", req.query);
 
     const where = {};
-    if (req.query.tujuan_id) {
-      where.tujuan_id = req.query.tujuan_id;
+    if (req.query.tujuan_id != null && req.query.tujuan_id !== "") {
+      where.tujuan_id = Number(req.query.tujuan_id);
+    }
+    if (req.query.indikator_id != null && req.query.indikator_id !== "") {
+      where.indikator_id = Number(req.query.indikator_id);
+    }
+    if (req.query.opd_id != null && req.query.opd_id !== "") {
+      where.opd_id = Number(req.query.opd_id);
     }
 
     const data = await RenstraTabelTujuan.findAll({
       where,
+      order: [["id", "DESC"]],
       include: [
         {
           model: IndikatorRenstra,

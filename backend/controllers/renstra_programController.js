@@ -1,8 +1,9 @@
 const { RenstraProgram, RenstraOPD } = require("../models");
+const { programWhereForRenstraOpdQuery } = require("../helpers/renstraOpdProgramFilter");
 
 // 🔧 CREATE
 exports.create = async (req, res) => {
-  const {
+  let {
     kode_program,
     nama_program,
     renstra_id,
@@ -11,54 +12,48 @@ exports.create = async (req, res) => {
     bidang_opd_penanggung_jawab,
   } = req.body;
 
-  // Validasi
-  if (!rpjmd_program_id || typeof rpjmd_program_id !== "string") {
-    return res
-      .status(400)
-      .json({ error: "rpjmd_program_id wajib diisi dan harus berupa string" });
+  // ── Koersi tipe data ──────────────────────────────────────────────────────
+  // rpjmd_program_id: simpan sebagai string (boleh masuk sebagai angka/string)
+  if (rpjmd_program_id !== undefined && rpjmd_program_id !== null) {
+    rpjmd_program_id = String(rpjmd_program_id);
   }
 
-  if (!kode_program || typeof kode_program !== "string") {
-    return res
-      .status(400)
-      .json({ error: "kode_program wajib diisi dan harus berupa string" });
+  // renstra_id: simpan sebagai integer
+  const renstraIdNum = Number(renstra_id);
+
+  // ── Validasi ──────────────────────────────────────────────────────────────
+  if (!rpjmd_program_id || rpjmd_program_id.trim() === "") {
+    return res.status(400).json({ error: "rpjmd_program_id wajib diisi" });
+  }
+
+  if (!kode_program || typeof kode_program !== "string" || kode_program.trim() === "") {
+    return res.status(400).json({ error: "kode_program wajib diisi dan harus berupa string" });
   }
 
   if (kode_program.length > 20) {
     return res.status(400).json({ error: "kode_program maksimal 20 karakter" });
   }
 
-  if (!nama_program || typeof nama_program !== "string") {
-    return res
-      .status(400)
-      .json({ error: "nama_program wajib diisi dan harus berupa string" });
+  if (!nama_program || typeof nama_program !== "string" || nama_program.trim() === "") {
+    return res.status(400).json({ error: "nama_program wajib diisi dan harus berupa string" });
   }
 
-  if (!renstra_id || typeof renstra_id !== "number") {
-    return res
-      .status(400)
-      .json({ error: "renstra_id wajib diisi dan harus berupa angka" });
+  if (!renstra_id || isNaN(renstraIdNum) || renstraIdNum <= 0) {
+    return res.status(400).json({ error: "renstra_id wajib diisi dan harus berupa angka positif" });
   }
 
   if (opd_penanggung_jawab && typeof opd_penanggung_jawab !== "string") {
-    return res
-      .status(400)
-      .json({ error: "opd_penanggung_jawab harus berupa string" });
+    return res.status(400).json({ error: "opd_penanggung_jawab harus berupa string" });
   }
 
-  if (
-    bidang_opd_penanggung_jawab &&
-    typeof bidang_opd_penanggung_jawab !== "string"
-  ) {
-    return res
-      .status(400)
-      .json({ error: "bidang_opd_penanggung_jawab harus berupa string" });
+  if (bidang_opd_penanggung_jawab && typeof bidang_opd_penanggung_jawab !== "string") {
+    return res.status(400).json({ error: "bidang_opd_penanggung_jawab harus berupa string" });
   }
 
   try {
     // Cek duplikasi
     const existing = await RenstraProgram.findOne({
-      where: { kode_program, renstra_id },
+      where: { kode_program, renstra_id: renstraIdNum },
     });
 
     if (existing) {
@@ -68,12 +63,12 @@ exports.create = async (req, res) => {
     }
 
     const data = await RenstraProgram.create({
-      kode_program,
-      nama_program,
-      renstra_id,
-      rpjmd_program_id,
-      opd_penanggung_jawab,
-      bidang_opd_penanggung_jawab,
+      kode_program: kode_program.trim(),
+      nama_program: nama_program.trim(),
+      renstra_id: renstraIdNum,
+      rpjmd_program_id: rpjmd_program_id.trim(),
+      opd_penanggung_jawab: opd_penanggung_jawab || "",
+      bidang_opd_penanggung_jawab: bidang_opd_penanggung_jawab || "",
     });
 
     res.status(201).json(data);
@@ -87,8 +82,10 @@ exports.findAll = async (req, res) => {
   try {
     const { renstra_id, tahun_mulai } = req.query;
 
-    const whereClause = {};
-    if (renstra_id) whereClause.renstra_id = renstra_id;
+    let whereClause = {};
+    if (renstra_id) {
+      whereClause = await programWhereForRenstraOpdQuery(renstra_id);
+    }
 
     // Ambil semua program Renstra, termasuk OPD dan Bidang
     const data = await RenstraProgram.findAll({
@@ -188,56 +185,47 @@ exports.update = async (req, res) => {
       bidang_opd_penanggung_jawab,
     } = req.body;
 
-    // Jika field kosong atau null, isi dengan string kosong
+    // ── Koersi tipe data ────────────────────────────────────────────────────
     opd_penanggung_jawab = opd_penanggung_jawab || "";
     bidang_opd_penanggung_jawab = bidang_opd_penanggung_jawab || "";
 
-    // Validasi tipe data
-    if (kode_program && typeof kode_program !== "string") {
-      return res
-        .status(400)
-        .json({ error: "kode_program harus berupa string" });
+    if (rpjmd_program_id !== undefined && rpjmd_program_id !== null) {
+      rpjmd_program_id = String(rpjmd_program_id);
     }
 
-    if (nama_program && typeof nama_program !== "string") {
-      return res
-        .status(400)
-        .json({ error: "nama_program harus berupa string" });
+    const renstraIdNum = renstra_id ? Number(renstra_id) : undefined;
+
+    // ── Validasi ringan ─────────────────────────────────────────────────────
+    if (kode_program !== undefined && typeof kode_program !== "string") {
+      return res.status(400).json({ error: "kode_program harus berupa string" });
     }
 
-    if (renstra_id && typeof renstra_id !== "number") {
-      return res.status(400).json({ error: "renstra_id harus berupa angka" });
+    if (nama_program !== undefined && typeof nama_program !== "string") {
+      return res.status(400).json({ error: "nama_program harus berupa string" });
     }
 
-    if (rpjmd_program_id && typeof rpjmd_program_id !== "string") {
-      return res
-        .status(400)
-        .json({ error: "rpjmd_program_id harus berupa string" });
+    if (renstra_id !== undefined && (isNaN(renstraIdNum) || renstraIdNum <= 0)) {
+      return res.status(400).json({ error: "renstra_id harus berupa angka positif" });
     }
 
     if (typeof opd_penanggung_jawab !== "string") {
-      return res
-        .status(400)
-        .json({ error: "opd_penanggung_jawab harus berupa string" });
+      return res.status(400).json({ error: "opd_penanggung_jawab harus berupa string" });
     }
 
     if (typeof bidang_opd_penanggung_jawab !== "string") {
-      return res
-        .status(400)
-        .json({ error: "bidang_opd_penanggung_jawab harus berupa string" });
+      return res.status(400).json({ error: "bidang_opd_penanggung_jawab harus berupa string" });
     }
 
-    const [updated] = await RenstraProgram.update(
-      {
-        kode_program,
-        nama_program,
-        renstra_id,
-        rpjmd_program_id,
-        opd_penanggung_jawab,
-        bidang_opd_penanggung_jawab,
-      },
-      { where: { id } }
-    );
+    const updatePayload = {
+      opd_penanggung_jawab,
+      bidang_opd_penanggung_jawab,
+    };
+    if (kode_program !== undefined)      updatePayload.kode_program      = kode_program.trim();
+    if (nama_program !== undefined)      updatePayload.nama_program      = nama_program.trim();
+    if (renstraIdNum !== undefined)      updatePayload.renstra_id        = renstraIdNum;
+    if (rpjmd_program_id !== undefined)  updatePayload.rpjmd_program_id  = rpjmd_program_id.trim();
+
+    const [updated] = await RenstraProgram.update(updatePayload, { where: { id } });
 
     if (!updated) return res.status(404).json({ message: "Data not found" });
 

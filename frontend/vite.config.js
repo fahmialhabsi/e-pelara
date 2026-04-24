@@ -5,9 +5,20 @@ import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const proxyTarget = process.env.VITE_PROXY_TARGET || "http://localhost:3000";
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    globals: false,
+    environment: "node",
+    include: [
+      "src/features/rpjmd/services/**/*.test.js",
+      "src/features/audit/**/*.test.js",
+      "src/utils/mapBackendErrorsToFormik.test.js",
+      "src/validations/indikatorSchemas.test.js",
+    ],
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -20,7 +31,7 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": {
-        target: "http://localhost:3000",
+        target: proxyTarget,
         changeOrigin: true,
       },
     },

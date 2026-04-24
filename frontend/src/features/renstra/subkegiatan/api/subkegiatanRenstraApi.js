@@ -1,6 +1,7 @@
 import api from "../../../../services/api";
 
-export const fetchSubkegiatanRenstra = () => api.get("/renstra-subkegiatan");
+export const fetchSubkegiatanRenstra = (params = {}) =>
+  api.get("/renstra-subkegiatan", { params });
 export const fetchSubkegiatanRenstraById = (id) =>
   api.get(`/renstra-subkegiatan/${id}`);
 export const createSubkegiatanRenstra = (data) =>

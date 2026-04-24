@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import api from "@/services/api";
+import { fetchIndikatorRpjmdList } from "@/features/rpjmd/services/indikatorRpjmdApi";
 import { useNavigate } from "react-router-dom";
 import { useDokumen } from "@/hooks/useDokumen";
 import IndikatorKegiatanNestedView from "./IndikatorKegiatanNestedView"; // sesuaikan path
@@ -18,15 +18,12 @@ const IndikatorKegiatanListPage = () => {
 
     setLoading(true);
     try {
-      const res = await api.get("/indikator-kegiatan", {
-        params: {
-          jenis_dokumen: dokumen.toUpperCase(),
-          tahun,
-          program_id: selectedProgramId,
-        },
+      const { data } = await fetchIndikatorRpjmdList("indikator-kegiatan", {
+        jenis_dokumen: dokumen.toUpperCase(),
+        tahun,
+        program_id: selectedProgramId,
       });
-      console.log("✅ Response indikator kegiatan:", res.data);
-      setData(res.data.data || []);
+      setData(data);
     } catch (err) {
       console.error("❌ Gagal memuat data indikator kegiatan:", err);
       if (err.response) {

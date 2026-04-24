@@ -1,5 +1,5 @@
 // src/features/rpjmd/pages/DashboardUtamaRpjmd.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../../../hooks/useAuth";
 import {
   BsEye,
@@ -13,6 +13,9 @@ import {
   BsClipboard,
   BsLayers,
   BsBuildings,
+  BsListUl,
+  BsFileEarmarkText,
+  BsCloudDownload,
 } from "react-icons/bs";
 
 import {
@@ -67,12 +70,30 @@ import CascadingDetail from "@/pages/CascadingDetail";
 
 import api from "../../../services/api";
 import { useDokumen } from "../../../hooks/useDokumen";
-import { Navigate, Outlet } from "react-router-dom";
+import { Link, Navigate, Outlet } from "react-router-dom";
 import SidebarMenu from "@/shared/components/SidebarMenu";
 import { checkAuthStatus } from "../../../contexts/AuthProvider";
 import { useNavigate } from "react-router-dom";
 import { usePeriodeAktif } from "@/features/rpjmd/hooks/usePeriodeAktif";
 import CascadingNestedView from "@/shared/components/CascadingNestedView";
+import IndikatorList from "@/shared/components/IndikatorList";
+import RpjmdDokumenImporPanel from "@/features/rpjmd/components/RpjmdDokumenImporPanel";
+import RpjmdMonitoringIndikator from "@/features/rpjmd/pages/RpjmdMonitoringIndikator";
+import RpjmdMonitoringOPD from "@/features/rpjmd/pages/RpjmdMonitoringOPD";
+import RpjmdMonitoringHeatmap from "@/features/rpjmd/pages/RpjmdMonitoringHeatmap";
+import RpjmdBulkMasterImportPage from "@/features/rpjmd/pages/RpjmdBulkMasterImportPage";
+import {
+  extractListData,
+  extractListMeta,
+  normalizeListItems,
+} from "@/utils/apiResponse";
+import { hasPlanFeature, PLAN_FEATURE_KEYS } from "@/utils/planFeatures";
+
+function menuItemPlanGate(menuKey) {
+  if (menuKey === "monitoring_rpjmd_heatmap") return PLAN_FEATURE_KEYS.heatmap;
+  if (menuKey === "monitoring_rpjmd_opd") return PLAN_FEATURE_KEYS.monitoring_opd;
+  return null;
+}
 
 const groupedMenuList = [
   {
@@ -81,6 +102,11 @@ const groupedMenuList = [
       { key: "visi", icon: <BsEye size={18} />, label: "Visi" },
       { key: "misi", icon: <BsPeople size={18} />, label: "Misi" },
       { key: "tujuan", icon: <BsFlag size={18} />, label: "Tujuan" },
+      {
+        key: "dokumen_impor_rpjmd",
+        icon: <BsFileEarmarkText size={18} />,
+        label: "Dokumen impor RPJMD (PDF)",
+      },
     ],
   },
   {
@@ -129,6 +155,11 @@ const groupedMenuList = [
         icon: <BsLayers size={18} />,
         label: "Sub Kegiatan",
       },
+      {
+        key: "bulk_master_import_rpjmd",
+        icon: <BsCloudDownload size={18} />,
+        label: "Impor massal (master → RPJMD)",
+      },
     ],
   },
   {
@@ -143,6 +174,11 @@ const groupedMenuList = [
         key: "indikator_rpjmd",
         icon: <BsLayers size={18} />,
         label: "Indikator Spesifik RPJMD",
+      },
+      {
+        key: "indikator_daftar_rpjmd",
+        icon: <BsListUl size={18} />,
+        label: "Daftar Indikator RPJMD",
       },
       { key: "cascading", icon: <BsLayers size={18} />, label: "Cascading" },
     ],
@@ -211,6 +247,16 @@ const groupedMenuList = [
         label: "Daftar Indikator Sasaran",
       },
       {
+        key: "indikator_strategi_list",
+        icon: <BsFlag size={18} />,
+        label: "Daftar Indikator Strategi",
+      },
+      {
+        key: "indikator_arah_kebijakan_list",
+        icon: <BsFlag size={18} />,
+        label: "Daftar Indikator Arah Kebijakan",
+      },
+      {
         key: "indikator_program_list",
         icon: <BsFlag size={18} />,
         label: "Daftar Indikator Program",
@@ -219,6 +265,26 @@ const groupedMenuList = [
         key: "indikator_kegiatan_list",
         icon: <BsFlag size={18} />,
         label: "Daftar Indikator Kegiatan",
+      },
+      {
+        key: "indikator_sub_kegiatan_list",
+        icon: <BsFlag size={18} />,
+        label: "Daftar Indikator Sub Kegiatan",
+      },
+      {
+        key: "monitoring_indikator_rpjmd",
+        icon: <BsBarChart size={18} />,
+        label: "Monitoring Indikator RPJMD",
+      },
+      {
+        key: "monitoring_rpjmd_opd",
+        icon: <BsBuildings size={18} />,
+        label: "Monitoring capaian per OPD",
+      },
+      {
+        key: "monitoring_rpjmd_heatmap",
+        icon: <BsLayers size={18} />,
+        label: "Heatmap indikator RPJMD",
       },
       {
         key: "indikator_khusus_list",
@@ -235,12 +301,30 @@ const roleBasedMenu = {
   PENGAWAS: groupedMenuList
     .flatMap((g) => g.items)
     .filter((m) =>
-      ["program", "kegiatan", "sub_kegiatan", "indikator"].includes(m.key)
+      [
+        "program",
+        "kegiatan",
+        "sub_kegiatan",
+        "indikator",
+        "dokumen_impor_rpjmd",
+        "monitoring_indikator_rpjmd",
+        "monitoring_rpjmd_opd",
+        "monitoring_rpjmd_heatmap",
+      ].includes(m.key)
     ),
   PELAKSANA: groupedMenuList
     .flatMap((g) => g.items)
     .filter((m) =>
-      ["program", "kegiatan", "sub_kegiatan", "indikator"].includes(m.key)
+      [
+        "program",
+        "kegiatan",
+        "sub_kegiatan",
+        "indikator",
+        "dokumen_impor_rpjmd",
+        "monitoring_indikator_rpjmd",
+        "monitoring_rpjmd_opd",
+        "monitoring_rpjmd_heatmap",
+      ].includes(m.key)
     ),
 };
 
@@ -298,7 +382,17 @@ export default function DashboardUtamaRpjmd() {
 
   const { dokumen, tahun } = useDokumen();
   const { user, loading: userLoading } = useAuth();
-  const { periode_id } = usePeriodeAktif();
+  const { periode_id, periodeList } = usePeriodeAktif();
+
+  const periodeRentangLabel = useMemo(() => {
+    const p = (periodeList || []).find(
+      (x) => String(x.id) === String(periode_id),
+    );
+    if (p?.tahun_awal != null && p?.tahun_akhir != null) {
+      return `${p.tahun_awal} – ${p.tahun_akhir}`;
+    }
+    return null;
+  }, [periodeList, periode_id]);
   const navigate = useNavigate();
 
   const [openedGroup, setOpenedGroup] = useState(() => {
@@ -337,11 +431,9 @@ export default function DashboardUtamaRpjmd() {
                 periode_id,
               },
             });
-            let count = 0;
-            if (res.data?.meta?.total) count = res.data.meta.total;
-            else if (Array.isArray(res.data?.data))
-              count = res.data.data.length;
-            else if (Array.isArray(res.data)) count = res.data.length;
+            const meta = extractListMeta(res.data);
+            const items = extractListData(res.data);
+            const count = Number(meta.totalItems ?? meta.total ?? items.length ?? 0);
             result[key] = count;
           } catch {
             result[key] = 0;
@@ -374,11 +466,9 @@ export default function DashboardUtamaRpjmd() {
           const res = await api.get(indikatorSummaryApiMap[key], {
             params: { jenis_dokumen: dokumen, tahun },
           });
-          if (res.data?.meta?.total) result[key] = res.data.meta.total;
-          else if (Array.isArray(res.data?.data))
-            result[key] = res.data.data.length;
-          else if (Array.isArray(res.data)) result[key] = res.data.length;
-          else result[key] = 0;
+          const meta = extractListMeta(res.data);
+          const items = extractListData(res.data);
+          result[key] = Number(meta.totalItems ?? meta.total ?? items.length ?? 0);
         } catch {
           result[key] = 0;
         }
@@ -388,8 +478,9 @@ export default function DashboardUtamaRpjmd() {
         const res = await api.get(indikatorSummaryApiMap.sub_kegiatan_output, {
           params: { jenis_dokumen: dokumen, tahun },
         });
-        result.sub_kegiatan_output =
-          res.data?.data?.filter((x) => !!x.output)?.length || 0;
+        result.sub_kegiatan_output = extractListData(res.data).filter(
+          (item) => Boolean(item?.output)
+        ).length;
       } catch {
         result.sub_kegiatan_output = 0;
       }
@@ -401,17 +492,6 @@ export default function DashboardUtamaRpjmd() {
     fetchIndikatorSummary();
     return () => (mounted = false);
   }, [dokumen, tahun]);
-
-  if (userLoading) {
-    return (
-      <div
-        className="d-flex justify-content-center align-items-center"
-        style={{ minHeight: 200 }}
-      >
-        <Spinner animation="border" />
-      </div>
-    );
-  }
 
   useEffect(() => {
     if (openedGroup !== null) {
@@ -427,9 +507,6 @@ export default function DashboardUtamaRpjmd() {
     }
   }, [navigate]);
 
-  if (!user) return <Navigate to="/login" replace />;
-  if (!dokumen || !tahun) return <Navigate to="/" replace />;
-
   useEffect(() => {
     const fetchCascadingData = async () => {
       try {
@@ -441,7 +518,7 @@ export default function DashboardUtamaRpjmd() {
             periode_id,
           },
         });
-        setDataCascading(res.data?.data || []);
+        setDataCascading(normalizeListItems(res.data));
       } catch (err) {
         console.error("Gagal memuat data cascading:", err);
         setDataCascading([]);
@@ -454,6 +531,20 @@ export default function DashboardUtamaRpjmd() {
       fetchCascadingData();
     }
   }, [dokumen, tahun, periode_id]);
+
+  if (userLoading) {
+    return (
+      <div
+        className="d-flex justify-content-center align-items-center"
+        style={{ minHeight: 200 }}
+      >
+        <Spinner animation="border" />
+      </div>
+    );
+  }
+
+  if (!user) return <Navigate to="/login" replace />;
+  if (!dokumen || !tahun) return <Navigate to="/" replace />;
 
   const renderMenuContent = () => {
     switch (selectedMenu) {
@@ -509,10 +600,18 @@ export default function DashboardUtamaRpjmd() {
         return <KegiatanList />;
       case "indikator_kegiatan_list":
         return <IndikatorKegiatanList />;
+      case "indikator_strategi_list":
+        return <IndikatorList defaultType="strategi" />;
+      case "indikator_arah_kebijakan_list":
+        return <IndikatorList defaultType="arah_kebijakan" />;
+      case "indikator_sub_kegiatan_list":
+        return <IndikatorList defaultType="sub_kegiatan_indikator" />;
       case "sub_kegiatan":
         return <SubKegiatanForm />;
       case "sub_kegiatan_list":
         return <SubKegiatanList />;
+      case "bulk_master_import_rpjmd":
+        return <RpjmdBulkMasterImportPage />;
       case "indikator":
         return <Indikator />;
       case "indikator_khusus_list":
@@ -521,6 +620,8 @@ export default function DashboardUtamaRpjmd() {
         return <OpdPenanggungJawabForm onSave={() => setSelectedMenu(null)} />;
       case "indikator_rpjmd":
         return <IndikatorRPJMD />;
+      case "indikator_daftar_rpjmd":
+        return <IndikatorList defaultType="tujuan" />;
       case "cascading":
         return <CascadingForm />;
       case "cascading_nested":
@@ -535,6 +636,14 @@ export default function DashboardUtamaRpjmd() {
         return <CascadingStatistik />;
       case "cascading_detail":
         return <CascadingDetail />;
+      case "dokumen_impor_rpjmd":
+        return <RpjmdDokumenImporPanel periodeId={periode_id} />;
+      case "monitoring_indikator_rpjmd":
+        return <RpjmdMonitoringIndikator />;
+      case "monitoring_rpjmd_opd":
+        return <RpjmdMonitoringOPD />;
+      case "monitoring_rpjmd_heatmap":
+        return <RpjmdMonitoringHeatmap />;
       default:
         return null;
     }
@@ -569,32 +678,47 @@ export default function DashboardUtamaRpjmd() {
                             (m) => m.key === item.key
                           )
                         )
-                        .map((menu) => (
-                          <ListGroup.Item
-                            key={menu.key}
-                            action
-                            active={selectedMenu === menu.key}
-                            onClick={() => {
-                              setSelectedMenu(menu.key);
-                              localStorage.setItem(
-                                "selectedMenuRPJMD",
-                                menu.key
-                              );
-                            }}
-                            className="ps-4 d-flex align-items-center"
-                            style={{ cursor: "pointer" }}
-                          >
-                            <span className="me-2">{menu.icon}</span>{" "}
-                            {menu.label}
-                          </ListGroup.Item>
-                        ))}
+                        .map((menu) => {
+                          const gate = menuItemPlanGate(menu.key);
+                          const locked =
+                            gate != null && !hasPlanFeature(user, gate);
+                          return (
+                            <ListGroup.Item
+                              key={menu.key}
+                              action
+                              active={selectedMenu === menu.key}
+                              disabled={locked}
+                              onClick={() => {
+                                if (locked) return;
+                                setSelectedMenu(menu.key);
+                                localStorage.setItem(
+                                  "selectedMenuRPJMD",
+                                  menu.key
+                                );
+                              }}
+                              className="ps-4 d-flex align-items-center flex-wrap"
+                              style={{ cursor: locked ? "not-allowed" : "pointer" }}
+                              title={locked ? "Upgrade ke PRO" : undefined}
+                            >
+                              <span className="me-2">{menu.icon}</span>
+                              {menu.label}
+                              {locked ? (
+                                <span className="ms-1 small">
+                                  <Link to={PRICING_PATH} className="text-muted">
+                                    (Upgrade ke PRO)
+                                  </Link>
+                                </span>
+                              ) : null}
+                            </ListGroup.Item>
+                          );
+                        })}
                   </div>
                 ))}
               </ListGroup>
             </Card.Body>
           </Card>
         </Col>
-        <Col md={9} lg={10}>
+        <Col md={9} lg={10} className="min-w-0">
           <h3 className="fw-bold mb-1 text-primary">
             📊 Dashboard Pengelolaan Data RPJMD
           </h3>
@@ -602,8 +726,15 @@ export default function DashboardUtamaRpjmd() {
             <span className="me-3">
               <strong>Dokumen Aktif:</strong> <Badge bg="info">{dokumen}</Badge>
             </span>
-            <span>
-              <strong>Tahun:</strong> <Badge bg="secondary">{tahun}</Badge>
+            {periodeRentangLabel ? (
+              <span className="me-3">
+                <strong>Periode RPJMD:</strong>{" "}
+                <Badge bg="primary">{periodeRentangLabel}</Badge>
+              </span>
+            ) : null}
+            <span className="text-muted small d-block d-md-inline mt-1 mt-md-0">
+              RPJMD satu periode (lima tahun); tidak ada pemilihan tahun terpisah — konteks data mengikuti periode aktif
+              Anda.
             </span>
           </div>
 

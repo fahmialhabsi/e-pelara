@@ -1,6 +1,11 @@
 "use strict";
 const { Model } = require("sequelize");
 
+/**
+ * Model legacy Renstra OPD (struktur lama bertingkat).
+ * Untuk dokumen Renstra refactor/canonical gunakan model `Renstra`
+ * pada `renstraModel.js` (table `renstra`).
+ */
 module.exports = (sequelize, DataTypes) => {
   class RenstraOPD extends Model {
     static associate(models) {

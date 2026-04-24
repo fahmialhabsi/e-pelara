@@ -5,6 +5,10 @@ const subKegiatanController = require("../controllers/subKegiatanController");
 const verifyToken = require("../middlewares/verifyToken");
 const allowRoles = require("../middlewares/allowRoles");
 const { validateSubKegiatan } = require("../utils/entityValidator");
+const {
+  loadOperationalModeSubKegiatan,
+  enforceMasterForSubKegiatan,
+} = require("../middlewares/requireMasterMode");
 
 // Role dengan hak penuh
 const adminOnly = ["SUPER_ADMIN", "ADMINISTRATOR"];
@@ -13,6 +17,14 @@ const readOnly = [...adminOnly, "PENGAWAS", "PELAKSANA"];
 
 // GET list dengan paginasi dan filter
 router.get("/", verifyToken, allowRoles(readOnly), subKegiatanController.list);
+
+// GET sub kegiatan per kegiatan (dropdown DPA; harus sebelum /:id)
+router.get(
+  "/by-kegiatan/:kegiatanId",
+  verifyToken,
+  allowRoles(readOnly),
+  subKegiatanController.listByKegiatanForDpa,
+);
 
 // GET detail by ID
 router.get(
@@ -27,6 +39,8 @@ router.post(
   "/",
   verifyToken,
   allowRoles(adminOnly),
+  loadOperationalModeSubKegiatan,
+  enforceMasterForSubKegiatan,
   validateSubKegiatan,
   subKegiatanController.create
 );
@@ -36,6 +50,8 @@ router.put(
   "/:id",
   verifyToken,
   allowRoles(adminOnly),
+  loadOperationalModeSubKegiatan,
+  enforceMasterForSubKegiatan,
   validateSubKegiatan,
   subKegiatanController.update
 );

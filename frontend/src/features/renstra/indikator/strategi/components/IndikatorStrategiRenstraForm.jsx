@@ -51,7 +51,7 @@ const IndikatorStrategiRenstraForm = ({ initialData = null, renstraAktif }) => {
         yup.string().required("Nama indikator wajib diisi"),
       satuan: (yup) => yup.string().required("Satuan wajib diisi"),
       target_tahun_1: (yup) =>
-        yup.string().required("Target tahun 1 wajib diisi"),
+        yup.string().required("Target (th. ke-1) wajib diisi"),
     },
     fetchOptions: {
       "strategi-renstra": async () => {
@@ -170,7 +170,7 @@ const IndikatorStrategiRenstraForm = ({ initialData = null, renstraAktif }) => {
 
         <InputField
           name="target_tahun_1"
-          label="Target Tahun 1"
+          label="Target (th. ke-1)"
           control={control}
           errors={errors}
           required

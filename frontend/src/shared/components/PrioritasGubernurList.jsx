@@ -22,6 +22,8 @@ import * as XLSX from "xlsx";
 import { useDarkMode } from "../../hooks/useDarkMode";
 import api from "../../services/api";
 import PrioritasGubForm from "./PrioritasGubernurForm"; // Pastikan path ini benar
+import { normalizeListItems } from "@/utils/apiResponse";
+import { isDokumenLevelPeriode } from "@/utils/planningDokumenUtils";
 
 export default function PrioritasGubernurList() {
   const navigate = useNavigate();
@@ -46,7 +48,11 @@ export default function PrioritasGubernurList() {
       setError(null);
 
       if (!dokumen || !tahun) {
-        setError("Dokumen dan tahun belum dipilih.");
+        setError(
+          isDokumenLevelPeriode(dokumen)
+            ? "Jenis dokumen / periode belum lengkap. Atur konteks di header."
+            : "Dokumen dan konteks waktu belum dipilih.",
+        );
         setLoading(false);
         return;
       }
@@ -59,18 +65,7 @@ export default function PrioritasGubernurList() {
           },
         });
 
-        let extractedData = [];
-        if (res.data && Array.isArray(res.data.data)) {
-          extractedData = res.data.data;
-        } else if (Array.isArray(res.data)) {
-          extractedData = res.data;
-        } else {
-          console.error(
-            "PrioritasGubernurList - Unexpected API response format:",
-            res.data
-          );
-          setError("Format data respons API tidak sesuai.");
-        }
+        const extractedData = normalizeListItems(res.data);
         setPrioritasGub(extractedData);
       } catch (err) {
         console.error("PrioritasGubernurList - Gagal fetch data:", err);

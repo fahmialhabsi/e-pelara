@@ -12,6 +12,7 @@ const {
 const verifyToken = require("../middlewares/verifyToken");
 const allowRoles = require("../middlewares/allowRoles");
 const { validatePeriode } = require("../utils/entityValidator");
+const { listResponse } = require("../utils/responseHelper");
 
 // GET /api/periode-rpjmd — semua role yang authenticated boleh baca daftar periode
 router.get(
@@ -24,7 +25,12 @@ router.get(
       const data = await PeriodeRpjmd.findAll({
         order: [["tahun_awal", "ASC"]],
       });
-      res.json(data);
+      return listResponse(
+        res,
+        200,
+        "Daftar periode berhasil diambil",
+        data,
+      );
     } catch (err) {
       console.error("Gagal ambil data periode:", err);
       res.status(500).json({ message: "Gagal mengambil data periode." });

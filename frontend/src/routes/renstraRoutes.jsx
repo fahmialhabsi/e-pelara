@@ -190,6 +190,28 @@ const RenstraTabelSubKegiatanEditPage = React.lazy(() =>
   )
 );
 
+// ✅ Tabel Strategi & Kebijakan
+const RenstraTabelStrategiKebijakanListPage = React.lazy(() =>
+  import("../features/renstra/strategiKebijakan/pages/RenstraTabelStrategiKebijakanListPage")
+);
+const RenstraTabelStrategiKebijakanAddPage = React.lazy(() =>
+  import("../features/renstra/strategiKebijakan/pages/RenstraTabelStrategiKebijakanAddPage")
+);
+const RenstraTabelStrategiKebijakanEditPage = React.lazy(() =>
+  import("../features/renstra/strategiKebijakan/pages/RenstraTabelStrategiKebijakanEditPage")
+);
+
+// ✅ Tabel Prioritas (Nasional / Daerah / Gubernur)
+const RenstraTabelPrioritasListPage = React.lazy(() =>
+  import("../features/renstra/prioritas/pages/RenstraTabelPrioritasListPage")
+);
+const RenstraTabelPrioritasAddPage = React.lazy(() =>
+  import("../features/renstra/prioritas/pages/RenstraTabelPrioritasAddPage")
+);
+const RenstraTabelPrioritasEditPage = React.lazy(() =>
+  import("../features/renstra/prioritas/pages/RenstraTabelPrioritasEditPage")
+);
+
 const renstraRoutes = [
   { path: "renstra-opd", element: <ListRenstraOPD /> },
   { path: "renstra-opd/new", element: <FormRenstraOPD /> },
@@ -311,6 +333,16 @@ const renstraRoutes = [
     path: "renstra/tabel/subkegiatan/edit/:id",
     element: <RenstraTabelSubKegiatanEditPage />,
   },
+
+  // ✅ Tabel Strategi & Arah Kebijakan
+  { path: "renstra/tabel/strategi-kebijakan",           element: <RenstraTabelStrategiKebijakanListPage /> },
+  { path: "renstra/tabel/strategi-kebijakan/add",       element: <RenstraTabelStrategiKebijakanAddPage /> },
+  { path: "renstra/tabel/strategi-kebijakan/edit/:id",  element: <RenstraTabelStrategiKebijakanEditPage /> },
+
+  // ✅ Tabel Prioritas Nasional / Daerah / Gubernur
+  { path: "renstra/tabel/prioritas/:jenis",            element: <RenstraTabelPrioritasListPage /> },
+  { path: "renstra/tabel/prioritas/:jenis/add",        element: <RenstraTabelPrioritasAddPage /> },
+  { path: "renstra/tabel/prioritas/:jenis/edit/:id",   element: <RenstraTabelPrioritasEditPage /> },
 ];
 
 export default renstraRoutes;

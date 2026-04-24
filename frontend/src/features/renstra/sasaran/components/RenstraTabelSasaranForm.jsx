@@ -1,5 +1,5 @@
 // src/features/renstra/sasaran/components/RenstraTabelSasaranForm.jsx
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { Card, Button } from "antd";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -113,6 +113,7 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
   const selectedTujuanId = watch("tujuan_id");
   const selectedSasaranId = watch("sasaran_id");
   const selectedIndikatorId = watch("indikator_id");
+  const prevSasaranIdRef = useRef(undefined);
 
   const targetValues = watch([
     "target_tahun_1",
@@ -131,17 +132,27 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
     "pagu_tahun_6",
   ]);
 
-  // 🔹 Query indikator
+  // 🔹 Indikator Renstra stage sasaran yang `ref_id`-nya merujuk baris indikator RPJMD sasaran terpilih
   const { data: indikatorOptions = [], isLoading: loadingIndikator } = useQuery(
     {
-      queryKey: ["indikator-renstra", renstraAktif?.id],
+      queryKey: [
+        "indikator-renstra",
+        renstraAktif?.id,
+        "sasaran",
+        selectedSasaranId,
+      ],
       queryFn: async () => {
         const res = await api.get("/indikator-renstra", {
-          params: { renstra_id: renstraAktif?.id },
+          params: {
+            renstra_id: renstraAktif?.id,
+            stage: "sasaran",
+            sasaran_id: selectedSasaranId,
+          },
         });
-        return res.data;
+        const raw = res.data;
+        return Array.isArray(raw) ? raw : raw?.data ?? [];
       },
-      enabled: !!renstraAktif,
+      enabled: !!renstraAktif?.id && !!selectedSasaranId,
     }
   );
 
@@ -168,23 +179,57 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
     enabled: !!renstraAktif && !!selectedTujuanId,
   });
 
-  // 🔹 Reset sasaran saat tujuan berubah
+  // 🔹 Reset sasaran & indikator saat tujuan berubah
   useEffect(() => {
     setValue("sasaran_id", "");
+    setValue("indikator_id", "");
+    prevSasaranIdRef.current = undefined;
   }, [selectedTujuanId, setValue]);
 
-  // 🔹 Auto set baseline & satuan jika indikator dipilih
+  // 🔹 Saat sasaran berubah (bukan inisialisasi pertama), kosongkan pilihan indikator
   useEffect(() => {
-    if (!initialData && selectedIndikatorId) {
-      const selected = indikatorOptions.find(
-        (i) => String(i.id) === String(selectedIndikatorId)
-      );
-      if (selected) {
-        setValue("baseline", selected.baseline ?? "");
-        setValue("satuan_target", selected.satuan ?? "");
-        for (let i = 1; i <= 6; i++)
-          setValue(`target_tahun_${i}`, selected[`target_tahun_${i}`] ?? "");
-      }
+    const cur = selectedSasaranId || undefined;
+    const prev = prevSasaranIdRef.current;
+    if (prev !== undefined && prev !== cur) {
+      setValue("indikator_id", "");
+    }
+    prevSasaranIdRef.current = cur;
+  }, [selectedSasaranId, setValue]);
+
+  // 🔹 Auto isi dari baris Indikator Renstra terpilih (sasaran RPJMD tidak punya lokasi/pagu per tahun)
+  useEffect(() => {
+    if (initialData || !selectedIndikatorId) return;
+    const selected = indikatorOptions.find(
+      (i) => String(i.id) === String(selectedIndikatorId)
+    );
+    if (!selected) return;
+
+    setValue("baseline", selected.baseline ?? "");
+    setValue("satuan_target", selected.satuan ?? "");
+    setValue(
+      "lokasi",
+      [selected.lokasi, selected.sumber_data, selected.keterangan]
+        .map((x) => (x != null ? String(x).trim() : ""))
+        .find(Boolean) ?? ""
+    );
+
+    for (let i = 1; i <= 5; i += 1) {
+      setValue(`target_tahun_${i}`, selected[`target_tahun_${i}`] ?? "");
+    }
+    const t6 =
+      selected.target_tahun_6 ??
+      selected.target_tahun_5 ??
+      "";
+    setValue("target_tahun_6", t6);
+
+    const paguVal = (i) => {
+      const raw = selected[`pagu_tahun_${i}`];
+      if (raw === null || raw === undefined || raw === "") return 0;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : 0;
+    };
+    for (let i = 1; i <= 6; i += 1) {
+      setValue(`pagu_tahun_${i}`, paguVal(i));
     }
   }, [selectedIndikatorId, indikatorOptions, setValue, initialData]);
 
@@ -226,7 +271,10 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
           : "Tambah Renstra Tabel Sasaran"
       }
     >
-      {!renstraAktif || loadingIndikator || loadingTujuan || loadingSasaran ? (
+      {!renstraAktif ||
+      loadingTujuan ||
+      loadingSasaran ||
+      (!!selectedSasaranId && loadingIndikator) ? (
         <SpinnerFullscreen tip="Memuat data..." />
       ) : (
         <>
@@ -282,6 +330,7 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
               control={control}
               errors={errors}
               required
+              disabled={!selectedSasaranId}
               options={indikatorOptions.map((item) => ({
                 label: item.nama_indikator,
                 value: String(item.id),
@@ -307,23 +356,23 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
               errors={errors}
             />
 
-            <h4 style={{ marginTop: 24 }}>Target per Tahun</h4>
+            <h4 style={{ marginTop: 24 }}>Target periode (th. ke-1 s/d ke-6)</h4>
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <InputField
                 key={`target_tahun_${i}`}
                 name={`target_tahun_${i}`}
-                label={`Target Tahun ${i}`}
+                label={`Target (th. ke-${i})`}
                 control={control}
                 errors={errors}
               />
             ))}
 
-            <h4 style={{ marginTop: 24 }}>Pagu per Tahun</h4>
+            <h4 style={{ marginTop: 24 }}>Pagu periode (th. ke-1 s/d ke-6)</h4>
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <InputField
                 key={`pagu_tahun_${i}`}
                 name={`pagu_tahun_${i}`}
-                label={`Pagu Tahun ${i}`}
+                label={`Pagu (th. ke-${i})`}
                 control={control}
                 errors={errors}
               />

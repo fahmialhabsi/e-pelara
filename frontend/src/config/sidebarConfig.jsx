@@ -11,6 +11,8 @@ import StarIcon from "@mui/icons-material/Star";
 import ListAltIcon from "@mui/icons-material/ListAlt";
 import AssignmentTurnedInIcon from "@mui/icons-material/AssignmentTurnedIn";
 import SubdirectoryArrowRightIcon from "@mui/icons-material/SubdirectoryArrowRight";
+import SyncAltIcon from "@mui/icons-material/SyncAlt";
+import FactCheckIcon from "@mui/icons-material/FactCheck";
 
 const sidebarConfig = {
   SUPER_ADMIN: [
@@ -163,6 +165,18 @@ const sidebarConfig = {
           label: "Clone Periode",
           path: "/admin/clone-periode",
         },
+        {
+          label: "Sync RPJMD → RKPD",
+          path: "/rkpd/rpjmd-sync",
+          icon: <SyncAltIcon />,
+          allowedDokumen: ["rpjmd", "rkpd"],
+        },
+        {
+          label: "Audit & compliance",
+          path: "/audit/planning-compliance",
+          icon: <FactCheckIcon />,
+          allowedDokumen: ["rpjmd", "renstra", "rkpd", "renja", "dpa"],
+        },
       ],
     },
   ],
@@ -214,6 +228,36 @@ const sidebarConfig = {
         {
           label: "Dashboard Monev",
           path: "/monev",
+          allowedDokumen: ["rpjmd", "renstra", "rkpd", "renja", "dpa"],
+        },
+      ],
+    },
+    {
+      group: "🔁 Integrasi",
+      items: [
+        {
+          label: "Sync RPJMD → RKPD",
+          path: "/rkpd/rpjmd-sync",
+          icon: <SyncAltIcon />,
+          allowedDokumen: ["rpjmd", "rkpd"],
+        },
+        {
+          label: "Audit & compliance",
+          path: "/audit/planning-compliance",
+          icon: <FactCheckIcon />,
+          allowedDokumen: ["rpjmd", "renstra", "rkpd", "renja", "dpa"],
+        },
+      ],
+    },
+  ],
+  PENGAWAS: [
+    {
+      group: "📋 Audit",
+      items: [
+        {
+          label: "Audit & compliance",
+          path: "/audit/planning-compliance",
+          icon: <FactCheckIcon />,
           allowedDokumen: ["rpjmd", "renstra", "rkpd", "renja", "dpa"],
         },
       ],

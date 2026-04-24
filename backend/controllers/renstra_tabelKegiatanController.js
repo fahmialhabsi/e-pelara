@@ -3,6 +3,7 @@ const {
   sequelize,
   RenstraTabelKegiatan,
   RenstraKegiatan,
+  RenstraProgram,
   RenstraTabelSubkegiatan,
   IndikatorRenstra,
   RenstraTabelProgram,
@@ -22,7 +23,7 @@ exports.create = async (req, res) => {
     const { kegiatan_id, indikator_id, program_id } = req.body;
 
     const kegiatan = await RenstraKegiatan.findByPk(kegiatan_id, {
-      include: [{ model: RenstraTabelSubkegiatan, as: "subkegiatans" }],
+      include: [{ model: RenstraTabelSubkegiatan, as: "tabelSubKegiatans" }],
     });
     const indikator = await IndikatorRenstra.findByPk(indikator_id);
 
@@ -56,8 +57,11 @@ exports.create = async (req, res) => {
       transaction: t,
     });
 
-    // Hitung akhir Kegiatan dari SubKegiatan
-    const akhir = hitungAkhirKegiatan({ subKegiatans: kegiatan.subKegiatans });
+    // Hitung akhir: dari tabel subkegiatan (renstra_tabel_subkegiatan) atau field tahun di body
+    const akhir = hitungAkhirKegiatan({
+      ...req.body,
+      subKegiatans: kegiatan.tabelSubKegiatans || [],
+    });
     await created.update(akhir, { transaction: t });
 
     await updateKegiatanPagu(created.id, t);
@@ -85,7 +89,7 @@ exports.update = async (req, res) => {
     const { kegiatan_id, indikator_id, program_id } = req.body;
 
     const kegiatan = await RenstraKegiatan.findByPk(kegiatan_id, {
-      include: [{ model: RenstraTabelSubkegiatan, as: "subkegiatans" }],
+      include: [{ model: RenstraTabelSubkegiatan, as: "tabelSubKegiatans" }],
     });
     const indikator = await IndikatorRenstra.findByPk(indikator_id);
 
@@ -125,8 +129,11 @@ exports.update = async (req, res) => {
 
     await existing.update(payload, { transaction: t });
 
-    // Hitung ulang target/pagu akhir otomatis dari SubKegiatan
-    const akhir = hitungAkhirKegiatan({ subKegiatans: kegiatan.subKegiatans });
+    // Hitung ulang target/pagu akhir otomatis dari tabel subkegiatan atau field tahun di body
+    const akhir = hitungAkhirKegiatan({
+      ...req.body,
+      subKegiatans: kegiatan.tabelSubKegiatans || [],
+    });
     await existing.update(akhir, { transaction: t });
 
     await updateKegiatanPagu(existing.id, t);
@@ -178,16 +185,30 @@ exports.delete = async (req, res) => {
 };
 
 // ------------------ FINDERS ------------------
+const tabelKegiatanListIncludes = [
+  {
+    model: RenstraProgram,
+    as: "program",
+    attributes: ["id", "kode_program", "nama_program", "opd_penanggung_jawab"],
+  },
+  {
+    model: IndikatorRenstra,
+    as: "indikator",
+    attributes: ["id", "kode_indikator", "nama_indikator"],
+  },
+  { model: RenstraTabelSubkegiatan, as: "subkegiatans" },
+];
+
 exports.findAll = async (req, res) => {
   try {
     const data = await RenstraTabelKegiatan.findAll({
-      include: [{ model: RenstraTabelSubkegiatan, as: "subkegiatans" }],
+      include: tabelKegiatanListIncludes,
       order: [["id", "ASC"]],
     });
 
     const result = data.map((k) => {
       const json = k.toJSON();
-      const akhir = hitungAkhirKegiatan({ subKegiatans: json.subKegiatans });
+      const akhir = hitungAkhirKegiatan(json);
       return { ...json, ...akhir };
     });
 
@@ -200,7 +221,7 @@ exports.findAll = async (req, res) => {
 exports.findOne = async (req, res) => {
   try {
     const data = await RenstraTabelKegiatan.findByPk(req.params.id, {
-      include: [{ model: RenstraTabelSubkegiatan, as: "subkegiatans" }],
+      include: tabelKegiatanListIncludes,
     });
 
     if (!data)
@@ -209,7 +230,7 @@ exports.findOne = async (req, res) => {
         .json({ message: "Data tidak ditemukan", blocked: true });
 
     const json = data.toJSON();
-    const akhir = hitungAkhirKegiatan({ subKegiatans: json.subKegiatans });
+    const akhir = hitungAkhirKegiatan(json);
 
     res.status(200).json({ ...json, ...akhir });
   } catch (err) {
@@ -233,19 +254,21 @@ exports.availablePagu = async (req, res) => {
       });
     }
 
-    // Ambil program
-    const program = await RenstraTabelProgram.findByPk(program_id);
+    // program_id di sini = PK renstra_tabel_program (bukan FK renstra_program)
+    const tabelProgram = await RenstraTabelProgram.findByPk(program_id);
 
-    if (!program) {
+    if (!tabelProgram) {
       return res.json({
         message: "Program tidak ditemukan",
         available: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 },
       });
     }
 
-    // Ambil semua kegiatan untuk program ini
+    const renstraProgramFk = tabelProgram.program_id;
+
+    // renstra_tabel_kegiatan.program_id → FK ke renstra_program.id
     const kegiatanList = await RenstraTabelKegiatan.findAll({
-      where: { program_id },
+      where: { program_id: renstraProgramFk },
     });
 
     // Parse input_pagu dari query (optional)
@@ -268,7 +291,7 @@ exports.availablePagu = async (req, res) => {
     // Hitung sisa pagu defensif + kurangi input user
     const sisaPagu = {};
     for (let i = 1; i <= 6; i++) {
-      const paguProgram = Number(program[`pagu_tahun_${i}`]) || 0;
+      const paguProgram = Number(tabelProgram[`pagu_tahun_${i}`]) || 0;
       const totalKegiatan = totalPaguKegiatan[i] || 0;
       const input = Number(userInput[i] || 0);
       sisaPagu[i] = Math.max(0, paguProgram - totalKegiatan - input);

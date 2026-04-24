@@ -1,5 +1,8 @@
 // src/components/ReportRPJMDPage.js
 import React, { useState, useEffect, useMemo } from "react";
+import { useDokumen } from "../../../hooks/useDokumen";
+import { usePeriodeAktif } from "../hooks/usePeriodeAktif";
+import { isDokumenLevelPeriode } from "@/utils/planningDokumenUtils";
 import {
   Form,
   Button,
@@ -13,21 +16,37 @@ import {
   Alert,
 } from "react-bootstrap";
 import api from "../../../services/api";
+import { extractSingleData, normalizeListItems } from "@/utils/apiResponse";
 
 const ReportRPJMDPage = () => {
+  const { dokumen, tahun: ctxTahun } = useDokumen();
+  const { periode_id, periodeList } = usePeriodeAktif();
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(periode_id),
+  );
+
   const [opds, setOpds] = useState([]);
   const [opdId, setOpdId] = useState("");
-  const [year, setYear] = useState(new Date().getFullYear());
+  const [year, setYear] = useState(() => new Date().getFullYear());
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (isDokumenLevelPeriode(dokumen) && periodeAktif?.tahun_awal != null) {
+      setYear(Number(periodeAktif.tahun_awal));
+    } else if (ctxTahun) {
+      const n = parseInt(String(ctxTahun), 10);
+      if (Number.isFinite(n)) setYear(n);
+    }
+  }, [dokumen, ctxTahun, periodeAktif]);
 
   // Fetch OPD list once
   useEffect(() => {
     const fetchOpds = async () => {
       try {
         const res = await api.get("/opd-penanggung-jawab");
-        setOpds(res.data);
+        setOpds(normalizeListItems(res.data));
       } catch (err) {
         console.error(err);
         setError("Gagal memuat daftar OPD. Coba muat ulang.");
@@ -43,10 +62,11 @@ const ReportRPJMDPage = () => {
     setLoading(true);
     try {
       const res = await api.get(`/laporan/rpjmd?opdId=${opdId}&tahun=${year}`);
-      if (!res.data || !res.data.programs) {
-        setError("Data laporan tidak tersedia untuk OPD/tahun yang dipilih.");
+      const payload = extractSingleData(res.data);
+      if (!payload || !payload.programs) {
+        setError("Data laporan tidak tersedia untuk OPD / acuan yang dipilih.");
       } else {
-        setReport(res.data);
+        setReport(payload);
       }
     } catch (err) {
       console.error(err);
@@ -195,7 +215,7 @@ const ReportRPJMDPage = () => {
                 <option value="">-- Pilih OPD --</option>
                 {opds.map((o) => (
                   <option key={o.id} value={o.id}>
-                    {o.nama}
+                    {o.nama_opd || o.nama || "-"}
                   </option>
                 ))}
               </Form.Control>
@@ -203,13 +223,23 @@ const ReportRPJMDPage = () => {
           </Col>
           <Col md={3}>
             <Form.Group controlId="formYear">
-              <Form.Label>Tahun</Form.Label>
+              <Form.Label>Periode laporan</Form.Label>
               <Form.Control
-                type="number"
-                value={year}
-                onChange={(e) => setYear(e.target.value)}
-                required
+                type="text"
+                readOnly
+                disabled
+                className="bg-light small"
+                value={
+                  isDokumenLevelPeriode(dokumen) && periodeAktif?.tahun_awal
+                    ? `${periodeAktif.tahun_awal}–${periodeAktif.tahun_akhir}`
+                    : String(year)
+                }
               />
+              {isDokumenLevelPeriode(dokumen) ? (
+                <Form.Text className="text-muted">
+                  Parameter laporan mengikuti periode aktif secara otomatis.
+                </Form.Text>
+              ) : null}
             </Form.Group>
           </Col>
           <Col md={4} className="d-flex align-items-end">
@@ -253,7 +283,9 @@ const ReportRPJMDPage = () => {
       {!loading && report && reportView}
 
       {!loading && !report && !error && (
-        <Alert variant="info">Pilih OPD dan tahun, lalu klik "Generate".</Alert>
+        <Alert variant="info">
+          Pilih OPD, lalu klik &quot;Generate&quot; (rentang mengikuti periode aktif).
+        </Alert>
       )}
     </Container>
   );

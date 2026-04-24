@@ -50,6 +50,18 @@ module.exports = (sequelize, DataTypes) => {
       foto_wakil_kepala_daerah: {
         type: DataTypes.STRING,
       },
+      change_reason_text: { type: DataTypes.TEXT, allowNull: true },
+      change_reason_file: { type: DataTypes.STRING(255), allowNull: true },
+      version: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: false,
+        defaultValue: 1,
+      },
+      is_active_version: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
     },
     {
       timestamps: true, // Menambahkan kolom createdAt dan updatedAt secara otomatis

@@ -8,6 +8,7 @@ const {
   Sasaran,
   Program,
   Kegiatan,
+  SubKegiatan,
   Strategi,
   ArahKebijakan,
 } = require("../models");
@@ -26,6 +27,7 @@ async function validateRelations(body) {
     { field: "sasaran_id", model: Sasaran },
     { field: "program_id", model: Program },
     { field: "kegiatan_id", model: Kegiatan },
+    { field: "sub_kegiatan_id", model: SubKegiatan },
   ];
 
   for (const { field, model } of fkFields) {
@@ -48,13 +50,14 @@ function getUniqueKeyFields(data, jenis_dokumen, tahun) {
     sasaran_id: data.sasaran_id,
     program_id: data.program_id,
     kegiatan_id: data.kegiatan_id,
+    sub_kegiatan_id: data.sub_kegiatan_id,
     jenis_dokumen,
     tahun,
   };
 }
 
 exports.list = async (req, res) => {
-  const { jenis_dokumen, tahun, limit, search } = req.query;
+  const { jenis_dokumen, tahun, limit = 10, page = 1, search } = req.query;
 
   if (!jenis_dokumen || !tahun) {
     return res
@@ -63,55 +66,59 @@ exports.list = async (req, res) => {
   }
 
   const where = {};
-
-  if (jenis_dokumen) where.jenis_dokumen = jenis_dokumen;
+  if (jenis_dokumen) where.jenis_dokumen = String(jenis_dokumen).toLowerCase();
   if (tahun) where.tahun = String(tahun);
 
-  const periode = await getPeriodeFromTahun(tahun);
-  if (!periode)
-    return res.status(400).json({ message: "Periode tidak ditemukan." });
+  /**
+   * periode_id TIDAK difilter di sini.
+   * Alasan: baris cascading lama mungkin punya periode_id berbeda atau NULL.
+   * Filter hanya jenis_dokumen + tahun agar semua data tampil.
+   */
 
-  where.periode_id = periode.id;
+  const safeLimit  = Math.min(parseInt(limit,  10) || 10, 100);
+  const safePage   = Math.max(parseInt(page,   10) || 1,  1);
+  const offset     = (safePage - 1) * safeLimit;
 
-  const limitNumber = limit ? parseInt(limit, 10) : undefined;
+  const FULL_INCLUDE = [
+    { model: Misi,             as: "misi" },
+    { model: PrioritasNasional,as: "priorNasional" },
+    { model: PrioritasDaerah,  as: "priorDaerah" },
+    { model: PrioritasGubernur,as: "priorKepda" },
+    { model: Tujuan,           as: "tujuan" },
+    { model: Sasaran,          as: "sasaran" },
+    { model: Program,          as: "program" },
+    { model: Kegiatan,         as: "kegiatan" },
+    { model: SubKegiatan,      as: "subKegiatan" },
+    { model: Strategi,         as: "strategis",      through: { attributes: [] } },
+    { model: ArahKebijakan,    as: "arahKebijakans", through: { attributes: [] } },
+  ];
 
   try {
+    // Hitung total untuk paginasi server-side
+    const total = await Cascading.count({ where });
+
     const items = await Cascading.findAll({
       where,
-      limit: limitNumber,
-      include: [
-        { model: Misi, as: "misi" },
-        { model: Program, as: "program" },
-        { model: Strategi, as: "strategis", through: { attributes: [] } },
-        {
-          model: ArahKebijakan,
-          as: "arahKebijakans",
-          through: { attributes: [] },
-        },
-        { model: PrioritasNasional, as: "priorNasional" },
-        { model: PrioritasDaerah, as: "priorDaerah" },
-        { model: PrioritasGubernur, as: "priorKepda" },
-        { model: Tujuan, as: "tujuan" },
-        { model: Sasaran, as: "sasaran" },
-        { model: Kegiatan, as: "kegiatan" },
-      ],
+      limit: safeLimit,
+      offset,
+      include: FULL_INCLUDE,
+      order: [["id", "DESC"]],
     });
 
-    // Filter hasil berdasarkan search query (frontend: ?search=xxx)
+    // Terapkan filter search di aplikasi (field relasi tidak bisa difilter mudah di DB)
     let filteredItems = items;
-
     if (search) {
-      const lower = search.toLowerCase();
+      const lower = String(search).toLowerCase();
       filteredItems = items.filter((item) =>
         [
-          item.jenis_dokumen,
-          item.tahun,
           item.misi?.isi_misi,
+          item.tujuan?.isi_tujuan,
+          item.sasaran?.isi_sasaran,
           item.program?.nama_program,
+          item.kegiatan?.nama_kegiatan,
+          item.subKegiatan?.nama_sub_kegiatan,
           ...(item.strategis?.map((s) => s.deskripsi || "") || []),
-          ...(item.arahKebijakans?.map(
-            (a) => a.deskripsi || a.nama_arah || ""
-          ) || []),
+          ...(item.arahKebijakans?.map((a) => a.deskripsi || a.nama_arah || "") || []),
         ]
           .filter(Boolean)
           .some((val) => val.toLowerCase().includes(lower))
@@ -121,7 +128,10 @@ exports.list = async (req, res) => {
     res.json({
       data: filteredItems,
       meta: {
-        totalItems: filteredItems.length,
+        totalItems: total,
+        totalPages: Math.ceil(total / safeLimit),
+        currentPage: safePage,
+        pageSize: safeLimit,
       },
     });
   } catch (err) {
@@ -203,6 +213,7 @@ exports.statistikSankey = async (req, res) => {
         },
         { model: Program, as: "program" },
         { model: Kegiatan, as: "kegiatan" },
+        { model: SubKegiatan, as: "subKegiatan" },
       ],
     });
 
@@ -220,6 +231,7 @@ exports.statistikSankey = async (req, res) => {
         ...(item.arahKebijakans?.map((a) => a.deskripsi || a.nama_arah) || []),
         item.program?.nama_program,
         item.kegiatan?.nama_kegiatan,
+        item.subKegiatan?.nama_sub_kegiatan,
       ]
         .filter(Boolean)
         .map(safeText);
@@ -307,7 +319,25 @@ exports.create = async (req, res) => {
 exports.get = async (req, res) => {
   try {
     const cascading = await Cascading.findByPk(req.params.id, {
-      include: Object.values(Cascading.associations),
+      /**
+       * Gunakan explicit include agar alias (as: "priorNasional" dll.) konsisten
+       * dengan yang diharapkan frontend (mergeRowsWithSnapshot & resolveExistingValue).
+       * Object.values(Cascading.associations) kadang tidak menghasilkan alias yang benar
+       * sehingga nested object null meskipun FK terisi.
+       */
+      include: [
+        { model: Misi, as: "misi" },
+        { model: PrioritasNasional, as: "priorNasional" },
+        { model: PrioritasDaerah, as: "priorDaerah" },
+        { model: PrioritasGubernur, as: "priorKepda" },
+        { model: Tujuan, as: "tujuan" },
+        { model: Sasaran, as: "sasaran" },
+        { model: Program, as: "program" },
+        { model: Kegiatan, as: "kegiatan" },
+        { model: SubKegiatan, as: "subKegiatan" },
+        { model: Strategi, as: "strategis" },
+        { model: ArahKebijakan, as: "arahKebijakans" },
+      ],
     });
 
     if (!cascading) {

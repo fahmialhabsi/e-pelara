@@ -3,9 +3,9 @@ import { useEffect } from "react";
 import axios from "axios";
 import { toast } from "react-toastify";
 
-export default function useSetPreviewFields(values, setFieldValue) {
+export default function useSetPreviewFields(values, setFieldValue, enabled = true) {
   useEffect(() => {
-    // Fetch tahun_awal dan tahun_akhir dari API Periode RPJMD
+    if (!enabled) return;
     const fetchPeriode = async () => {
       try {
         const response = await axios.get("/periode-rpjmds/active");
@@ -20,13 +20,17 @@ export default function useSetPreviewFields(values, setFieldValue) {
     };
 
     fetchPeriode();
+  }, [enabled, setFieldValue]);
 
-    // Set target_awal dan target_akhir dari target_tahun_1 & target_tahun_5
-    if (values?.target_tahun_1) {
-      setFieldValue("target_awal", values.target_tahun_1);
+  useEffect(() => {
+    if (!enabled) return;
+    const t1 = values?.target_tahun_1;
+    const t5 = values?.target_tahun_5;
+    if (t1 !== undefined && t1 !== null && t1 !== "") {
+      setFieldValue("target_awal", t1);
     }
-    if (values?.target_tahun_5) {
-      setFieldValue("target_akhir", values.target_tahun_5);
+    if (t5 !== undefined && t5 !== null && t5 !== "") {
+      setFieldValue("target_akhir", t5);
     }
-  }, [values.target_tahun_1, values.target_tahun_5]);
+  }, [enabled, values?.target_tahun_1, values?.target_tahun_5, setFieldValue]);
 }

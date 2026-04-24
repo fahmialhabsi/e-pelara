@@ -7,9 +7,13 @@ const {
   IndikatorDetail,
 } = require("../models");
 const { Op } = require("sequelize");
-const { getPeriodeFromTahun } = require("../utils/periodeHelper");
+const { getPeriodeIdFromTahun } = require("../utils/periodeHelper");
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
-const { successResponse, errorResponse } = require("../utils/responseHelper");
+const {
+  successResponse,
+  errorResponse,
+  listResponse,
+} = require("../utils/responseHelper");
 
 // Helper: Bersihkan payload dari string kosong
 const cleanPayload = (payload) => {
@@ -80,7 +84,7 @@ exports.getIndikators = async (req, res, next) => {
     }
 
     await ensureClonedOnce(jenis_dokumen, tahun);
-    const periode_id = await getPeriodeFromTahun(tahun);
+    const periode_id = await getPeriodeIdFromTahun(tahun);
     if (!periode_id) return errorResponse(res, 400, "Periode tidak ditemukan.");
 
     const safeLimit = Math.min(Number(limit), 100);
@@ -109,13 +113,10 @@ exports.getIndikators = async (req, res, next) => {
       distinct: true,
     });
 
-    return successResponse(res, 200, "List indikator", {
-      data: rows,
-      meta: {
-        totalItems: count,
-        totalPages: Math.ceil(count / safeLimit),
-        currentPage: Number(page),
-      },
+    return listResponse(res, 200, "List indikator", rows, {
+      totalItems: count,
+      totalPages: Math.ceil(count / safeLimit),
+      currentPage: Number(page),
     });
   } catch (err) {
     console.error(err);

@@ -1,0 +1,24 @@
+<div class="header-doc">
+  <h2>LAPORAN REALISASI ANGGARAN</h2>
+  <p>{{NAMA_OPD}}</p>
+  <p>Untuk Tahun yang Berakhir sampai dengan 31 Desember {{TAHUN}} (dibandingkan dengan {{TAHUN_LALU}})</p>
+  <p style="font-size:9pt;">(dalam rupiah)</p>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th rowspan="2">Uraian</th>
+      <th colspan="3">Tahun {{TAHUN}}</th>
+      <th>Tahun {{TAHUN_LALU}}</th>
+    </tr>
+    <tr>
+      <th class="rupiah">Anggaran (Rp)</th>
+      <th class="rupiah">Realisasi (Rp)</th>
+      <th class="persen">%</th>
+      <th class="rupiah">Realisasi (Rp)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{LRA_ROWS}}
+  </tbody>
+</table>

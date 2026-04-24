@@ -3,6 +3,7 @@ const router = express.Router();
 const LakipController = require("../controllers/lakipController");
 const verifyToken = require("../middlewares/verifyToken");
 const allowRoles = require("../middlewares/allowRoles");
+const guardApproved = require("../middlewares/guardApproved");
 
 router.get(
   "/",
@@ -26,12 +27,14 @@ router.put(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
+  guardApproved("lakip"),
   LakipController.update
 );
 router.delete(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
+  guardApproved("lakip"),
   LakipController.destroy
 );
 

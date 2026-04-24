@@ -19,7 +19,7 @@ const schema = Yup.object().shape({
   kode_indikator: Yup.string().required("Kode indikator wajib diisi"),
   nama_indikator: Yup.string().required("Nama indikator wajib diisi"),
   satuan: Yup.string().required("Satuan wajib diisi"),
-  target_tahun_1: Yup.string().required("Target tahun 1 wajib diisi"),
+  target_tahun_1: Yup.string().required("Target (th. ke-1) wajib diisi"),
 });
 
 const IndikatorKebijakanRenstraForm = ({
@@ -175,7 +175,7 @@ const IndikatorKebijakanRenstraForm = ({
 
         <InputField
           name="target_tahun_1"
-          label="Target Tahun 1"
+          label="Target (th. ke-1)"
           control={control}
           errors={errors}
           required

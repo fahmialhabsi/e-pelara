@@ -1,25 +1,31 @@
 // src/features/renstra/sasaran/pages/RenstraTabelSasaranListPage.jsx
 import React from "react";
-import { Table, Button, Empty, Popconfirm } from "antd";
+import { Table, Button, Empty, Popconfirm, Typography } from "antd";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import api from "@/services/api";
 import SpinnerSasaranFullscreen from "../components/SpinnerSasaranFullscreen";
+import {
+  formatNumber,
+  formatNumberShort,
+  StandardRenstraExpandedRow,
+  renstraTabelListTableProps,
+  renstraTabelListPageShellStyle,
+} from "@/features/renstra/shared/components/RenstraTabelListCommon";
 
-const formatNumber = (num) => {
-  if (num === null || num === undefined || num === "") return "-";
-  return Number(num).toLocaleString("id-ID", { minimumFractionDigits: 2 });
-};
+const { Text } = Typography;
 
 const RenstraTabelSasaranListPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  const { data = [], isLoading } = useQuery({
     queryKey: ["renstra-tabel-sasaran"],
     queryFn: async () => {
       const res = await api.get("/renstra-tabel-sasaran");
-      return res.data;
+      if (Array.isArray(res.data)) return res.data;
+      if (Array.isArray(res.data?.data)) return res.data.data;
+      return [];
     },
   });
 
@@ -42,13 +48,13 @@ const RenstraTabelSasaranListPage = () => {
         <Empty description="Belum ada data" />
         <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
           <Button onClick={() => navigate("/dashboard-renstra")}>
-            🔙 Kembali
+            Kembali
           </Button>
           <Button
             type="primary"
             onClick={() => navigate("/renstra/tabel/sasaran/add")}
           >
-            ➕ Tambah
+            Tambah
           </Button>
         </div>
       </div>
@@ -56,63 +62,81 @@ const RenstraTabelSasaranListPage = () => {
 
   const columns = [
     {
+      title: "Kode",
+      dataIndex: "kode_sasaran",
+      key: "kode_sasaran",
+      width: 96,
+      ellipsis: true,
+      fixed: "left",
+    },
+    {
+      title: "Sasaran",
+      dataIndex: "nama_sasaran",
+      key: "nama_sasaran",
+      width: 200,
+      ellipsis: true,
+    },
+    {
       title: "Indikator",
       dataIndex: ["indikator", "nama_indikator"],
       key: "indikator",
-      fixed: "left",
-    },
-    { title: "Baseline", dataIndex: "baseline", key: "baseline" },
-    { title: "Satuan", dataIndex: "satuan_target", key: "satuan_target" },
-    { title: "Lokasi", dataIndex: "lokasi", key: "lokasi" },
-    {
-      title: "Target per Tahun",
-      children: Array.from({ length: 6 }, (_, i) => ({
-        title: `T${i + 1}`,
-        dataIndex: `target_tahun_${i + 1}`,
-        key: `target_tahun_${i + 1}`,
-        render: formatNumber,
-      })),
+      width: 200,
+      ellipsis: true,
     },
     {
-      title: "Pagu per Tahun",
-      children: Array.from({ length: 6 }, (_, i) => ({
-        title: `T${i + 1}`,
-        dataIndex: `pagu_tahun_${i + 1}`,
-        key: `pagu_tahun_${i + 1}`,
-        render: formatNumber,
-      })),
+      title: "Lokasi",
+      dataIndex: "lokasi",
+      key: "lokasi",
+      width: 130,
+      ellipsis: true,
     },
     {
-      title: "Target Akhir",
+      title: "Target akhir",
       dataIndex: "target_akhir_renstra",
       key: "target_akhir_renstra",
-      render: formatNumber,
+      width: 108,
+      align: "right",
+      render: (v) => (
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>
+          {formatNumber(v)}
+        </span>
+      ),
     },
     {
-      title: "Pagu Akhir",
+      title: "Pagu akhir",
       dataIndex: "pagu_akhir_renstra",
       key: "pagu_akhir_renstra",
-      render: formatNumber,
+      width: 120,
+      align: "right",
+      render: (v) => (
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>
+          {formatNumberShort(v)}
+        </span>
+      ),
     },
     {
       title: "Aksi",
       key: "aksi",
+      width: 168,
       fixed: "right",
       render: (_, record) => (
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <Button
+            size="small"
             type="primary"
             onClick={() => navigate(`/renstra/tabel/sasaran/edit/${record.id}`)}
           >
-            ✏️ Edit
+            Edit
           </Button>
           <Popconfirm
-            title="Apakah Anda yakin ingin menghapus data ini?"
+            title="Hapus data ini?"
             onConfirm={() => handleDelete(record.id)}
             okText="Ya"
             cancelText="Batal"
           >
-            <Button danger>🗑️ Hapus</Button>
+            <Button size="small" danger>
+              Hapus
+            </Button>
           </Popconfirm>
         </div>
       ),
@@ -120,24 +144,42 @@ const RenstraTabelSasaranListPage = () => {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+    <div style={renstraTabelListPageShellStyle}>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          marginBottom: 16,
+          alignItems: "center",
+        }}
+      >
         <Button onClick={() => navigate("/dashboard-renstra")}>
-          🔙 Kembali
+          Kembali
         </Button>
         <Button
           type="primary"
           onClick={() => navigate("/renstra/tabel/sasaran/add")}
         >
-          ➕ Tambah
+          Tambah
         </Button>
+        <Text type="secondary" style={{ marginLeft: 8 }}>
+          Klik baris untuk melihat target &amp; pagu periode (th. ke-1 s/d ke-6).
+        </Text>
       </div>
+
       <Table
         dataSource={data}
         columns={columns}
         rowKey="id"
-        bordered
-        scroll={{ x: 1400 }}
+        {...renstraTabelListTableProps}
+        expandable={{
+          expandRowByClick: true,
+          expandedRowRender: (record) => (
+            <StandardRenstraExpandedRow record={record} />
+          ),
+          rowExpandable: () => true,
+        }}
       />
     </div>
   );

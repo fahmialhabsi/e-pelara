@@ -23,7 +23,7 @@ const RenstraTabelSubKegiatanEditPage = () => {
     queryKey: ["renstra-tabel-subkegiatan", id],
     queryFn: async () => {
       const res = await api.get(`/renstra-tabel-subkegiatan/${id}`);
-      return res.data.data; // ✅ ambil data yang benar
+      return res.data?.data ?? res.data;
     },
     enabled: !!id,
   });

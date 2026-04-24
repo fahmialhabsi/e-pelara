@@ -25,6 +25,7 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "rkpd_id",
         as: "rkpd",
       });
+      this.belongsTo(models.Tenant, { foreignKey: "tenant_id", as: "tenant" });
     }
   }
 
@@ -41,6 +42,7 @@ module.exports = (sequelize, DataTypes) => {
       nama_indikator: { type: DataTypes.TEXT, allowNull: false },
       tipe_indikator: { type: DataTypes.ENUM("Output"), allowNull: false },
       jenis: { type: DataTypes.TEXT, allowNull: true },
+      indikator_kinerja: { type: DataTypes.TEXT, allowNull: true },
       tolok_ukur_kinerja: { type: DataTypes.TEXT, allowNull: true },
       target_kinerja: { type: DataTypes.TEXT, allowNull: true },
       jenis_indikator: {
@@ -83,6 +85,12 @@ module.exports = (sequelize, DataTypes) => {
       rkpd_id: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
       jenis_dokumen: { type: DataTypes.STRING, allowNull: false },
       tahun: { type: DataTypes.STRING, allowNull: false },
+      tenant_id: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: false,
+        defaultValue: 1,
+        references: { model: "tenants", key: "id" },
+      },
     },
     {
       sequelize,
@@ -100,34 +108,40 @@ module.exports = (sequelize, DataTypes) => {
     }
   );
 
-  // Hooks
-  IndikatorProgram.addHook("beforeCreate", async (instance) => {
+  // Hooks — cegah duplikat per indikator sasaran (sasaran_id = FK ke baris indikatorsasaran) + transaction
+  IndikatorProgram.addHook("beforeCreate", async (instance, options) => {
+    const tx = options?.transaction;
     const exists = await IndikatorProgram.findOne({
       where: {
+        sasaran_id: instance.sasaran_id,
         kode_indikator: instance.kode_indikator,
         jenis_dokumen: instance.jenis_dokumen,
         tahun: instance.tahun,
       },
+      transaction: tx,
     });
     if (exists) {
       throw new Error(
-        "Data dengan kombinasi kode_indikator, jenis_dokumen, dan tahun sudah ada."
+        "Data dengan kombinasi sasaran_id (indikator sasaran), kode_indikator, jenis_dokumen, dan tahun sudah ada."
       );
     }
   });
 
-  IndikatorProgram.addHook("beforeBulkCreate", async (instances) => {
+  IndikatorProgram.addHook("beforeBulkCreate", async (instances, options) => {
+    const tx = options?.transaction;
     for (const instance of instances) {
       const exists = await IndikatorProgram.findOne({
         where: {
+          sasaran_id: instance.sasaran_id,
           kode_indikator: instance.kode_indikator,
           jenis_dokumen: instance.jenis_dokumen,
           tahun: instance.tahun,
         },
+        transaction: tx,
       });
       if (exists) {
         throw new Error(
-          `Data duplikat ditemukan: kode_indikator=${instance.kode_indikator}`
+          `Data duplikat: kode_indikator=${instance.kode_indikator}, sasaran_id=${instance.sasaran_id}`
         );
       }
     }

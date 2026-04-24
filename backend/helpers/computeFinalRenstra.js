@@ -7,8 +7,24 @@
 function hitungAkhirSubKegiatan(subKegiatans = []) {
   return subKegiatans.reduce(
     (acc, sub) => {
-      acc.target += parseFloat(sub.target || sub.target_akhir_renstra || 0);
-      acc.pagu += parseFloat(sub.pagu || sub.pagu_akhir_renstra || 0);
+      const hasPerTahun = [1, 2, 3, 4, 5, 6].some(
+        (i) =>
+          sub[`target_tahun_${i}`] != null ||
+          sub[`pagu_tahun_${i}`] != null
+      );
+      if (hasPerTahun) {
+        let t = 0;
+        let p = 0;
+        for (let i = 1; i <= 6; i++) {
+          t += parseFloat(sub[`target_tahun_${i}`] || 0);
+          p += parseFloat(sub[`pagu_tahun_${i}`] || 0);
+        }
+        acc.target += t / 6;
+        acc.pagu += p;
+      } else {
+        acc.target += parseFloat(sub.target || sub.target_akhir_renstra || 0);
+        acc.pagu += parseFloat(sub.pagu || sub.pagu_akhir_renstra || 0);
+      }
       return acc;
     },
     { target: 0, pagu: 0 }
@@ -20,17 +36,17 @@ function hitungAkhirSubKegiatan(subKegiatans = []) {
  * @param {Object} kegiatan - kegiatan object
  */
 function hitungAkhirKegiatan(kegiatan) {
-  if (!kegiatan) return { target: 0, pagu: 0 };
+  if (!kegiatan) return { target_akhir_renstra: 0, pagu_akhir_renstra: 0 };
 
   let target = 0;
   let pagu = 0;
 
-  // Jika ada subKegiatans, hitung dari subKegiatans
-  if (
-    Array.isArray(kegiatan.subKegiatans) &&
-    kegiatan.subKegiatans.length > 0
-  ) {
-    const hasilSub = hitungAkhirSubKegiatan(kegiatan.subKegiatans);
+  // Alias Sequelize: hasMany as "subkegiatans" (huruf k kecil)
+  const subs = kegiatan.subKegiatans || kegiatan.subkegiatans;
+
+  // Jika ada subkegiatan tabel, hitung dari situ
+  if (Array.isArray(subs) && subs.length > 0) {
+    const hasilSub = hitungAkhirSubKegiatan(subs);
     target = hasilSub.target;
     pagu = hasilSub.pagu;
   } else {

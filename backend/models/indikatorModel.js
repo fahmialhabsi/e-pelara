@@ -29,6 +29,7 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "rpjmd_id",
         as: "rpjmd",
       });
+      Indikator.belongsTo(models.Tenant, { foreignKey: "tenant_id", as: "tenant" });
       Indikator.hasMany(models.RealisasiBulanan, {
         foreignKey: "indikator_id",
         as: "realisasi_bulanan",
@@ -204,6 +205,12 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false,
         field: "tahun",
+      },
+      tenant_id: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: false,
+        defaultValue: 1,
+        references: { model: "tenants", key: "id" },
       },
     },
     {

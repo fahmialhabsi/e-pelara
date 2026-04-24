@@ -9,6 +9,7 @@ const fs = require("fs");
 const cookieParser = require("cookie-parser");
 const logger = require("./utils/logger");
 const connectRedis = require("./utils/redisClient"); // versi retry otomatis
+const masterReferensiRoutes = require("./routes/masterReferensiRoutes");
 
 // === HUBUNGKAN REDIS CLIENT ===
 (async () => {
@@ -30,15 +31,25 @@ const connectRedis = require("./utils/redisClient"); // versi retry otomatis
 })();
 
 // === SETUP MIDDLEWARE ===
-const allowedOrigins = process.env.CORS_ORIGINS
-  ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim())
-  : ["http://localhost:5173", "http://localhost:3001"];
+const defaultAllowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3001",
+  "http://localhost:3013",
+];
+const allowedOrigins = Array.from(
+  new Set([
+    ...defaultAllowedOrigins,
+    ...(process.env.CORS_ORIGINS
+      ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim())
+      : []),
+  ]),
+);
+const isAllowedOrigin = (origin) => !origin || allowedOrigins.includes(origin);
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true); // izinkan request tanpa origin
-      if (!allowedOrigins.includes(origin)) {
+      if (!isAllowedOrigin(origin)) {
         return callback(
           new Error(
             "The CORS policy for this site does not allow access from the specified Origin.",
@@ -52,8 +63,20 @@ app.use(
   }),
 );
 
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
+
+// JSON API: jangan cache di browser/proxy — hindari 304 + body kosong untuk XHR (dropdown SPA).
+app.use("/api", (req, res, next) => {
+  res.setHeader(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, private",
+  );
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+});
 
 // Morgan log ke file
 const accessLogStream = fs.createWriteStream(
@@ -106,6 +129,15 @@ const tujuanRoutes = require("./routes/tujuanRoutes");
 const visiRoutes = require("./routes/visiRoutes");
 const targetsRoutes = require("./routes/targetsRoutes");
 const rpjmdRoutes = require("./routes/rpjmdRoutes");
+const rpjmdImportRoutes = require("./routes/rpjmdImportRoutes");
+const rpjmdMonitoringRoutes = require("./routes/rpjmdMonitoringRoutes");
+const rpjmdBulkFromMasterRoutes = require("./routes/rpjmdBulkFromMasterRoutes");
+const rpjmdBackfillRoutes = require("./routes/rpjmdBackfillRoutes");
+const rpjmdProgramAutoMapRoutes = require("./routes/rpjmdProgramAutoMapRoutes");
+const rpjmdKegiatanAutoMapRoutes = require("./routes/rpjmdKegiatanAutoMapRoutes");
+const rpjmdSubAutoMapRoutes = require("./routes/rpjmdSubAutoMapRoutes");
+const rpjmdRkpdSyncRoutes = require("./routes/rpjmdRkpdSyncRoutes");
+const planningAuditDashboardRoutes = require("./routes/planningAuditDashboardRoutes");
 const realisasiRoutes = require("./routes/realisasiIndikatorRoutes");
 const evaluasiRoutes = require("./routes/evaluasiRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
@@ -121,6 +153,10 @@ const indikatorTujuan = require("./routes/indikatorTujuanRoutes");
 const indikatorSasaran = require("./routes/indikatorSasaran");
 const indikatorProgram = require("./routes/indikatorProgram");
 const indikatorKegiatan = require("./routes/indikatorKegiatan");
+const indikatorStrategi = require("./routes/indikatorStrategi");
+const indikatorArahKebijakan = require("./routes/indikatorArahKebijakan");
+const indikatorSubKegiatan = require("./routes/indikatorSubKegiatan");
+const wizardRoutes = require("./routes/wizardRoutes");
 const monitoringRoutes = require("./routes/monitoringRoutes");
 const dashboardRpjmdRoutes = require("./routes/dashboardRpjmdRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
@@ -129,6 +165,7 @@ const kinerjaRoutes = require("./routes/kinerjaRoutes");
 
 // RENSTRA ROUTES
 const renstraBabRoutes = require("./routes/renstraBabRoutes");
+const renstraRoutes = require("./routes/renstraRoutes");
 const RenstraOpd = require("./routes/renstra_opdRoutes");
 const renstraTujuanRoutes = require("./routes/renstra_tujuanRoutes");
 const renstraSasaranRoutes = require("./routes/renstra_sasaranRoutes");
@@ -145,6 +182,8 @@ const renstra_tabelKegiatanRoutes = require("./routes/renstra_tabelKegiatanRoute
 const renstra_tabelSubKegiatanRoutes = require("./routes/renstra_tabelSubKegiatanRoutes");
 const renstra_tabelSasaranRoutes = require("./routes/renstra_tabelSasaranRoutes");
 const renstra_tabelTujuanRoutes = require("./routes/renstra_tabelTujuanRoutes");
+const renstra_tabelStrategiKebijakanRoutes = require("./routes/renstra_tabelStrategiKebijakanRoutes");
+const renstra_tabelPrioritasRoutes = require("./routes/renstra_tabelPrioritasRoutes");
 
 // USE RPKD
 const rkpdRoutes = require("./routes/rkpdRoutes");
@@ -180,11 +219,38 @@ const lkDispangRoutes = require("./routes/lkDispangRoutes");
 // USE LAKIP
 const lakipRoutes = require("./routes/lakipRoutes");
 
+// USE APPROVAL WORKFLOW
+const approvalRoutes = require("./routes/approvalRoutes");
+
+// USE SIPD INTERNAL
+const sipdRoutes = require("./routes/sipdRoutes");
+
+// USE LAKIP GENERATOR
+const lakipGeneratorRoutes = require("./routes/lakipGeneratorRoutes");
+
+// USE DASHBOARD LKD
+const lkdRoutes = require("./routes/lkdRoutes");
+
+// USE KODE REKENING (Permendagri 90)
+const kodeRekeningRoutes = require("./routes/kodeRekeningRoutes");
+const masterRoutes = require("./routes/masterRoutes");
+const migrationRoutes = require("./routes/migrationRoutes");
+const appPolicyRoutes = require("./routes/appPolicyRoutes");
+const regulasiRoutes = require("./routes/regulasiRoutes");
+const auditPlanningRoutes = require("./routes/auditPlanningRoutes");
+const derivationRoutes = require("./routes/derivationRoutes");
+
+// USE MODUL LAPORAN KEUANGAN (BAS, jurnal, saldo)
+const lkAccountingRoutes = require("./routes/lkAccountingRoutes");
+
 // USE CLONE PERIODE
 const clonePeriodeRoutes = require("./routes/clonePeriodeRoutes");
+const tenantRoutes = require("./routes/tenantRoutes");
+const planRoutes = require("./routes/planRoutes");
 
 app.use(cookieParser());
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // === STATIC FILES ===
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
@@ -195,6 +261,9 @@ app.use("/api", signPdfRoutes);
 app.use("/api/periode-rpjmd", periodeRoutes);
 app.use("/api/rekomendasi-ai", rekomendasiAIRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/tenants", tenantRoutes);
+app.use("/api/plans", planRoutes);
+app.use("/api", derivationRoutes);
 app.use("/api", userRoutes);
 app.use("/api/divisions", divisionRoutes);
 app.use("/api/roles", roleRoutes);
@@ -217,6 +286,15 @@ app.use("/api/tujuan", tujuanRoutes);
 app.use("/api/visi", visiRoutes);
 app.use("/api/targets", targetsRoutes);
 app.use("/api/rpjmd", rpjmdRoutes);
+app.use("/api/rpjmd-import", rpjmdImportRoutes);
+app.use("/api/rpjmd-monitoring", rpjmdMonitoringRoutes);
+app.use("/api/rpjmd/bulk-from-master", rpjmdBulkFromMasterRoutes);
+app.use("/api/rpjmd/backfill", rpjmdBackfillRoutes);
+app.use("/api/rpjmd/program-auto-map", rpjmdProgramAutoMapRoutes);
+app.use("/api/rpjmd/kegiatan-auto-map", rpjmdKegiatanAutoMapRoutes);
+app.use("/api/rpjmd/sub-auto-map", rpjmdSubAutoMapRoutes);
+app.use("/api/rpjmd-rkpd-sync", rpjmdRkpdSyncRoutes);
+app.use("/api/planning-audit", planningAuditDashboardRoutes);
 app.use("/api/realisasi-indikator", realisasiRoutes);
 app.use("/api/evaluasi", evaluasiRoutes);
 app.use("/api", dashboardRoutes);
@@ -231,6 +309,10 @@ app.use("/api/indikator-tujuans", indikatorTujuan);
 app.use("/api/indikator-sasaran", indikatorSasaran);
 app.use("/api/indikator-program", indikatorProgram);
 app.use("/api/indikator-kegiatan", indikatorKegiatan);
+app.use("/api/indikator-strategi", indikatorStrategi);
+app.use("/api/indikator-arah-kebijakan", indikatorArahKebijakan);
+app.use("/api/indikator-sub-kegiatan", indikatorSubKegiatan);
+app.use("/api/wizard", wizardRoutes);
 app.use("/api", monitoringRoutes);
 app.use("/api/dashboard-rpjmd", dashboardRpjmdRoutes);
 app.use("/api/notifications", notificationRoutes);
@@ -238,6 +320,7 @@ app.use("/api/cascading", cascadingRoutes);
 app.use("/api", kinerjaRoutes);
 
 // USE RENSTRA ROUTES
+app.use("/api/renstra-docs", renstraRoutes);
 app.use("/api/renstra", renstraBabRoutes);
 app.use("/api/renstra-opd", RenstraOpd);
 app.use("/api/renstra-tujuan", renstraTujuanRoutes);
@@ -255,6 +338,11 @@ app.use("/api/renstra-tabel-sasaran", renstra_tabelSasaranRoutes);
 app.use("/api/renstra-tabel-program", renstra_tabelProgramRoutes);
 app.use("/api/renstra-tabel-kegiatan", renstra_tabelKegiatanRoutes);
 app.use("/api/renstra-tabel-subkegiatan", renstra_tabelSubKegiatanRoutes);
+app.use(
+  "/api/renstra-tabel-strategi-kebijakan",
+  renstra_tabelStrategiKebijakanRoutes,
+);
+app.use("/api/renstra-tabel-prioritas", renstra_tabelPrioritasRoutes);
 
 // USE RKPD
 app.use("/api/rkpd", rkpdRoutes);
@@ -262,6 +350,12 @@ app.use("/api/rkpd-init", rkpdInitRoutes);
 
 // USE RENJA
 app.use("/api/renja", renjaRoutes);
+
+// Audit konsistensi perencanaan (domain v2)
+app.use("/api/audit", auditPlanningRoutes);
+
+const planningDocumentRoutes = require("./routes/planningDocumentRoutes");
+app.use("/api/planning", planningDocumentRoutes);
 
 // USE RKA
 app.use("/api/rka", rkaRoutes);
@@ -290,6 +384,27 @@ app.use("/api/lk-dispang", lkDispangRoutes);
 // USE LAKIP
 app.use("/api/lakip", lakipRoutes);
 
+// USE APPROVAL WORKFLOW
+app.use("/api/approval", approvalRoutes);
+
+// USE SIPD INTERNAL
+app.use("/api/sipd", sipdRoutes);
+
+// USE LAKIP GENERATOR
+app.use("/api/lakip-generator", lakipGeneratorRoutes);
+
+// USE DASHBOARD LKD
+app.use("/api/lkd", lkdRoutes);
+app.use("/api/rekening", kodeRekeningRoutes);
+app.use("/api/master", masterRoutes);
+app.use("/api/v1/master", masterRoutes);
+app.use("/api/migration", migrationRoutes);
+app.use("/api/v1/migration", migrationRoutes);
+app.use("/api/v1/app-policy", appPolicyRoutes);
+app.use("/api/regulasi", regulasiRoutes);
+app.use("/api", lkAccountingRoutes);
+app.use("/api", masterReferensiRoutes);
+
 app.use((err, req, res, next) => {
   console.error("🔥 ERROR CAUGHT:", err.stack);
   const errorStack = `${new Date().toISOString()} - ${err.stack}`;
@@ -307,7 +422,7 @@ const server = http.createServer(app);
 const { Server } = require("socket.io");
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3001",
+    origin: allowedOrigins,
     credentials: true,
   },
 });

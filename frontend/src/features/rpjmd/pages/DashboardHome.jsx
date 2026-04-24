@@ -12,6 +12,7 @@ import { useAuth } from "../../../hooks/useAuth";
 import { useRequireDokumenTahun } from "../../../hooks/useRequireDokumenTahun.jsx";
 import TrendChart from "../components/TrendChart";
 import api from "../../../services/api";
+import { extractSingleData } from "@/utils/apiResponse";
 
 const DashboardHome = () => {
   const { user, logout } = useAuth();
@@ -25,7 +26,7 @@ const DashboardHome = () => {
     const fetchKinerja = async () => {
       try {
         const res = await api.get("/kinerja-rpjmd");
-        setChartData(res.data);
+        setChartData(extractSingleData(res.data));
       } catch (e) {
         console.error("Gagal memuat tren kinerja", e);
         setError("Gagal memuat tren kinerja RPJMD");
@@ -58,7 +59,9 @@ const DashboardHome = () => {
 
         {!isReady && (
           <Alert variant="info">
-            Silakan pilih jenis dokumen &amp; tahun terlebih dahulu.
+            Silakan pilih jenis dokumen di header. RPJMD dan Renstra memakai
+            konteks periode dokumen otomatis. Renja/RKPD dan dokumen berbasis
+            satu angka kalender memakai konteks di header seperti biasa.
           </Alert>
         )}
 

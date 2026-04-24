@@ -1,5 +1,5 @@
 // src/features/renstra/subkegiatan/components/RenstraTabelSubKegiatanForm.jsx
-import React, { useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import { Card, Button } from "antd";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -14,105 +14,56 @@ import SpinnerFullscreen from "./RenstraTableSubKegiatanSpinnerFullscreen";
 const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
   const navigate = useNavigate();
 
-  // 🔹 Queries
-  const { data: programOptions = [], isLoading: loadingProgram } = useQuery({
-    queryKey: ["renstra-program", renstraAktif?.id],
-    queryFn: async () => {
-      const res = await api.get("/renstra-program", {
-        params: { renstra_id: renstraAktif?.id },
-      });
-      return res.data;
-    },
-    enabled: !!renstraAktif,
-  });
+  // 🔹 Yup — wajib hanya hierarki Program / Kegiatan / Subkegiatan; sisanya opsional (isi otomatis/manual).
+  const schema = () => {
+    const num = (def = 0) =>
+      Yup.number()
+        .transform((_, orig) => {
+          if (orig === "" || orig === null || orig === undefined) return def;
+          const n = Number(orig);
+          return Number.isFinite(n) ? n : def;
+        })
+        .default(def);
 
-  const { data: kegiatanOptions = [], isLoading: loadingKegiatan } = useQuery({
-    queryKey: ["renstra-kegiatan", renstraAktif?.id],
-    queryFn: async () => {
-      const res = await api.get("/renstra-kegiatan", {
-        params: { renstra_id: renstraAktif?.id },
-      });
-      return res.data;
-    },
-    enabled: !!renstraAktif,
-  });
-
-  const { data: subkegiatanOptions = [], isLoading: loadingSub } = useQuery({
-    queryKey: ["renstra-subkegiatan", renstraAktif?.id],
-    queryFn: async () => {
-      const res = await api.get("/renstra-subkegiatan", {
-        params: { renstra_id: renstraAktif?.id },
-      });
-      // Pastikan selalu array
-      if (Array.isArray(res.data)) return res.data;
-      if (Array.isArray(res.data?.data)) return res.data.data;
-      return [];
-    },
-    enabled: !!renstraAktif,
-  });
-
-  const { data: indikatorOptions = [], isLoading: loadingIndikator } = useQuery(
-    {
-      queryKey: ["indikator-renstra", renstraAktif?.id],
-      queryFn: async () => {
-        const res = await api.get("/indikator-renstra", {
-          params: { renstra_id: renstraAktif?.id },
-        });
-        return res.data;
-      },
-      enabled: !!renstraAktif,
-    }
-  );
-
-  // 🔹 Yup schema
-  const schema = () =>
-    Yup.object({
+    return Yup.object({
       program_id: Yup.string().required("Program wajib dipilih"),
       kegiatan_id: Yup.string().required("Kegiatan wajib dipilih"),
       subkegiatan_id: Yup.string().required("Subkegiatan wajib dipilih"),
-      indikator_manual: Yup.string().required("Indikator wajib diisi"),
-      baseline: Yup.number()
-        .typeError("Harus berupa angka")
-        .required("Baseline wajib diisi"),
-      satuan_target: Yup.string().required("Satuan target wajib diisi"),
-      lokasi: Yup.string().required("Lokasi wajib diisi"),
-      kode_subkegiatan: Yup.string().required("Kode subkegiatan wajib diisi"),
-      nama_subkegiatan: Yup.string().required("Nama subkegiatan wajib diisi"),
-      target_tahun_1: Yup.number().typeError("Harus angka").required(),
-      target_tahun_2: Yup.number().typeError("Harus angka").required(),
-      target_tahun_3: Yup.number().typeError("Harus angka").required(),
-      target_tahun_4: Yup.number().typeError("Harus angka").required(),
-      target_tahun_5: Yup.number().typeError("Harus angka").required(),
-      target_tahun_6: Yup.number().typeError("Harus angka").required(),
-      pagu_tahun_1: Yup.number().typeError("Harus angka").required(),
-      pagu_tahun_2: Yup.number().typeError("Harus angka").required(),
-      pagu_tahun_3: Yup.number().typeError("Harus angka").required(),
-      pagu_tahun_4: Yup.number().typeError("Harus angka").required(),
-      pagu_tahun_5: Yup.number().typeError("Harus angka").required(),
-      pagu_tahun_6: Yup.number().typeError("Harus angka").required(),
+      indikator_manual: Yup.string().default(""),
+      baseline: num(0),
+      satuan_target: Yup.string().default(""),
+      lokasi: Yup.string().default(""),
+      kode_subkegiatan: Yup.string().default(""),
+      nama_subkegiatan: Yup.string().default(""),
+      target_tahun_1: num(0),
+      target_tahun_2: num(0),
+      target_tahun_3: num(0),
+      target_tahun_4: num(0),
+      target_tahun_5: num(0),
+      target_tahun_6: num(0),
+      pagu_tahun_1: num(0),
+      pagu_tahun_2: num(0),
+      pagu_tahun_3: num(0),
+      pagu_tahun_4: num(0),
+      pagu_tahun_5: num(0),
+      pagu_tahun_6: num(0),
+      target_akhir_renstra: num(0),
+      pagu_akhir_renstra: num(0),
     });
+  };
 
-  // 🔹 defaultValues final
+  // 🔹 defaultValues
   const defaultValues = {
-    // Foreign keys (harus string)
     program_id: initialData?.program_id ? String(initialData.program_id) : "",
-    kegiatan_id: initialData?.kegiatan_id
-      ? String(initialData.kegiatan_id)
-      : "",
-    subkegiatan_id: initialData?.subkegiatan_id
-      ? String(initialData.subkegiatan_id)
-      : "",
+    kegiatan_id: initialData?.kegiatan_id ? String(initialData.kegiatan_id) : "",
+    subkegiatan_id: initialData?.subkegiatan_id ? String(initialData.subkegiatan_id) : "",
     renstra_opd_id: initialData?.renstra_opd_id ?? renstraAktif?.id ?? "",
-
-    // Field string
     indikator_manual: initialData?.indikator_manual ?? "",
     kode_subkegiatan: initialData?.kode_subkegiatan ?? "",
     nama_subkegiatan: initialData?.nama_subkegiatan ?? "",
     sub_bidang_penanggung_jawab: initialData?.sub_bidang_penanggung_jawab ?? "",
     satuan_target: initialData?.satuan_target ?? "",
     lokasi: initialData?.lokasi ?? "",
-
-    // Field numeric, default = 0
     baseline: initialData?.baseline ?? 0,
     target_tahun_1: initialData?.target_tahun_1 ?? 0,
     target_tahun_2: initialData?.target_tahun_2 ?? 0,
@@ -130,54 +81,40 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
     pagu_akhir_renstra: initialData?.pagu_akhir_renstra ?? 0,
   };
 
-  // 🔹 Generate payload final
+  // 🔹 Payload generator
   const generatePayload = (data) => {
-    // Helper: convert ke number aman
-    const toNumber = (value, defaultValue = 0) => {
-      if (value === "" || value === null || value === undefined)
-        return defaultValue;
-      const n = Number(value);
-      return Number.isNaN(n) ? defaultValue : n;
+    const toNumber = (v, def = 0) => {
+      if (v === "" || v === null || v === undefined) return def;
+      const n = Number(v);
+      return Number.isNaN(n) ? def : n;
     };
-
-    // Payload terstruktur
-    const payload = {
-      // Foreign keys (string sesuai requirement frontend)
+    return {
       program_id: data.program_id || "",
       kegiatan_id: data.kegiatan_id || "",
       subkegiatan_id: data.subkegiatan_id || "",
       renstra_opd_id: data.renstra_opd_id || "",
-
-      // Field string
       indikator_manual: data.indikator_manual || "",
       kode_subkegiatan: data.kode_subkegiatan || "",
       nama_subkegiatan: data.nama_subkegiatan || "",
       sub_bidang_penanggung_jawab: data.sub_bidang_penanggung_jawab || "",
       satuan_target: data.satuan_target || "",
       lokasi: data.lokasi || "",
-
-      // Field numeric (default aman = 0)
-      baseline: toNumber(data.baseline, 0),
-      target_tahun_1: toNumber(data.target_tahun_1, 0),
-      target_tahun_2: toNumber(data.target_tahun_2, 0),
-      target_tahun_3: toNumber(data.target_tahun_3, 0),
-      target_tahun_4: toNumber(data.target_tahun_4, 0),
-      target_tahun_5: toNumber(data.target_tahun_5, 0),
-      target_tahun_6: toNumber(data.target_tahun_6, 0),
-      pagu_tahun_1: toNumber(data.pagu_tahun_1, 0),
-      pagu_tahun_2: toNumber(data.pagu_tahun_2, 0),
-      pagu_tahun_3: toNumber(data.pagu_tahun_3, 0),
-      pagu_tahun_4: toNumber(data.pagu_tahun_4, 0),
-      pagu_tahun_5: toNumber(data.pagu_tahun_5, 0),
-      pagu_tahun_6: toNumber(data.pagu_tahun_6, 0),
-      target_akhir_renstra: toNumber(data.target_akhir_renstra, 0),
-      pagu_akhir_renstra: toNumber(data.pagu_akhir_renstra, 0),
+      baseline: toNumber(data.baseline),
+      target_tahun_1: toNumber(data.target_tahun_1),
+      target_tahun_2: toNumber(data.target_tahun_2),
+      target_tahun_3: toNumber(data.target_tahun_3),
+      target_tahun_4: toNumber(data.target_tahun_4),
+      target_tahun_5: toNumber(data.target_tahun_5),
+      target_tahun_6: toNumber(data.target_tahun_6),
+      pagu_tahun_1: toNumber(data.pagu_tahun_1),
+      pagu_tahun_2: toNumber(data.pagu_tahun_2),
+      pagu_tahun_3: toNumber(data.pagu_tahun_3),
+      pagu_tahun_4: toNumber(data.pagu_tahun_4),
+      pagu_tahun_5: toNumber(data.pagu_tahun_5),
+      pagu_tahun_6: toNumber(data.pagu_tahun_6),
+      target_akhir_renstra: toNumber(data.target_akhir_renstra),
+      pagu_akhir_renstra: toNumber(data.pagu_akhir_renstra),
     };
-
-    // Debug: cek payload sebelum dikirim
-    console.log("Payload final dikirim ke backend:", payload);
-
-    return payload;
   };
 
   // 🔹 Form template
@@ -190,28 +127,199 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
     generatePayload,
     queryKeys: ["renstra-tabel-subkegiatan"],
     redirectPath: "/renstra/tabel/subkegiatan",
-    mode: "onChange", // agar isValid update setiap input
+    mode: "onChange",
   });
 
   const { control, handleSubmit, setValue, watch, formState } = form;
 
+  const selectedProgramId = watch("program_id");
+  const selectedKegiatanId = watch("kegiatan_id");
+  const selectedSubkegiatanId = watch("subkegiatan_id");
+
+  /** Tahun master RPJMD (sub_kegiatan / indikator memakai kolom tahun numerik). */
+  const tahunRpjmd = useMemo(() => {
+    const y = Number(renstraAktif?.tahun_mulai);
+    return Number.isFinite(y) && y > 0 ? y : new Date().getFullYear();
+  }, [renstraAktif?.tahun_mulai]);
+
+  // 🔹 1) Load Program (filtered by renstra_id)
+  const { data: programList = [], isLoading: loadingProgram } = useQuery({
+    queryKey: ["renstra-program", renstraAktif?.id],
+    queryFn: async () => {
+      const res = await api.get("/renstra-program", {
+        params: { renstra_id: renstraAktif?.id },
+      });
+      return Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+    },
+    enabled: !!renstraAktif?.id,
+  });
+
+  // 🔹 2) Load Kegiatan (filtered by program_id, cascades when program changes)
+  const { data: kegiatanList = [], isLoading: loadingKegiatan } = useQuery({
+    queryKey: ["renstra-kegiatan-cascade", renstraAktif?.id, selectedProgramId],
+    queryFn: async () => {
+      const params = { renstra_id: renstraAktif?.id };
+      if (selectedProgramId) params.program_id = selectedProgramId;
+      const res = await api.get("/renstra-kegiatan", { params });
+      return Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+    },
+    enabled: !!renstraAktif?.id && !!selectedProgramId,
+  });
+
+  const selectedKegRow = useMemo(
+    () => kegiatanList.find((k) => String(k.id) === String(selectedKegiatanId)),
+    [kegiatanList, selectedKegiatanId]
+  );
+
+  const rpjmdKegiatanId = useMemo(() => {
+    const raw =
+      selectedKegRow?.rpjmd_kegiatan_id ?? selectedKegRow?.kegiatan_rpjmd?.id;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [selectedKegRow]);
+
+  // 🔹 3) Sub kegiatan master RPJMD (ID = PK sub_kegiatan; wajib agar create memakai SubKegiatan.findByPk di backend)
+  const { data: subkegiatanList = [], isLoading: loadingSub } = useQuery({
+    queryKey: ["master-sub-kegiatan-by-rpjmd-kegiatan", rpjmdKegiatanId, tahunRpjmd],
+    queryFn: async () => {
+      const res = await api.get(`/sub-kegiatan/by-kegiatan/${rpjmdKegiatanId}`, {
+        params: { tahun: tahunRpjmd },
+      });
+      if (Array.isArray(res.data)) return res.data;
+      if (Array.isArray(res.data?.data)) return res.data.data;
+      return [];
+    },
+    enabled: !!rpjmdKegiatanId && !!tahunRpjmd,
+  });
+
+  // 🔹 Reset downstream when parent changes
+  const clearDerivedSubFields = useCallback(() => {
+    setValue("subkegiatan_id", "");
+    setValue("kode_subkegiatan", "");
+    setValue("nama_subkegiatan", "");
+    setValue("sub_bidang_penanggung_jawab", "");
+    setValue("indikator_manual", "");
+    setValue("baseline", 0);
+    setValue("satuan_target", "");
+    setValue("lokasi", "");
+    for (let i = 1; i <= 6; i += 1) {
+      setValue(`target_tahun_${i}`, 0);
+      setValue(`pagu_tahun_${i}`, 0);
+    }
+  }, [setValue]);
+
+  useEffect(() => {
+    if (!initialData) {
+      setValue("kegiatan_id", "");
+      clearDerivedSubFields();
+    }
+  }, [selectedProgramId, initialData, setValue, clearDerivedSubFields]);
+
+  useEffect(() => {
+    if (!initialData) {
+      clearDerivedSubFields();
+    }
+  }, [selectedKegiatanId, initialData, clearDerivedSubFields]);
+
+  // 🔹 Isi otomatis dari master sub_kegiatan + indikator RPJMD (hanya mode tambah)
+  useEffect(() => {
+    if (initialData || !selectedSubkegiatanId || !tahunRpjmd) return;
+
+    const parseNum = (v) => {
+      if (v === null || v === undefined || v === "") return 0;
+      const n = parseFloat(String(v).replace(",", "."));
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const [subRes, indRes] = await Promise.all([
+          api.get(`/sub-kegiatan/${selectedSubkegiatanId}`),
+          api.get("/indikator-sub-kegiatan/by-sub-kegiatan", {
+            params: {
+              sub_kegiatan_id: selectedSubkegiatanId,
+              jenis_dokumen: "rpjmd",
+              tahun: String(tahunRpjmd),
+              perPage: 50,
+            },
+          }),
+        ]);
+        if (cancelled) return;
+
+        const sub = subRes.data?.data ?? subRes.data;
+        const indPayload = indRes.data?.data;
+        const indRows = Array.isArray(indPayload)
+          ? indPayload
+          : Array.isArray(indRes.data)
+            ? indRes.data
+            : [];
+        const first = indRows[0] || null;
+
+        if (sub) {
+          setValue("kode_subkegiatan", sub.kode_sub_kegiatan || "");
+          setValue("nama_subkegiatan", sub.nama_sub_kegiatan || "");
+          setValue("sub_bidang_penanggung_jawab", sub.sub_bidang_opd || "");
+        }
+
+        if (first) {
+          const indLabel =
+            first.nama_indikator || first.kode_indikator || "";
+          setValue("indikator_manual", indLabel);
+          setValue("baseline", parseNum(first.baseline ?? first.target_awal));
+          setValue("satuan_target", first.satuan || "");
+          setValue(
+            "lokasi",
+            first.sumber_data ||
+              first.keterangan ||
+              sub?.nama_opd ||
+              ""
+          );
+          for (let i = 1; i <= 5; i += 1) {
+            setValue(`target_tahun_${i}`, parseNum(first[`target_tahun_${i}`]));
+          }
+          const t5 = parseNum(first.target_tahun_5);
+          setValue("target_tahun_6", t5);
+        } else {
+          setValue("indikator_manual", "");
+          setValue("baseline", 0);
+          setValue("satuan_target", "");
+          setValue("lokasi", sub?.nama_opd || "");
+          for (let i = 1; i <= 6; i += 1) {
+            setValue(`target_tahun_${i}`, 0);
+          }
+        }
+
+        const fromSub = Number(sub?.pagu_anggaran ?? sub?.total_pagu_anggaran ?? 0) || 0;
+        const fromInd = parseNum(first?.anggaran);
+        const totalPagu = Math.round(Number(fromSub || fromInd) || 0);
+        // RPJMD hanya punya pagu/anggaran total — tidak ada pagu_tahun_1..6; bagi rata ke 6 tahun Renstra.
+        const base = Math.floor(totalPagu / 6);
+        const rem = totalPagu - base * 6;
+        for (let i = 1; i <= 6; i += 1) {
+          setValue(`pagu_tahun_${i}`, base + (i <= rem ? 1 : 0));
+        }
+      } catch {
+        /* biarkan pengguna mengisi manual */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialData, selectedSubkegiatanId, tahunRpjmd, setValue]);
+
+  // 🔹 Pre-select saat edit
+  useEffect(() => {
+    if (!initialData) return;
+    if (initialData.program_id) setValue("program_id", String(initialData.program_id));
+    if (initialData.kegiatan_id) setValue("kegiatan_id", String(initialData.kegiatan_id));
+    if (initialData.subkegiatan_id) setValue("subkegiatan_id", String(initialData.subkegiatan_id));
+  }, [initialData, setValue]);
+
   // 🔹 Hitung otomatis target & pagu akhir
-  const targetValues = watch([
-    "target_tahun_1",
-    "target_tahun_2",
-    "target_tahun_3",
-    "target_tahun_4",
-    "target_tahun_5",
-    "target_tahun_6",
-  ]);
-  const paguValues = watch([
-    "pagu_tahun_1",
-    "pagu_tahun_2",
-    "pagu_tahun_3",
-    "pagu_tahun_4",
-    "pagu_tahun_5",
-    "pagu_tahun_6",
-  ]);
+  const targetValues = watch(["target_tahun_1","target_tahun_2","target_tahun_3","target_tahun_4","target_tahun_5","target_tahun_6"]);
+  const paguValues = watch(["pagu_tahun_1","pagu_tahun_2","pagu_tahun_3","pagu_tahun_4","pagu_tahun_5","pagu_tahun_6"]);
 
   const targetAkhirRenstra = useMemo(() => {
     const nums = targetValues.map((v) => Number(v) || 0);
@@ -229,53 +337,7 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
     setValue("pagu_akhir_renstra", paguAkhirRenstra);
   }, [targetAkhirRenstra, paguAkhirRenstra, setValue]);
 
-  // 🔹 Update subkegiatan related fields
-  useEffect(() => {
-    const selected = subkegiatanOptions.find(
-      (s) => String(s.id) === watch("subkegiatan_id")
-    );
-    if (selected) {
-      setValue("kode_subkegiatan", selected.kode_sub_kegiatan || "");
-      setValue("nama_subkegiatan", selected.nama_sub_kegiatan || "");
-      setValue("sub_bidang_penanggung_jawab", selected.sub_bidang_opd || "");
-    }
-  }, [watch("subkegiatan_id"), subkegiatanOptions, setValue]);
-
-  useEffect(() => {
-    if (!initialData) return;
-
-    // Program
-    const programSelected = programOptions.find(
-      (p) => p.id === initialData.program?.id
-    );
-    if (programSelected) setValue("program_id", String(programSelected.id));
-
-    // Kegiatan
-    const kegiatanSelected = kegiatanOptions.find(
-      (k) => k.id === initialData.kegiatan?.id
-    );
-    if (kegiatanSelected) setValue("kegiatan_id", String(kegiatanSelected.id));
-
-    // Subkegiatan
-    const subkegiatanSelected = subkegiatanOptions.find(
-      (s) => s.id === initialData.subkegiatan?.id
-    );
-    if (subkegiatanSelected)
-      setValue("subkegiatan_id", String(subkegiatanSelected.id));
-  }, [
-    initialData,
-    programOptions,
-    kegiatanOptions,
-    subkegiatanOptions,
-    setValue,
-  ]);
-
-  const isLoading =
-    !renstraAktif ||
-    loadingProgram ||
-    loadingKegiatan ||
-    loadingSub ||
-    loadingIndikator;
+  const isLoading = !renstraAktif || loadingProgram;
 
   return (
     <Card
@@ -296,38 +358,43 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)}>
+            {/* Level 1: Program */}
             <SelectWithLabelValue
               name="program_id"
               label="Program"
               control={control}
               errors={formState.errors}
               required
-              options={programOptions.map((item) => ({
-                label: item.nama_program, // ini yang tampil
-                value: String(item.id), // ini yang tersimpan
+              options={programList.map((item) => ({
+                label: `${item.kode_program} - ${item.nama_program}`,
+                value: String(item.id),
               }))}
             />
 
+            {/* Level 2: Kegiatan (cascade dari Program) */}
             <SelectWithLabelValue
               name="kegiatan_id"
               label="Kegiatan"
               control={control}
               errors={formState.errors}
               required
-              options={kegiatanOptions.map((item) => ({
-                label: item.nama_kegiatan,
+              disabled={!selectedProgramId || loadingKegiatan}
+              options={kegiatanList.map((item) => ({
+                label: `${item.kode_kegiatan || ""} - ${item.nama_kegiatan}`,
                 value: String(item.id),
               }))}
             />
 
+            {/* Level 3: SubKegiatan (cascade dari Kegiatan) */}
             <SelectWithLabelValue
               name="subkegiatan_id"
               label="Subkegiatan"
               control={control}
               errors={formState.errors}
               required
-              options={subkegiatanOptions.map((item) => ({
-                label: item.nama_sub_kegiatan,
+              disabled={!selectedKegiatanId || !rpjmdKegiatanId || loadingSub}
+              options={subkegiatanList.map((item) => ({
+                label: `${item.kode_sub_kegiatan || ""} - ${item.nama_sub_kegiatan}`,
                 value: String(item.id),
               }))}
             />
@@ -379,25 +446,27 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
               disabled
             />
 
-            <h4 style={{ marginTop: 24 }}>Target per Tahun</h4>
+            <h4 style={{ marginTop: 24 }}>Target periode (th. ke-1 s/d ke-6)</h4>
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <InputField
                 key={`target_tahun_${i}`}
                 name={`target_tahun_${i}`}
-                label={`Target Tahun ${i}`}
+                label={`Target (th. ke-${i})`}
                 control={control}
                 errors={formState.errors}
+                type="number"
               />
             ))}
 
-            <h4 style={{ marginTop: 24 }}>Pagu per Tahun</h4>
+            <h4 style={{ marginTop: 24 }}>Pagu periode (th. ke-1 s/d ke-6)</h4>
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <InputField
                 key={`pagu_tahun_${i}`}
                 name={`pagu_tahun_${i}`}
-                label={`Pagu Tahun ${i}`}
+                label={`Pagu (th. ke-${i})`}
                 control={control}
                 errors={formState.errors}
+                type="number"
               />
             ))}
 

@@ -1,6 +1,11 @@
 const express = require("express");
 const router = express.Router();
-const { register, login } = require("../controllers/authController");
+const {
+  register,
+  login,
+  forgotPassword,
+  resetPasswordWithToken,
+} = require("../controllers/authController");
 const authController = require("../controllers/authController");
 const rateLimit = require("express-rate-limit");
 
@@ -38,6 +43,9 @@ router.post(
 
 // Rute untuk login pengguna (rate limit aktif!)
 router.post("/login", authLimiter, login);
+
+router.post("/forgot-password", authLimiter, forgotPassword);
+router.post("/reset-password", authLimiter, resetPasswordWithToken);
 
 router.post("/refresh-token", authController.refreshToken);
 

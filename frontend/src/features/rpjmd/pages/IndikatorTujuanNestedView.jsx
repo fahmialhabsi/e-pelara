@@ -5,8 +5,10 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
+import { deleteIndikatorRpjmd } from "@/features/rpjmd/services/indikatorRpjmdApi";
 
-const IndikatorTujuanNestedView = ({ data = [] }) => {
+const IndikatorTujuanNestedView = ({ data = [], onDeleted }) => {
   const [filter, setFilter] = useState("");
   const [expandedRowId, setExpandedRowId] = useState(null);
   const navigate = useNavigate();
@@ -31,18 +33,14 @@ const IndikatorTujuanNestedView = ({ data = [] }) => {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm("Yakin ingin menghapus data ini?")) {
-      try {
-        const res = await fetch(`/api/indikator-tujuan/${id}`, {
-          method: "DELETE",
-        });
-        if (!res.ok) throw new Error("Gagal menghapus");
-        alert("Data berhasil dihapus");
-        window.location.reload();
-      } catch (err) {
-        console.error(err);
-        alert("Gagal menghapus data");
-      }
+    if (!window.confirm("Yakin ingin menghapus data ini?")) return;
+    try {
+      await deleteIndikatorRpjmd("indikator-tujuans", id);
+      toast.success("Data berhasil dihapus.");
+      onDeleted?.();
+    } catch (err) {
+      console.error(err);
+      toast.error("Gagal menghapus data.");
     }
   };
 
@@ -116,11 +114,11 @@ const IndikatorTujuanNestedView = ({ data = [] }) => {
                   <th rowSpan="2">Target</th>
                   <th rowSpan="2">Satuan</th>
                   <th colSpan="5" className="text-center">
-                    Capaian Tahun Ke
+                    Capaian (th. ke-I s/d V)
                   </th>
                   <th rowSpan="2">Baseline</th>
                   <th colSpan="5" className="text-center">
-                    Target Tahun Ke
+                    Target (th. ke-I s/d V)
                   </th>
                   <th rowSpan="2">Aksi</th>
                 </tr>

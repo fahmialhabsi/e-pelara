@@ -9,10 +9,17 @@ const {
   Misi,
   ProgramArahKebijakan,
 } = require("../models");
-const { Op } = require("sequelize");
-const { getPeriodeFromTahun } = require("../utils/periodeHelper");
+const { Op, fn, col, where: sqlWhere } = require("sequelize");
+const {
+  getPeriodeFromTahun,
+  getPeriodeIdFromTahun,
+} = require("../utils/periodeHelper");
 const { validationResult } = require("express-validator");
-const { successResponse, errorResponse } = require("../utils/responseHelper");
+const {
+  successResponse,
+  errorResponse,
+  listResponse,
+} = require("../utils/responseHelper");
 const {
   recalcProgramTotal,
   recalcProgramTotalByKode,
@@ -177,7 +184,7 @@ const programController = {
       const filtered = [];
       const kodeSet = new Set();
 
-      const periode_id = await getPeriodeFromTahun(data[0]?.tahun);
+      const periode_id = await getPeriodeIdFromTahun(data[0]?.tahun);
       if (!periode_id) {
         return errorResponse(res, 400, "Periode tidak ditemukan.");
       }
@@ -242,7 +249,14 @@ const programController = {
 
   async list(req, res) {
     try {
-      const { page = 1, limit = 20, tahun, jenis_dokumen } = req.query;
+      const {
+        page = 1,
+        limit = 20,
+        tahun,
+        jenis_dokumen,
+        sasaran_id,
+        arah_kebijakan_id,
+      } = req.query;
       if (!tahun || !jenis_dokumen) {
         return res
           .status(400)
@@ -256,26 +270,101 @@ const programController = {
       }
       const periode_id = periode.id;
 
-      const safeLimit = Math.min(parseInt(limit), MAX_PAGE_LIMIT);
-      const offset = (parseInt(page) - 1) * safeLimit;
+      const currentPage = parseInt(page, 10) || 1;
+      const safeLimit = Math.min(parseInt(limit, 10) || 20, MAX_PAGE_LIMIT);
+      const offset = (currentPage - 1) * safeLimit;
 
-      const where = { tahun, jenis_dokumen, periode_id };
+      const jenisLc = String(jenis_dokumen).trim().toLowerCase();
+      const where = {
+        tahun,
+        periode_id,
+        [Op.and]: [
+          sqlWhere(fn("LOWER", col("Program.jenis_dokumen")), jenisLc),
+        ],
+      };
+      if (!arah_kebijakan_id && sasaran_id) {
+        where.sasaran_id = sasaran_id;
+      }
+
+      const includeForList = includeRelations.map((inc) => {
+        if (inc.as === "ArahKebijakan" && arah_kebijakan_id) {
+          return {
+            ...inc,
+            required: true,
+            where: { id: arah_kebijakan_id },
+          };
+        }
+        return inc;
+      });
+
       const { count, rows } = await Program.findAndCountAll({
         where,
-        include: includeRelations,
+        include: includeForList,
         limit: safeLimit,
         offset,
         order: [["kode_program", "ASC"]],
         distinct: true,
       });
 
-      return res.json({
-        data: rows,
-        meta: {
-          totalItems: count,
-          totalPages: Math.ceil(count / safeLimit),
-          currentPage: parseInt(page),
-        },
+      if (
+        count === 0 &&
+        sasaran_id &&
+        !arah_kebijakan_id &&
+        jenisLc !== "rpjmd"
+      ) {
+        const selectedSasaran = await Sasaran.findByPk(sasaran_id, {
+          attributes: ["id", "rpjmd_id", "nomor", "jenis_dokumen", "periode_id"],
+        });
+
+        let fallbackSasaranId = null;
+        if (selectedSasaran?.jenis_dokumen === "rpjmd") {
+          fallbackSasaranId = selectedSasaran.id;
+        } else if (selectedSasaran?.rpjmd_id) {
+          fallbackSasaranId = selectedSasaran.rpjmd_id;
+        } else if (selectedSasaran?.nomor) {
+          const mappedSasaran = await Sasaran.findOne({
+            where: {
+              nomor: selectedSasaran.nomor,
+              jenis_dokumen: "rpjmd",
+              tahun: String(tahun),
+            },
+            attributes: ["id"],
+          });
+          fallbackSasaranId = mappedSasaran?.id || null;
+        }
+
+        if (fallbackSasaranId) {
+          const fallback = await Program.findAndCountAll({
+            where: {
+              tahun,
+              jenis_dokumen: "rpjmd",
+              sasaran_id: fallbackSasaranId,
+            },
+            include: includeRelations,
+            limit: safeLimit,
+            offset,
+            order: [["kode_program", "ASC"]],
+            distinct: true,
+          });
+
+          return listResponse(
+            res,
+            200,
+            "Daftar program berhasil diambil",
+            fallback.rows,
+            {
+              totalItems: fallback.count,
+              totalPages: Math.ceil(fallback.count / safeLimit),
+              currentPage,
+            }
+          );
+        }
+      }
+
+      return listResponse(res, 200, "Daftar program berhasil diambil", rows, {
+        totalItems: count,
+        totalPages: Math.ceil(count / safeLimit),
+        currentPage,
       });
     } catch (err) {
       console.error("Error listing Program:", err);
@@ -290,6 +379,10 @@ const programController = {
     try {
       const { tahun, jenis_dokumen } = req.query;
 
+      if (tahun && jenis_dokumen) {
+        await ensureClonedOnce(jenis_dokumen, tahun);
+      }
+
       const where = {};
       if (tahun) where.tahun = tahun;
       if (jenis_dokumen) where.jenis_dokumen = jenis_dokumen;
@@ -300,12 +393,7 @@ const programController = {
         include: includeRelations,
       });
 
-      return successResponse(
-        res,
-        200,
-        "Semua program berhasil dimuat",
-        programs,
-      );
+      return listResponse(res, 200, "Semua program berhasil dimuat", programs);
     } catch (err) {
       return handleServerError(res, err, "memuat semua program");
     }
@@ -463,9 +551,19 @@ function parseIds(raw) {
 }
 
 async function resolveOpd(input) {
-  if (!input) return null;
-  if (typeof input === "number") return { id: input };
-  const [namaOpd, bidang] = input.split("||");
+  if (input === null || input === undefined || input === "") return null;
+  if (typeof input === "number" && Number.isFinite(input)) {
+    return { id: input };
+  }
+  if (typeof input === "string") {
+    const trimmed = input.trim();
+    if (/^\d+$/.test(trimmed)) {
+      const id = Number(trimmed);
+      if (Number.isSafeInteger(id)) return { id };
+    }
+  }
+  const raw = typeof input === "string" ? input : String(input);
+  const [namaOpd, bidang] = raw.split("||");
   const whereClause = bidang
     ? { nama_opd: namaOpd.trim(), nama_bidang_opd: bidang.trim() }
     : { nama_opd: namaOpd.trim() };

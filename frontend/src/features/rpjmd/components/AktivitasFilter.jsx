@@ -33,7 +33,7 @@ export default function AktivitasFilter({ filters, setFilters }) {
             <option value="bulan">Per Bulan</option>
             <option value="triwulan">Per Triwulan</option>
             <option value="semester">Per Semester</option>
-            <option value="tahun">Per Tahun</option>
+            <option value="tahun">Agregat 12 bulan (log aktivitas)</option>
           </Form.Select>
         </Col>
         <Col>

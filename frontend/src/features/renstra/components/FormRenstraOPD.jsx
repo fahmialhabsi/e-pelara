@@ -6,14 +6,18 @@ import * as Yup from "yup";
 import api from "../../../services/api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import {
+  extractListData,
+  normalizeListItems,
+} from "../../../utils/apiResponse";
 
 const schema = Yup.object().shape({
   opd_id: Yup.number().required("OPD wajib dipilih"),
   bidang_opd: Yup.string().required("Bidang OPD wajib dipilih"),
   sub_bidang_opd: Yup.string().required("Sub Bidang OPD wajib diisi"),
   rpjmd_id: Yup.number().required("RPJMD wajib dipilih"),
-  tahun_mulai: Yup.number().required("Tahun Mulai wajib dipilih"),
-  tahun_akhir: Yup.number().required("Tahun Akhir wajib dipilih"),
+  tahun_mulai: Yup.number().required("Awal periode Renstra wajib dipilih"),
+  tahun_akhir: Yup.number().required("Akhir periode Renstra wajib dipilih"),
   keterangan: Yup.string(),
 });
 
@@ -52,7 +56,7 @@ const FormRenstraOPD = ({ initialData = null, onSuccess }) => {
     queryKey: ["opd-penanggung-jawab"],
     queryFn: async () => {
       const res = await api.get("/opd-penanggung-jawab");
-      return res.data.data || [];
+      return normalizeListItems(res.data);
     },
   });
 
@@ -63,7 +67,8 @@ const FormRenstraOPD = ({ initialData = null, onSuccess }) => {
 
   const { data: periodeOptions = [] } = useQuery({
     queryKey: ["periode-rpjmd"],
-    queryFn: () => api.get("/periode-rpjmd").then((res) => res.data),
+    queryFn: () =>
+      api.get("/periode-rpjmd").then((res) => extractListData(res.data)),
   });
 
   const mutation = useMutation({
@@ -92,11 +97,26 @@ const FormRenstraOPD = ({ initialData = null, onSuccess }) => {
     },
   });
 
-  // Filter bidang berdasarkan OPD yang dipilih
+  // Filter bidang berdasarkan OPD yang dipilih.
+  // Cari nama_opd dari entri yang dipilih, lalu tampilkan SEMUA bidang
+  // yang memiliki nama_opd yang sama (bukan hanya satu entri by primary key).
   const filteredBidangOptions = useMemo(() => {
     if (!selectedOpdId) return [];
+    // Konversi ke number untuk menghindari type-mismatch string vs number
+    const selectedId = Number(selectedOpdId);
+    const selectedOpd = opdOptions.find((opd) => Number(opd.id) === selectedId);
+    if (!selectedOpd || !selectedOpd.nama_opd) return [];
+
+    // Ambil semua bidang yang berada di bawah nama_opd yang sama
+    const seen = new Set();
     return opdOptions
-      .filter((opd) => opd.id === selectedOpdId && opd.nama_bidang_opd)
+      .filter(
+        (opd) =>
+          opd.nama_opd === selectedOpd.nama_opd &&
+          opd.nama_bidang_opd &&
+          !seen.has(opd.nama_bidang_opd) &&
+          seen.add(opd.nama_bidang_opd)
+      )
       .map((opd) => ({
         value: opd.nama_bidang_opd,
         label: opd.nama_bidang_opd,
@@ -209,9 +229,9 @@ const FormRenstraOPD = ({ initialData = null, onSuccess }) => {
           />
         </Form.Item>
 
-        {/* Tahun Mulai */}
+        {/* Awal periode (nilai = tahun_awal RPJMD, dipetakan ke field tahun_mulai) */}
         <Form.Item
-          label="Tahun Mulai"
+          label="Awal periode Renstra"
           validateStatus={errors.tahun_mulai ? "error" : ""}
           help={errors.tahun_mulai?.message}
         >
@@ -219,10 +239,10 @@ const FormRenstraOPD = ({ initialData = null, onSuccess }) => {
             name="tahun_mulai"
             control={control}
             render={({ field }) => (
-              <Select {...field} allowClear placeholder="Pilih Tahun Mulai">
+              <Select {...field} allowClear placeholder="Pilih awal periode">
                 {periodeOptions.map((p) => (
                   <Select.Option key={p.tahun_awal} value={p.tahun_awal}>
-                    {p.nama} ({p.tahun_awal})
+                    {p.nama} ({p.tahun_awal}–{p.tahun_akhir})
                   </Select.Option>
                 ))}
               </Select>
@@ -230,9 +250,9 @@ const FormRenstraOPD = ({ initialData = null, onSuccess }) => {
           />
         </Form.Item>
 
-        {/* Tahun Akhir */}
+        {/* Akhir periode (nilai = tahun_akhir RPJMD, dipetakan ke field tahun_akhir) */}
         <Form.Item
-          label="Tahun Akhir"
+          label="Akhir periode Renstra"
           validateStatus={errors.tahun_akhir ? "error" : ""}
           help={errors.tahun_akhir?.message}
         >
@@ -240,10 +260,10 @@ const FormRenstraOPD = ({ initialData = null, onSuccess }) => {
             name="tahun_akhir"
             control={control}
             render={({ field }) => (
-              <Select {...field} allowClear placeholder="Pilih Tahun Akhir">
+              <Select {...field} allowClear placeholder="Pilih akhir periode">
                 {periodeOptions.map((p) => (
                   <Select.Option key={p.tahun_akhir} value={p.tahun_akhir}>
-                    {p.nama} ({p.tahun_akhir})
+                    {p.nama} ({p.tahun_awal}–{p.tahun_akhir})
                   </Select.Option>
                 ))}
               </Select>

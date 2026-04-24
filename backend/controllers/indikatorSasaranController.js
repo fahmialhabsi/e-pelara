@@ -15,6 +15,70 @@ const {
   getPeriodeFromTahun,
   getPeriodeAktif,
 } = require("../utils/periodeHelper");
+const {
+  sendValidationErrors,
+  fromSequelizeValidationError,
+} = require("../utils/validationErrorResponse");
+
+async function buildJenisDokumenClause({ model, jenis_dokumen, tahun }) {
+  const jd = String(jenis_dokumen ?? "").trim();
+  const tahunStr = String(tahun ?? "").trim();
+  if (!jd || !tahunStr) return jd;
+
+  const variants = new Set([jd, jd.toUpperCase(), jd.toLowerCase()]);
+
+  // Khusus RPJMD: data bisa tersimpan sebagai label periode (mis. "RPJMD 2025-2029").
+  if (jd.toUpperCase() === "RPJMD") {
+    const periode =
+      (await getPeriodeFromTahun(tahunStr)) || (await getPeriodeAktif());
+    const periodeNama = String(periode?.nama ?? "").trim();
+    if (
+      periodeNama &&
+      /^RPJMD\b/i.test(periodeNama) &&
+      periodeNama.toUpperCase() !== "RPJMD"
+    ) {
+      const count = await model.count({
+        where: { tahun: tahunStr, jenis_dokumen: periodeNama },
+      });
+      if (count > 0) variants.add(periodeNama);
+    }
+    variants.add("RPJMD");
+  }
+
+  return variants.size > 1 ? { [Op.in]: [...variants] } : jd;
+}
+
+function fillBaselineFallback(rows) {
+  for (const r of rows) {
+    if (!r) continue;
+    const baseline = r.baseline ?? r.get?.("baseline");
+    if (baseline == null || String(baseline).trim() === "") {
+      const c5 = r.capaian_tahun_5 ?? r.get?.("capaian_tahun_5");
+      if (c5 != null && String(c5).trim() !== "") {
+        if (typeof r.setDataValue === "function") r.setDataValue("baseline", c5);
+        else r.baseline = c5;
+      }
+    }
+  }
+}
+
+function fillPenanggungJawabFallbackFromPrograms(rows) {
+  for (const r of rows) {
+    if (!r) continue;
+    const pj = r.penanggung_jawab ?? r.get?.("penanggung_jawab");
+    if (pj != null && String(pj).trim() !== "") continue;
+    const programs = r.programs ?? r.get?.("programs");
+    if (!Array.isArray(programs) || programs.length === 0) continue;
+    for (const p of programs) {
+      const ppj = p?.penanggung_jawab ?? p?.get?.("penanggung_jawab");
+      if (ppj != null && String(ppj).trim() !== "") {
+        if (typeof r.setDataValue === "function") r.setDataValue("penanggung_jawab", ppj);
+        else r.penanggung_jawab = ppj;
+        break;
+      }
+    }
+  }
+}
 
 const applyDefaultsAndNormalize = (data, periode) => {
   if (!periode?.id && !data.periode_id) {
@@ -52,9 +116,12 @@ exports.create = async (req, res) => {
     const rows = Array.isArray(req.body) ? req.body : [req.body];
 
     if (!rows.every((r) => r.indikator_id)) {
-      return res
-        .status(400)
-        .json({ message: "Semua data harus memiliki indikator_id" });
+      return sendValidationErrors(
+        res,
+        400,
+        { indikator_id: ["Semua data harus memiliki indikator_id"] },
+        { message: "Semua data harus memiliki indikator_id" },
+      );
     }
 
     const tahun = rows[0]?.tahun || new Date().getFullYear();
@@ -62,7 +129,7 @@ exports.create = async (req, res) => {
       (await getPeriodeFromTahun(tahun)) || (await getPeriodeAktif());
 
     const withDefaults = rows.map((row) =>
-      applyDefaultsAndNormalize(row, periode)
+      applyDefaultsAndNormalize(row, periode),
     );
 
     const transaction = await sequelize.transaction();
@@ -76,12 +143,29 @@ exports.create = async (req, res) => {
     } catch (error) {
       await transaction.rollback();
       if (error.name === "SequelizeUniqueConstraintError") {
-        return res.status(409).json({
-          status: "error",
-          message:
-            "Data sudah ada untuk kombinasi indikator_id, kode_indikator, jenis_dokumen, dan tahun.",
-          fields: error.fields,
-        });
+        return sendValidationErrors(
+          res,
+          409,
+          {
+            kode_indikator: [
+              "Data sudah ada untuk kombinasi indikator_id, kode_indikator, jenis_dokumen, dan tahun.",
+            ],
+          },
+          {
+            message:
+              "Data sudah ada untuk kombinasi indikator_id, kode_indikator, jenis_dokumen, dan tahun.",
+          },
+        );
+      }
+      if (error.name === "SequelizeValidationError") {
+        return sendValidationErrors(
+          res,
+          400,
+          fromSequelizeValidationError(error),
+          {
+            message: error.message,
+          },
+        );
       }
       return res.status(500).json({ status: "error", message: error.message });
     }
@@ -96,9 +180,12 @@ exports.bulkCreateDetail = async (req, res) => {
     const rows = req.body.rows;
 
     if (!indikatorId || !Array.isArray(rows) || rows.length === 0) {
-      return res
-        .status(400)
-        .json({ message: "indikatorId dan data rows wajib diisi." });
+      return sendValidationErrors(
+        res,
+        400,
+        { rows: ["indikatorId dan data rows wajib diisi."] },
+        { message: "indikatorId dan data rows wajib diisi." },
+      );
     }
 
     const tahun = rows[0]?.tahun || new Date().getFullYear();
@@ -106,18 +193,30 @@ exports.bulkCreateDetail = async (req, res) => {
       (await getPeriodeFromTahun(tahun)) || (await getPeriodeAktif());
 
     const toInsert = rows.map((r) =>
-      applyDefaultsAndNormalize({ ...r, indikator_id: indikatorId }, periode)
+      applyDefaultsAndNormalize({ ...r, indikator_id: indikatorId }, periode),
     );
 
     const created = await IndikatorSasaran.bulkCreate(toInsert);
     return res.status(201).json({ status: "success", data: created });
   } catch (err) {
     if (err.name === "SequelizeUniqueConstraintError") {
-      return res.status(409).json({
-        status: "error",
-        message:
-          "Data sudah ada untuk kombinasi kode_indikator, jenis_dokumen, dan tahun.",
-        fields: err.fields,
+      return sendValidationErrors(
+        res,
+        409,
+        {
+          kode_indikator: [
+            "Data sudah ada untuk kombinasi kode_indikator, jenis_dokumen, dan tahun.",
+          ],
+        },
+        {
+          message:
+            "Data sudah ada untuk kombinasi kode_indikator, jenis_dokumen, dan tahun.",
+        },
+      );
+    }
+    if (err.name === "SequelizeValidationError") {
+      return sendValidationErrors(res, 400, fromSequelizeValidationError(err), {
+        message: err.message,
       });
     }
     return res.status(500).json({ status: "error", message: err.message });
@@ -130,14 +229,31 @@ exports.findAll = async (req, res) => {
     tahun = "2025",
     page = 1,
     perPage = 50,
+    sasaran_id,
   } = req.query;
   await ensureClonedOnce(jenis_dokumen, tahun);
   const limit = Math.min(parseInt(perPage), MAX_LIMIT),
     offset = (page - 1) * limit;
 
+  const tahunStr = String(tahun).trim();
+  const jenisClause = await buildJenisDokumenClause({
+    model: IndikatorSasaran,
+    jenis_dokumen,
+    tahun: tahunStr,
+  });
+
+  const where = { jenis_dokumen: jenisClause, tahun: tahunStr };
+  if (sasaran_id) where.sasaran_id = sasaran_id;
+
   const { count, rows } = await IndikatorSasaran.findAndCountAll({
-    where: { jenis_dokumen, tahun },
+    where,
     include: [
+      {
+        model: OpdPenanggungJawab,
+        as: "opdPenanggungJawab",
+        attributes: ["id", "nama_opd", "nama_bidang_opd"],
+        required: false,
+      },
       {
         model: IndikatorProgram,
         as: "programs",
@@ -162,6 +278,10 @@ exports.findAll = async (req, res) => {
     order: [["id", "ASC"]],
     distinct: true,
   });
+
+  fillBaselineFallback(rows);
+  fillPenanggungJawabFallbackFromPrograms(rows);
+
   return res.json({
     status: "success",
     data: rows,
@@ -179,6 +299,12 @@ exports.findOne = async (req, res) => {
     const indikator = await IndikatorSasaran.findByPk(req.params.id, {
       attributes: { exclude: ["createdAt", "updatedAt"] },
       include: [
+        {
+          model: OpdPenanggungJawab,
+          as: "opdPenanggungJawab",
+          attributes: ["id", "nama_opd", "nama_bidang_opd"],
+          required: false,
+        },
         {
           model: IndikatorProgram,
           as: "programs",
@@ -199,6 +325,9 @@ exports.findOne = async (req, res) => {
         .status(404)
         .json({ status: "error", message: "Data tidak ditemukan." });
     }
+
+    fillBaselineFallback([indikator]);
+    fillPenanggungJawabFallbackFromPrograms([indikator]);
 
     return res.status(200).json({ status: "success", data: indikator });
   } catch (err) {
@@ -223,12 +352,24 @@ exports.findByTujuan = async (req, res) => {
     const offset = (parseInt(page, 10) - 1) * limit;
 
     const where = { tujuan_id };
-    if (tahun) where.tahun = tahun;
-    if (jenis_dokumen) where.jenis_dokumen = jenis_dokumen;
+    if (tahun) where.tahun = String(tahun).trim();
+    if (jenis_dokumen) {
+      where.jenis_dokumen = await buildJenisDokumenClause({
+        model: IndikatorSasaran,
+        jenis_dokumen,
+        tahun: where.tahun || tahun,
+      });
+    }
 
     const { count, rows } = await IndikatorSasaran.findAndCountAll({
       where,
       include: [
+        {
+          model: OpdPenanggungJawab,
+          as: "opdPenanggungJawab",
+          attributes: ["id", "nama_opd", "nama_bidang_opd"],
+          required: false,
+        },
         {
           model: IndikatorProgram,
           as: "programs",
@@ -248,6 +389,9 @@ exports.findByTujuan = async (req, res) => {
       order: [["id", "ASC"]],
       distinct: true,
     });
+
+    fillBaselineFallback(rows);
+    fillPenanggungJawabFallbackFromPrograms(rows);
 
     return res.json({
       status: "success",
@@ -303,6 +447,19 @@ exports.update = async (req, res) => {
     await indikatorSasaran.update(updateData);
     return res.status(200).json({ status: "success", data: indikatorSasaran });
   } catch (err) {
+    if (err.name === "SequelizeValidationError") {
+      return sendValidationErrors(res, 400, fromSequelizeValidationError(err), {
+        message: err.message,
+      });
+    }
+    if (err.name === "SequelizeUniqueConstraintError") {
+      return sendValidationErrors(
+        res,
+        409,
+        { kode_indikator: ["Kode indikator bentrok dengan data lain."] },
+        { message: err.message },
+      );
+    }
     return res.status(500).json({ status: "error", message: err.message });
   }
 };

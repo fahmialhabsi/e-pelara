@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import api from "@/services/api";
+import { fetchIndikatorRpjmdList } from "@/features/rpjmd/services/indikatorRpjmdApi";
 import { useNavigate } from "react-router-dom";
 import { useDokumen } from "@/hooks/useDokumen";
 import IndikatorProgramNestedView from "./IndikatorProgramNestedView"; // sesuaikan path
@@ -18,16 +18,13 @@ const IndikatorProgramListPage = () => {
 
     setLoading(true);
     try {
-      const res = await api.get("/indikator-program", {
-        params: {
-          jenis_dokumen: dokumen.toUpperCase(),
-          tahun,
-          sasaran_id: selectedSasaranId,
-        },
+      const { data } = await fetchIndikatorRpjmdList("indikator-program", {
+        jenis_dokumen: dokumen.toUpperCase(),
+        tahun,
+        sasaran_id: selectedSasaranId,
       });
 
-      console.log("✅ Response indikator program:", res.data);
-      setData(res.data.data || []);
+      setData(data);
     } catch (err) {
       console.error("❌ Gagal memuat data indikator program:", err);
       if (err.response) {

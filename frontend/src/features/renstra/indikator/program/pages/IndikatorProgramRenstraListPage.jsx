@@ -35,7 +35,7 @@ const IndikatorProgramRenstraListPage = () => {
     { title: "No", dataIndex: "kode_indikator", key: "no" },
     { title: "Nama Indikator", dataIndex: "nama_indikator", key: "nama" },
     { title: "Satuan", dataIndex: "satuan", key: "satuan" },
-    { title: "Target Tahun 1", dataIndex: "target_tahun_1", key: "target" },
+    { title: "Target (th. ke-1)", dataIndex: "target_tahun_1", key: "target" },
     {
       title: "Aksi",
       key: "aksi",

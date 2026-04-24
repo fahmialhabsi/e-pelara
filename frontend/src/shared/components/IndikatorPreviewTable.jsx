@@ -14,10 +14,10 @@ export default function IndikatorPreviewTable({ list = [], onDelete }) {
             <th>Satuan</th>
             <th>Baseline</th>
             {[1, 2, 3, 4, 5].map((i) => (
-              <th key={i}>{`Tahun ${i}`}</th>
+              <th key={i}>{`Th. ke-${i}`}</th>
             ))}
-            <th>Tahun Awal</th>
-            <th>Tahun Akhir</th>
+            <th>Awal periode</th>
+            <th>Akhir periode</th>
             <th>Target Awal</th>
             <th>Target Akhir</th>
             <th>Penanggung Jawab</th>

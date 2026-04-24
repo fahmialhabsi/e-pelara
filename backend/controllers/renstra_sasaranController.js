@@ -1,4 +1,4 @@
-const { RenstraSasaran, Sasaran } = require("../models");
+const { RenstraSasaran, Sasaran, RenstraTujuan } = require("../models");
 
 exports.create = async (req, res) => {
   try {
@@ -66,6 +66,11 @@ exports.findOne = async (req, res) => {
     const data = await RenstraSasaran.findByPk(req.params.id, {
       include: [
         {
+          model: RenstraTujuan,
+          as: "tujuan",
+          attributes: ["id", "no_tujuan", "isi_tujuan"],
+        },
+        {
           model: Sasaran,
           as: "sasaran_rpjmd",
           attributes: ["id", "nomor", "isi_sasaran"],
@@ -91,7 +96,9 @@ exports.findOne = async (req, res) => {
   }
 };
 
-// Ambil Sasaran RPJMD berdasarkan tujuan_id
+// Ambil Sasaran RPJMD berdasarkan tujuan_id (Renstra Tujuan ID).
+// tujuan_id yang diterima adalah ID dari tabel renstra_tujuan (bukan tujuan RPJMD langsung).
+// Perlu lookup RenstraTujuan terlebih dahulu untuk mendapatkan rpjmd_tujuan_id yang sebenarnya.
 exports.getSasaranRpjmd = async (req, res) => {
   try {
     const { tujuan_id } = req.query;
@@ -103,9 +110,31 @@ exports.getSasaranRpjmd = async (req, res) => {
       });
     }
 
+    // Langkah 1: cari RenstraTujuan untuk mendapatkan rpjmd_tujuan_id
+    const renstraTujuan = await RenstraTujuan.findByPk(tujuan_id, {
+      attributes: ["id", "rpjmd_tujuan_id"],
+    });
+
+    if (!renstraTujuan) {
+      return res.status(404).json({
+        message: "failed",
+        error: `Tujuan Renstra dengan id ${tujuan_id} tidak ditemukan.`,
+      });
+    }
+
+    const rpjmdTujuanId = renstraTujuan.rpjmd_tujuan_id;
+
+    if (!rpjmdTujuanId) {
+      return res.status(404).json({
+        message: "failed",
+        error: "Tujuan Renstra ini belum terhubung ke Tujuan RPJMD.",
+      });
+    }
+
+    // Langkah 2: ambil Sasaran dari tabel RPJMD menggunakan rpjmd_tujuan_id
     const sasaran = await Sasaran.findAll({
       where: {
-        tujuan_id,
+        tujuan_id: rpjmdTujuanId,
         jenis_dokumen: "rpjmd",
       },
       attributes: ["id", "nomor", "isi_sasaran"],

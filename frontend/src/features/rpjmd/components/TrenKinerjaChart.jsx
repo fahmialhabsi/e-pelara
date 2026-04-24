@@ -11,6 +11,7 @@ import {
   Legend,
 } from "chart.js";
 import api from "../../../services/api";
+import { extractSingleData } from "@/utils/apiResponse";
 
 ChartJS.register(
   CategoryScale,
@@ -29,7 +30,7 @@ const TrenKinerjaChart = () => {
     const fetchKinerja = async () => {
       try {
         const res = await api.get("/kinerja-rpjmd");
-        setData(res.data);
+        setData(extractSingleData(res.data));
       } catch (error) {
         console.error("Gagal mengambil data kinerja RPJMD:", error);
       }

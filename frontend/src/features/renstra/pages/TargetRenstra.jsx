@@ -64,7 +64,7 @@ export default function TargetRenstra() {
         resetTargets(res.data);
       }
     } catch (err) {
-      console.error("Gagal fetch tahun", err);
+      console.error("Gagal memuat rentang periode dari server", err);
     }
   };
 
@@ -275,7 +275,7 @@ export default function TargetRenstra() {
       for (let i = 0; i < years.length; i++) {
         if (!form[level][i]) {
           alert(
-            `Isi target ${level.replace("target_", "")} untuk tahun ${years[i]}`
+            `Isi target ${level.replace("target_", "")} untuk th. ke-${i + 1} dalam periode`,
           );
           return;
         }
@@ -368,7 +368,7 @@ export default function TargetRenstra() {
         name={`${key}[${i}]`}
         value={v}
         onChange={handleChange}
-        placeholder={years[i]}
+        placeholder={`Th. ke-${i + 1}`}
         className="border p-2 w-full rounded mb-1"
       />
     ));
@@ -409,7 +409,7 @@ export default function TargetRenstra() {
           "kode_program" // ubah ke kode_program
         )}
         <div>
-          <label>Capaian Tahun Awal Program</label>
+          <label>Capaian awal periode (program)</label>
           <input
             type="text"
             value={form.capaian_program}
@@ -441,7 +441,7 @@ export default function TargetRenstra() {
           "kode_kegiatan"
         )}
         <div>
-          <label>Capaian Tahun Awal Kegiatan</label>
+          <label>Capaian awal periode (kegiatan)</label>
           <input
             type="text"
             value={form.capaian_kegiatan}
@@ -472,7 +472,7 @@ export default function TargetRenstra() {
           "sub_kegiatan_id" // ✅ pakai field ini untuk value
         )}
         <div>
-          <label>Capaian Tahun Awal Sub Kegiatan</label>
+          <label>Capaian awal periode (sub kegiatan)</label>
           <input
             type="number"
             name="capaian_subkegiatan"

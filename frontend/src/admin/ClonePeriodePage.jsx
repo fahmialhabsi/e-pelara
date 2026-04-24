@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import api from "../services/api";
+import { extractListData } from "../utils/apiResponse";
 import { toast } from "react-toastify";
 import { Modal, Button, Form, Spinner, Card } from "react-bootstrap";
 import { useNavigate } from "react-router-dom";
@@ -26,8 +27,14 @@ const ClonePeriodePage = () => {
   useEffect(() => {
     api
       .get("/periode-rpjmd")
-      .then((res) => setPeriodes(res.data))
-      .catch(() => toast.error("Gagal memuat data periode"));
+      .then((res) => {
+        const rows = extractListData(res.data);
+        setPeriodes(Array.isArray(rows) ? rows : []);
+      })
+      .catch(() => {
+        setPeriodes([]);
+        toast.error("Gagal memuat data periode");
+      });
   }, []);
 
   const handleCheckbox = (item) => {
@@ -41,6 +48,10 @@ const ClonePeriodePage = () => {
   const handleClone = async () => {
     if (!fromPeriode || !toPeriode) {
       toast.error("Pilih periode asal dan tujuan");
+      return;
+    }
+    if (String(fromPeriode) === String(toPeriode)) {
+      toast.error("Periode asal dan periode tujuan tidak boleh sama");
       return;
     }
     const include = Object.keys(includeItems).filter(
@@ -60,8 +71,10 @@ const ClonePeriodePage = () => {
       });
       toast.success("Berhasil mengkloning data antar periode");
       // setShowModal(false);
-    } catch {
-      toast.error("Gagal mengkloning data");
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.message || "Gagal mengkloning data"
+      );
     } finally {
       setLoading(false);
     }
@@ -79,7 +92,7 @@ const ClonePeriodePage = () => {
             onChange={(e) => setFromPeriode(e.target.value)}
           >
             <option value="">Pilih Periode Asal</option>
-            {periodes.map((p) => (
+            {(Array.isArray(periodes) ? periodes : []).map((p) => (
               <option key={p.id} value={p.id}>
                 {p.nama} ({p.tahun_awal} - {p.tahun_akhir})
               </option>
@@ -94,7 +107,7 @@ const ClonePeriodePage = () => {
             onChange={(e) => setToPeriode(e.target.value)}
           >
             <option value="">Pilih Periode Tujuan</option>
-            {periodes.map((p) => (
+            {(Array.isArray(periodes) ? periodes : []).map((p) => (
               <option key={p.id} value={p.id}>
                 {p.nama} ({p.tahun_awal} - {p.tahun_akhir})
               </option>

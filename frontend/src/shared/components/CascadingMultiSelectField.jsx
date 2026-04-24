@@ -29,7 +29,6 @@ export default function CascadingMultiSelectField({
     : mappedOptions.find((opt) => opt.value === String(value));
 
   const handleChange = (selected) => {
-    console.log("🧪 MultiSelect Changed:", selected);
     if (isMulti) {
       onChange(
         fieldKey,

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Table, Button, Spinner } from "react-bootstrap";
-import api from "@/services/api";
+import { deleteIndikatorRpjmd } from "@/features/rpjmd/services/indikatorRpjmdApi";
 
 const IndikatorKegiatanNestedView = ({ data, loading, refetch }) => {
   const [expandedRowId, setExpandedRowId] = useState(null);
@@ -8,7 +8,7 @@ const IndikatorKegiatanNestedView = ({ data, loading, refetch }) => {
   const handleDelete = async (id) => {
     if (window.confirm("Apakah Anda yakin ingin menghapus data ini?")) {
       try {
-        await api.delete(`/indikator-kegiatan/${id}`);
+        await deleteIndikatorRpjmd("indikator-kegiatan", id);
         refetch();
       } catch (err) {
         console.error("Gagal menghapus indikator:", err);
@@ -31,9 +31,9 @@ const IndikatorKegiatanNestedView = ({ data, loading, refetch }) => {
           <th rowSpan={2}>Tolok Ukur</th>
           <th rowSpan={2}>Satuan</th>
           <th rowSpan={2}>Penanggung Jawab</th>
-          <th colSpan={5}>Capaian Tahun Ke-</th>
+          <th colSpan={5}>Capaian (th. ke-)</th>
           <th rowSpan={2}>Baseline</th>
-          <th colSpan={5}>Target Tahun Ke-</th>
+          <th colSpan={5}>Target (th. ke-)</th>
           <th rowSpan={2}>Aksi</th>
         </tr>
         <tr>

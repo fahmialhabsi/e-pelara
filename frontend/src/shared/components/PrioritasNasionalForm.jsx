@@ -12,10 +12,16 @@ import {
 import { useNavigate } from "react-router-dom";
 import api from "../../services/api";
 import { useDokumen } from "../../hooks/useDokumen";
+import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
+import { konteksBannerRows } from "../../utils/planningDokumenUtils";
 
 function PrioritasNasionalForm({ existingData, onSubmitSuccess }) {
   const navigate = useNavigate();
   const { dokumen, tahun } = useDokumen();
+  const { periode_id, periodeList } = usePeriodeAktif();
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(periode_id),
+  );
   const isEdit = existingData && existingData.id;
 
   const [loading, setLoading] = useState(true);
@@ -100,8 +106,11 @@ function PrioritasNasionalForm({ existingData, onSubmitSuccess }) {
       </Breadcrumb>
 
       <div className="mb-3">
-        <strong>Dokumen Aktif:</strong> {dokumen || "-"} <br />
-        <strong>Tahun:</strong> {tahun || "-"}
+        {konteksBannerRows(dokumen, tahun, periodeAktif).map((r) => (
+          <span key={r.key} className="d-block">
+            <strong>{r.label}:</strong> {r.value}
+          </span>
+        ))}
       </div>
 
       <Card className="shadow-sm border-0">

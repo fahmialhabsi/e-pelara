@@ -1,42 +1,25 @@
-import React, { useState, useEffect } from "react";
-import CalkEditor from "../components/CalkEditor";
-import ReportExportPanel from "../components/ReportExportPanel";
-import { fetchJurnal, fetchAset, fetchAnggaran } from "../services/lkApi";
+/**
+ * LkDashboard.jsx — Dashboard Laporan Keuangan Dinas (LKD)
+ * Full-featured: filter, chart, tabel, export CSV/Excel
+ */
+import React from "react";
+import { Container } from "react-bootstrap";
+import { BarChart as BsBarChart } from "react-bootstrap-icons";
+import LkdDashboardPanel from "../components/LkdDashboardPanel";
 
-const LkDashboard = () => {
-  const [jurnalData, setJurnalData] = useState([]);
-  const [asetData, setAsetData] = useState([]);
-  const [anggaranData, setAnggaranData] = useState([]);
-  const [calk, setCalk] = useState("");
-
-  useEffect(() => {
-    fetchJurnal().then(setJurnalData);
-    fetchAset().then(setAsetData);
-    fetchAnggaran().then(setAnggaranData);
-  }, []);
-
-  const handleSaveCalk = (text) => {
-    setCalk(text);
-  };
-
-  const exportToExcel = () => alert("Export ke Excel berhasil!");
-  const printDraft = () => alert("Mencetak Draft dengan watermark...");
-  const printFinal = () => alert("Mencetak FINAL dengan tanda tangan resmi...");
-
-  return (
-    <div>
-      <h1>Dashboard Laporan Keuangan DISPANG</h1>
-      <CalkEditor onSave={handleSaveCalk} />
-      <ReportExportPanel
-        onExport={exportToExcel}
-        onPrintDraft={printDraft}
-        onPrintFinal={printFinal}
-      />
-      <pre>
-        {JSON.stringify({ jurnalData, asetData, anggaranData }, null, 2)}
-      </pre>
+const LkDashboard = () => (
+  <Container fluid className="py-4 px-3">
+    <div className="d-flex align-items-center gap-2 mb-4">
+      <BsBarChart size={28} className="text-primary" />
+      <div>
+        <h4 className="mb-0 fw-bold">Dashboard LKD</h4>
+        <p className="mb-0 small text-muted">
+          Laporan Keuangan Dinas Ketahanan Pangan — Anggaran &amp; Realisasi Real-Time
+        </p>
+      </div>
     </div>
-  );
-};
+    <LkdDashboardPanel />
+  </Container>
+);
 
 export default LkDashboard;

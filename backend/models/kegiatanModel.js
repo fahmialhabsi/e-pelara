@@ -33,6 +33,19 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "kegiatan_id",
         as: "rkpd",
       });
+
+      Kegiatan.belongsTo(models.RegulasiVersi, {
+        foreignKey: "regulasi_versi_id",
+        as: "regulasiVersi",
+      });
+      Kegiatan.belongsTo(models.MasterKegiatan, {
+        foreignKey: "master_kegiatan_id",
+        as: "masterKegiatan",
+      });
+      Kegiatan.belongsTo(models.User, {
+        foreignKey: "migrated_by",
+        as: "migratedByUser",
+      });
     }
   }
 
@@ -88,6 +101,31 @@ module.exports = (sequelize, DataTypes) => {
       },
       bidang_opd_penanggung_jawab: {
         type: DataTypes.STRING,
+        allowNull: true,
+      },
+      master_kegiatan_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+      regulasi_versi_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+      input_mode: {
+        type: DataTypes.ENUM("LEGACY", "MASTER"),
+        allowNull: false,
+        defaultValue: "LEGACY",
+      },
+      migration_status: {
+        type: DataTypes.STRING(32),
+        allowNull: true,
+      },
+      migrated_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      migrated_by: {
+        type: DataTypes.INTEGER,
         allowNull: true,
       },
     },

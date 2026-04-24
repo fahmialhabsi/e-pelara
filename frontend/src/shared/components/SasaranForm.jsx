@@ -15,6 +15,11 @@ import api from "../../services/api";
 import { useAuth } from "../../hooks/useAuth";
 import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
 import { toast } from "react-toastify";
+import {
+  extractListData,
+  normalizeListItems,
+} from "../../utils/apiResponse";
+import { konteksBannerRows } from "../../utils/planningDokumenUtils";
 
 function SasaranForm({ existingData, onSubmitSuccess, onCancel }) {
   const { user, loading: authLoading } = useAuth();
@@ -22,8 +27,12 @@ function SasaranForm({ existingData, onSubmitSuccess, onCancel }) {
     dokumen,
     tahun,
     periode_id: currentPeriodeId,
+    periodeList,
     loading: periodeAktifLoading,
   } = usePeriodeAktif();
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(currentPeriodeId),
+  );
   const navigate = useNavigate();
   const isEdit = Boolean(existingData?.id);
 
@@ -74,8 +83,8 @@ function SasaranForm({ existingData, onSubmitSuccess, onCancel }) {
           }),
         ]);
 
-        const rpjmdData = rpjmdRes.data || [];
-        const tujuanData = tujuanRes.data || [];
+        const rpjmdData = extractListData(rpjmdRes.data);
+        const tujuanData = normalizeListItems(tujuanRes.data);
 
         setRpjmdList(rpjmdData);
         setTujuanList(tujuanData);
@@ -144,7 +153,7 @@ function SasaranForm({ existingData, onSubmitSuccess, onCancel }) {
     const selectedId = e.target.value;
     const periodeIdFromForm = formData.periode_id;
     const dokumenFromForm = formData.jenis_dokumen;
-    const tahunFromForm = formData.tahun;
+    const konteksTahunAngka = formData.tahun;
 
     setFormData((prev) => ({ ...prev, tujuan_id: selectedId }));
     setIsiTujuanPreview("");
@@ -154,28 +163,35 @@ function SasaranForm({ existingData, onSubmitSuccess, onCancel }) {
       !selectedId ||
       !periodeIdFromForm ||
       !dokumenFromForm ||
-      !tahunFromForm
+      !konteksTahunAngka
     ) {
       setIsLoadingData(false);
       return;
     }
 
     try {
-      const res = await api.get("/sasaran", {
+      const selectedTujuan = tujuanList.find(
+        (item) => String(item.id) === String(selectedId)
+      );
+
+      if (!selectedTujuan) {
+        setIsLoadingData(false);
+        return;
+      }
+
+      const res = await api.get("/sasaran/next-number", {
         params: {
           tujuan_id: selectedId,
           jenis_dokumen: dokumenFromForm,
-          tahun: tahunFromForm,
+          tahun: konteksTahunAngka,
         },
       });
 
-      const sasaranList = Array.isArray(res.data) ? res.data : res.data.data;
-      const noUrut = sasaranList.length + 1;
-      const selectedTujuan = tujuanList.find(
-        (m) => m.id === Number(selectedId)
-      );
       const prefix = `S${selectedTujuan.no_tujuan}`;
-      const formattedNo = `${prefix}-${String(noUrut).padStart(2, "0")}`;
+      const rawNext = res.data?.nextNomor;
+      const nextSeq = Number.parseInt(String(rawNext), 10);
+      const seq = Number.isFinite(nextSeq) && nextSeq > 0 ? nextSeq : 1;
+      const formattedNo = `${prefix}-${String(seq).padStart(2, "0")}`;
 
       setIsiTujuanPreview(selectedTujuan.isi_tujuan);
       setFormData((prev) => ({
@@ -260,8 +276,8 @@ function SasaranForm({ existingData, onSubmitSuccess, onCancel }) {
     return (
       <Container className="my-4 text-center">
         <p>
-          Dokumen, Tahun, atau Periode Aktif tidak tersedia. Silakan pilih
-          dokumen/tahun.
+          Konteks dokumen atau periode aktif belum tersedia. Atur pemilihan dokumen
+          di header aplikasi.
         </p>
       </Container>
     );
@@ -271,7 +287,7 @@ function SasaranForm({ existingData, onSubmitSuccess, onCancel }) {
     return (
       <Container className="my-4 text-center">
         <p>
-          Belum ada data Tujuan yang tersedia untuk dokumen dan tahun aktif ini.
+          Belum ada data Tujuan untuk periode / konteks dokumen aktif ini.
         </p>
       </Container>
     );
@@ -292,8 +308,11 @@ function SasaranForm({ existingData, onSubmitSuccess, onCancel }) {
       </Breadcrumb>
 
       <div className="mb-3">
-        <strong>Dokumen Aktif:</strong> {dokumen} <br />
-        <strong>Tahun:</strong> {tahun}
+        {konteksBannerRows(dokumen, tahun, periodeAktif).map((r) => (
+          <span key={r.key} className="d-block">
+            <strong>{r.label}:</strong> {r.value}
+          </span>
+        ))}
       </div>
 
       <Card>

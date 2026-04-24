@@ -1,0 +1,90 @@
+# PATCH queue (HARUS DIHAPUS / HARUS DIUBAH)
+
+- `frontend\src\features\renstra\components\FormRenstraOPD.jsx:242` — HARUS DIHAPUS — <Select {...field} allowClear placeholder="Pilih Tahun Mulai">
+- `frontend\src\features\renstra\components\FormRenstraOPD.jsx:244` — HARUS DIHAPUS — <Select.Option key={p.tahun_awal} value={p.tahun_awal}>
+- `frontend\src\features\renstra\components\FormRenstraOPD.jsx:263` — HARUS DIHAPUS — <Select {...field} allowClear placeholder="Pilih Tahun Akhir">
+- `frontend\src\features\renstra\components\FormRenstraOPD.jsx:265` — HARUS DIHAPUS — <Select.Option key={p.tahun_akhir} value={p.tahun_akhir}>
+- `frontend\src\features\renstra\kebijakan\components\kebijakanRenstraForm.jsx:50` — HARUS DIUBAH — setValue("tahun", selected?.tahun \|\| "");
+- `frontend\src\features\renstra\kebijakan\components\kebijakanRenstraForm.jsx:67` — HARUS DIUBAH — setValue("tahun", initialData.tahun);
+- `frontend\src\features\renstra\kegiatan\components\RenstraTabelKegiatanForm.jsx:179` — HARUS DIUBAH — const handlePaguChange = (tahun, value) => {
+- `frontend\src\features\renstra\kegiatan\components\RenstraTabelKegiatanForm.jsx:180` — HARUS DIUBAH — setInputPagu((prev) => ({ ...prev, [tahun]: Number(value \|\| 0) }));
+- `frontend\src\features\renstra\pages\RenstraDashboard.jsx:135` — HARUS DIUBAH — const paguPerTahun = [1, 2, 3, 4, 5, 6].map((i) => ({
+- `frontend\src\features\renstra\pages\TargetRenstra.jsx:67` — HARUS DIUBAH — console.error("Gagal fetch tahun", err);
+- `frontend\src\features\renstra\pages\TargetRenstraList.jsx:78` — HARUS DIUBAH — <th>Tahun</th>
+- `frontend\src\features\renstra\pages\TargetRenstraList.jsx:95` — HARUS DIUBAH — <td>{t.tahun \|\| "-"}</td>
+- `frontend\src\features\renstra\utils\exportRenstra.js:37` — HARUS DIUBAH — [["ID", "Indikator", "Tahun", "Target", "Satuan", "Pagu", "Lokasi"]],
+- `frontend\src\features\renstra\utils\exportRenstra.js:57` — HARUS DIUBAH — "Tahun",
+- `frontend\src\features\rpjmd\components\AktivitasFilter.jsx:36` — HARUS DIUBAH — <option value="tahun">Agregat tahunan (log aktivitas)</option>
+- `frontend\src\features\rpjmd\hooks\useKegiatanFormLogic.js:191` — HARUS DIUBAH — "⚠️ Tidak ada data program yang tersedia untuk tahun",
+- `frontend\src\features\rpjmd\hooks\usePeriodeAktif.jsx:85` — HARUS DIUBAH — return currentYear >= tahunAwal && currentYear <= tahunAkhir;
+- `frontend\src\features\rpjmd\hooks\useSubKegiatanFormLogic.js:101` — HARUS DIUBAH — if (existingData && programList.length > 0 && dokumen && tahun) {
+- `frontend\src\features\rpjmd\pages\DashboardHome.jsx:12` — HARUS DIUBAH — import { useRequireDokumenTahun } from "../../../hooks/useRequireDokumenTahun.jsx";
+- `frontend\src\features\rpjmd\pages\DashboardMonitoring.jsx:195` — HARUS DIUBAH — <option value="tahun">Agregat tahunan (monitoring)</option>
+- `frontend\src\features\rpjmd\pages\DashboardMonitoring.jsx:208` — HARUS DIUBAH — : timeType === "tahun"
+- `frontend\src\features\rpjmd\pages\IndikatorKegiatanNestedView.jsx:34` — HARUS DIUBAH — <th colSpan={5}>Capaian Tahun Ke-</th>
+- `frontend\src\features\rpjmd\pages\IndikatorKegiatanNestedView.jsx:36` — HARUS DIUBAH — <th colSpan={5}>Target Tahun Ke-</th>
+- `frontend\src\shared\components\CascadingForm.jsx:574` — HARUS DIUBAH — : "Silakan pilih dokumen dan tahun di header terlebih dahulu."}
+- `frontend\src\shared\components\CascadingList.jsx:335` — HARUS DIUBAH — : "Silakan pilih dokumen dan tahun di header terlebih dahulu untuk melihat data cascading."}
+- `frontend\src\shared\components\CascadingList.jsx:485` — HARUS DIUBAH — <p>Belum ada data cascading untuk {String(dokumen \|\| "").toUpperCase()} tahun {tahun}.</p>
+- `frontend\src\shared\components\CascadingNestedView.jsx:289` — HARUS DIUBAH — : "Belum ada data cascading untuk dokumen dan tahun ini."}
+- `frontend\src\shared\components\GlobalDokumenTahunPicker.jsx:28` — HARUS DIHAPUS — export default function GlobalDokumenTahunPicker() {
+- `frontend\src\shared\components\GlobalDokumenTahunPicker.jsx:125` — HARUS DIUBAH — <option value="">Tahun</option>
+- `frontend\src\shared\components\GlobalDokumenTahunPickerModal.jsx:1` — HARUS DIHAPUS — // src/shared/components/GlobalDokumenTahunPickerModal.jsx
+- `frontend\src\shared\components\GlobalDokumenTahunPickerModal.jsx:31` — HARUS DIHAPUS — export default function GlobalDokumenTahunPickerModal({ forceOpen }) {
+- `frontend\src\shared\components\GlobalDokumenTahunPickerModal.jsx:152` — HARUS DIUBAH — : "Pilih Dokumen & Tahun"}
+- `frontend\src\shared\components\GlobalDokumenTahunPickerModal.jsx:183` — HARUS DIUBAH — <Form.Label>Tahun</Form.Label>
+- `frontend\src\shared\components\GlobalDokumenTahunPickerModal.jsx:189` — HARUS DIHAPUS — <option value="">Pilih Tahun...</option>
+- `frontend\src\shared\components\GlobalDokumenTahunPickerModal.jsx:190` — HARUS DIUBAH — {tahunList.map((th) => (
+- `frontend\src\shared\components\hooks\useIndikatorBuilder.js:9` — HARUS DIUBAH — const getTargetTahunValues = (values) =>
+- `frontend\src\shared\components\hooks\useIndikatorFields.js:143` — HARUS DIUBAH — label: `Capaian Tahun ${i}`,
+- `frontend\src\shared\components\hooks\useIndikatorFields.js:144` — HARUS DIUBAH — tooltip: `Capaian aktual untuk tahun ke-${i}.`,
+- `frontend\src\shared\components\hooks\useIndikatorFields.js:155` — HARUS DIUBAH — label: `Target Tahun ${i}`,
+- `frontend\src\shared\components\hooks\useIndikatorFields.js:156` — HARUS DIUBAH — tooltip: `Target indikator untuk tahun ke-${i}.`,
+- `frontend\src\shared\components\hooks\useIndikatorFields.js:174` — HARUS DIUBAH — label: "Tahun Awal",
+- `frontend\src\shared\components\hooks\useIndikatorFields.js:180` — HARUS DIUBAH — label: "Tahun Akhir",
+- `frontend\src\shared\components\hooks\useIndikatorFields.js:187` — HARUS DIUBAH — tooltip: "Otomatis dari target tahun 1",
+- `frontend\src\shared\components\hooks\useIndikatorFields.js:193` — HARUS DIUBAH — tooltip: "Otomatis dari target tahun 5",
+- `frontend\src\shared\components\IndikatorKhususNestedView.jsx:31` — HARUS DIUBAH — "Capaian Tahun I",
+- `frontend\src\shared\components\IndikatorKhususNestedView.jsx:36` — HARUS DIUBAH — "Target Tahun I",
+- `frontend\src\shared\components\IndikatorList.jsx:117` — HARUS DIUBAH — { header: "Tahun", key: "tahun" },
+- `frontend\src\shared\components\IndikatorList.jsx:197` — HARUS DIUBAH — : "Tahun dan jenis dokumen belum dipilih. Atur konteks dokumen di header lalu muat ulang halaman ini.",
+- `frontend\src\shared\components\IndikatorList.jsx:306` — HARUS DIUBAH — "Tahun dan jenis dokumen wajib dipilih sebelum mengekspor data."
+- `frontend\src\shared\components\IndikatorPreviewTable.jsx:17` — HARUS DIUBAH — <th key={i}>{`Tahun ${i}`}</th>
+- `frontend\src\shared\components\IndikatorPreviewTable.jsx:19` — HARUS DIUBAH — <th>Tahun Awal</th>
+- `frontend\src\shared\components\IndikatorPreviewTable.jsx:20` — HARUS DIUBAH — <th>Tahun Akhir</th>
+- `frontend\src\shared\components\IndikatorTabContent.jsx:293` — HARUS DIUBAH — placeholder={`Pilih dari impor (${uruCol.replace("tahun_", "")})`}
+- `frontend\src\shared\components\IndikatorTabContent.jsx:359` — HARUS DIUBAH — Otomatis: rata-rata berbobot <strong>1&nbsp;: 2&nbsp;: 3&nbsp;: 4</strong> pada Capaian Tahun 1–4 (tahun
+- `frontend\src\shared\components\KegiatanForm.jsx:175` — HARUS DIUBAH — name="tahun"
+- `frontend\src\shared\components\MuiSidebarGlobal.jsx:111` — HARUS DIUBAH — : "Silakan pilih jenis dokumen dan tahun di header dahulu"
+- `frontend\src\shared\components\MuiTopbarGlobal.jsx:7` — HARUS DIHAPUS — import GlobalDokumenTahunPicker from "./GlobalDokumenTahunPicker";
+- `frontend\src\shared\components\MuiTopbarGlobal.jsx:8` — HARUS DIHAPUS — import GlobalDokumenTahunPickerModal from "./GlobalDokumenTahunPickerModal";
+- `frontend\src\shared\components\MuiTopbarGlobal.jsx:28` — HARUS DIHAPUS — <GlobalDokumenTahunPicker />
+- `frontend\src\shared\components\MuiTopbarGlobal.jsx:32` — HARUS DIHAPUS — <GlobalDokumenTahunPickerModal />
+- `frontend\src\shared\components\PrioritasGubernurList.jsx:50` — HARUS DIUBAH — setError("Dokumen dan tahun belum dipilih.");
+- `frontend\src\shared\components\RequireDokumenTahun.jsx:4` — HARUS DIHAPUS — import GlobalDokumenTahunPickerModal from "./GlobalDokumenTahunPickerModal";
+- `frontend\src\shared\components\RequireDokumenTahun.jsx:26` — HARUS DIHAPUS — <GlobalDokumenTahunPickerModal forceOpen />
+- `frontend\src\shared\components\RequireDokumenTahun.jsx:46` — HARUS DIHAPUS — <GlobalDokumenTahunPickerModal forceOpen />
+- `frontend\src\shared\components\RequireDokumenTahun.jsx:63` — HARUS DIHAPUS — <GlobalDokumenTahunPickerModal forceOpen />
+- `frontend\src\shared\components\RPJMDList.jsx:101` — HARUS DIUBAH — <th>Tahun Penetapan</th>
+- `frontend\src\shared\components\RPJMDList.jsx:114` — HARUS DIUBAH — <td>{item.tahun_penetapan}</td>
+- `frontend\src\shared\components\RpjmdMetadataForm.jsx:99` — HARUS DIUBAH — <Form.Label>Tahun Penetapan</Form.Label>
+- `frontend\src\shared\components\RpjmdMetadataForm.jsx:101` — HARUS DIUBAH — name="tahun_penetapan"
+- `frontend\src\shared\components\steps\ArahKebijakanStep.jsx:51` — HARUS DIUBAH — if (tahun && !values.tahun) setFieldValue("tahun", tahun);
+- `frontend\src\shared\components\steps\IndikatorStep.jsx:213` — HARUS DIUBAH — <Form.Label>Target Tiap Tahun</Form.Label>
+- `frontend\src\shared\components\steps\ProgramStep.jsx:100` — HARUS DIUBAH — String(prev.tahun ?? "") !== String(snap.tahun ?? ""))
+- `frontend\src\shared\components\steps\ReadOnlyIndikatorPreview.jsx:58` — HARUS DIUBAH — <th>{`Target Tahun ${i}`}</th>
+- `frontend\src\shared\components\steps\ReadOnlyIndikatorPreview.jsx:64` — HARUS DIUBAH — <th>{`Capaian Tahun ${i}`}</th>
+- `frontend\src\shared\components\steps\ReusableStepTemplate.jsx:186` — HARUS DIUBAH — <th key={i}>{`Tahun ${i}`}</th>
+- `frontend\src\shared\components\steps\SasaranStep.jsx:61` — HARUS DIUBAH — if (!values.tahun) setFieldValue("tahun", tahun);
+- `frontend\src\shared\components\steps\StepTemplate.jsx:199` — HARUS DIUBAH — <strong>nama indikator, baseline akhir 2024, target Tahun 1–5</strong> (2025–2029).{" "}
+- `frontend\src\shared\components\steps\StrategiStep.jsx:51` — HARUS DIUBAH — if (tahun && !values.tahun) setFieldValue("tahun", tahun);
+- `frontend\src\shared\components\steps\TujuanStep.jsx:78` — HARUS DIUBAH — setFieldValue("tahun", tahun);
+- `frontend\src\shared\components\steps\TujuanStep.jsx:297` — HARUS DIUBAH — toast.error("Tahun atau jenis dokumen belum terisi.");
+- `frontend\src\shared\components\steps\wizardIndikatorStepUtils.js:214` — HARUS DIUBAH — "tahun",
+- `frontend\src\shared\components\steps\wizardIndikatorStepUtils.js:311` — HARUS DIUBAH — "tahun",
+- `frontend\src\shared\components\TablerTopbarGlobal.jsx:4` — HARUS DIHAPUS — import GlobalDokumenTahunPicker from "./GlobalDokumenTahunPicker";
+- `frontend\src\shared\components\TablerTopbarGlobal.jsx:5` — HARUS DIHAPUS — import GlobalDokumenTahunPickerModal from "./GlobalDokumenTahunPickerModal";
+- `frontend\src\shared\components\TablerTopbarGlobal.jsx:23` — HARUS DIHAPUS — <GlobalDokumenTahunPicker />
+- `frontend\src\shared\components\TablerTopbarGlobal.jsx:24` — HARUS DIHAPUS — <GlobalDokumenTahunPickerModal />
+- `frontend\src\utils\planningDokumenUtils.js:86` — HARUS DIUBAH — label: "Tahun",
+- `frontend\src\utils\planningDokumenUtils.js:87` — HARUS DIUBAH — value: tahun != null && tahun !== "" ? String(tahun) : "—",

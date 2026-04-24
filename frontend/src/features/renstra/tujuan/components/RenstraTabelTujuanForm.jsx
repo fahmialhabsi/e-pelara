@@ -1,6 +1,6 @@
 // src/features/renstra/tujuan/components/RenstraTabelTujuanForm.jsx
 import React, { useEffect, useMemo } from "react";
-import { Card, Button } from "antd";
+import { Card, Button, Alert } from "antd";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import * as Yup from "yup";
@@ -94,14 +94,14 @@ const RenstraTabelTujuanForm = ({ initialData = null, renstraAktif }) => {
     target_tahun_4: initialData?.target_tahun_4 ?? "",
     target_tahun_5: initialData?.target_tahun_5 ?? "",
     target_tahun_6: initialData?.target_tahun_6 ?? "",
-    pagu_tahun_1: initialData?.pagu_tahun_1 ?? "",
-    pagu_tahun_2: initialData?.pagu_tahun_2 ?? "",
-    pagu_tahun_3: initialData?.pagu_tahun_3 ?? "",
-    pagu_tahun_4: initialData?.pagu_tahun_4 ?? "",
-    pagu_tahun_5: initialData?.pagu_tahun_5 ?? "",
-    pagu_tahun_6: initialData?.pagu_tahun_6 ?? "",
+    pagu_tahun_1: initialData?.pagu_tahun_1 ?? 0,
+    pagu_tahun_2: initialData?.pagu_tahun_2 ?? 0,
+    pagu_tahun_3: initialData?.pagu_tahun_3 ?? 0,
+    pagu_tahun_4: initialData?.pagu_tahun_4 ?? 0,
+    pagu_tahun_5: initialData?.pagu_tahun_5 ?? 0,
+    pagu_tahun_6: initialData?.pagu_tahun_6 ?? 0,
     target_akhir_renstra: initialData?.target_akhir_renstra ?? "",
-    pagu_akhir_renstra: initialData?.pagu_akhir_renstra ?? "",
+    pagu_akhir_renstra: initialData?.pagu_akhir_renstra ?? 0,
   };
 
   const generatePayload = (data) => ({
@@ -162,22 +162,110 @@ const RenstraTabelTujuanForm = ({ initialData = null, renstraAktif }) => {
     }
   }, [selectedTujuanId, tujuanOptions, setValue]);
 
-  // 🔹 Auto set baseline & satuan jika indikator dipilih
+  // 🔹 Auto set dari indikator Renstra (disahkan dari RPJMD / master indikator)
   const selectedIndikatorId = watch("indikator_id");
   useEffect(() => {
-    if (!initialData && selectedIndikatorId) {
-      const selected = indikatorOptions.find(
-        (i) => String(i.id) === String(selectedIndikatorId)
-      );
-      if (selected) {
-        setValue("baseline", selected.baseline ?? "");
-        setValue("satuan_target", selected.satuan ?? "");
-        for (let i = 1; i <= 6; i++) {
-          setValue(`target_tahun_${i}`, selected[`target_tahun_${i}`] ?? "");
-        }
+    if (initialData || !selectedIndikatorId) return;
+    const selected = indikatorOptions.find(
+      (i) => String(i.id) === String(selectedIndikatorId)
+    );
+    if (!selected) return;
+
+    setValue("baseline", selected.baseline ?? "");
+    setValue("satuan_target", selected.satuan ?? "");
+
+    const lokasiDariIndikator =
+      selected.lokasi != null && String(selected.lokasi).trim() !== ""
+        ? String(selected.lokasi).trim()
+        : "";
+    const lokasiDariRenstra =
+      selected.renstra?.bidang_opd != null &&
+      String(selected.renstra.bidang_opd).trim() !== ""
+        ? String(selected.renstra.bidang_opd).trim()
+        : "";
+    setValue("lokasi", lokasiDariIndikator || lokasiDariRenstra || "");
+
+    for (let i = 1; i <= 6; i++) {
+      const key = `target_tahun_${i}`;
+      let v = selected[key];
+      if (i === 6 && (v === undefined || v === null || v === "")) {
+        v = selected.target_tahun_5;
+      }
+      if (v !== undefined && v !== null && v !== "") {
+        setValue(key, v);
+      }
+    }
+
+    const hasPaguDiMaster = [1, 2, 3, 4, 5, 6].some((i) => {
+      const p = selected[`pagu_tahun_${i}`];
+      return p != null && p !== "";
+    });
+    if (hasPaguDiMaster) {
+      for (let i = 1; i <= 6; i++) {
+        const key = `pagu_tahun_${i}`;
+        const p = selected[key];
+        const num =
+          p !== undefined && p !== null && p !== "" ? Number(p) : 0;
+        setValue(key, Number.isNaN(num) ? 0 : num);
       }
     }
   }, [selectedIndikatorId, indikatorOptions, setValue, initialData]);
+
+  // 🔹 Jika master indikator tidak punya pagu: isi dari baris renstra_tabel_tujuan terbaru (tujuan + indikator + OPD sama)
+  useEffect(() => {
+    if (initialData || !selectedTujuanId || !selectedIndikatorId || !renstraAktif?.id) {
+      return;
+    }
+    const selected = indikatorOptions.find(
+      (i) => String(i.id) === String(selectedIndikatorId)
+    );
+    if (!selected) return;
+
+    const hasPaguDiMaster = [1, 2, 3, 4, 5, 6].some((i) => {
+      const p = selected[`pagu_tahun_${i}`];
+      return p != null && p !== "";
+    });
+    if (hasPaguDiMaster) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get("/renstra-tabel-tujuan", {
+          params: {
+            tujuan_id: selectedTujuanId,
+            indikator_id: selectedIndikatorId,
+            opd_id: renstraAktif.id,
+          },
+        });
+        const rows = Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+        if (cancelled || !rows.length) return;
+        const latest = rows[0];
+        const sum = [1, 2, 3, 4, 5, 6].reduce(
+          (s, i) => s + Number(latest[`pagu_tahun_${i}`] || 0),
+          0
+        );
+        if (sum <= 0) return;
+        for (let i = 1; i <= 6; i++) {
+          setValue(
+            `pagu_tahun_${i}`,
+            Number(latest[`pagu_tahun_${i}`] || 0)
+          );
+        }
+      } catch (e) {
+        console.warn("Gagal ambil pagu dari riwayat renstra_tabel_tujuan:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedTujuanId,
+    selectedIndikatorId,
+    renstraAktif?.id,
+    indikatorOptions,
+    initialData,
+    setValue,
+  ]);
 
   // 🔹 Hitung target_akhir_renstra & pagu_akhir_renstra
   const targetValues = watch([
@@ -209,8 +297,12 @@ const RenstraTabelTujuanForm = ({ initialData = null, renstraAktif }) => {
   );
 
   useEffect(() => {
-    setValue("target_akhir_renstra", targetAkhirRenstra);
-    setValue("pagu_akhir_renstra", paguAkhirRenstra);
+    setValue("target_akhir_renstra", targetAkhirRenstra, {
+      shouldDirty: false,
+    });
+    setValue("pagu_akhir_renstra", paguAkhirRenstra, {
+      shouldDirty: false,
+    });
   }, [targetAkhirRenstra, paguAkhirRenstra, setValue]);
 
   return (
@@ -312,23 +404,47 @@ const RenstraTabelTujuanForm = ({ initialData = null, renstraAktif }) => {
               errors={errors}
             />
 
-            <h4 style={{ marginTop: 24 }}>Target per Tahun</h4>
+            <h4 style={{ marginTop: 24 }}>Target periode (th. ke-1 s/d ke-6)</h4>
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <InputField
                 key={`target_tahun_${i}`}
                 name={`target_tahun_${i}`}
-                label={`Target Tahun ${i}`}
+                label={`Target (th. ke-${i})`}
                 control={control}
                 errors={errors}
               />
             ))}
 
-            <h4 style={{ marginTop: 24 }}>Pagu per Tahun</h4>
+            <h4 style={{ marginTop: 24 }}>Pagu periode (th. ke-1 s/d ke-6)</h4>
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="Sumber pengisian pagu otomatis"
+              description={
+                <>
+                  <p style={{ marginBottom: 8 }}>
+                    Pagu diisi otomatis dari (1) <strong>master indikator
+                    Renstra</strong> jika kolom <code>pagu_tahun_1</code>–
+                    <code>6</code> sudah ada; atau (2){" "}
+                    <strong>baris terbaru</strong> di{" "}
+                    <code>renstra_tabel_tujuan</code> dengan kombinasi{" "}
+                    <em>Tujuan + Indikator + OPD</em> yang sama (riwayat input
+                    sebelumnya).
+                  </p>
+                  <p style={{ marginBottom: 0 }}>
+                    Jika keduanya kosong (misalnya kombinasi baru), isi pagu
+                    manual di form ini atau perbarui master indikator / impor
+                    data.
+                  </p>
+                </>
+              }
+            />
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <InputField
                 key={`pagu_tahun_${i}`}
                 name={`pagu_tahun_${i}`}
-                label={`Pagu Tahun ${i}`}
+                label={`Pagu (th. ke-${i})`}
                 control={control}
                 errors={errors}
               />

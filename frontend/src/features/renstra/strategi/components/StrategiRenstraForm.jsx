@@ -18,7 +18,6 @@ const StrategiRenstraForm = ({ initialData = null, renstraAktif }) => {
     isSubmitting,
     isLoading,
     dropdowns,
-    handleStrategiChange,
   } = useStrategiRenstraForm(initialData, renstraAktif);
 
   const {
@@ -40,7 +39,9 @@ const StrategiRenstraForm = ({ initialData = null, renstraAktif }) => {
 
   const mergedStrategiOptions = useMemo(() => {
     const list = [...strategiOptions];
-    const exists = list.find((s) => s.id === initialData?.rpjmd_strategi_id);
+    const exists = list.find(
+      (s) => Number(s.id) === Number(initialData?.rpjmd_strategi_id)
+    );
 
     if (!exists && initialData?.no_rpjmd && initialData?.isi_strategi_rpjmd) {
       list.unshift({
@@ -88,8 +89,8 @@ const StrategiRenstraForm = ({ initialData = null, renstraAktif }) => {
           required
           loading={isLoading}
           options={sasaranOptions.map((item) => ({
-            value: item.id,
-            label: `${item.nomor} - ${item.isi_sasaran}`,
+            value: Number(item.id),
+            label: `${item.nomor ?? ""} - ${item.isi_sasaran ?? ""}`.trim(),
           }))}
         />
 
@@ -101,10 +102,9 @@ const StrategiRenstraForm = ({ initialData = null, renstraAktif }) => {
           required
           loading={isLoading}
           options={mergedStrategiOptions.map((item) => ({
-            value: item.id,
-            label: `${item.kode_strategi} - ${item.deskripsi}`,
+            value: Number(item.id),
+            label: `${item.kode_strategi ?? ""} - ${item.deskripsi ?? ""}`.trim(),
           }))}
-          onChange={handleStrategiChange}
         />
 
         <InputField

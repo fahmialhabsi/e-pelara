@@ -52,6 +52,19 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "rpjmd_id", // atau foreignKey yang sesuai
         as: "renstra_program",
       });
+
+      Program.belongsTo(models.RegulasiVersi, {
+        foreignKey: "regulasi_versi_id",
+        as: "regulasiVersi",
+      });
+      Program.belongsTo(models.MasterProgram, {
+        foreignKey: "master_program_id",
+        as: "masterProgram",
+      });
+      Program.belongsTo(models.User, {
+        foreignKey: "migrated_by",
+        as: "migratedByUser",
+      });
     }
   }
 
@@ -112,6 +125,31 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
       tahun: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+      master_program_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+      regulasi_versi_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+      input_mode: {
+        type: DataTypes.ENUM("LEGACY", "MASTER"),
+        allowNull: false,
+        defaultValue: "LEGACY",
+      },
+      migration_status: {
+        type: DataTypes.STRING(32),
+        allowNull: true,
+      },
+      migrated_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      migrated_by: {
         type: DataTypes.INTEGER,
         allowNull: true,
       },

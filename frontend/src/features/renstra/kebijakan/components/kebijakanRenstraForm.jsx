@@ -39,9 +39,13 @@ const KebijakanRenstraForm = ({ initialData = null, renstraAktif }) => {
 
   const handleArahKebijakanChange = useCallback(
     (value) => {
-      const selected = arahKebijakanOptions.find((item) => item.id === value);
+      const selected = arahKebijakanOptions.find(
+        (item) => Number(item.id) === Number(value)
+      );
+      const teks = selected?.deskripsi || "";
       setValue("no_arah_rpjmd", selected?.kode_arah || "");
-      setValue("isi_arah_rpjmd", selected?.deskripsi || "");
+      setValue("isi_arah_rpjmd", teks);
+      setValue("deskripsi", teks);
       setValue("jenisDokumen", selected?.jenisDokumen || "");
       setValue("tahun", selected?.tahun || "");
     },

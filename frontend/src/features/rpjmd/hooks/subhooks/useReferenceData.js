@@ -1,7 +1,55 @@
-// Refactored: useReferenceData.js - lebih stabil & bersih
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import api from "@/services/api";
-import { useDokumen } from "@/hooks/useDokumen";
+import { normalizeListItems } from "@/utils/apiResponse";
+
+/** Normalisasi nama OPD/bidang untuk perbandingan (bukan untuk tampilan). */
+export function normalizeOpdNameKey(name) {
+  if (typeof name !== "string") return "";
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function representativeIdForGroup(rows) {
+  if (!rows?.length) return null;
+  const emptyOrSameAsOpd = rows.filter((r) => {
+    const b = (r.nama_bidang_opd ?? "").toString().trim();
+    if (!b) return true;
+    return normalizeOpdNameKey(b) === normalizeOpdNameKey(r.nama_opd);
+  });
+  const pool = emptyOrSameAsOpd.length ? emptyOrSameAsOpd : rows;
+  return pool.reduce((best, r) => (Number(r.id) < Number(best.id) ? r : best))
+    .id;
+}
+
+/** Satu opsi per nama OPD (master memiliki banyak baris per bidang). */
+export function buildOpdSelectOptions(opdEntries) {
+  const byKey = new Map();
+  for (const row of opdEntries || []) {
+    const key = normalizeOpdNameKey(row.nama_opd);
+    if (!key) continue;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(row);
+  }
+  const options = [];
+  for (const rows of byKey.values()) {
+    const id = representativeIdForGroup(rows);
+    const label = (rows[0].nama_opd ?? "").trim() || rows[0].nama_opd;
+    options.push({ value: String(id), label });
+  }
+  options.sort((a, b) => a.label.localeCompare(b.label, "id"));
+  return options;
+}
+
+/** Map ID baris manapun ke ID perwakilan grup OPD yang sama (untuk mode edit). */
+export function resolveStoredOpdToRepresentativeId(opdEntries, rawId) {
+  if (rawId === null || rawId === undefined || rawId === "") return null;
+  const row = (opdEntries || []).find((r) => String(r.id) === String(rawId));
+  if (!row?.nama_opd) return null;
+  const key = normalizeOpdNameKey(row.nama_opd);
+  const group = (opdEntries || []).filter(
+    (r) => normalizeOpdNameKey(r.nama_opd) === key,
+  );
+  return String(representativeIdForGroup(group));
+}
 
 export default function useReferenceData(params = {}) {
   const { rpjmd_id, tahun, opd_penanggung_jawab, sasaran_id, jenis_dokumen } =
@@ -17,12 +65,11 @@ export default function useReferenceData(params = {}) {
   const [allPrograms, setAllPrograms] = useState([]);
   const [refsLoading, setRefsLoading] = useState(true);
 
-  const { dokumen } = useDokumen();
   const isReady = !!(tahun && rpjmd_id && jenis_dokumen);
 
-  // 🔁 Misi, Tujuan, Sasaran, Arah, OPD
   useEffect(() => {
     if (!isReady) return;
+
     let cancelled = false;
     setRefsLoading(true);
 
@@ -41,26 +88,15 @@ export default function useReferenceData(params = {}) {
             }),
           ]);
 
-        console.log("🧪 Tahun:", tahun);
-        console.log("🧪 Jenis dokumen:", jenis_dokumen);
-        console.log("📥 Sasaran fetched:", sasaranRes.data);
-        console.log("🎯 selectedSasaran:", selectedSasaran);
-        console.log("🔡 prefix:", selectedSasaran?.nomor);
-
         if (cancelled) return;
 
-        setMisis(Array.isArray(misiRes.data) ? misiRes.data : []);
-        setTujuans(Array.isArray(tujuanRes.data) ? tujuanRes.data : []);
-        const parsedSasaran = Array.isArray(sasaranRes.data?.data)
-          ? sasaranRes.data.data
-          : Array.isArray(sasaranRes.data)
-          ? sasaranRes.data
-          : [];
-        setSasarans(parsedSasaran);
-        setAras(Array.isArray(arahRes.data?.data) ? arahRes.data.data : []);
-        setOpdEntries(Array.isArray(opdRes.data?.data) ? opdRes.data.data : []);
+        setMisis(normalizeListItems(misiRes.data));
+        setTujuans(normalizeListItems(tujuanRes.data));
+        setSasarans(normalizeListItems(sasaranRes.data));
+        setAras(normalizeListItems(arahRes.data));
+        setOpdEntries(normalizeListItems(opdRes.data));
       } catch (err) {
-        console.error("❌ Gagal fetch reference dasar:", err);
+        console.error("Gagal fetch reference dasar:", err);
       } finally {
         if (!cancelled) setRefsLoading(false);
       }
@@ -71,56 +107,46 @@ export default function useReferenceData(params = {}) {
     };
   }, [isReady, tahun, rpjmd_id, jenis_dokumen]);
 
-  // 🧠 selectedSasaran distabilkan dengan useMemo
-  const selectedSasaran = useMemo(() => {
-    return sasarans.find((s) => String(s.id) === String(sasaran_id));
-  }, [sasarans, sasaran_id]);
+  const selectedSasaran = useMemo(
+    () => sasarans.find((item) => String(item.id) === String(sasaran_id)),
+    [sasarans, sasaran_id],
+  );
 
-  // 🎯 Strategi dari kode sasaran
   useEffect(() => {
-    // Reset strategi dan arah saat sasaran berubah
     setStrategis([]);
     setAras([]);
 
-    if (!tahun || !jenis_dokumen || !sasaran_id || !selectedSasaran) return;
-
-    const prefix = selectedSasaran.nomor?.trim();
-    if (!prefix) return;
+    if (!tahun || !jenis_dokumen || !sasaran_id || !selectedSasaran?.nomor) {
+      return;
+    }
 
     let cancelled = false;
 
     (async () => {
       try {
-        // Ambil strategi yang cocok dengan kode prefix dari sasaran
         const strategiRes = await api.get("/strategi/by-kode-prefix", {
           params: {
             tahun,
             jenis_dokumen,
-            prefix: `S${prefix}`,
+            prefix: `S${selectedSasaran.nomor.trim()}`,
           },
         });
 
-        const strategiData = Array.isArray(strategiRes.data?.data)
-          ? strategiRes.data.data
-          : strategiRes.data;
+        const strategiData = normalizeListItems(strategiRes.data);
+        const strategiIds = strategiData.map((item) => Number(item.id));
 
-        const strategiIds = strategiData.map((s) => s.id);
-
-        // Ambil semua arah kebijakan, lalu filter berdasarkan strategi_ids
         const arahRes = await api.get("/arah-kebijakan", {
           params: { tahun, jenis_dokumen, limit: 1000 },
         });
 
-        const allArah = Array.isArray(arahRes.data?.data)
-          ? arahRes.data.data
-          : arahRes.data;
-
-        const filteredArah = allArah
-          .filter((a) => strategiIds.includes(a.strategi_id))
-          .map((a) => ({
-            ...a,
+        const filteredArah = normalizeListItems(arahRes.data)
+          .filter((item) => strategiIds.includes(Number(item.strategi_id)))
+          .map((item) => ({
+            ...item,
             strategi_id:
-              a.strategi_id ?? a?.ProgramArahKebijakan?.strategi_id ?? null,
+              item.strategi_id ??
+              item?.ProgramArahKebijakan?.strategi_id ??
+              null,
           }));
 
         if (!cancelled) {
@@ -128,7 +154,7 @@ export default function useReferenceData(params = {}) {
           setAras(filteredArah);
         }
       } catch (err) {
-        console.error("❌ Gagal fetch strategi atau arah kebijakan:", err);
+        console.error("Gagal fetch strategi atau arah kebijakan:", err);
         if (!cancelled) {
           setStrategis([]);
           setAras([]);
@@ -141,7 +167,6 @@ export default function useReferenceData(params = {}) {
     };
   }, [tahun, jenis_dokumen, sasaran_id, selectedSasaran]);
 
-  // 🏢 Bidang berdasarkan OPD
   useEffect(() => {
     if (!opd_penanggung_jawab || opdEntries.length === 0) {
       setBidangOptions([]);
@@ -149,34 +174,42 @@ export default function useReferenceData(params = {}) {
     }
 
     const selectedOpd = opdEntries.find(
-      (e) => String(e.id) === String(opd_penanggung_jawab)
+      (item) => String(item.id) === String(opd_penanggung_jawab),
     );
     const targetNamaOpd = selectedOpd?.nama_opd;
 
-    const matches = opdEntries.filter(
-      (e) =>
-        e.nama_opd &&
-        targetNamaOpd &&
-        e.nama_opd.trim().toLowerCase() === targetNamaOpd.trim().toLowerCase()
-    );
-
-    const bidangList = matches
-      .flatMap((e) => {
-        const raw = e.nama_bidang_opd;
+    const bidangList = opdEntries
+      .filter(
+        (item) =>
+          item.nama_opd &&
+          targetNamaOpd &&
+          item.nama_opd.trim().toLowerCase() ===
+            targetNamaOpd.trim().toLowerCase(),
+      )
+      .flatMap((item) => {
+        const raw = item.nama_bidang_opd;
         if (Array.isArray(raw)) return raw;
-        if (typeof raw === "string") return raw.split(",").map((s) => s.trim());
+        if (typeof raw === "string") return raw.split(",").map((v) => v.trim());
         return [];
       })
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter((bidang) => {
+        const opdKey = normalizeOpdNameKey(targetNamaOpd);
+        const bKey = normalizeOpdNameKey(bidang);
+        return bKey && bKey !== opdKey;
+      });
 
-    const uniqueList = Array.from(new Set(bidangList));
-    const opts = uniqueList.map((b) => ({ label: b, value: b }));
-    setBidangOptions(opts);
+    setBidangOptions(
+      Array.from(new Set(bidangList)).map((bidang) => ({
+        label: bidang,
+        value: bidang,
+      })),
+    );
   }, [opd_penanggung_jawab, opdEntries]);
 
-  // 📦 Program untuk validasi duplikasi
   useEffect(() => {
     if (!tahun || !rpjmd_id) return;
+
     let cancelled = false;
 
     (async () => {
@@ -184,11 +217,12 @@ export default function useReferenceData(params = {}) {
         const res = await api.get("/programs", {
           params: { tahun, jenis_dokumen: "rpjmd", limit: 1000 },
         });
+
         if (!cancelled) {
-          setAllPrograms(Array.isArray(res.data?.data) ? res.data.data : []);
+          setAllPrograms(normalizeListItems(res.data));
         }
       } catch (err) {
-        console.error("❌ Gagal fetch programs:", err);
+        console.error("Gagal fetch programs:", err);
       }
     })();
 
@@ -198,12 +232,17 @@ export default function useReferenceData(params = {}) {
   }, [tahun, rpjmd_id]);
 
   const uniqueOpds = useMemo(() => {
-    const set = new Set();
+    const values = new Set();
     opdEntries.forEach((entry) => {
-      if (entry.nama_opd) set.add(entry.nama_opd);
+      if (entry.nama_opd) values.add(entry.nama_opd);
     });
-    return Array.from(set);
+    return Array.from(values);
   }, [opdEntries]);
+
+  const opdSelectOptions = useMemo(
+    () => buildOpdSelectOptions(opdEntries),
+    [opdEntries],
+  );
 
   return useMemo(
     () => ({
@@ -213,6 +252,7 @@ export default function useReferenceData(params = {}) {
       strategis,
       aras,
       opdEntries,
+      opdSelectOptions,
       bidangOptions,
       uniqueOpds,
       allPrograms,
@@ -226,10 +266,11 @@ export default function useReferenceData(params = {}) {
       strategis,
       aras,
       opdEntries,
+      opdSelectOptions,
       bidangOptions,
       uniqueOpds,
       allPrograms,
       refsLoading,
-    ]
+    ],
   );
 }

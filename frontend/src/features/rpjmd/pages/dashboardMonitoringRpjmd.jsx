@@ -89,7 +89,7 @@ const DashboardMonitoringRpjmd = () => {
         <h5>Kegiatan: {kegiatan.nama}</h5>
         {kegiatan.Realisasis?.map((r, j) => (
           <div key={j}>
-            Realisasi: {r.nilai} – {r.tahun}
+            Realisasi: {r.nilai} · th. kalender {r.tahun}
           </div>
         ))}
       </div>
@@ -105,7 +105,7 @@ const DashboardMonitoringRpjmd = () => {
         <h5>Kegiatan: {kegiatan.nama}</h5>
         {kegiatan.Realisasis?.map((r, j) => (
           <div key={j}>
-            Realisasi: {r.nilai} – {r.tahun}
+            Realisasi: {r.nilai} · th. kalender {r.tahun}
           </div>
         ))}
       </div>

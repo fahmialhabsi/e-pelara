@@ -46,6 +46,8 @@ const generatePayloadRenstraTabelKegiatan = (formData) => {
   payload.kegiatan_id = Number(payload.kegiatan_id);
   payload.indikator_id = Number(payload.indikator_id);
 
+  delete payload.tabel_program_id;
+
   return payload;
 };
 

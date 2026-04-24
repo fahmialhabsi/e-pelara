@@ -4,6 +4,8 @@ import React, { useState, useEffect, useContext, createContext } from "react";
 import AuthContext from "./authContext";
 import io from "socket.io-client";
 import api from "../services/api";
+import { SOCKET_URL } from "../config/runtimeConfig";
+import { extractListData } from "../utils/apiResponse";
 
 export const NotificationContext = createContext();
 
@@ -14,7 +16,7 @@ export const NotificationProvider = ({ children }) => {
   useEffect(() => {
     if (!userReady || !user?.token) return;
 
-    const socket = io(import.meta.env.VITE_API_URL, {
+    const socket = io(SOCKET_URL, {
       query: {
         role: user?.role,
         userId: user?.id,
@@ -23,7 +25,7 @@ export const NotificationProvider = ({ children }) => {
 
     api
       .get("/notifications")
-      .then((r) => setNotifications(r.data.data))
+      .then((r) => setNotifications(extractListData(r.data)))
       .catch((err) => {
         console.error("Gagal mengambil notifikasi:", err);
       });

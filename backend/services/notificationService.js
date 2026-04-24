@@ -46,7 +46,7 @@ async function sendNotification(
         entity_type: entityType,
         entity_id: entityId,
         link,
-        created_at: notification.created_at,
+        created_at: notification.createdAt,
       });
     }
 

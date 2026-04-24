@@ -25,6 +25,10 @@ import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import ProgramNestedView from "../../shared/components/ProgramNestedView";
+import {
+  extractListMeta,
+  normalizeListItems,
+} from "@/utils/apiResponse";
 
 export default function ProgramPrioritasList() {
   const navigate = useNavigate();
@@ -66,7 +70,8 @@ export default function ProgramPrioritasList() {
         },
       });
 
-      const rawPrograms = res.data.data ?? [];
+      const rawPrograms = normalizeListItems(res.data);
+      const meta = extractListMeta(res.data);
 
       const processed = rawPrograms.map((program) => {
         const strategiList = program.Strategi ?? [];
@@ -89,7 +94,7 @@ export default function ProgramPrioritasList() {
       console.log("🚀 ~ rawPrograms:", rawPrograms)
 
       setPrograms(processed);
-      setTotalPages(res.data.meta?.totalPages || 1);
+      setTotalPages(meta.totalPages || 1);
       setErrorMsg("");
     } catch (err) {
       console.error("❌ Gagal fetch programs:", err?.response || err);

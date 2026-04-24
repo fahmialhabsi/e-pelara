@@ -1,17 +1,40 @@
-import { useEffect, useState } from "react";
-import api from "@/services/api";
+import { useCallback, useEffect, useState } from "react";
+import { getAllRkpd } from "./rkpdApi";
 
-export const useRkpdData = () => {
+const useRkpdData = (params = {}) => {
   const [data, setData] = useState([]);
+  const [meta, setMeta] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const result = await getAllRkpd(params);
+      setData(Array.isArray(result.data) ? result.data : []);
+      setMeta(result.meta || {});
+    } catch (err) {
+      setError(err);
+      setData([]);
+      setMeta({});
+    } finally {
+      setLoading(false);
+    }
+  }, [params]);
 
   useEffect(() => {
-    api
-      .get("/rkpd")
-      .then((res) => setData(res.data))
-      .catch((err) => console.error("Gagal load RKPD:", err));
-  }, []);
+    load();
+  }, [load]);
 
-  return data;
+  return {
+    data,
+    meta,
+    loading,
+    error,
+    refetch: load,
+  };
 };
 
 export default useRkpdData;
+

@@ -27,6 +27,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { usePeriodeAktif } from "@/features/rpjmd/hooks/usePeriodeAktif";
 import StrategiForm from "./StrategiForm";
+import {
+  extractListData,
+  extractListMeta,
+  normalizeListItems,
+} from "@/utils/apiResponse";
 
 export default function StrategiList() {
   const navigate = useNavigate();
@@ -39,7 +44,6 @@ export default function StrategiList() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const [periodeValid, setPeriodeValid] = useState(null);
-  const [periodeList, setPeriodeList] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [selected, setSelected] = useState({});
@@ -50,7 +54,6 @@ export default function StrategiList() {
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
-  const [sasaranList, setSasaranList] = useState([]);
 
   const normalizedSearch = search.trim().toLowerCase();
 
@@ -62,8 +65,8 @@ export default function StrategiList() {
     const fetchPeriode = async () => {
       try {
         const res = await api.get("/periode-rpjmd");
-        setPeriodeList(res.data);
-        const valid = res.data.some(
+        const periodeData = extractListData(res.data);
+        const valid = periodeData.some(
           (p) =>
             Number(user?.tahun) >= Number(p.tahun_awal) &&
             Number(user?.tahun) <= Number(p.tahun_akhir)
@@ -77,26 +80,6 @@ export default function StrategiList() {
     if (user?.tahun) fetchPeriode();
   }, [user]);
 
-  const fetchSasaran = useCallback(async () => {
-    try {
-      const res = await api.get("/sasaran", {
-        params: {
-          jenis_dokumen: dokumen,
-          tahun,
-        },
-      });
-      setSasaranList(res.data);
-    } catch (err) {
-      console.error("Gagal fetch sasaran:", err);
-    }
-  }, [dokumen, tahun]);
-
-  useEffect(() => {
-    if (dokumen && tahun) {
-      fetchSasaran();
-    }
-  }, [fetchSasaran]);
-
   const fetchStrategi = useCallback(async () => {
     setLoading(true);
     try {
@@ -104,13 +87,8 @@ export default function StrategiList() {
         params: { page, limit, search, jenis_dokumen: dokumen, tahun },
       });
 
-      const list = Array.isArray(res.data)
-        ? res.data
-        : Array.isArray(res.data.data)
-        ? res.data.data
-        : [];
-
-      const meta = res.data.meta || {};
+      const list = normalizeListItems(res.data);
+      const meta = extractListMeta(res.data);
 
       setStrategiList(list);
       setTotalPages(meta?.totalPages || 1);
@@ -122,10 +100,6 @@ export default function StrategiList() {
       setLoading(false);
     }
   }, [page, limit, search, dokumen, tahun]);
-
-  useEffect(() => {
-    if (search) setPage(1);
-  }, [search]);
 
   useEffect(() => {
     fetchStrategi();
@@ -156,7 +130,7 @@ export default function StrategiList() {
   };
 
   useEffect(() => {
-    setPage(1); // reset ke halaman awal
+    setPage(1);
   }, [search]);
 
   const handleAdd = () => {
@@ -193,11 +167,15 @@ export default function StrategiList() {
   const handleExportExcel = () => {
     const ws = XLSX.utils.json_to_sheet(
       strategiList.map((s) => ({
-        Sasaran: s.Sasaran
-          ? `${s.Sasaran.nomor} – ${s.Sasaran.isi_sasaran}`
-          : "-",
-        Kode_Strategi: s.kode_strategi || "-",
-        Deskripsi: s.deskripsi || "-",
+        Uraian_Tujuan_Sasaran: [
+          s.Sasaran?.Tujuan?.isi_tujuan || "-",
+          s.Sasaran
+            ? `${s.Sasaran.nomor || ""} – ${s.Sasaran.isi_sasaran || ""}`
+            : "-",
+        ].join(" | "),
+        Kode_Uraian_Strategi: [s.kode_strategi || "-", s.deskripsi || "-"].join(
+          " | "
+        ),
       }))
     );
     const wb = XLSX.utils.book_new();
@@ -208,13 +186,16 @@ export default function StrategiList() {
   const handleExportPdf = () => {
     const doc = new jsPDF();
     autoTable(doc, {
-      head: [["No", "Sasaran", "Kode Strategi", "Deskripsi"]],
-      body: strategiList.map((s, i) => [
-        i + 1,
-        s.Sasaran?.isi_sasaran || "-",
-        s.kode_strategi || "-",
-        s.deskripsi || "-",
-      ]),
+      head: [["No", "Uraian Tujuan/Sasaran", "Kode & Uraian Strategi"]],
+      body: strategiList.map((s, i) => {
+        const t = s.Sasaran?.Tujuan?.isi_tujuan || "-";
+        const sasaranUraian = s.Sasaran
+          ? `${s.Sasaran.nomor || ""} – ${s.Sasaran.isi_sasaran || ""}`
+          : "-";
+        const tsBlock = `${t}\n${sasaranUraian}`;
+        const kodStr = `${s.kode_strategi || "-"}\n${s.deskripsi || "-"}`;
+        return [i + 1, tsBlock, kodStr];
+      }),
     });
     doc.save("strategi_rpjmd.pdf");
   };
@@ -223,8 +204,7 @@ export default function StrategiList() {
     return (
       <Container className="mt-5">
         <Alert variant="danger">
-          Tahun login tidak sesuai dengan periode RPJMD. Silakan login ulang
-          atau hubungi admin.
+          Konteks periode login tidak selaras dengan periode RPJMD aktif. Silakan login ulang atau hubungi admin.
         </Alert>
       </Container>
     );
@@ -238,63 +218,23 @@ export default function StrategiList() {
     );
   }
 
-  const grouped = {};
-  let matchFound = false;
-
-  strategiList.forEach((st) => {
+  const matchFound = strategiList.some((st) => {
+    if (!normalizedSearch) return false;
+    const q = normalizedSearch;
     const sas = st.Sasaran;
     const tujuan = sas?.Tujuan;
-    const misi = tujuan?.Misi;
-    const match =
-      normalizedSearch &&
-      `${st.kode_strategi} ${st.deskripsi}`
-        .toLowerCase()
-        .includes(normalizedSearch);
-    if (match) matchFound = true;
-
-    if (!sas || !tujuan || !misi) return;
-
-    const misiId = misi.id;
-    const tujuanId = tujuan.id;
-    const sasaranId = sas.id;
-
-    if (!grouped[misiId]) {
-      grouped[misiId] = {
-        misi,
-        tujuanMap: {},
-      };
-    }
-
-    if (!grouped[misiId].tujuanMap[tujuanId]) {
-      grouped[misiId].tujuanMap[tujuanId] = {
-        tujuan,
-        sasaranMap: {},
-      };
-    }
-
-    if (!grouped[misiId].tujuanMap[tujuanId].sasaranMap[sasaranId]) {
-      grouped[misiId].tujuanMap[tujuanId].sasaranMap[sasaranId] = {
-        sasaran: sas,
-        strategiList: [],
-      };
-    }
-
-    grouped[misiId].tujuanMap[tujuanId].sasaranMap[sasaranId].strategiList.push(
-      {
-        ...st,
-        match,
-      }
-    );
-  });
-
-  Object.values(grouped).forEach(({ tujuanMap }) => {
-    Object.values(tujuanMap).forEach(({ sasaranMap }) => {
-      Object.values(sasaranMap).forEach(({ strategiList }) => {
-        strategiList.sort((a, b) =>
-          b.match === a.match ? 0 : b.match ? -1 : 1
-        );
-      });
-    });
+    const blob = [
+      st.kode_strategi,
+      st.deskripsi,
+      sas?.nomor,
+      sas?.isi_sasaran,
+      tujuan?.no_tujuan,
+      tujuan?.isi_tujuan,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return blob.includes(q);
   });
 
   return (
@@ -376,77 +316,66 @@ export default function StrategiList() {
           <Table striped bordered hover responsive ref={tableRef}>
             <thead>
               <tr>
-                <th style={{ width: "15%" }}>Kode</th>
-                <th>Uraian Misi/Tujuan/Sasaran/Strategi</th>
+                <th style={{ width: "42%" }}>Uraian Tujuan/Sasaran</th>
+                <th>Kode &amp; Uraian Strategi</th>
                 <th style={{ width: "10%" }}>Aksi</th>
               </tr>
             </thead>
             <tbody>
-              {Object.entries(grouped).map(([misiId, { misi, tujuanMap }]) => (
-                <React.Fragment key={`misi-${misiId}`}>
-                  <tr>
-                    <td>{misi.no_misi}</td>
-                    <td>{misi.isi_misi}</td>
-                    <td />
-                  </tr>
+              {strategiList.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="text-center text-muted">
+                    Tidak ada data strategi.
+                  </td>
+                </tr>
+              ) : (
+                strategiList.map((st) => {
+                  const sas = st.Sasaran;
+                  const tujuan = sas?.Tujuan;
+                  const uraianTS =
+                    sas && tujuan ? (
+                      <>
+                        <strong>Tujuan ({tujuan.no_tujuan || "-"}):</strong>{" "}
+                        {highlightText(tujuan.isi_tujuan || "-")}
+                        <br />
+                        <strong>Sasaran ({sas.nomor || "-"}):</strong>{" "}
+                        {highlightText(sas.isi_sasaran || "-")}
+                      </>
+                    ) : (
+                      <span className="text-muted">
+                        Relasi tujuan/sasaran tidak tersedia
+                      </span>
+                    );
 
-                  {Object.entries(tujuanMap).map(
-                    ([tujuanId, { tujuan, sasaranMap }]) => (
-                      <React.Fragment key={`tujuan-${tujuanId}`}>
-                        <tr>
-                          <td>{tujuan.no_tujuan}</td>
-                          <td>{tujuan.isi_tujuan}</td>
-                          <td />
-                        </tr>
-
-                        {Object.entries(sasaranMap).map(
-                          ([sasaranId, { sasaran, strategiList }]) => (
-                            <React.Fragment key={`sasaran-${sasaranId}`}>
-                              <tr>
-                                <td>{sasaran.nomor}</td>
-                                <td>{sasaran.isi_sasaran}</td>
-                                <td />
-                              </tr>
-
-                              {strategiList.length > 0 ? (
-                                strategiList.map((st) => (
-                                  <tr key={`strategi-${st.id}`}>
-                                    <td>{highlightText(st.kode_strategi)}</td>
-                                    <td>{highlightText(st.deskripsi)}</td>
-                                    <td className="text-center">
-                                      <Button
-                                        variant="outline-primary"
-                                        size="sm"
-                                        className="me-2"
-                                        onClick={() => handleEdit(st)}
-                                      >
-                                        <FaEdit />
-                                      </Button>
-                                      <Button
-                                        variant="outline-danger"
-                                        size="sm"
-                                        onClick={() => handleDelete(st.id)}
-                                      >
-                                        <FaTrash />
-                                      </Button>
-                                    </td>
-                                  </tr>
-                                ))
-                              ) : (
-                                <tr>
-                                  <td colSpan={3} className="fst-italic">
-                                    Belum ada strategi
-                                  </td>
-                                </tr>
-                              )}
-                            </React.Fragment>
-                          )
-                        )}
-                      </React.Fragment>
-                    )
-                  )}
-                </React.Fragment>
-              ))}
+                  return (
+                    <tr key={st.id}>
+                      <td>{uraianTS}</td>
+                      <td>
+                        <strong>{highlightText(st.kode_strategi || "-")}</strong>
+                        <br />
+                        {highlightText(st.deskripsi || "-")}
+                      </td>
+                      <td className="text-center">
+                        <Button
+                          variant="outline-primary"
+                          size="sm"
+                          className="me-2"
+                          onClick={() => handleEdit(st)}
+                        >
+                          <FaEdit />
+                        </Button>
+                        <Button
+                          variant="outline-danger"
+                          size="sm"
+                          onClick={() => handleDelete(st.id)}
+                        >
+                          <FaTrash />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </Table>
 

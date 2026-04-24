@@ -10,16 +10,49 @@ const {
 const { Op } = require("sequelize");
 const { getPeriodeFromTahun } = require("../utils/periodeHelper");
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
+const { listResponse } = require("../utils/responseHelper");
+
+/**
+ * Samakan awalan kode SST strategi dengan nomor sasaran (ST… → SST…).
+ * Menangani kode_strategi di DB yang tidak selaras (mis. SST1-01-02.1 untuk sasaran ST3-01-02).
+ */
+function canonicalSstKodeForArah(strategi) {
+  const raw = String(strategi?.kode_strategi || "").trim();
+  const nom = strategi?.Sasaran?.nomor;
+  if (!nom) return raw || "";
+  const sasSst = String(nom).replace(/^ST/, "SST");
+  if (!raw) return `${sasSst}.1`;
+  if (raw.startsWith(sasSst)) return raw;
+  const m = raw.match(/\.(\d+)$/);
+  const suffix = m ? `.${m[1]}` : ".1";
+  return `${sasSst}${suffix}`;
+}
+
+function arahKodePrefixFromStrategi(strategi) {
+  return canonicalSstKodeForArah(strategi).replace(/^SST/, "ASST");
+}
 
 module.exports = {
   async create(req, res) {
     try {
-      const { strategi_id, deskripsi, jenis_dokumen, tahun } = req.body;
+      const {
+        strategi_id: sidRaw,
+        deskripsi,
+        jenis_dokumen,
+        tahun,
+      } = req.body;
+      const strategi_id = parseInt(String(sidRaw), 10);
 
-      if (!strategi_id || !deskripsi || !jenis_dokumen || !tahun) {
+      if (
+        !Number.isFinite(strategi_id) ||
+        strategi_id < 1 ||
+        !deskripsi ||
+        !jenis_dokumen ||
+        !tahun
+      ) {
         return res.status(400).json({
           message:
-            "Field strategi_id, deskripsi, jenis_dokumen, dan tahun wajib diisi.",
+            "Field strategi_id (angka valid), deskripsi, jenis_dokumen, dan tahun wajib diisi.",
         });
       }
 
@@ -33,14 +66,17 @@ module.exports = {
       }
       const periode_id = periode.id;
 
-      const strategi = await Strategi.findByPk(strategi_id);
+      const strategi = await Strategi.findByPk(strategi_id, {
+        include: [
+          { model: Sasaran, as: "Sasaran", attributes: ["id", "nomor"] },
+        ],
+      });
       if (!strategi) {
         return res.status(404).json({ message: "Strategi tidak ditemukan." });
       }
 
-      // Ambil prefix lengkap dengan mempertahankan bagian setelah 'SST'
-      // Contoh: 'SST1-01-01.1' jadi 'ASST1-01-01.1'
-      const prefix = strategi.kode_strategi.replace(/^SST/, "ASST");
+      // Samakan awalan ASST dengan nomor sasaran (ST→SST) bila kode_strategi di DB tidak selaras.
+      const prefix = arahKodePrefixFromStrategi(strategi);
 
       // Cari semua kode_arah yang dimulai dengan prefix + '.'
       const existing = await ArahKebijakan.findAll({
@@ -130,7 +166,7 @@ module.exports = {
       const periode_id = periode.id;
 
       const page = parseInt(req.query.page, 10) || 1;
-      const limit = Math.min(parseInt(req.query.limit, 10) || 10, 100);
+      const limit = Math.min(parseInt(req.query.limit, 10) || 50, 1000);
       const offset = (page - 1) * limit;
 
       const where = { jenis_dokumen, tahun, periode_id };
@@ -152,6 +188,7 @@ module.exports = {
         where,
         limit,
         offset,
+        subQuery: false,
         distinct: true,
         include: [
           {
@@ -183,23 +220,101 @@ module.exports = {
         order: [["kode_arah", "ASC"]],
       });
 
-      const totalPages = Math.ceil(count / limit);
+      let finalRows = rows;
+      let finalCount = count;
 
-      return res.status(200).json({
-        data: rows.map((arah) => ({
+      if (finalCount === 0 && strategi_id && jenis_dokumen !== "rpjmd") {
+        const selectedIds = strategi_id
+          .split(",")
+          .map((id) => parseInt(id, 10))
+          .filter(Boolean);
+
+        const selectedStrategi = selectedIds.length
+          ? await Strategi.findByPk(selectedIds[0], {
+              attributes: ["id", "kode_strategi", "jenis_dokumen"],
+            })
+          : null;
+
+        let fallbackStrategiId = null;
+        if (selectedStrategi?.jenis_dokumen === "rpjmd") {
+          fallbackStrategiId = selectedStrategi.id;
+        } else if (selectedStrategi?.kode_strategi) {
+          const sourceStrategi = await Strategi.findOne({
+            where: {
+              kode_strategi: selectedStrategi.kode_strategi,
+              jenis_dokumen: "rpjmd",
+              tahun,
+            },
+            attributes: ["id"],
+          });
+          fallbackStrategiId = sourceStrategi?.id || null;
+        }
+
+        if (fallbackStrategiId) {
+          const fallbackWhere = { jenis_dokumen: "rpjmd", tahun, strategi_id: fallbackStrategiId };
+          if (search) {
+            fallbackWhere.deskripsi = { [Op.like]: `%${search}%` };
+          }
+
+          const fallback = await ArahKebijakan.findAndCountAll({
+            where: fallbackWhere,
+            limit,
+            offset,
+            subQuery: false,
+            distinct: true,
+            include: [
+              {
+                model: Strategi,
+                as: "Strategi",
+                attributes: [
+                  "id",
+                  "kode_strategi",
+                  "deskripsi",
+                  "periode_id",
+                  "tahun",
+                ],
+                include: [
+                  {
+                    model: Sasaran,
+                    as: "Sasaran",
+                    attributes: ["id", "nomor", "isi_sasaran", "tujuan_id"],
+                    include: [
+                      {
+                        model: Tujuan,
+                        as: "Tujuan",
+                        attributes: ["id", "no_tujuan", "isi_tujuan"],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+            order: [["kode_arah", "ASC"]],
+          });
+
+          finalRows = fallback.rows;
+          finalCount = fallback.count;
+        }
+      }
+
+      return listResponse(
+        res,
+        200,
+        "Daftar arah kebijakan berhasil diambil",
+        finalRows.map((arah) => ({
           ...arah.toJSON(),
           strategi_id: Number(arah.strategi_id),
           id: Number(arah.id),
         })),
-        meta: {
-          totalItems: count,
-          totalPages,
+        {
+          totalItems: finalCount,
+          totalPages: Math.ceil(finalCount / limit),
           currentPage: page,
-          ...(count === 0 && search
+          ...(finalCount === 0 && search
             ? { message: "Tidak ada yang cocok dengan pencarian." }
             : {}),
-        },
-      });
+        }
+      );
     } catch (err) {
       console.error("Gagal mengambil data arah kebijakan:", err);
       return res.status(500).json({
@@ -268,12 +383,16 @@ module.exports = {
       }
       const periode_id = periode.id;
 
-      const strategi = await Strategi.findByPk(strategi_id);
+      const strategi = await Strategi.findByPk(strategi_id, {
+        include: [
+          { model: Sasaran, as: "Sasaran", attributes: ["id", "nomor"] },
+        ],
+      });
       if (!strategi) {
         return res.status(404).json({ message: "Strategi tidak ditemukan." });
       }
 
-      const prefix = strategi.kode_strategi.replace(/^SST/, "ASST");
+      const prefix = arahKodePrefixFromStrategi(strategi);
 
       // Ambil semua kode yang sama dengan prefix atau mulai dengan prefix + '.'
       const existing = await ArahKebijakan.findAll({
@@ -325,7 +444,12 @@ module.exports = {
         group: ["ArahKebijakan.id"],
       });
 
-      return res.status(200).json(list);
+      return listResponse(
+        res,
+        200,
+        "Daftar arah kebijakan berdasarkan program berhasil diambil",
+        list
+      );
     } catch (err) {
       console.error("Gagal memuat arah kebijakan:", err);
       return res.status(500).json({ message: "Gagal memuat arah kebijakan." });

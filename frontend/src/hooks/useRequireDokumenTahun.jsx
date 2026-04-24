@@ -1,6 +1,8 @@
 // src/hooks/useRequireDokumenTahun.js
 import { useDokumen } from "./useDokumen";
 import GlobalDokumenTahunPickerModal from "../shared/components/GlobalDokumenTahunPickerModal.jsx";
+import { usePeriodeAktif } from "../features/rpjmd/hooks/usePeriodeAktif";
+import { isDokumenLevelPeriode } from "../utils/planningDokumenUtils";
 
 /**
  * Hook ini digunakan untuk menjaga agar user tidak bisa mengakses halaman
@@ -13,8 +15,13 @@ import GlobalDokumenTahunPickerModal from "../shared/components/GlobalDokumenTah
  */
 export const useRequireDokumenTahun = () => {
   const { dokumen, tahun } = useDokumen();
+  const { loading: periodeLoading } = usePeriodeAktif();
 
-  const isReady = !!dokumen && !!tahun;
+  const periodeLevel = isDokumenLevelPeriode(dokumen);
+  const isReady =
+    !!dokumen &&
+    !!tahun &&
+    (!periodeLevel || !periodeLoading);
 
   const GuardModal = !isReady ? (
     <GlobalDokumenTahunPickerModal forceOpen />

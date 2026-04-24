@@ -36,6 +36,7 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "penanggung_jawab",
         as: "rkpd",
       });
+      this.belongsTo(models.Tenant, { foreignKey: "tenant_id", as: "tenant" });
     }
   }
 
@@ -69,6 +70,12 @@ module.exports = (sequelize, DataTypes) => {
       tahun: {
         type: DataTypes.INTEGER,
         allowNull: false,
+      },
+      tenant_id: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: false,
+        defaultValue: 1,
+        references: { model: "tenants", key: "id" },
       },
     },
     {

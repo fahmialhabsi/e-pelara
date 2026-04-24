@@ -1,7 +1,7 @@
 // src/features/renstra/indikator/hooks/useIndikatorUmumRenstraForm.js
 
 import * as Yup from "yup";
-import { useRenstraFormTemplate } from "@/hooks/templateUseRenstra/useRenstraFormTemplate";
+import { useRenstraFormTemplate } from "@/hooks/templatesUseRenstra/useRenstraFormTemplate";
 
 // ✅ Schema sesuai field backend
 const getSchema = () =>

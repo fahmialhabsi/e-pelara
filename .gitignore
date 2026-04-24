@@ -12,6 +12,7 @@ frontend/node_modules/
 .env.local
 .env.production
 backend/.env
+backend/.secrets/
 frontend/.env.development
 frontend/.env.production
 
@@ -30,3 +31,20 @@ Thumbs.db
 
 # Editor
 .vscode/
+
+# Pratinjau impor RPJMD (cache disk)
+backend/tmp/
+frontend/.env.production
+backend/.env
+frontend/.env.production
+.claire/
+.claude/
+backup/
+dokumenEPelara/
+e-pelara-integration/
+e-pelara/
+*.sql
+*.xlsx
+*.pdf
+*.docx
+~$*

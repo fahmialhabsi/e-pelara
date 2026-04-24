@@ -31,4 +31,7 @@ export const TIPE_INDIKATOR_MAP = {
   sasaran: "Outcome",
   program: "Output",
   kegiatan: "Proses",
+  strategi: "Outcome",
+  arah_kebijakan: "Outcome",
+  sub_kegiatan: "Process",
 };

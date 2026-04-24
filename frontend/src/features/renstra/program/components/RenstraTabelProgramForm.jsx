@@ -249,6 +249,23 @@ const RenstraTabelProgramForm = ({ initialData = null, renstraAktif }) => {
             </Button>
           </div>
 
+          {programOptions.length === 0 && (
+            <div
+              style={{
+                background: "#fffbe6",
+                border: "1px solid #ffe58f",
+                borderRadius: 6,
+                padding: "10px 16px",
+                marginBottom: 16,
+                fontSize: 13,
+                color: "#614700",
+              }}
+            >
+              ⚠️ <strong>Belum ada Program Renstra.</strong> Tambahkan terlebih dahulu melalui{" "}
+              <strong>Aksi Input Data Renstra → Program</strong>, lalu kembali ke halaman ini.
+            </div>
+          )}
+
           <form onSubmit={handleSubmit(onSubmit)}>
             <SelectWithLabelValue
               name="program_id"
@@ -303,25 +320,25 @@ const RenstraTabelProgramForm = ({ initialData = null, renstraAktif }) => {
               errors={errors}
             />
 
-            {/* 🔹 Target per tahun */}
-            <h4 style={{ marginTop: 24 }}>Target per Tahun</h4>
+            {/* 🔹 Target periode */}
+            <h4 style={{ marginTop: 24 }}>Target periode (th. ke-1 s/d ke-6)</h4>
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <InputField
                 key={`target_tahun_${i}`}
                 name={`target_tahun_${i}`}
-                label={`Target Tahun ${i}`}
+                label={`Target (th. ke-${i})`}
                 control={control}
                 errors={errors}
               />
             ))}
 
-            {/* 🔹 Pagu per tahun */}
-            <h4 style={{ marginTop: 24 }}>Pagu per Tahun</h4>
+            {/* 🔹 Pagu periode */}
+            <h4 style={{ marginTop: 24 }}>Pagu periode (th. ke-1 s/d ke-6)</h4>
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <InputField
                 key={`pagu_tahun_${i}`}
                 name={`pagu_tahun_${i}`}
-                label={`Pagu Tahun ${i}`}
+                label={`Pagu (th. ke-${i})`}
                 control={control}
                 errors={errors}
               />

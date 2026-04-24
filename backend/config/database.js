@@ -10,7 +10,7 @@ const sequelize = new Sequelize(
   process.env.DB_PASSWORD || dbConfig.password,
   {
     host: process.env.DB_HOST || dbConfig.host,
-    port: process.env.DB_PORT || 3306,
+    port: parseInt(process.env.DB_PORT) || 3306,
     dialect: dbConfig.dialect,
     dialectOptions: dbConfig.dialectOptions,
     define: dbConfig.define,

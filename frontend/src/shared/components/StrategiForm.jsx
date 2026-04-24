@@ -14,6 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
 import { toast } from "react-toastify";
+import { normalizeListItems } from "../../utils/apiResponse";
 
 function StrategiForm({ existingData, onSubmitSuccess, onCancel }) {
   const isEdit = Boolean(existingData?.id);
@@ -77,10 +78,8 @@ function StrategiForm({ existingData, onSubmitSuccess, onCancel }) {
           }),
         ]);
 
-        setTujuanList(tujuanRes.data || []);
-        setSasaranList(
-          Array.isArray(sasaranRes.data.data) ? sasaranRes.data.data : []
-        );
+        setTujuanList(normalizeListItems(tujuanRes.data));
+        setSasaranList(normalizeListItems(sasaranRes.data));
 
         setFormData((prev) => ({
           ...prev,
@@ -144,11 +143,25 @@ function StrategiForm({ existingData, onSubmitSuccess, onCancel }) {
 
   useEffect(() => {
     const { sasaran_id, jenis_dokumen, tahun } = formData;
-    if (!sasaran_id || !jenis_dokumen || !tahun || isEdit) return; // 👈 Tambahan isEdit
+    if (!sasaran_id || !jenis_dokumen || !tahun) return;
+    if (
+      isEdit &&
+      existingData?.sasaran_id != null &&
+      String(sasaran_id) === String(existingData.sasaran_id)
+    ) {
+      return;
+    }
 
     api
       .get("/strategi/preview-kode", {
-        params: { sasaran_id, jenis_dokumen, tahun },
+        params: {
+          sasaran_id,
+          jenis_dokumen,
+          tahun,
+          ...(isEdit && existingData?.id
+            ? { exclude_strategy_id: existingData.id }
+            : {}),
+        },
       })
       .then((res) => {
         setPreviewKode(res.data.kode_strategi);
@@ -160,7 +173,14 @@ function StrategiForm({ existingData, onSubmitSuccess, onCancel }) {
       .catch((err) => {
         console.error("Gagal fetch preview kode:", err);
       });
-  }, [formData.sasaran_id, formData.jenis_dokumen, formData.tahun, isEdit]);
+  }, [
+    formData.sasaran_id,
+    formData.jenis_dokumen,
+    formData.tahun,
+    isEdit,
+    existingData?.sasaran_id,
+    existingData?.id,
+  ]);
 
   const handleSasaranChange = (e) => {
     const selectedId = e.target.value;
@@ -204,10 +224,7 @@ function StrategiForm({ existingData, onSubmitSuccess, onCancel }) {
       };
 
       if (isEdit) {
-        await api.put(`/strategi/${existingData.id}`, {
-          ...payload,
-          kode_strategi: existingData.kode_strategi,
-        });
+        await api.put(`/strategi/${existingData.id}`, payload);
         toast.success("Data berhasil diperbarui!");
       } else {
         await api.post("/strategi", payload);
@@ -237,11 +254,33 @@ function StrategiForm({ existingData, onSubmitSuccess, onCancel }) {
 
   return (
     <Container className="my-4">
+      <Breadcrumb className="mb-3">
+        <Breadcrumb.Item onClick={() => navigate("/dashboard-rpjmd")}>
+          Dashboard
+        </Breadcrumb.Item>
+        <Breadcrumb.Item onClick={() => navigate("/rpjmd/strategi-list")}>
+          Daftar Strategi
+        </Breadcrumb.Item>
+        <Breadcrumb.Item active>
+          {isEdit ? "Edit Strategi" : "Tambah Strategi"}
+        </Breadcrumb.Item>
+      </Breadcrumb>
+
       <Card>
         <Card.Body>
-          <Card.Title>
-            {isEdit ? "Edit Strategi" : "Tambah Strategi"}
-          </Card.Title>
+          <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <Card.Title className="mb-0">
+              {isEdit ? "Edit Strategi" : "Tambah Strategi"}
+            </Card.Title>
+            <Button
+              variant="outline-primary"
+              type="button"
+              size="sm"
+              onClick={() => navigate("/rpjmd/strategi-list")}
+            >
+              Daftar Strategi
+            </Button>
+          </div>
           <Form onSubmit={handleSubmit}>
             <Tabs
               activeKey={activeTab}

@@ -12,16 +12,29 @@ import {
   Col,
   Form,
   Breadcrumb,
+  Badge,
 } from "react-bootstrap";
+import Select from "react-select";
+import { formatProgramOptionLabel } from "@/utils/programDisplayLabel";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "@/services/api";
 import useSubKegiatanFormLogic from "@/features/rpjmd/hooks/useSubKegiatanFormLogic";
+import {
+  MASTER_REFERENSI_BADGE_LABEL,
+  MANUAL_INPUT_BADGE_LABEL,
+} from "@/services/masterService";
 import { useDokumen } from "@/hooks/useDokumen";
+import { usePeriodeAktif } from "@/features/rpjmd/hooks/usePeriodeAktif";
+import { konteksBannerRows } from "@/utils/planningDokumenUtils";
 
 export default function SubKegiatanForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { dokumen, tahun } = useDokumen();
+  const { periode_id, periodeList } = usePeriodeAktif();
+  const periodeAktif = periodeList.find(
+    (p) => String(p.id) === String(periode_id),
+  );
 
   const [existingData, setExistingData] = useState(null);
   const [initialLoading, setInitialLoading] = useState(!!id);
@@ -66,7 +79,24 @@ export default function SubKegiatanForm() {
     handleProgramChange,
     duplicateField,
     loading,
-    onSubmit: propsOnSubmit,
+    masterSubKegiatanOptions,
+    masterSubLoading,
+    applyMasterSubSelection,
+    selectedMasterSubOption,
+    hasMasterSubList,
+    kodeSubOutsideMaster,
+    masterProgramsLoading,
+    masterKegiatanLoading,
+    masterProgramList,
+    masterKegiatanList,
+    selectedMasterProgramId,
+    selectedMasterKegiatanId,
+    masterPathActive,
+    handleMasterProgramChange,
+    handleMasterKegiatanChange,
+    formatMasterProgramLabel,
+    formatMasterKegiatanLabel,
+    lockManualKodeNama,
   } = useSubKegiatanFormLogic(existingData, handleSuccessSubmit);
 
   if (initialLoading || loading) {
@@ -93,8 +123,11 @@ export default function SubKegiatanForm() {
       </Breadcrumb>
 
       <div className="mb-3">
-        <strong>Dokumen Aktif:</strong> {dokumen || "-"} <br />
-        <strong>Tahun:</strong> {tahun || "-"}
+        {konteksBannerRows(dokumen, tahun, periodeAktif).map((r) => (
+          <span key={r.key} className="d-block">
+            <strong>{r.label}:</strong> {r.value}
+          </span>
+        ))}
       </div>
 
       {message && (
@@ -115,8 +148,15 @@ export default function SubKegiatanForm() {
 
       <Card className="shadow-sm border-0">
         <Card.Body>
-          <Card.Title className="mb-4">
-            {formData.id ? "Edit" : "Tambah"} Sub Kegiatan
+          <Card.Title className="mb-4 d-flex flex-wrap align-items-center gap-2">
+            <span>
+              {formData.id ? "Edit" : "Tambah"} Sub Kegiatan
+            </span>
+            <Badge bg={masterPathActive ? "primary" : "secondary"}>
+              {masterPathActive
+                ? MASTER_REFERENSI_BADGE_LABEL
+                : MANUAL_INPUT_BADGE_LABEL}
+            </Badge>
           </Card.Title>
 
           <Form onSubmit={handleSubmit}>
@@ -125,29 +165,136 @@ export default function SubKegiatanForm() {
                 <Row className="mb-3">
                   <Col md={6}>
                     <Form.Group className="mb-3">
-                      <Form.Label>Program</Form.Label>
+                      <Form.Label>
+                        Program (referensi Kepmendagri / master)
+                      </Form.Label>
+                      <Form.Select
+                        value={selectedMasterProgramId}
+                        onChange={handleMasterProgramChange}
+                        disabled={masterProgramsLoading}
+                      >
+                        <option value="">
+                          {masterProgramsLoading
+                            ? "Memuat daftar program master…"
+                            : (masterProgramList || []).length === 0
+                              ? "Belum ada data program master (dataset / impor)"
+                              : "— Opsional: pilih dari master untuk isi otomatis —"}
+                        </option>
+                        {(masterProgramList || []).map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {formatMasterProgramLabel(p)}
+                          </option>
+                        ))}
+                      </Form.Select>
+                      <Form.Text className="text-muted">
+                        Memilih master menonaktifkan dropdown program/kegiatan
+                        transaksi dan mengisi kode/nama dari data master.
+                      </Form.Text>
+                    </Form.Group>
+
+                    <Form.Group className="mb-3">
+                      <Form.Label>Kegiatan (referensi master)</Form.Label>
+                      <Form.Select
+                        value={selectedMasterKegiatanId}
+                        onChange={handleMasterKegiatanChange}
+                        disabled={
+                          !masterPathActive ||
+                          masterKegiatanLoading ||
+                          !selectedMasterProgramId
+                        }
+                      >
+                        <option value="">
+                          {!masterPathActive
+                            ? "— Pilih program master terlebih dahulu —"
+                            : masterKegiatanLoading
+                              ? "Memuat kegiatan master…"
+                              : (masterKegiatanList || []).length === 0
+                                ? "— Tidak ada kegiatan master untuk program ini —"
+                                : "— Pilih kegiatan master —"}
+                        </option>
+                        {(masterKegiatanList || []).map((k) => (
+                          <option key={k.id} value={k.id}>
+                            {formatMasterKegiatanLabel(k)}
+                          </option>
+                        ))}
+                      </Form.Select>
+                    </Form.Group>
+
+                    {masterPathActive ? (
+                      <Row className="mb-3 g-2">
+                        <Col sm={6}>
+                          <Form.Group>
+                            <Form.Label>Kode program (master)</Form.Label>
+                            <Form.Control
+                              value={formData.kode_program || ""}
+                              readOnly
+                              plaintext
+                              className="bg-light"
+                            />
+                          </Form.Group>
+                        </Col>
+                        <Col sm={6}>
+                          <Form.Group>
+                            <Form.Label>Nama program (master)</Form.Label>
+                            <Form.Control
+                              value={formData.nama_program || ""}
+                              readOnly
+                              plaintext
+                              className="bg-light"
+                            />
+                          </Form.Group>
+                        </Col>
+                        <Col sm={6}>
+                          <Form.Group>
+                            <Form.Label>Kode kegiatan (master)</Form.Label>
+                            <Form.Control
+                              value={formData.kode_kegiatan || ""}
+                              readOnly
+                              plaintext
+                              className="bg-light"
+                            />
+                          </Form.Group>
+                        </Col>
+                        <Col sm={6}>
+                          <Form.Group>
+                            <Form.Label>Nama kegiatan (master)</Form.Label>
+                            <Form.Control
+                              value={formData.nama_kegiatan || ""}
+                              readOnly
+                              plaintext
+                              className="bg-light"
+                            />
+                          </Form.Group>
+                        </Col>
+                      </Row>
+                    ) : null}
+
+                    <Form.Group className="mb-3">
+                      <Form.Label>Program (transaksi RPJMD)</Form.Label>
                       <Form.Select
                         name="program_id"
                         value={formData.program_id}
                         onChange={(e) => handleProgramChange(e.target.value)}
-                        required
+                        required={!masterPathActive}
+                        disabled={masterPathActive}
                       >
                         <option value="">-- Pilih Program --</option>
                         {(programList || []).map((p) => (
                           <option key={p.id} value={p.id}>
-                            {p.kode_program} - {p.nama_program}
+                            {formatProgramOptionLabel(p)}
                           </option>
                         ))}
                       </Form.Select>
                     </Form.Group>
 
                     <Form.Group>
-                      <Form.Label>Kegiatan</Form.Label>
+                      <Form.Label>Kegiatan (transaksi RPJMD)</Form.Label>
                       <Form.Select
                         name="kegiatan_id"
                         value={formData.kegiatan_id}
                         onChange={handleChange}
-                        required
+                        required={!masterPathActive}
+                        disabled={masterPathActive}
                       >
                         <option value="">-- Pilih Kegiatan --</option>
                         {(kegiatanList || []).map((k) => (
@@ -178,46 +325,153 @@ export default function SubKegiatanForm() {
                   </Col>
                 </Row>
 
-                <Row className="mb-3">
-                  <Col md={6}>
-                    <Form.Group>
-                      <Form.Label>Kode Sub Kegiatan</Form.Label>
-                      <Form.Control
-                        name="kode_sub_kegiatan"
-                        value={formData.kode_sub_kegiatan}
-                        onChange={handleChange}
-                        isInvalid={duplicateField === "kode_sub_kegiatan"}
-                        required
-                      />
-                    </Form.Group>
-                  </Col>
-                  <Col md={6}>
-                    <Form.Group>
-                      <Form.Label>Nama Sub Kegiatan</Form.Label>
-                      <Form.Control
-                        name="nama_sub_kegiatan"
-                        value={formData.nama_sub_kegiatan}
-                        onChange={handleChange}
-                        isInvalid={duplicateField === "nama_sub_kegiatan"}
-                        required
-                      />
-                    </Form.Group>
-                    <Form.Group className="mt-3">
-                      <Form.Label>Pagu Anggaran</Form.Label>
-                      <Form.Control
-                        type="text"
-                        name="pagu_anggaran"
-                        value={formData.pagu_anggaran}
-                        onChange={handleChange}
-                        required
-                      />
-                      <Form.Text muted>
-                        Nilai dalam rupiah. Hanya angka, titik akan ditambahkan
-                        otomatis.
-                      </Form.Text>
-                    </Form.Group>
-                  </Col>
-                </Row>
+              </Tab>
+
+              <Tab eventKey="subkegiatan" title="Sub Kegiatan">
+                {!formData.program_id || !formData.kegiatan_id ? (
+                  <Alert variant="info" className="mt-3">
+                    Pilih <strong>Program</strong> dan <strong>Kegiatan</strong>{" "}
+                    di tab Informasi Umum agar daftar sub kegiatan master bisa
+                    dimuat.
+                  </Alert>
+                ) : null}
+
+                {formData.program_id &&
+                formData.kegiatan_id &&
+                (masterProgramsLoading ||
+                  masterKegiatanLoading ||
+                  masterSubLoading) ? (
+                  <div className="text-muted small mt-3 mb-2">
+                    <Spinner animation="border" size="sm" className="me-2" />
+                    Memuat referensi sub kegiatan dari master…
+                  </div>
+                ) : null}
+
+                {hasMasterSubList ? (
+                  <Form.Group className="mb-3 mt-3">
+                    <Form.Label>Pilih sub kegiatan (master referensi)</Form.Label>
+                    <Select
+                      classNamePrefix="ep-master-sub"
+                      options={masterSubKegiatanOptions}
+                      value={selectedMasterSubOption}
+                      onChange={(opt) => applyMasterSubSelection(opt)}
+                      isClearable={!masterPathActive}
+                      isSearchable
+                      formatOptionLabel={(opt) => opt.label}
+                      placeholder="Cari kode atau nama sub kegiatan…"
+                      noOptionsMessage={() => "Tidak ada data"}
+                    />
+                    <Form.Text className="text-muted d-block mt-1">
+                      Data dari referensi master (per kegiatan). Satu pilihan
+                      mengisi kode, nama, dan tautan master bila tersedia.
+                    </Form.Text>
+                  </Form.Group>
+                ) : formData.program_id &&
+                  formData.kegiatan_id &&
+                  !masterProgramsLoading &&
+                  !masterKegiatanLoading &&
+                  !masterSubLoading ? (
+                  <Alert variant="light" className="mt-3 border">
+                    Tidak ada baris sub kegiatan master untuk kegiatan ini
+                    (penyesuaian kode RPJMD vs master atau data belum diimpor).
+                    Isi kode dan nama sub kegiatan manual di bawah.
+                  </Alert>
+                ) : null}
+
+                {kodeSubOutsideMaster ? (
+                  <Alert variant="warning" className="mb-3">
+                    Kode/nama sub kegiatan tidak cocok dengan baris master.
+                    Sesuaikan manual atau pilih dari daftar di atas.
+                  </Alert>
+                ) : null}
+
+                {masterPathActive &&
+                hasMasterSubList &&
+                !selectedMasterSubOption ? (
+                  <Alert variant="warning" className="mb-3">
+                    Mode <strong>MASTER</strong>: pilih sub kegiatan dari daftar
+                    referensi. Input manual kode/nama sub tidak digunakan.
+                  </Alert>
+                ) : null}
+
+                {lockManualKodeNama ? (
+                  <Row className="mb-3 mt-2">
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>Kode Sub Kegiatan</Form.Label>
+                        <Form.Control
+                          value={formData.kode_sub_kegiatan || ""}
+                          readOnly
+                          plaintext
+                          className="bg-light"
+                          placeholder={
+                            masterPathActive && !formData.kode_sub_kegiatan
+                              ? "Pilih dari daftar master"
+                              : ""
+                          }
+                        />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label>Nama Sub Kegiatan</Form.Label>
+                        <Form.Control
+                          value={formData.nama_sub_kegiatan || ""}
+                          readOnly
+                          plaintext
+                          className="bg-light"
+                          placeholder={
+                            masterPathActive && !formData.nama_sub_kegiatan
+                              ? "Pilih dari daftar master"
+                              : ""
+                          }
+                        />
+                      </Form.Group>
+                    </Col>
+                  </Row>
+                ) : (
+                  <Row className="mb-3">
+                    <Col md={6}>
+                      <Form.Group className="mt-3">
+                        <Form.Label>Kode Sub Kegiatan</Form.Label>
+                        <Form.Control
+                          name="kode_sub_kegiatan"
+                          value={formData.kode_sub_kegiatan}
+                          onChange={handleChange}
+                          isInvalid={duplicateField === "kode_sub_kegiatan"}
+                          required
+                        />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group className="mt-3">
+                        <Form.Label>Nama Sub Kegiatan</Form.Label>
+                        <Form.Control
+                          name="nama_sub_kegiatan"
+                          value={formData.nama_sub_kegiatan}
+                          onChange={handleChange}
+                          isInvalid={duplicateField === "nama_sub_kegiatan"}
+                          required
+                        />
+                      </Form.Group>
+                    </Col>
+                  </Row>
+                )}
+
+                <Form.Group className="mt-3">
+                  <Form.Label>Pagu Anggaran</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="pagu_anggaran"
+                    value={formData.pagu_anggaran}
+                    onChange={handleChange}
+                    required
+                  />
+                  <Form.Text muted>
+                    Nilai dalam rupiah. Hanya angka, titik akan ditambahkan
+                    otomatis.
+                  </Form.Text>
+                </Form.Group>
               </Tab>
             </Tabs>
 
