@@ -4,6 +4,7 @@ const {
   Sasaran,
   Strategi,
   ArahKebijakan,
+  Kegiatan,
   OpdPenanggungJawab,
   Tujuan,
   Misi,
@@ -63,6 +64,72 @@ const includeRelations = [
   },
 ];
 
+async function assertProgramHasArahKebijakan({ sasaran_id, arahRaw }) {
+  const sid = Number.parseInt(String(sasaran_id ?? "").trim(), 10);
+  if (!Number.isInteger(sid) || sid < 1) {
+    return { ok: false, message: "sasaran_id wajib diisi dan harus angka valid." };
+  }
+
+  const arahIds = Array.isArray(arahRaw)
+    ? arahRaw
+        .map((a) => (typeof a === "object" ? a.id : a))
+        .filter((v) => v !== undefined && v !== null && String(v).trim() !== "")
+        .map((v) => Number.parseInt(String(v), 10))
+        .filter((n) => Number.isInteger(n) && n > 0)
+    : [];
+
+  if (!arahIds.length) {
+    return {
+      ok: false,
+      message: "Program wajib memiliki minimal 1 Arah Kebijakan (arah_kebijakan).",
+    };
+  }
+
+  // Validasi eksistensi + konsistensi: arah_kebijakan → strategi → sasaran sama dengan sasaran_id program
+  const rows = await ArahKebijakan.findAll({
+    where: { id: { [Op.in]: arahIds } },
+    attributes: ["id", "strategi_id"],
+    include: [
+      {
+        model: Strategi,
+        as: "Strategi",
+        attributes: ["id", "sasaran_id"],
+        required: false,
+      },
+    ],
+  });
+
+  if (rows.length !== arahIds.length) {
+    const found = new Set(rows.map((r) => Number(r.id)));
+    const missing = arahIds.filter((id) => !found.has(Number(id)));
+    return {
+      ok: false,
+      message: `Arah Kebijakan tidak ditemukan: ${missing.join(", ")}`,
+    };
+  }
+
+  for (const r of rows) {
+    const strategiId = r.strategi_id ?? null;
+    const parentSasaranId = r.Strategi?.sasaran_id ?? null;
+    if (strategiId == null || parentSasaranId == null) {
+      return {
+        ok: false,
+        message:
+          "Arah Kebijakan tidak memiliki relasi strategi/sasaran yang lengkap; perbaiki data Arah Kebijakan terlebih dahulu.",
+      };
+    }
+    if (Number(parentSasaranId) !== Number(sid)) {
+      return {
+        ok: false,
+        message:
+          "Arah Kebijakan yang dipilih tidak konsisten dengan Sasaran Program (bukan turunan sasaran yang sama).",
+      };
+    }
+  }
+
+  return { ok: true, arahIds };
+}
+
 const programController = {
   async create(req, res) {
     try {
@@ -85,6 +152,9 @@ const programController = {
         tahun,
         jenis_dokumen,
       } = req.body;
+
+      const arahChk = await assertProgramHasArahKebijakan({ sasaran_id, arahRaw });
+      if (!arahChk.ok) return errorResponse(res, 400, arahChk.message);
 
       const periode = await getPeriodeFromTahun(tahun);
       if (!periode) {
@@ -436,6 +506,14 @@ const programController = {
         jenis_dokumen,
       } = req.body;
 
+      // Safe validation untuk data existing:
+      // - enforce saat client mengirim field arah_kebijakan (artinya user mengubah relasi),
+      // - tidak memaksa bila field tidak dikirim (legacy record bisa tetap dibuka/edit field lain).
+      if (arahRaw !== undefined) {
+        const arahChk = await assertProgramHasArahKebijakan({ sasaran_id, arahRaw });
+        if (!arahChk.ok) return errorResponse(res, 400, arahChk.message);
+      }
+
       const periode = await getPeriodeFromTahun(tahun);
       if (!periode) {
         return errorResponse(res, 400, "Periode tidak ditemukan.");
@@ -524,6 +602,18 @@ const programController = {
     try {
       const program = await Program.findByPk(req.params.id);
       if (!program) return errorResponse(res, 404, "Program tidak ditemukan.");
+
+      const childCount = await Kegiatan.count({
+        where: { program_id: program.id },
+      });
+      if (childCount > 0) {
+        return errorResponse(
+          res,
+          400,
+          "Tidak bisa menghapus Program yang masih memiliki Kegiatan. Hapus Kegiatan terlebih dahulu.",
+        );
+      }
+
       const kodeProgram = program.kode_program;
       await program.destroy();
       await recalcProgramTotalByKode(kodeProgram);

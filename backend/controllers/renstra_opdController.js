@@ -1,15 +1,38 @@
 // controllers/renstra_opdController.js
-const { RenstraOPD, OpdPenanggungJawab } = require("../models");
+const { RenstraOPD, OpdPenanggungJawab, RPJMD } = require("../models");
 const { Op } = require("sequelize");
 
 // Role yang boleh melihat data semua OPD (tidak dibatasi per-OPD)
 const ADMIN_ROLES = ["SUPER_ADMIN", "ADMINISTRATOR"];
+
+async function assertActiveRpjmd(rpjmd_id) {
+  if (rpjmd_id == null || String(rpjmd_id).trim() === "") {
+    return { ok: false, message: "rpjmd_id wajib diisi." };
+  }
+  const rid = Number.parseInt(String(rpjmd_id), 10);
+  if (!Number.isInteger(rid) || rid < 1) {
+    return { ok: false, message: "rpjmd_id tidak valid." };
+  }
+
+  const row = await RPJMD.findByPk(rid);
+  if (!row) return { ok: false, message: "RPJMD tidak ditemukan." };
+  // enforce minimal: harus aktif (kolom tersedia di model)
+  if (row.is_active_version === false) {
+    return { ok: false, message: "RPJMD tidak aktif. Pilih RPJMD aktif." };
+  }
+  return { ok: true, row };
+}
 
 // ✅ CREATE
 exports.create = async (req, res) => {
   try {
     if (!req.body.opd_id) {
       return res.status(400).json({ message: "opd_id wajib diisi" });
+    }
+
+    const rpjmdCheck = await assertActiveRpjmd(req.body.rpjmd_id);
+    if (!rpjmdCheck.ok) {
+      return res.status(400).json({ message: rpjmdCheck.message });
     }
 
     const opd = await OpdPenanggungJawab.findByPk(req.body.opd_id);
@@ -125,6 +148,16 @@ exports.update = async (req, res) => {
   try {
     if (!req.body.opd_id) {
       return res.status(400).json({ message: "opd_id wajib diisi" });
+    }
+
+    // Safe validation untuk data existing:
+    // - Enforce jika client mengirim rpjmd_id (artinya user mengubah/mengisi relasi).
+    // - Tidak memaksa jika field tidak dikirim (hindari blok update legacy payload yang tidak menyertakan rpjmd_id).
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "rpjmd_id")) {
+      const rpjmdCheck = await assertActiveRpjmd(req.body.rpjmd_id);
+      if (!rpjmdCheck.ok) {
+        return res.status(400).json({ message: rpjmdCheck.message });
+      }
     }
 
     const opd = await OpdPenanggungJawab.findByPk(req.body.opd_id);

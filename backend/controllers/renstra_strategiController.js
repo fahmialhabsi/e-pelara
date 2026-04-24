@@ -1,5 +1,10 @@
 // controllers/renstra_strategiController.js
-const { RenstraStrategi, RenstraOPD, Strategi } = require("../models");
+const { RenstraStrategi, RenstraOPD, Strategi, RenstraSasaran } = require("../models");
+
+function toInt(v) {
+  const n = Number.parseInt(String(v ?? "").trim(), 10);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
 
 exports.create = async (req, res) => {
   try {
@@ -18,6 +23,44 @@ exports.create = async (req, res) => {
         success: false,
         message:
           "sasaran_id, rpjmd_strategi_id, renstra_id, dan deskripsi wajib diisi.",
+      });
+    }
+
+    const renstraSasaran = await RenstraSasaran.findByPk(toInt(sasaran_id), {
+      attributes: ["id", "renstra_id", "rpjmd_sasaran_id"],
+    });
+    if (!renstraSasaran) {
+      return res.status(400).json({
+        success: false,
+        message: "sasaran_id tidak valid: RenstraSasaran tidak ditemukan.",
+      });
+    }
+    if (Number(renstraSasaran.renstra_id) !== Number(toInt(renstra_id))) {
+      return res.status(400).json({
+        success: false,
+        message: "sasaran_id tidak konsisten dengan renstra_id pada payload.",
+      });
+    }
+
+    const strategiRpjmd = await Strategi.findByPk(toInt(rpjmd_strategi_id), {
+      attributes: ["id", "sasaran_id"],
+    });
+    if (!strategiRpjmd) {
+      return res.status(400).json({
+        success: false,
+        message: "rpjmd_strategi_id tidak valid: Strategi RPJMD tidak ditemukan.",
+      });
+    }
+
+    if (
+      strategiRpjmd.sasaran_id != null &&
+      renstraSasaran.rpjmd_sasaran_id != null &&
+      Number(strategiRpjmd.sasaran_id) !== Number(renstraSasaran.rpjmd_sasaran_id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Strategi RPJMD tidak konsisten: strategi bukan turunan dari Sasaran RPJMD yang dipilih pada RenstraSasaran.",
       });
     }
 
@@ -170,33 +213,96 @@ exports.generateKodeStrategi = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const id = req.params.id;
-    const {
-      kode_strategi,
-      deskripsi,
-      sasaran_id,
-      rpjmd_strategi_id,
-      renstra_id,
-      no_rpjmd,
-      isi_strategi_rpjmd,
-    } = req.body;
 
-    if (!sasaran_id || !rpjmd_strategi_id || !renstra_id || !deskripsi) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "sasaran_id, rpjmd_strategi_id, renstra_id, dan deskripsi wajib diisi.",
+    // Safe update: dukung payload parsial (ambil field kunci dari record existing)
+    const existing = await RenstraStrategi.findByPk(id, {
+      attributes: [
+        "id",
+        "kode_strategi",
+        "deskripsi",
+        "sasaran_id",
+        "rpjmd_strategi_id",
+        "renstra_id",
+        "no_rpjmd",
+        "isi_strategi_rpjmd",
+      ],
+    });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: "Data tidak ditemukan" });
+    }
+
+    const merged = {
+      kode_strategi: req.body.kode_strategi ?? existing.kode_strategi,
+      deskripsi: req.body.deskripsi ?? existing.deskripsi,
+      sasaran_id: req.body.sasaran_id ?? existing.sasaran_id,
+      rpjmd_strategi_id: req.body.rpjmd_strategi_id ?? existing.rpjmd_strategi_id,
+      renstra_id: req.body.renstra_id ?? existing.renstra_id,
+      no_rpjmd: req.body.no_rpjmd ?? existing.no_rpjmd,
+      isi_strategi_rpjmd: req.body.isi_strategi_rpjmd ?? existing.isi_strategi_rpjmd,
+    };
+
+    // Safe enforcement: validasi konsistensi hanya jika client mengubah field relasi.
+    const wantsConsistencyCheck =
+      Object.prototype.hasOwnProperty.call(req.body || {}, "sasaran_id") ||
+      Object.prototype.hasOwnProperty.call(req.body || {}, "rpjmd_strategi_id") ||
+      Object.prototype.hasOwnProperty.call(req.body || {}, "renstra_id");
+
+    if (wantsConsistencyCheck) {
+      if (!merged.sasaran_id || !merged.rpjmd_strategi_id || !merged.renstra_id || !merged.deskripsi) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "sasaran_id, rpjmd_strategi_id, renstra_id, dan deskripsi wajib diisi.",
+        });
+      }
+
+      const renstraSasaran = await RenstraSasaran.findByPk(toInt(merged.sasaran_id), {
+        attributes: ["id", "renstra_id", "rpjmd_sasaran_id"],
       });
+      if (!renstraSasaran) {
+        return res.status(400).json({
+          success: false,
+          message: "sasaran_id tidak valid: RenstraSasaran tidak ditemukan.",
+        });
+      }
+      if (Number(renstraSasaran.renstra_id) !== Number(toInt(merged.renstra_id))) {
+        return res.status(400).json({
+          success: false,
+          message: "sasaran_id tidak konsisten dengan renstra_id pada payload.",
+        });
+      }
+
+      const strategiRpjmd = await Strategi.findByPk(toInt(merged.rpjmd_strategi_id), {
+        attributes: ["id", "sasaran_id"],
+      });
+      if (!strategiRpjmd) {
+        return res.status(400).json({
+          success: false,
+          message: "rpjmd_strategi_id tidak valid: Strategi RPJMD tidak ditemukan.",
+        });
+      }
+      if (
+        strategiRpjmd.sasaran_id != null &&
+        renstraSasaran.rpjmd_sasaran_id != null &&
+        Number(strategiRpjmd.sasaran_id) !== Number(renstraSasaran.rpjmd_sasaran_id)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Strategi RPJMD tidak konsisten: strategi bukan turunan dari Sasaran RPJMD yang dipilih pada RenstraSasaran.",
+        });
+      }
     }
 
     const [updated] = await RenstraStrategi.update(
       {
-        kode_strategi,
-        deskripsi,
-        sasaran_id,
-        rpjmd_strategi_id,
-        renstra_id,
-        no_rpjmd,
-        isi_strategi_rpjmd,
+        kode_strategi: merged.kode_strategi,
+        deskripsi: merged.deskripsi,
+        sasaran_id: merged.sasaran_id,
+        rpjmd_strategi_id: merged.rpjmd_strategi_id,
+        renstra_id: merged.renstra_id,
+        no_rpjmd: merged.no_rpjmd,
+        isi_strategi_rpjmd: merged.isi_strategi_rpjmd,
       },
       { where: { id } }
     );

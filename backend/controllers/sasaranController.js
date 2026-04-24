@@ -1,4 +1,4 @@
-const { Sasaran, Tujuan, Misi, Indikator } = require("../models");
+const { Sasaran, Tujuan, Misi, Indikator, Strategi } = require("../models");
 const { getPeriodeFromTahun } = require("../utils/periodeHelper");
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
 const { Op } = require("sequelize");
@@ -501,6 +501,17 @@ const sasaranController = {
       const sasaran = await Sasaran.findByPk(req.params.id);
       if (!sasaran)
         return res.status(404).json({ message: "Sasaran tidak ditemukan." });
+
+      const hasStrategi = await Strategi.findOne({
+        where: { sasaran_id: sasaran.id },
+        attributes: ["id"],
+      });
+      if (hasStrategi) {
+        return res.status(400).json({
+          message:
+            "Tidak bisa menghapus Sasaran yang masih memiliki Strategi. Hapus/relokasi Strategi terlebih dahulu.",
+        });
+      }
 
       await sasaran.destroy();
       return res.status(200).json({ message: "Sasaran berhasil dihapus" });

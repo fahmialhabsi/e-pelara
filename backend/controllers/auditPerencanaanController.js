@@ -3,6 +3,7 @@
 const { Op } = require("sequelize");
 const db = require("../models");
 const planningDomain = require("../services/planningDomainService");
+const { runCascadingGapAudit } = require("../services/cascadingGapAuditService");
 
 const {
   RenjaDokumen,
@@ -128,4 +129,17 @@ async function getPerencanaanConsistency(req, res) {
 
 module.exports = {
   getPerencanaanConsistency,
+  /**
+   * GET /api/audit/cascading-gap
+   * Audit READ-ONLY untuk titik putus cascading RPJMD → Renstra OPD.
+   */
+  async getCascadingGap(req, res) {
+    try {
+      const report = await runCascadingGapAudit(db.sequelize);
+      return res.json({ success: true, data: report });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ success: false, message: e.message });
+    }
+  },
 };

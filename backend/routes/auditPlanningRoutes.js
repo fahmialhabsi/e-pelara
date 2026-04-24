@@ -15,4 +15,11 @@ router.get(
   ctrl.getPerencanaanConsistency,
 );
 
+router.get(
+  "/cascading-gap",
+  verifyToken,
+  allowRoles(READ_ROLES),
+  ctrl.getCascadingGap,
+);
+
 module.exports = router;

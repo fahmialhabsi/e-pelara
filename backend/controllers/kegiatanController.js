@@ -487,6 +487,17 @@ const kegiatanController = {
       if (!kegiatan)
         return errorResponse(res, 404, "Kegiatan tidak ditemukan.");
 
+      const childCount = await SubKegiatan.count({
+        where: { kegiatan_id: kegiatan.id },
+      });
+      if (childCount > 0) {
+        return errorResponse(
+          res,
+          400,
+          "Tidak bisa menghapus Kegiatan yang masih memiliki Sub Kegiatan. Hapus Sub Kegiatan terlebih dahulu.",
+        );
+      }
+
       const kodeKegiatan = kegiatan.kode_kegiatan;
       const kodeProgram = kodeKegiatan?.split(".").slice(0, 3).join(".");
 
