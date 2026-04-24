@@ -1,4 +1,4 @@
-﻿const {
+const {
   sequelize,
   Program,
   IndikatorProgram,
@@ -68,14 +68,44 @@ const defaultDokumen = {
   tahun: String(new Date().getFullYear()),
 };
 
-function buildDocJenisClause(jenis_dokumen, tableAlias = null) {
+function buildJenisDokumenWhere(jenis_dokumen) {
+  const raw = String(jenis_dokumen ?? "").trim();
+  if (!raw) return null;
+
+  const rawLc = raw.toLowerCase();
+
+  // Data RPJMD di DB sering tersimpan sebagai "RPJMD 2025-2029" (nama periode),
+  // sedangkan client kadang kirim "rpjmd". Samakan jadi prefix match.
+  if (rawLc === "rpjmd" || rawLc.startsWith("rpjmd ")) {
+    return { jenis_dokumen: { [Op.like]: "RPJMD%" } };
+  }
+
+  // Selain RPJMD, gunakan match persis.
+  return { jenis_dokumen: raw };
+}
+
+async function buildTahunWhere({ tahun, jenis_dokumen }) {
+  const tahunStr = String(tahun ?? "").trim();
+  if (!tahunStr) return null;
+
   const jenisLc = String(jenis_dokumen ?? "").trim().toLowerCase();
-  if (!jenisLc) return null;
-  const colName = tableAlias ? `${tableAlias}.jenis_dokumen` : "jenis_dokumen";
-  const left = fn("LOWER", fn("TRIM", col(colName)));
-  // RPJMD bisa tersimpan sebagai "RPJMD 2025-2029" → match prefix.
-  if (jenisLc === "rpjmd") return sqlWhere(left, { [Op.like]: "rpjmd%" });
-  return sqlWhere(left, jenisLc);
+  if (/^rpjmd/.test(jenisLc)) {
+    const periode = await getPeriodeFromTahun(tahunStr);
+    const tahunAwal = Number(periode?.tahun_awal);
+    const tahunAkhir = Number(periode?.tahun_akhir);
+    if (
+      Number.isFinite(tahunAwal) &&
+      Number.isFinite(tahunAkhir) &&
+      tahunAkhir >= tahunAwal &&
+      tahunAkhir - tahunAwal <= 20
+    ) {
+      const years = [];
+      for (let y = tahunAwal; y <= tahunAkhir; y += 1) years.push(String(y));
+      return { tahun: { [Op.in]: years } };
+    }
+  }
+
+  return { tahun: tahunStr };
 }
 
 function extractProgramBaseFromArahKodeIndikator(kode) {
@@ -168,7 +198,7 @@ exports.create = async (req, res) => {
         message: err.message,
       });
     }
-    console.error("âŒ CREATE ERROR:", err);
+    console.error("CREATE ERROR:", err);
     return res.status(500).json({ message: err.message });
   }
 };
@@ -241,7 +271,7 @@ exports.bulkCreateDetail = async (req, res) => {
         message: err.message,
       });
     }
-    console.error("âŒ BULK CREATE DETAIL ERROR:", err);
+    console.error("BULK CREATE DETAIL ERROR:", err);
     return res.status(500).json({ message: err.message });
   }
 };
@@ -262,15 +292,14 @@ exports.findAll = async (req, res) => {
     const limit = Math.min(parseInt(perPage, 10) || 50, MAX_LIMIT);
     const offset = (parseInt(page, 10) - 1) * limit;
 
-    const docJenisClause = buildDocJenisClause(jenis_dokumen, "IndikatorProgram");
-    const docJenisClauseSasaran = buildDocJenisClause(
-      jenis_dokumen,
-      "IndikatorSasaran",
-    );
+    const docJenisWhere = buildJenisDokumenWhere(jenis_dokumen);
+    const docJenisWhereSasaran = buildJenisDokumenWhere(jenis_dokumen);
     const tahunStr = String(tahun).trim();
+    const tahunWhere = await buildTahunWhere({ tahun: tahunStr, jenis_dokumen });
+
     const andParts = [
-      { tahun: tahunStr },
-      ...(docJenisClause ? [docJenisClause] : []),
+      ...(tahunWhere ? [tahunWhere] : []),
+      ...(docJenisWhere ? [docJenisWhere] : []),
     ];
 
     let pid = null;
@@ -287,7 +316,7 @@ exports.findAll = async (req, res) => {
               sasaran_id: prog.sasaran_id,
               tahun: tahunStr,
               [Op.and]: [
-                ...(docJenisClauseSasaran ? [docJenisClauseSasaran] : []),
+                ...(docJenisWhereSasaran ? [docJenisWhereSasaran] : []),
               ],
             },
             attributes: ["id", "sasaran_id"],
@@ -369,7 +398,7 @@ exports.findAll = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("âŒ FIND ALL ERROR:", err.message);
+    console.error("FIND ALL ERROR:", err.message);
     return res.status(500).json({ message: err.message });
   }
 };
@@ -404,7 +433,7 @@ exports.findOne = async (req, res) => {
 
     return res.status(200).json(indikatorProgram);
   } catch (err) {
-    console.error("âŒ FIND ONE ERROR:", err);
+    console.error("FIND ONE ERROR:", err);
     return res.status(500).json({ message: err.message });
   }
 };
@@ -429,10 +458,11 @@ exports.getNextKode = async (req, res) => {
       tahun != null && String(tahun).trim() !== ""
         ? String(tahun).trim()
         : String(new Date().getFullYear());
-    const jenisLc =
-      jenis_dokumen != null && String(jenis_dokumen).trim() !== ""
-        ? String(jenis_dokumen).trim().toLowerCase()
-        : null;
+    const docJenisWhere = buildJenisDokumenWhere(jenis_dokumen);
+    const tahunWhere = await buildTahunWhere({
+      tahun: tahunStr,
+      jenis_dokumen,
+    });
 
     // Basis kode indikator program mengikuti kode indikator Arah Kebijakan jika tersedia.
     // Jika tidak ada, fallback ke kode program (masih deterministik dan mudah diaudit).
@@ -443,10 +473,8 @@ exports.getNextKode = async (req, res) => {
     const prefix = `IP-${base}`;
 
     const andParts = [
-      { tahun: tahunStr },
-      ...(jenisLc
-        ? [sqlWhere(fn("LOWER", col("jenis_dokumen")), jenisLc)]
-        : []),
+      ...(tahunWhere ? [tahunWhere] : []),
+      ...(docJenisWhere ? [docJenisWhere] : []),
       { kode_indikator: { [Op.like]: `${prefix}.%` } },
     ];
 

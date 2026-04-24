@@ -87,7 +87,7 @@ import {
   extractListMeta,
   normalizeListItems,
 } from "@/utils/apiResponse";
-import { hasPlanFeature, PLAN_FEATURE_KEYS } from "@/utils/planFeatures";
+import { hasPlanFeature, PLAN_FEATURE_KEYS, PRICING_PATH } from "@/utils/planFeatures";
 
 function menuItemPlanGate(menuKey) {
   if (menuKey === "monitoring_rpjmd_heatmap") return PLAN_FEATURE_KEYS.heatmap;

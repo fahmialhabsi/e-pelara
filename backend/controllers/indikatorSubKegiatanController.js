@@ -502,15 +502,25 @@ exports.findOne = async (req, res) => {
   try {
     const record = await IndikatorSubKegiatan.findByPk(req.params.id, {
       include: [
-        { model: SubKegiatan, as: "subKegiatan", attributes: ["id", "kegiatan_id", "kode_sub_kegiatan", "nama_sub_kegiatan"] },
-        { model: OpdPenanggungJawab, as: "opdPenanggungJawab", attributes: ["id", "nama_opd", "nama_bidang_opd"] },
+        {
+          model: SubKegiatan,
+          as: "subKegiatan",
+          attributes: ["id", "kegiatan_id", "kode_sub_kegiatan", "nama_sub_kegiatan"],
+          required: false,
+        },
+        {
+          model: OpdPenanggungJawab,
+          as: "opdPenanggungJawab",
+          attributes: ["id", "nama_opd", "nama_bidang_opd"],
+          required: false,
+        },
       ],
     });
     if (!record) return res.status(404).json({ message: "Indikator tidak ditemukan." });
 
     fillBaselineFallback([record]);
     await fillPenanggungJawabFallbackFromProgram([record]);
-    return res.json({ status: "success", data: record });
+    return res.json({ status: "success", data: record.get({ plain: true }) });
   } catch (err) {
     return res.status(500).json({ status: "error", message: err.message });
   }
@@ -525,7 +535,28 @@ exports.update = async (req, res) => {
     const tahun   = req.body?.tahun || record.tahun || new Date().getFullYear();
     const periode = (await getPeriodeFromTahun(tahun)) || (await getPeriodeAktif());
     await record.update(applyDefaults(req.body, periode));
-    return res.json({ status: "success", data: record });
+
+    await record.reload({
+      include: [
+        {
+          model: SubKegiatan,
+          as: "subKegiatan",
+          attributes: ["id", "kegiatan_id", "kode_sub_kegiatan", "nama_sub_kegiatan"],
+          required: false,
+        },
+        {
+          model: OpdPenanggungJawab,
+          as: "opdPenanggungJawab",
+          attributes: ["id", "nama_opd", "nama_bidang_opd"],
+          required: false,
+        },
+      ],
+    });
+
+    fillBaselineFallback([record]);
+    await fillPenanggungJawabFallbackFromProgram([record]);
+
+    return res.json({ status: "success", data: record.get({ plain: true }) });
   } catch (err) {
     if (err.name === "SequelizeValidationError")
       return sendValidationErrors(res, 400, fromSequelizeValidationError(err), { message: err.message });

@@ -343,7 +343,7 @@ exports.getAll = async (req, res) => {
       meta: buildMeta(count, safeLimit, page),
     });
   } catch (err) {
-    console.error("❌ getAll indikatorKegiatan error:", err);
+    console.error("getAll indikatorKegiatan error:", err);
     return res.status(500).json({
       message: "Error fetching indikator kegiatan",
     });
@@ -361,8 +361,10 @@ exports.getById = async (req, res) => {
           attributes: { exclude: ["createdAt", "updatedAt"] },
         },
         {
-          association: "opdPenanggungJawab",
+          model: OpdPenanggungJawab,
+          as: "opdPenanggungJawab",
           attributes: ["id", "nama_opd", "nama_bidang_opd"],
+          required: false,
         },
         {
           model: IndikatorProgram,
@@ -390,7 +392,7 @@ exports.getById = async (req, res) => {
 
     return res.status(200).json(kegiatan);
   } catch (err) {
-    console.error("❌ getById error:", err);
+    console.error("getById error:", err);
     return res.status(500).json({
       message: "Error fetching indikator kegiatan",
     });
@@ -402,7 +404,7 @@ exports.create = async (req, res) => {
     const rows = Array.isArray(req.body) ? req.body : [req.body];
     const sanitized = await Promise.all(rows.map((r) => sanitizeAndFill(r)));
 
-    console.log("🛠 sanitize data:", sanitized);
+    console.log("sanitize data:", sanitized);
 
     sanitized.forEach(normalizeDecimalFields);
     const created = await IndikatorKegiatan.bulkCreate(sanitized);
