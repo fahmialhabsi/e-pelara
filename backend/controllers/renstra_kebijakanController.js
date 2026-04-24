@@ -5,8 +5,57 @@ const {
   ArahKebijakan,
 } = require("../models");
 
+function toInt(v) {
+  const n = Number.parseInt(String(v ?? "").trim(), 10);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+async function assertKebijakanConsistency({ strategi_id, rpjmd_arah_id, renstra_id }) {
+  const sid = toInt(strategi_id);
+  const aid = toInt(rpjmd_arah_id);
+  const rid = toInt(renstra_id);
+  if (!sid || !aid || !rid) {
+    return {
+      ok: false,
+      message: "strategi_id, rpjmd_arah_id, dan renstra_id wajib diisi (angka).",
+    };
+  }
+
+  const renstraStrategi = await RenstraStrategi.findByPk(sid, {
+    attributes: ["id", "renstra_id", "rpjmd_strategi_id"],
+  });
+  if (!renstraStrategi) {
+    return { ok: false, message: "strategi_id tidak valid: RenstraStrategi tidak ditemukan." };
+  }
+  if (Number(renstraStrategi.renstra_id) !== Number(rid)) {
+    return { ok: false, message: "strategi_id tidak konsisten dengan renstra_id pada payload." };
+  }
+
+  const arah = await ArahKebijakan.findByPk(aid, { attributes: ["id", "strategi_id"] });
+  if (!arah) {
+    return { ok: false, message: "rpjmd_arah_id tidak valid: Arah Kebijakan RPJMD tidak ditemukan." };
+  }
+  if (
+    arah.strategi_id != null &&
+    renstraStrategi.rpjmd_strategi_id != null &&
+    Number(arah.strategi_id) !== Number(renstraStrategi.rpjmd_strategi_id)
+  ) {
+    return {
+      ok: false,
+      message:
+        "Arah Kebijakan RPJMD tidak konsisten: arah kebijakan bukan turunan dari Strategi RPJMD yang dipilih pada RenstraStrategi.",
+    };
+  }
+
+  return { ok: true };
+}
+
 exports.create = async (req, res) => {
   try {
+    // Enforce untuk data baru: wajib konsisten parent-child Renstra→RPJMD.
+    const chk = await assertKebijakanConsistency(req.body);
+    if (!chk.ok) return res.status(400).json({ error: chk.message });
+
     const data = await RenstraKebijakan.create(req.body);
     res.status(201).json(data);
   } catch (err) {
@@ -134,6 +183,26 @@ exports.update = async (req, res) => {
     if (req.body.tahun !== undefined) updateData.tahun = req.body.tahun;
     if (req.body.renstra_id !== undefined)
       updateData.renstra_id = req.body.renstra_id;
+
+    // Validasi konsistensi bila field kunci dikirim (aman untuk data existing: hanya enforce saat ada payload kunci).
+    if (
+      Object.prototype.hasOwnProperty.call(updateData, "strategi_id") ||
+      Object.prototype.hasOwnProperty.call(updateData, "rpjmd_arah_id") ||
+      Object.prototype.hasOwnProperty.call(updateData, "renstra_id")
+    ) {
+      // Safe: bila sebagian field kunci tidak dikirim saat update, ambil dari data existing.
+      const existing = await RenstraKebijakan.findByPk(id, {
+        attributes: ["id", "strategi_id", "rpjmd_arah_id", "renstra_id"],
+      });
+      if (!existing) return res.status(404).json({ message: "Data not found" });
+
+      const chk = await assertKebijakanConsistency({
+        strategi_id: updateData.strategi_id ?? existing.strategi_id,
+        rpjmd_arah_id: updateData.rpjmd_arah_id ?? existing.rpjmd_arah_id,
+        renstra_id: updateData.renstra_id ?? existing.renstra_id,
+      });
+      if (!chk.ok) return res.status(400).json({ error: chk.message });
+    }
 
     const [updated] = await RenstraKebijakan.update(updateData, {
       where: { id },

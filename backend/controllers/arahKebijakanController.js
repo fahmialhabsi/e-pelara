@@ -6,6 +6,7 @@ const {
   Sasaran,
   Tujuan,
   Program,
+  ProgramArahKebijakan,
 } = require("../models");
 const { Op } = require("sequelize");
 const { getPeriodeFromTahun } = require("../utils/periodeHelper");
@@ -530,6 +531,18 @@ module.exports = {
   async delete(req, res) {
     try {
       const { id } = req.params;
+
+      const used = await ProgramArahKebijakan.findOne({
+        where: { arah_kebijakan_id: id },
+        attributes: ["program_id", "arah_kebijakan_id"],
+      });
+      if (used) {
+        return res.status(400).json({
+          error:
+            "Tidak bisa menghapus Arah Kebijakan yang masih dipakai Program. Lepaskan relasi program_arah_kebijakan terlebih dahulu.",
+        });
+      }
+
       const deleted = await ArahKebijakan.destroy({ where: { id } });
 
       if (!deleted) {

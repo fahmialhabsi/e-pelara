@@ -1,0 +1,12 @@
+# Root .gitignore mengabaikan `*.sql`. File audit perlu bisa di-commit.
+!cascading-gap-audit.sql
+
+# Phase 4 - Data Cleanup (relink/null/delete) sebelum FK
+!phase4_cleanup/
+!phase4_cleanup/*.sql
+!phase4_cleanup/*.md
+
+# Phase 5 - FK enforcement (staged)
+!phase5_fk/
+!phase5_fk/*.sql
+!phase5_fk/*.md

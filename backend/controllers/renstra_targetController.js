@@ -2,8 +2,100 @@ const {
   RenstraTarget,
   IndikatorRenstra,
   RenstraTargetDetail,
+  RenstraOPD,
   sequelize,
 } = require("../models");
+
+function toInt(v) {
+  const n = Number.parseInt(String(v ?? "").trim(), 10);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function uniq(arr) {
+  return [...new Set(arr)];
+}
+
+async function expectedYearsForIndikator(indikator_id) {
+  const id = toInt(indikator_id);
+  if (!id) return { ok: false, message: "indikator_id tidak valid." };
+
+  const indikator = await IndikatorRenstra.findByPk(id, {
+    attributes: ["id", "renstra_id"],
+  });
+  if (!indikator) return { ok: false, message: "Indikator Renstra tidak ditemukan." };
+
+  const rid = toInt(indikator.renstra_id);
+  if (!rid) {
+    return {
+      ok: false,
+      message: "Indikator Renstra tidak terhubung ke renstra_id yang valid.",
+    };
+  }
+
+  const renstra = await RenstraOPD.findByPk(rid, {
+    attributes: ["id", "tahun_mulai", "tahun_akhir"],
+  });
+  if (!renstra) return { ok: false, message: "Renstra OPD tidak ditemukan untuk indikator ini." };
+
+  const start = toInt(renstra.tahun_mulai);
+  const end = toInt(renstra.tahun_akhir);
+  if (!start || !end || start > end || end - start > 10) {
+    return {
+      ok: false,
+      message: "Rentang tahun Renstra OPD tidak valid untuk validasi target tahunan.",
+    };
+  }
+
+  const years = [];
+  for (let y = start; y <= end; y += 1) years.push(y);
+  return { ok: true, years, renstra_id: rid };
+}
+
+function validateDetailsShape(details) {
+  if (!Array.isArray(details) || details.length === 0) {
+    return { ok: false, message: "details wajib diisi (array) dan tidak boleh kosong." };
+  }
+  for (const d of details) {
+    const tahun = Number.parseInt(String(d?.tahun ?? "").trim(), 10);
+    if (!Number.isInteger(tahun) || tahun < 2000 || tahun > 2100) {
+      return { ok: false, message: "details.tahun harus angka valid (2000-2100)." };
+    }
+    if (d?.target_value === undefined || d?.target_value === null || String(d.target_value).trim() === "") {
+      return { ok: false, message: "details.target_value wajib diisi." };
+    }
+    if (!/^-?\d+(\.\d+)?$/.test(String(d.target_value).trim())) {
+      return { ok: false, message: "details.target_value harus angka desimal." };
+    }
+    if (d?.level !== undefined && d?.level !== null && typeof d.level !== "string") {
+      return { ok: false, message: "details.level harus string bila diisi." };
+    }
+  }
+  return { ok: true };
+}
+
+function validateDetailsComplete({ details, expectedYears }) {
+  const years = uniq(details.map((d) => Number.parseInt(String(d.tahun), 10)));
+  const missing = expectedYears.filter((y) => !years.includes(y));
+  if (missing.length) {
+    return {
+      ok: false,
+      message: `Target tahunan belum lengkap. Tahun yang hilang: ${missing.join(", ")}.`,
+    };
+  }
+  // duplikat tahun+level dalam payload
+  const seen = new Set();
+  for (const d of details) {
+    const key = `${d.level ?? ""}::${Number.parseInt(String(d.tahun), 10)}`;
+    if (seen.has(key)) {
+      return {
+        ok: false,
+        message: "details mengandung duplikasi (tahun + level) pada payload.",
+      };
+    }
+    seen.add(key);
+  }
+  return { ok: true };
+}
 
 class RenstraTargetController {
   // ✅ Create atau Update target multi-tahun
@@ -23,6 +115,21 @@ class RenstraTargetController {
         pagu_subkegiatan,
         details,
       } = req.body;
+
+      const shape = validateDetailsShape(details);
+      if (!shape.ok) {
+        return res.status(400).json({ message: shape.message });
+      }
+
+      const exp = await expectedYearsForIndikator(indikator_id);
+      if (!exp.ok) {
+        return res.status(400).json({ message: exp.message });
+      }
+
+      const complete = validateDetailsComplete({ details, expectedYears: exp.years });
+      if (!complete.ok) {
+        return res.status(400).json({ message: complete.message });
+      }
 
       const target = await RenstraTarget.create({
         indikator_id,
@@ -107,7 +214,23 @@ class RenstraTargetController {
       const { details, ...mainData } = req.body;
       await target.update(mainData);
 
-      if (Array.isArray(details)) {
+      // Safe enforcement untuk data existing:
+      // - Jika client mengirim details, wajib lengkap.
+      // - Jika tidak mengirim details, tidak memaksa agar edit field lain tidak memblok data lama.
+      if (details !== undefined) {
+        const shape = validateDetailsShape(details);
+        if (!shape.ok) {
+          return res.status(400).json({ message: shape.message });
+        }
+        const exp = await expectedYearsForIndikator(target.indikator_id);
+        if (!exp.ok) {
+          return res.status(400).json({ message: exp.message });
+        }
+        const complete = validateDetailsComplete({ details, expectedYears: exp.years });
+        if (!complete.ok) {
+          return res.status(400).json({ message: complete.message });
+        }
+
         await RenstraTargetDetail.destroy({ where: { renstra_target_id: id } });
         for (const d of details) {
           await RenstraTargetDetail.create({

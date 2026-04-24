@@ -1,18 +1,73 @@
 const { RenstraSasaran, Sasaran, RenstraTujuan } = require("../models");
 
+function toInt(v) {
+  const n = Number.parseInt(String(v ?? "").trim(), 10);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function parseNumericString(v) {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  if (!/^\d+$/.test(s)) return null;
+  const n = Number.parseInt(s, 10);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
 exports.create = async (req, res) => {
   try {
     const { rpjmd_sasaran_id, ...rest } = req.body;
 
+    const renstraTujuanId = toInt(rest.tujuan_id);
+    const renstraId = toInt(rest.renstra_id);
+    if (!renstraTujuanId || !renstraId) {
+      return res.status(400).json({
+        message: "failed",
+        error: "renstra_id dan tujuan_id (RenstraTujuan) wajib diisi.",
+      });
+    }
+
+    const renstraTujuan = await RenstraTujuan.findByPk(renstraTujuanId, {
+      attributes: ["id", "renstra_id", "rpjmd_tujuan_id"],
+    });
+    if (!renstraTujuan) {
+      return res.status(404).json({
+        message: "failed",
+        error: "Tujuan Renstra tidak ditemukan.",
+      });
+    }
+    if (Number(renstraTujuan.renstra_id) !== Number(renstraId)) {
+      return res.status(400).json({
+        message: "failed",
+        error: "tujuan_id tidak sesuai dengan renstra_id (Renstra OPD) pada payload.",
+      });
+    }
+
     // Cari Sasaran RPJMD
     const sasaranRpjmd = await Sasaran.findByPk(rpjmd_sasaran_id, {
-      attributes: ["id", "nomor", "isi_sasaran"],
+      attributes: ["id", "nomor", "isi_sasaran", "tujuan_id"],
     });
 
     if (!sasaranRpjmd) {
       return res.status(404).json({
         message: "failed",
         error: "Sasaran RPJMD tidak ditemukan",
+      });
+    }
+
+    // Konsistensi: sasaran RPJMD harus child dari tujuan RPJMD pada renstra_tujuan.
+    const tujuanRpjmdId = parseNumericString(renstraTujuan.rpjmd_tujuan_id);
+    if (!tujuanRpjmdId) {
+      return res.status(400).json({
+        message: "failed",
+        error:
+          "Tujuan Renstra belum terhubung ke Tujuan RPJMD numerik yang valid (rpjmd_tujuan_id).",
+      });
+    }
+    if (sasaranRpjmd.tujuan_id != null && Number(sasaranRpjmd.tujuan_id) !== Number(tujuanRpjmdId)) {
+      return res.status(400).json({
+        message: "failed",
+        error:
+          "Sasaran RPJMD tidak konsisten: sasaran bukan turunan dari tujuan RPJMD yang dipilih pada RenstraTujuan.",
       });
     }
 

@@ -636,9 +636,22 @@ const strategiController = {
   async delete(req, res) {
     try {
       const { id } = req.params;
+
+      const arah = await ArahKebijakan.findOne({
+        where: { strategi_id: id },
+        attributes: ["id"],
+      });
+      if (arah) {
+        return res.status(400).json({
+          error:
+            "Tidak bisa menghapus Strategi yang masih memiliki Arah Kebijakan. Hapus/relokasi Arah Kebijakan terlebih dahulu.",
+        });
+      }
+
       const deleted = await Strategi.destroy({ where: { id } });
-      if (!deleted)
+      if (!deleted) {
         return res.status(404).json({ error: "Strategi tidak ditemukan." });
+      }
       return res.status(204).send();
     } catch (err) {
       console.error("Error deleting strategi:", err);
