@@ -6,6 +6,8 @@ Matrix ini memastikan setiap FK yang dibuat pada `03_add_fk_constraints.sql`:
 - punya rollback di `04_rollback_fk_constraints.sql`.
 
 Kolom `preflight_check` merujuk ke `check_name` pada summary di `01_preflight_fk_check.sql`.
+Untuk item yang diaktivasi di Phase 6, `preflight_check` merujuk ke summary pada preflight Phase 6.
+Status `ACTIVE` untuk item Phase 6 berarti gate data sudah terpenuhi saat aktivasi: `non_numeric/blank = 0` dan `missing parent = 0`.
 
 | child_table | child_column | parent_table | parent_column | preflight_check | index_name | fk_name | rollback_available | status |
 |---|---|---|---|---|---|---|---|---|
@@ -21,7 +23,7 @@ Kolom `preflight_check` merujuk ke `check_name` pada summary di `01_preflight_fk
 | program_strategi | program_id | program | id | table_engine_innodb; missing_parent_child_table_or_column; pivot_invalid; fk_column_type_mismatch | idx_fk_program_strategi__program_id | fk_program_strategi__program_id__program | YES | ACTIVE |
 | program_strategi | strategi_id | strategi | id | table_engine_innodb; missing_parent_child_table_or_column; pivot_invalid; fk_column_type_mismatch | idx_fk_program_strategi__strategi_id | fk_program_strategi__strategi_id__strategi | YES | ACTIVE |
 | renstra_tujuan | renstra_id | renstra_opd | id | table_engine_innodb; missing_parent_child_table_or_column; orphan_renstra_chain; fk_column_type_mismatch | idx_fk_renstra_tujuan__renstra_id | fk_renstra_tujuan__renstra_id__renstra_opd | YES | ACTIVE |
-| renstra_tujuan | rpjmd_tujuan_id | tujuan | id | skipped_fk_renstra_tujuan__rpjmd_tujuan_id__tujuan | (Phase 6) | (Phase 6) | NO | SKIPPED_PHASE_6 |
+| renstra_tujuan | rpjmd_tujuan_id | tujuan | id | phase6_non_numeric_renstra_tujuan_rpjmd_tujuan_id; phase6_missing_parent_renstra_tujuan_rpjmd_tujuan_id__tujuan; phase6_type_mismatch_renstra_tujuan_rpjmd_tujuan_id__tujuan | idx_fk_renstra_tujuan__rpjmd_tujuan_id | fk_renstra_tujuan__rpjmd_tujuan_id__tujuan | YES | ACTIVE |
 | renstra_sasaran | renstra_id | renstra_opd | id | table_engine_innodb; missing_parent_child_table_or_column; orphan_renstra_chain; fk_column_type_mismatch | idx_fk_renstra_sasaran__renstra_id | fk_renstra_sasaran__renstra_id__renstra_opd | YES | ACTIVE |
 | renstra_sasaran | tujuan_id | renstra_tujuan | id | table_engine_innodb; missing_parent_child_table_or_column; orphan_renstra_chain; fk_column_type_mismatch | idx_fk_renstra_sasaran__tujuan_id | fk_renstra_sasaran__tujuan_id__renstra_tujuan | YES | ACTIVE |
 | renstra_sasaran | rpjmd_sasaran_id | sasaran | id | table_engine_innodb; missing_parent_child_table_or_column; orphan_renstra_chain; broken_renstra_chain; fk_column_type_mismatch | idx_fk_renstra_sasaran__rpjmd_sasaran_id | fk_renstra_sasaran__rpjmd_sasaran_id__sasaran | YES | ACTIVE |
@@ -42,4 +44,3 @@ Kolom `preflight_check` merujuk ke `check_name` pada summary di `01_preflight_fk
 | indikator_renstra | renstra_id | renstra_opd | id | table_engine_innodb; missing_parent_child_table_or_column; orphan_renstra_chain; fk_column_type_mismatch | idx_fk_indikator_renstra__renstra_id | fk_indikator_renstra__renstra_id__renstra_opd | YES | ACTIVE |
 | renstra_target | indikator_id | indikator_renstra | id | table_engine_innodb; missing_parent_child_table_or_column; orphan_renstra_chain; fk_column_type_mismatch | idx_fk_renstra_target__indikator_id | fk_renstra_target__indikator_id__indikator_renstra | YES | ACTIVE |
 | renstra_target_detail | renstra_target_id | renstra_target | id | table_engine_innodb; missing_parent_child_table_or_column; orphan_renstra_chain; duplicate_target_detail; fk_column_type_mismatch | idx_fk_renstra_target_detail__renstra_target_id | fk_renstra_target_detail__renstra_target_id__renstra_target | YES | ACTIVE |
-
