@@ -160,10 +160,12 @@ export default function ProgramStep({ options, tabKey, setTabKey, onNext }) {
         String(prev.tahun ?? "") !== String(snap.tahun ?? ""))
     ) {
       setFieldValue("program_id", "");
+      setFieldValue("program", []);
       setProgramOptions([]);
+      clearIndikatorDraftScalars(setFieldValue, PROGRAM_DRAFT_CLEAR_KEYS);
     }
     prevProgramParentRef.current = snap;
-  }, [values.sasaran_id, values.periode_id, values.tahun, setFieldValue]);
+  }, [values.sasaran_id, values.arah_kebijakan_id, values.periode_id, values.tahun, setFieldValue]);
 
   const loadPrograms = useCallback(
     debounce(async () => {
@@ -300,6 +302,9 @@ export default function ProgramStep({ options, tabKey, setTabKey, onNext }) {
           {
             tahun: String(values.tahun),
             jenis_dokumen: jd,
+            ...(values.arah_kebijakan_id
+              ? { arah_kebijakan_id: String(values.arah_kebijakan_id) }
+              : {}),
           }
         );
         if (cancelled) return;
@@ -354,10 +359,14 @@ export default function ProgramStep({ options, tabKey, setTabKey, onNext }) {
           // Jika API mengembalikan baris "referensi" (program_id NULL) untuk kompatibilitas legacy,
           // jangan pakai kode_indikator ST... sebagai kode indikator Program.
           // Tetap gunakan sebagai referensi konten (nama/uraian), tetapi kode di-generate dari AR... -> IP-...
-          const fk = mapped[0]?.program_id ?? rawRows?.[0]?.program_id;
+          const first = mapped[0] ?? rawRows?.[0];
+          const fk = first?.program_id;
+          const kodeFromRow = String(first?.kode_indikator ?? "").trim();
           const isRef =
             fk == null || String(fk).trim() === "" || String(fk) === "null";
-          if (isRef) {
+          const hasValidProgramKode = kodeFromRow.startsWith("IP");
+
+          if (isRef && !hasValidProgramKode) {
             setFieldValue("kode_indikator", "");
             // Auto isi OPD penanggung jawab dari konteks arah kebijakan jika masih kosong.
             const pjFromArah =
@@ -377,6 +386,11 @@ export default function ProgramStep({ options, tabKey, setTabKey, onNext }) {
             const next = [...mapped];
             next[0] = { ...next[0], kode_indikator: "" };
             setFieldValue("program", next);
+          } else if (kodeFromRow) {
+            setFieldValue("kode_indikator", kodeFromRow);
+            const next = [...mapped];
+            next[0] = { ...next[0], kode_indikator: kodeFromRow };
+            setFieldValue("program", next);
           }
         } else {
           clearIndikatorDraftScalars(setFieldValue, PROGRAM_DRAFT_CLEAR_KEYS);
@@ -391,7 +405,7 @@ export default function ProgramStep({ options, tabKey, setTabKey, onNext }) {
     return () => {
       cancelled = true;
     };
-  }, [values.program_id, values.tahun, values.jenis_dokumen, setFieldValue]);
+  }, [values.program_id, values.tahun, values.jenis_dokumen, values.arah_kebijakan_id, setFieldValue]);
 
   // Step Program: opsi indikator arah kebijakan (kode AR...) sebagai basis pembentukan kode indikator program (IP-...).
   useEffect(() => {
@@ -532,7 +546,7 @@ export default function ProgramStep({ options, tabKey, setTabKey, onNext }) {
         firstId &&
         /^\d+$/.test(firstId) &&
         values?.kode_indikator &&
-        String(values.kode_indikator).trim().startsWith("IP-");
+        String(values.kode_indikator).trim().startsWith("IP");
 
       if (shouldUpgradeLegacy) {
         await updateIndikatorProgram(firstId, {
