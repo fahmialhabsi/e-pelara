@@ -422,7 +422,7 @@ exports.getNextKode = async (req, res) => {
       });
     }
 
-    const nextKode = await generateKodeIndikator(sasaran_id, sasaran.nomor);
+    const nextKode = await generateKodeIndikator(sasaran_id, `IS${sasaran.nomor.slice(2)}`);
     return res.json({ status: "success", next_kode: nextKode });
   } catch (err) {
     return res.status(500).json({ status: "error", message: err.message });

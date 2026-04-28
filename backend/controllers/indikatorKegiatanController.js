@@ -262,13 +262,11 @@ exports.getAll = async (req, res) => {
     const safeLimit = Math.min(Number(limit) || 50, MAX_LIMIT);
     const offset = (Number(page) - 1) * safeLimit;
 
-    const effectiveJenisDokumen = await preferPeriodeNamaIfExists({
-      model: IndikatorKegiatan,
-      jenis_dokumen,
-      tahun,
-    });
+    const jdFilter = /^rpjmd$/i.test(String(jenis_dokumen).trim())
+      ? { [Op.like]: "RPJMD%" }
+      : String(jenis_dokumen).trim();
 
-    const where = { jenis_dokumen: effectiveJenisDokumen, tahun };
+    const where = { jenis_dokumen: jdFilter, tahun };
     let selectedKegiatan = null;
 
     if (
@@ -495,7 +493,7 @@ exports.bulkCreateDetail = async (req, res) => {
 exports.getNextKode = async (req, res) => {
   try {
     const { kegiatan_id } = req.params;
-    const { tahun, jenis_dokumen } = req.query;
+    const { tahun, jenis_dokumen, indikator_program_kode_indikator } = req.query;
 
     if (!kegiatan_id) {
       return res.status(400).json({ message: "kegiatan_id wajib diisi." });
@@ -521,8 +519,10 @@ exports.getNextKode = async (req, res) => {
         ? String(jenis_dokumen).trim().toLowerCase()
         : null;
 
-    // Standar kode indikator kegiatan (RPJMD): IPK-<kode_kegiatan>-NN
-    const prefix = `IPK-${String(kegiatan.kode_kegiatan).trim()}`;
+    const progKode = String(indikator_program_kode_indikator || "").trim();
+    const prefix = progKode.startsWith("IP")
+      ? `IK${progKode.slice(2)}`
+      : `IK-${String(kegiatan.kode_kegiatan).trim()}`;
 
     const andParts = [
       { tahun: tahunStr },

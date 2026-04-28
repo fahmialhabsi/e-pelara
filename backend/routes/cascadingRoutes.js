@@ -29,6 +29,12 @@ router.get(
   ctrl.statistikSankey
 );
 router.get(
+  "/suggest-prioritas",
+  verifyToken,
+  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
+  ctrl.suggestPrioritas,
+);
+router.get(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),

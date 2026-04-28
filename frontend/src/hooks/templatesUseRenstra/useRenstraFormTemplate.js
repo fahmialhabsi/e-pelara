@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState } from "react";
+import { useEffect, useCallback, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -50,16 +50,23 @@ export const useRenstraFormTemplate = ({
   const [isLoadingDropdowns, setIsLoadingDropdowns] = useState(
     Object.keys(fetchOptions).length > 0
   );
-  const fetchedRef = useRef(false);
+  const fetchedRef = useRef("");
+
+  const fetchSignature = useMemo(() => {
+    const keys = Object.keys(fetchOptions).sort().join("|");
+    const renstraId = renstraAktif?.id ?? initialData?.renstra_id ?? "";
+    return `${keys}::renstra=${String(renstraId)}`;
+  }, [fetchOptions, renstraAktif?.id, initialData?.renstra_id]);
 
   // Ambil semua dropdown secara paralel saat komponen mount
   useEffect(() => {
     const keys = Object.keys(fetchOptions);
     if (keys.length === 0) return;
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
+    if (fetchedRef.current === fetchSignature) return;
+    fetchedRef.current = fetchSignature;
 
     setIsLoadingDropdowns(true);
+    setDropdowns(initDropdowns());
 
     const promises = keys.map((key) =>
       fetchOptions[key]()
@@ -79,7 +86,7 @@ export const useRenstraFormTemplate = ({
       setIsLoadingDropdowns(false);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // hanya sekali saat mount
+  }, [fetchSignature]); // ulangi saat signature berubah (mis. renstraAktif baru ter-load)
 
   // ── Form ──────────────────────────────────────────────────────────────────
   const resolvedSchema = typeof schema === "function" ? schema() : schema;
@@ -127,7 +134,12 @@ export const useRenstraFormTemplate = ({
     },
     onError: (err) => {
       console.error(err);
-      message.error(err?.response?.data?.message || "Gagal menyimpan data.");
+      message.error(
+        err?.response?.data?.error ||
+          err?.response?.data?.message ||
+          err?.message ||
+          "Gagal menyimpan data."
+      );
       if (typeof onError === "function") onError(err);
     },
   });

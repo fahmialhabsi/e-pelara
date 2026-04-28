@@ -1,3 +1,4 @@
+// backend/middlewares/validateHierarchy.js
 "use strict";
 
 const { Op } = require("sequelize");

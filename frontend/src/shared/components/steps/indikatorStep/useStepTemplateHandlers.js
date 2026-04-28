@@ -36,6 +36,7 @@ export default function useStepTemplateHandlers(setFieldValue) {
 
       setFieldValue("nomor", value);
       setFieldValue("label_sasaran", label);
+      setFieldValue("sasaran_label", label);
       setFieldValue("isi_sasaran", isi_sasaran);
       setFieldValue("sasaran_id", value ? Number(value) : null);
       setFieldValue("misi_id", misi_id || "");

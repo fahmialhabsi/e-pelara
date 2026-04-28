@@ -39,6 +39,11 @@ module.exports = (sequelize, DataTypes) => {
 
   RenstraSubkegiatan.init(
     {
+      id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+    },
       renstra_program_id: {
         type: DataTypes.INTEGER,
         allowNull: false,

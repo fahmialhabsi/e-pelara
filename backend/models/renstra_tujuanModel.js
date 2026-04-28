@@ -33,7 +33,8 @@ module.exports = (sequelize, DataTypes) => {
     {
       misi_id: DataTypes.INTEGER,
       renstra_id: DataTypes.INTEGER,
-      rpjmd_tujuan_id: DataTypes.UUID,
+      // Phase 6 FK: renstra_tujuan.rpjmd_tujuan_id -> tujuan.id (INTEGER)
+      rpjmd_tujuan_id: DataTypes.INTEGER,
       no_tujuan: DataTypes.STRING,
       isi_tujuan: DataTypes.TEXT,
       no_rpjmd: DataTypes.STRING,

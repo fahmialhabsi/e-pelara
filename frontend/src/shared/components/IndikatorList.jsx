@@ -1,3 +1,4 @@
+// frontend/src/shared/components/IndikatorList.jsx
 import React, { useState, useEffect, useCallback, Fragment } from "react";
 import {
   Table,

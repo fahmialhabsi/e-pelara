@@ -62,7 +62,12 @@ export default function StrategiStep({ options, tabKey, setTabKey, onNext }) {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        Object.entries(parsed).forEach(([key, val]) => setFieldValue(key, val));
+        Object.entries(parsed).forEach(([key, val]) => {
+          const cur = values?.[key];
+          const curEmpty = cur == null || (typeof cur === "string" && cur.trim() === "");
+          if (!curEmpty) return;
+          setFieldValue(key, val);
+        });
       } catch {
         /* ignore */
       }
@@ -198,25 +203,28 @@ export default function StrategiStep({ options, tabKey, setTabKey, onNext }) {
         } else {
           setFieldValue("rpjmd_import_indikator_strategi_id", "");
           clearIndikatorDraftScalars(setFieldValue);
-          if (
-            !cancelled &&
-            values.strategi_id &&
-            values.jenis_dokumen &&
-            values.tahun
-          ) {
-            try {
-              const nk = await fetchNextKodeIndikatorStrategi(
-                values.strategi_id,
-                {
-                  jenis_dokumen: values.jenis_dokumen,
-                  tahun: values.tahun,
-                },
-              );
-              const next = nk.data?.next_kode;
-              if (!cancelled && next) setFieldValue("kode_indikator", next);
-            } catch {
-              /* next-kode opsional */
-            }
+        }
+
+        /* kode_indikator selalu dari next-kode API (bukan dari row DB lama).
+           Dipanggil setelah hydrate agar overwrite nilai dari hydrateDraftFromIndikatorRow. */
+        if (
+          !cancelled &&
+          values.strategi_id &&
+          values.jenis_dokumen &&
+          values.tahun
+        ) {
+          try {
+            const nk = await fetchNextKodeIndikatorStrategi(
+              values.strategi_id,
+              {
+                jenis_dokumen: values.jenis_dokumen,
+                tahun: values.tahun,
+              },
+            );
+            const next = nk.data?.next_kode;
+            if (!cancelled && next) setFieldValue("kode_indikator", next);
+          } catch {
+            /* next-kode opsional */
           }
         }
       } catch {

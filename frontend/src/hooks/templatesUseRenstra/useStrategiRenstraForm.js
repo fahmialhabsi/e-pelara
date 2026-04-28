@@ -1,8 +1,9 @@
-import { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import * as Yup from "yup";
 import api from "@/services/api";
 import { useRenstraFormTemplate } from "@/hooks/templatesUseRenstra/useRenstraFormTemplate";
 import { useWatch } from "react-hook-form";
+import { useQuery } from "@tanstack/react-query";
 
 export const useStrategiRenstraForm = (initialData, renstraAktif) => {
   const schema = Yup.object().shape({
@@ -45,11 +46,6 @@ export const useStrategiRenstraForm = (initialData, renstraAktif) => {
   );
 
   const [mutationResultData, setMutationResultData] = useState(null);
-  const hasResetInitialData = useRef(false);
-
-  const currentRenstraId = useMemo(() => {
-    return initialData?.renstra_id || renstraAktif?.id;
-  }, [initialData?.renstra_id, renstraAktif?.id]);
 
   const fetchOptions = useMemo(
     () => ({
@@ -62,33 +58,6 @@ export const useStrategiRenstraForm = (initialData, renstraAktif) => {
             ? list.filter((s) => Number(s.renstra_id) === Number(rid))
             : list;
         }),
-      "strategi-rpjmd": () =>
-        api
-          .get("/strategi", {
-            params: {
-              jenis_dokumen: "RPJMD",
-              tahun: renstraAktif?.tahun_mulai,
-            },
-          })
-          .then((res) => res.data?.data || res.data || []),
-      "tujuan-rpjmd": () =>
-        api
-          .get("/tujuan", {
-            params: {
-              jenis_dokumen: "RPJMD",
-              tahun: renstraAktif?.tahun_mulai,
-            },
-          })
-          .then((res) => res.data?.data || res.data || []),
-      "arah-kebijakan": () =>
-        api
-          .get("/arah-kebijakan", {
-            params: {
-              jenis_dokumen: "RPJMD",
-              tahun: renstraAktif?.tahun_mulai,
-            },
-          })
-          .then((res) => res.data?.data || res.data || []),
     }),
     [renstraAktif?.id, renstraAktif?.tahun_mulai, initialData?.renstra_id]
   );
@@ -144,8 +113,80 @@ export const useStrategiRenstraForm = (initialData, renstraAktif) => {
     name: "strategi_rpjmd_id",
   });
 
+  const watchedSasaranRenstraId = useWatch({
+    control,
+    name: "sasaran_id",
+  });
+
+  const selectedSasaranRenstra = useMemo(() => {
+    const sid = Number(watchedSasaranRenstraId);
+    if (!Number.isFinite(sid) || sid <= 0) return null;
+    const rows = dropdowns?.["sasaran-renstra"] || [];
+    return rows.find((s) => Number(s?.id) === sid) ?? null;
+  }, [dropdowns?.["sasaran-renstra"], watchedSasaranRenstraId]);
+
+  const rpjmdTahun = useMemo(() => {
+    const y = renstraAktif?.tahun_mulai ?? initialData?.renstra?.tahun_mulai ?? null;
+    const n = Number(y);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [renstraAktif?.tahun_mulai, initialData?.renstra?.tahun_mulai]);
+
+  const selectedRpjmdSasaranId = useMemo(() => {
+    const n = Number(selectedSasaranRenstra?.rpjmd_sasaran_id);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [selectedSasaranRenstra?.rpjmd_sasaran_id]);
+
+  const expectedKodePrefix = useMemo(() => {
+    const nomor = String(selectedSasaranRenstra?.nomor || "").trim();
+    if (!nomor) return "";
+    return nomor.replace(/^ST/i, "SST");
+  }, [selectedSasaranRenstra?.nomor]);
+
+  const shouldLoadStrategiRpjmd = !!rpjmdTahun && (!!selectedRpjmdSasaranId || !!expectedKodePrefix);
+
+  const { data: strategiRpjmdRowsRaw = [], isLoading: loadingStrategiRpjmd } = useQuery({
+    queryKey: ["rpjmd-strategi", rpjmdTahun, selectedRpjmdSasaranId ?? "all"],
+    enabled: shouldLoadStrategiRpjmd,
+    queryFn: async () => {
+      const params = {
+        jenis_dokumen: "rpjmd",
+        tahun: rpjmdTahun,
+        limit: 1000,
+      };
+      if (selectedRpjmdSasaranId) params.sasaran_id = selectedRpjmdSasaranId;
+
+      const res = await api.get("/strategi", { params });
+      const raw = res.data;
+      return Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
+
+  const strategiRpjmdOptions = useMemo(() => {
+    const list = Array.isArray(strategiRpjmdRowsRaw) ? strategiRpjmdRowsRaw : [];
+    const pref = expectedKodePrefix;
+    if (!pref) return list;
+
+    const filtered = list.filter((s) => String(s?.kode_strategi || "").startsWith(`${pref}.`));
+    // Jika query sudah dibatasi sasaran_id (aman), jangan sampai dropdown kosong total hanya karena kode tidak selaras.
+    if (selectedRpjmdSasaranId) return filtered.length ? filtered : list;
+    // Jika belum ada rpjmd_sasaran_id, tampilkan hanya yang sesuai prefix agar user tidak salah pilih.
+    return filtered;
+  }, [strategiRpjmdRowsRaw, expectedKodePrefix, selectedRpjmdSasaranId]);
+
+  // Saat sasaran berubah, kosongkan pilihan Strategi RPJMD agar user tidak salah pilih dari sasaran sebelumnya.
   useEffect(() => {
-    const selectedStrategi = dropdowns?.["strategi-rpjmd"]?.find(
+    if (initialData?.id) return;
+    setValue("strategi_rpjmd_id", "", { shouldDirty: false, shouldValidate: false });
+    setValue("no_strategi", "", { shouldDirty: false, shouldValidate: false });
+    setValue("no_rpjmd", "", { shouldDirty: false, shouldValidate: false });
+    setValue("isi_strategi_rpjmd", "", { shouldDirty: false, shouldValidate: false });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedSasaranRenstraId]);
+
+  useEffect(() => {
+    const selectedStrategi = strategiRpjmdOptions?.find(
       (item) => Number(item.id) === Number(watchedStrategiRpjmdId)
     );
 
@@ -194,14 +235,14 @@ export const useStrategiRenstraForm = (initialData, renstraAktif) => {
         });
       }
     }
-  }, [watchedStrategiRpjmdId, dropdowns, setValue, form, initialData?.id]);
+  }, [watchedStrategiRpjmdId, strategiRpjmdOptions, setValue, form, initialData?.id]);
 
   useEffect(() => {
-    if (!initialData?.id || !dropdowns?.["strategi-rpjmd"]?.length) return;
+    if (!initialData?.id || !strategiRpjmdOptions?.length) return;
 
     const sid =
       initialData.rpjmd_strategi_id ?? initialData.strategi_rpjmd_id;
-    const selectedStrategi = dropdowns?.["strategi-rpjmd"]?.find(
+    const selectedStrategi = strategiRpjmdOptions?.find(
       (item) => Number(item.id) === Number(sid)
     );
 
@@ -239,7 +280,7 @@ export const useStrategiRenstraForm = (initialData, renstraAktif) => {
         shouldValidate: false,
       });
     }
-  }, [initialData, dropdowns, setValue]);
+  }, [initialData, strategiRpjmdOptions, setValue]);
 
   // Gunakan isDropdownsLoading dari template (bukan .length) agar tidak
   // loading selamanya jika API mengembalikan array kosong [].
@@ -247,14 +288,18 @@ export const useStrategiRenstraForm = (initialData, renstraAktif) => {
     isSubmitting ||
     isDropdownsLoading ||
     dropdowns?.["sasaran-renstra"] === null ||
-    dropdowns?.["strategi-rpjmd"] === null;
+    (shouldLoadStrategiRpjmd && loadingStrategiRpjmd);
 
   return {
     form,
     onSubmit,
     isSubmitting: form.formState.isSubmitting,
     isLoading: totalLoading,
-    dropdowns,
+    dropdowns: {
+      ...dropdowns,
+      "strategi-rpjmd": strategiRpjmdOptions,
+      strategiKodePrefix: expectedKodePrefix,
+    },
     mutationResultData,
   };
 };

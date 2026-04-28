@@ -149,7 +149,7 @@ const RenstraSidebar = () => {
             {/* Aksi Input */}
             <Accordion.Item eventKey="1">
               <Accordion.Header onClick={() => handleToggle("1")}>
-                ✏️ Aksi Input Data Renstra
+                Aksi Input Data Renstra
               </Accordion.Header>
               <Accordion.Body>
                 <small className="text-muted d-block mb-2">
@@ -172,7 +172,7 @@ const RenstraSidebar = () => {
             {/* Input Tabel Renstra */}
             <Accordion.Item eventKey="5">
               <Accordion.Header onClick={() => handleToggle("5")}>
-                📊 Input Tabel Renstra
+                Input Tabel Renstra
               </Accordion.Header>
               <Accordion.Body>
                 <small className="text-muted d-block mb-2">
@@ -183,62 +183,62 @@ const RenstraSidebar = () => {
                     to="/renstra/tabel/tujuan"
                     className="btn btn-outline-primary btn-sm"
                   >
-                    📊 Tabel Tujuan
+                    Tabel Tujuan
                   </Link>
                   <Link
                     to="/renstra/tabel/sasaran"
                     className="btn btn-outline-success btn-sm"
                   >
-                    🎯 Tabel Sasaran
+                    Tabel Sasaran
                   </Link>
                   <Link
                     to="/renstra/tabel/program"
                     className="btn btn-outline-warning btn-sm"
                   >
-                    🗂️ Tabel Program
+                    Tabel Program
                   </Link>
                   <Link
                     to="/renstra/tabel/kegiatan"
                     className="btn btn-outline-info btn-sm"
                   >
-                    📑 Tabel Kegiatan
+                    Tabel Kegiatan
                   </Link>
                   <Link
                     to="/renstra/tabel/subkegiatan"
                     className="btn btn-outline-secondary btn-sm"
                   >
-                    📝 Tabel Sub Kegiatan
+                    Tabel Sub Kegiatan
                   </Link>
                   <Link
                     to="/renstra/tabel/strategi-kebijakan"
                     className="btn btn-outline-dark btn-sm"
                   >
-                    🔗 Tabel Strategi & Kebijakan
+                    Tabel Strategi & Kebijakan
                   </Link>
                   <Link
                     to="/renstra/tabel/prioritas/nasional"
                     className="btn btn-outline-danger btn-sm"
                   >
-                    🇮🇩 Prioritas Nasional
+                    Prioritas Nasional
                   </Link>
                   <Link
                     to="/renstra/tabel/prioritas/daerah"
                     className="btn btn-outline-warning btn-sm"
                   >
-                    🏛️ Prioritas Daerah
+                    Prioritas Daerah
                   </Link>
                   <Link
                     to="/renstra/tabel/prioritas/gubernur"
                     className="btn btn-outline-purple btn-sm"
                     style={{ borderColor: "#6f42c1", color: "#6f42c1" }}
                   >
-                    👤 Prioritas Gubernur
+                    Prioritas Gubernur
                   </Link>
                 </div>
               </Accordion.Body>
             </Accordion.Item>
 
-            {/* ✅ Target Renstra */}
+            {/* Target Renstra */}
             <Accordion.Item eventKey="4">
               <Accordion.Header onClick={() => handleToggle("4")}>
                 Target Renstra
@@ -249,13 +249,13 @@ const RenstraSidebar = () => {
                     to="/renstra/target" // list target
                     className="btn btn-outline-success btn-sm"
                   >
-                    🎯 Lihat Target Renstra
+                    Lihat Target Renstra
                   </Link>
                   <Link
                     to="/renstra/target/add" // form tambah
                     className="btn btn-outline-primary btn-sm"
                   >
-                    ➕ Tambah Target Renstra
+                    Tambah Target Renstra
                   </Link>
                 </div>
               </Accordion.Body>
@@ -272,13 +272,13 @@ const RenstraSidebar = () => {
                     to="/renstra-opd"
                     className="btn btn-outline-primary btn-sm"
                   >
-                    📋 M027 - Daftar Renstra
+                    M027 - Daftar Renstra
                   </Link>
                   <Link
                     to="/renstra-opd/new"
                     className="btn btn-outline-success btn-sm"
                   >
-                    ⚙️ Setup / Aktifkan Renstra OPD
+                    Setup / Aktifkan Renstra OPD
                   </Link>
                 </div>
               </Accordion.Body>

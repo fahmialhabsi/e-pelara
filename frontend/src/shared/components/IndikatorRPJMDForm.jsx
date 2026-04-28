@@ -130,6 +130,8 @@ const _CLEAR_FROM = [
     "strategi_label",
     "arah_kebijakan_id",
     "arah_kebijakan_label",
+    "indikator_arah_kebijakan_id",
+    "indikator_arah_kebijakan_label",
     "program_id",
     "program_label",
     "kode_program",
@@ -145,6 +147,8 @@ const _CLEAR_FROM = [
     "strategi_label",
     "arah_kebijakan_id",
     "arah_kebijakan_label",
+    "indikator_arah_kebijakan_id",
+    "indikator_arah_kebijakan_label",
     "program_id",
     "program_label",
     "kode_program",
@@ -158,6 +162,8 @@ const _CLEAR_FROM = [
     "strategi_label",
     "arah_kebijakan_id",
     "arah_kebijakan_label",
+    "indikator_arah_kebijakan_id",
+    "indikator_arah_kebijakan_label",
     "program_id",
     "program_label",
     "kode_program",
@@ -169,6 +175,8 @@ const _CLEAR_FROM = [
   /* 3 strategi*/ [
     "arah_kebijakan_id",
     "arah_kebijakan_label",
+    "indikator_arah_kebijakan_id",
+    "indikator_arah_kebijakan_label",
     "program_id",
     "program_label",
     "kode_program",
@@ -178,6 +186,8 @@ const _CLEAR_FROM = [
     "sub_kegiatan_label",
   ],
   /* 4 arah_keb*/ [
+    "indikator_arah_kebijakan_id",
+    "indikator_arah_kebijakan_label",
     "program_id",
     "program_label",
     "kode_program",
@@ -447,6 +457,16 @@ function StepNavigator({
 /* ──────────────────── IndikatorRPJMD (main) ─────────────────── */
 
 const IndikatorRPJMD = () => {
+  // Instrumentation: debug setFieldValue untuk kode_indikator
+  const debugSetFieldValue = (name, value, shouldValidate) => {
+    if (name === "kode_indikator") {
+      console.group("WRITE kode_indikator");
+      console.log("value:", value);
+      console.trace();
+      console.groupEnd();
+    }
+    return setFieldValue(name, value, shouldValidate);
+  };
   const { dokumen, tahun } = useDokumen();
   const { periode_id, periodeList } = usePeriodeAktif();
   const periodeAktif = periodeList.find(
@@ -688,6 +708,22 @@ const IndikatorRPJMD = () => {
     sumber_data: "",
     penanggung_jawab: "",
     keterangan: "",
+    /** ID IndikatorTujuan yang dipilih sebagai konteks hierarki (dipilih di Step Sasaran). */
+    indikator_tujuan_id: "",
+    /** Label "IT2-01-01 - Pertumbuhan PDRB..." untuk ditampilkan di context panel semua step. */
+    indikator_tujuan_label: "",
+    /** ID IndikatorSasaran yang dipilih sebagai konteks hierarki (dipilih di Step Strategi). */
+    indikator_sasaran_id: "",
+    /** Label "IS2-01-03-01 - ..." untuk ditampilkan di context panel step Strategi ke bawah. */
+    indikator_sasaran_label: "",
+    /** ID IndikatorStrategi yang dipilih sebagai konteks hierarki (dipilih di Step Arah Kebijakan). */
+    indikator_strategi_id: "",
+    /** Label "IST-... - ..." untuk ditampilkan di context panel step Arah Kebijakan ke bawah. */
+    indikator_strategi_label: "",
+    /** ID IndikatorArahKebijakan yang dipilih sebagai konteks hierarki (dipilih di Step Program). */
+    indikator_arah_kebijakan_id: "",
+    /** Label "IAK-... - ..." untuk ditampilkan di context panel step Program ke bawah. */
+    indikator_arah_kebijakan_label: "",
     /** Baris impor PDF terpilih (tab Indikator tujuan) — untuk dropdown & isi otomatis. */
     rpjmd_import_indikator_tujuan_id: "",
     /** Baris indikator strategi (GET by-strategi) — dropdown Nama Indikator step Strategi. */
@@ -952,7 +988,7 @@ const IndikatorRPJMD = () => {
                         options={options}
                         stepOptions={options[currentStepObj.key] || []}
                         values={values}
-                        setFieldValue={setFieldValue}
+                        setFieldValue={debugSetFieldValue}
                         tabKey={currentStep}
                         setTabKey={setCurrentStep}
                         onNext={() => handleStepChange(currentStep + 1)}

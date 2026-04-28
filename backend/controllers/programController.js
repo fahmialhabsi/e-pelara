@@ -27,6 +27,9 @@ const {
 } = require("../utils/paguHelper");
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
 const { logActivity } = require("../services/auditService");
+const {
+  autoCloneProgramByArahKebijakan,
+} = require("../services/autoCloneProgramService");
 
 const MAX_PAGE_LIMIT = 100;
 const includeRelations = [
@@ -367,7 +370,7 @@ const programController = {
         return inc;
       });
 
-      const { count, rows } = await Program.findAndCountAll({
+      let { count, rows } = await Program.findAndCountAll({
         where,
         include: includeForList,
         limit: safeLimit,
@@ -376,6 +379,47 @@ const programController = {
         distinct: true,
       });
 
+      // FALLBACK 1: Jika arah_kebijakan_id filter hasilnya kosong, fallback ke sasaran_id dari arah_kebijakan
+      if (
+        count === 0 &&
+        arah_kebijakan_id &&
+        sasaran_id
+      ) {
+        const arahKebijakanData = await ArahKebijakan.findByPk(arah_kebijakan_id, {
+          attributes: ["id", "strategi_id"],
+          include: [
+            {
+              model: Strategi,
+              as: "Strategi",
+              attributes: ["id", "sasaran_id"],
+              required: false,
+            },
+          ],
+        });
+
+        if (arahKebijakanData?.Strategi?.sasaran_id) {
+          const fallbackResult = await Program.findAndCountAll({
+            where: {
+              tahun,
+              periode_id,
+              [Op.and]: [
+                sqlWhere(fn("LOWER", col("Program.jenis_dokumen")), jenisLc),
+              ],
+              sasaran_id: arahKebijakanData.Strategi.sasaran_id,
+            },
+            include: includeRelations,
+            limit: safeLimit,
+            offset,
+            order: [["kode_program", "ASC"]],
+            distinct: true,
+          });
+
+          count = fallbackResult.count;
+          rows = fallbackResult.rows;
+        }
+      }
+
+      // FALLBACK 2: Jika sasaran_id filter (tanpa arah_kebijakan_id) hasilnya kosong, fallback ke RPJMD sasaran
       if (
         count === 0 &&
         sasaran_id &&
@@ -417,17 +461,8 @@ const programController = {
             distinct: true,
           });
 
-          return listResponse(
-            res,
-            200,
-            "Daftar program berhasil diambil",
-            fallback.rows,
-            {
-              totalItems: fallback.count,
-              totalPages: Math.ceil(fallback.count / safeLimit),
-              currentPage,
-            }
-          );
+          count = fallback.count;
+          rows = fallback.rows;
         }
       }
 
@@ -447,7 +482,7 @@ const programController = {
   // 📌 LIST ALL tanpa pagination (khusus dropdown)
   async listAll(req, res) {
     try {
-      const { tahun, jenis_dokumen } = req.query;
+      const { tahun, jenis_dokumen, arah_kebijakan_id } = req.query;
 
       if (tahun && jenis_dokumen) {
         await ensureClonedOnce(jenis_dokumen, tahun);
@@ -457,10 +492,21 @@ const programController = {
       if (tahun) where.tahun = tahun;
       if (jenis_dokumen) where.jenis_dokumen = jenis_dokumen;
 
+      const includeForListAll = includeRelations.map((inc) => {
+        if (inc.as === "ArahKebijakan" && arah_kebijakan_id) {
+          return {
+            ...inc,
+            required: true,
+            where: { id: arah_kebijakan_id },
+          };
+        }
+        return inc;
+      });
+
       const programs = await Program.findAll({
         where,
         order: [["kode_program", "ASC"]],
-        include: includeRelations,
+        include: includeForListAll,
       });
 
       return listResponse(res, 200, "Semua program berhasil dimuat", programs);
@@ -468,6 +514,67 @@ const programController = {
       return handleServerError(res, err, "memuat semua program");
     }
   },
+
+  
+  async autoClone(req, res) {
+  try {
+    const {
+      arahKebijakanId,
+      strategiId,
+      periodeId,
+      sasaranId,
+      rpjmdId,
+      tahun,
+      jenisDokumen,
+    } = req.body;
+
+    if (!arahKebijakanId) {
+      return errorResponse(res, 400, "arahKebijakanId wajib diisi");
+    }
+
+    if (!tahun || !jenisDokumen) {
+      return errorResponse(res, 400, "tahun dan jenisDokumen wajib diisi");
+    }
+
+    // 🔥 AUTO HITUNG PERIODE DARI TAHUN
+    const periode = await getPeriodeFromTahun(tahun);
+
+    if (!periode && !periodeId) {
+      return errorResponse(res, 400, "Periode tidak ditemukan dari tahun");
+    }
+
+    const finalPeriodeId = periodeId || periode?.id;
+
+    // mapping camelCase → snake_case (biar konsisten DB kamu)
+    const jenis_dokumen = jenisDokumen;
+
+    const programs = await autoCloneProgramByArahKebijakan({
+      arahKebijakanId,
+      strategiId,
+      periodeId: finalPeriodeId,
+      sasaranId,
+      rpjmdId,
+      tahun,
+      jenisDokumen: jenis_dokumen,
+    });
+
+    return successResponse(
+      res,
+      200,
+      "Program + Kegiatan + SubKegiatan berhasil di-auto-clone",
+      programs
+    );
+  } catch (error) {
+    console.error("AUTO CLONE ERROR:", error);
+
+    return errorResponse(
+      res,
+      500,
+      "Gagal auto clone program",
+      error.message
+    );
+  }
+},
 
   async getById(req, res) {
     try {

@@ -5,6 +5,7 @@ import StepTemplate from "./StepTemplate";
 import {
   createIndikatorProgramBatch,
   fetchIndikatorProgramByProgram,
+  fetchIndikatorProgramByKodePrefix,
   fetchProgramsForStep,
   fetchIndikatorArahByArahKebijakan,
   updateIndikatorProgram,
@@ -76,6 +77,8 @@ export default function ProgramStep({ options, tabKey, setTabKey, onNext }) {
   const programIdRef = useRef(values.program_id);
   programIdRef.current = values.program_id;
   const prevProgramParentRef = useRef(null);
+  const latestValuesRef = useRef(values);
+  latestValuesRef.current = values;
 
   const [programOptions, setProgramOptions] = useState([]);
   const [loadingProgram, setLoadingProgram] = useState(false);
@@ -133,7 +136,9 @@ export default function ProgramStep({ options, tabKey, setTabKey, onNext }) {
   }, [values?.penanggung_jawab, values?.arah_kebijakan_penanggung_jawab, setFieldValue]);
 
   useEffect(() => {
-    if (!values.program_id || !values.jenis_dokumen || !values.tahun) return;
+    // Simpan jika ada program_id atau arah_kebijakan_id (Step Kegiatan butuh arah_kebijakan_id untuk fetch indikator program)
+    if (!values.program_id && !values.arah_kebijakan_id) return;
+    if (!values.jenis_dokumen || !values.tahun) return;
 
     const stringified = JSON.stringify(values);
     localStorage.setItem("form_rpjmd", stringified);
@@ -180,15 +185,39 @@ export default function ProgramStep({ options, tabKey, setTabKey, onNext }) {
       try {
         setLoadingProgram(true);
         const jd = String(values.jenis_dokumen || "").trim().toLowerCase();
-        const res = await fetchProgramsForStep({
-          tahun: values.tahun,
-          jenis_dokumen: jd,
-          // Prefer arah_kebijakan_id jika tersedia: alur operator adalah Arah Kebijakan -> Program.
-          ...(values.arah_kebijakan_id
-            ? { arah_kebijakan_id: values.arah_kebijakan_id }
-            : { sasaran_id: values.sasaran_id }),
-          periode_id: values.periode_id,
-        });
+
+        if (values.arah_kebijakan_id) {
+            const cloneRes = await fetch("/api/programs/auto-clone", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${localStorage.getItem("token")}`,
+              },
+              body: JSON.stringify({
+                arahKebijakanId: values.arah_kebijakan_id,
+                strategiId: values.strategi_id || null,
+                periodeId: values.periode_id || null,
+                sasaranId: values.sasaran_id || null,
+                rpjmdId: values.rpjmd_id || values.sasaran_id || null,
+                tahun: values.tahun,
+                jenisDokumen: jd,
+              }),
+            });
+
+            if (!cloneRes.ok) {
+              const errBody = await cloneRes.json().catch(() => null);
+              throw new Error(errBody?.message || "Gagal auto-clone program");
+            }
+          }
+
+          const res = await fetchProgramsForStep({
+            tahun: values.tahun,
+            jenis_dokumen: jd,
+            ...(values.arah_kebijakan_id
+              ? { arah_kebijakan_id: values.arah_kebijakan_id }
+              : { sasaran_id: values.sasaran_id }),
+            periode_id: values.periode_id,
+          });
         const rows = normalizeListItems(res.data);
         const mapped = rows.map((p) => {
           const h = hierarchyFromProgramRow(p);
@@ -248,6 +277,7 @@ export default function ProgramStep({ options, tabKey, setTabKey, onNext }) {
     [
       values.sasaran_id,
       values.arah_kebijakan_id,
+      values.strategi_id,
       values.tahun,
       values.jenis_dokumen,
       values.periode_id,
@@ -308,7 +338,29 @@ export default function ProgramStep({ options, tabKey, setTabKey, onNext }) {
           }
         );
         if (cancelled) return;
-        const rawRows = extractIndikatorProgramListFromResponseBody(res.data);
+        let rawRows = extractIndikatorProgramListFromResponseBody(res.data);
+
+        // Fallback via prefix kode AR → IP jika filter arah_kebijakan_id tidak menemukan data.
+        if (rawRows.length === 0) {
+          const pRefAR = latestValuesRef.current.program_ref_ar_kode_indikator;
+          if (pRefAR) {
+            const ipPrefix = String(pRefAR).trim().replace(/^AR/i, "IP");
+            if (ipPrefix) {
+              try {
+                const res2 = await fetchIndikatorProgramByKodePrefix(ipPrefix, {
+                  tahun: String(values.tahun),
+                  jenis_dokumen: jd,
+                });
+                if (!cancelled) {
+                  const rows2 = extractIndikatorProgramListFromResponseBody(res2.data);
+                  if (rows2.length > 0) rawRows = rows2;
+                }
+              } catch { /* abaikan */ }
+            }
+          }
+        }
+        if (cancelled) return;
+
         const pjFallback = firstPenanggungJawabFromWizardContext(values);
         let mapped = rawRows.map((r) => {
           const row = mapIndikatorProgramApiRowToWizard(r);
@@ -340,14 +392,14 @@ export default function ProgramStep({ options, tabKey, setTabKey, onNext }) {
 
         setFieldValue("program", mapped);
         if (mapped.length > 0) {
+          // Hydrate semua field draft (termasuk kode_indikator dan nama_indikator) dari record pertama.
           hydrateDraftFromIndikatorRow(
             mapped[0],
             setFieldValue,
-            PROGRAM_EXTRA_DRAFT_KEYS
+            PROGRAM_EXTRA_DRAFT_KEYS,
           );
 
-          // Pola ArahKebijakanStep: jika penanggung_jawab kosong, isi dari konteks wizard (arah/strategi/tujuan).
-          // Letakkan setelah hydrate agar nilai hydrate tidak menimpa fallback.
+          // Jika penanggung_jawab masih kosong, isi dari konteks wizard.
           if (pjFallback != null && String(pjFallback).trim() !== "") {
             const cur = values?.penanggung_jawab;
             const empty = cur == null || String(cur).trim() === "";
@@ -356,18 +408,12 @@ export default function ProgramStep({ options, tabKey, setTabKey, onNext }) {
             }
           }
 
-          // Jika API mengembalikan baris "referensi" (program_id NULL) untuk kompatibilitas legacy,
-          // jangan pakai kode_indikator ST... sebagai kode indikator Program.
-          // Tetap gunakan sebagai referensi konten (nama/uraian), tetapi kode di-generate dari AR... -> IP-...
-          const first = mapped[0] ?? rawRows?.[0];
+          const first = mapped[0];
           const fk = first?.program_id;
-          const kodeFromRow = String(first?.kode_indikator ?? "").trim();
           const isRef =
             fk == null || String(fk).trim() === "" || String(fk) === "null";
-          const hasValidProgramKode = kodeFromRow.startsWith("IP");
 
-          if (isRef && !hasValidProgramKode) {
-            setFieldValue("kode_indikator", "");
+          if (isRef) {
             // Auto isi OPD penanggung jawab dari konteks arah kebijakan jika masih kosong.
             const pjFromArah =
               values?.arah_kebijakan_penanggung_jawab != null &&
@@ -381,16 +427,6 @@ export default function ProgramStep({ options, tabKey, setTabKey, onNext }) {
             ) {
               setFieldValue("penanggung_jawab", pjFromArah);
             }
-            // Agar preview sync (baseline/pj) bisa match draft yang memakai kode IP-...,
-            // kosongkan juga kode pada baris list (dedupeKey akan fallback ke ctx kode_indikator).
-            const next = [...mapped];
-            next[0] = { ...next[0], kode_indikator: "" };
-            setFieldValue("program", next);
-          } else if (kodeFromRow) {
-            setFieldValue("kode_indikator", kodeFromRow);
-            const next = [...mapped];
-            next[0] = { ...next[0], kode_indikator: kodeFromRow };
-            setFieldValue("program", next);
           }
         } else {
           clearIndikatorDraftScalars(setFieldValue, PROGRAM_DRAFT_CLEAR_KEYS);

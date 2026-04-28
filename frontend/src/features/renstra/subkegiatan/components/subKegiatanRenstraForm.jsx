@@ -153,7 +153,15 @@ export default function SubkegiatanRenstraForm({
                 onChange={(e) => {
                   const raw = e.target.value;
                   const v = raw === "" ? null : Number(raw);
+                  
                   field.onChange(v);
+
+                  setValue("sub_kegiatan_id", v, {
+                    shouldDirty: true,
+                    shouldTouch: true,
+                    shouldValidate: true,
+                  });
+
                   if (v == null) return;
                   const sub = subKegiatanOptions.find(
                     (s) => Number(s.value) === Number(v)
@@ -170,9 +178,7 @@ export default function SubkegiatanRenstraForm({
                     "nama_bidang_opd",
                     sub.nama_bidang_opd || renstraAktif?.bidang_opd || ""
                   );
-                  setValue("renstra_program_id", sub.renstra_program_id ?? null, {
-                    shouldValidate: true,
-                  });
+                  
                 }}
                 disabled={!subKegiatanOptions.length}
                 style={{

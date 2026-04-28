@@ -21,6 +21,7 @@ export default function useStepTemplateData({
   tahun,
   dokumen,
   programId,
+  arahKebijakanId,
   kegiatanId,
   indikatorProgramId,
   kegiatanKodeIndikator,
@@ -75,27 +76,21 @@ export default function useStepTemplateData({
 
     const fetchIndikatorProgram = async () => {
       try {
+        // Kirim arah_kebijakan_id jika tersedia — backend memprioritaskan filter ini di atas program_id,
+        // sehingga menemukan record yang SAMA dengan yang dipakai ProgramStep (termasuk record isRef
+        // dengan program_id NULL yang linked ke arah_kebijakan). Ini memastikan indikator_program_id
+        // yang dipilih user menunjuk ke record yang benar, sehingga IndikatorKegiatan yang ditemukan
+        // juga benar.
         const res = await fetchIndikatorProgramOptions({
           program_id: programId,
+          ...(arahKebijakanId ? { arah_kebijakan_id: arahKebijakanId } : {}),
           jenis_dokumen: dokumen,
           tahun,
         });
 
         const rows = normalizeListItems(res.data);
 
-        // Prioritaskan baris indikator program yang benar-benar terikat ke program (program_id != null).
-        // Baris legacy hasil impor sering program_id NULL tetapi masih ikut ter-return untuk kompatibilitas.
-        const hasConcrete = rows.some(
-          (r) => r?.program_id != null && String(r.program_id).trim() !== "",
-        );
-        const effective = hasConcrete
-          ? rows.filter(
-              (r) =>
-                r?.program_id != null && String(r.program_id).trim() !== "",
-            )
-          : rows;
-
-        const opts = effective
+        const opts = rows
           .map((item) => ({
             value: item.id,
             label: `${item.kode_indikator} - ${item.nama_indikator}`,
@@ -108,6 +103,19 @@ export default function useStepTemplateData({
           .filter((o) => o.value != null && String(o.value).trim() !== "");
 
         setProgramIndikatorOptions(opts);
+
+        // Auto-pilih opsi pertama jika nilai saat ini tidak ada di opsi baru (atau belum dipilih).
+        // Ini memastikan indikator_program_id selalu menunjuk ke record yang ditemukan
+        // via arah_kebijakan_id (record yang sama dengan ProgramStep).
+        if (opts.length > 0) {
+          const currentIdStr = String(indikatorProgramId ?? "").trim();
+          const stillValid =
+            currentIdStr !== "" &&
+            opts.some((o) => String(o.value) === currentIdStr);
+          if (!stillValid) {
+            setFieldValue("indikator_program_id", opts[0].value);
+          }
+        }
       } catch (err) {
         console.error("❌ Gagal fetch indikator program:", err);
         setProgramIndikatorOptions([]);
@@ -115,7 +123,7 @@ export default function useStepTemplateData({
     };
 
     fetchIndikatorProgram();
-  }, [stepKey, programId, dokumen, tahun]);
+  }, [stepKey, programId, arahKebijakanId, dokumen, tahun]);
 
   useEffect(() => {
     // Step Sub Kegiatan: dropdown acuan indikator kegiatan (terikat ke indikator program + kegiatan).

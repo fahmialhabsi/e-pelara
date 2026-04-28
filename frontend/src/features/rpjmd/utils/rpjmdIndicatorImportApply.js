@@ -6,7 +6,7 @@
  * - Capaian tahun 1 = baseline 2024 (kondisi awal / titik tolak kinerja menjelang tahun pertama RPJMD);
  *   capaian tahun 2–5 dikosongkan agar diisi dari realisasi pemantauan atau dari rangkaian historis tab 2.28 bila relevan.
  */
-export function applyRpjmdTujuanSasaran31Row(row, setFieldValue) {
+export function applyRpjmdTujuanSasaran31Row(row, setFieldValue, wizardStepKey = null) {
   if (!row || typeof setFieldValue !== "function") return;
   setFieldValue("nama_indikator", String(row.indikator || "").trim());
   const bl = row.baseline_2024;
@@ -25,5 +25,9 @@ export function applyRpjmdTujuanSasaran31Row(row, setFieldValue) {
   setFieldValue("capaian_tahun_1", bl != null ? String(bl).trim() : "");
   for (let i = 2; i <= 5; i += 1) {
     setFieldValue(`capaian_tahun_${i}`, "");
+  }
+  // PATCH: Jangan pernah timpa kode_indikator pada step Sasaran
+  if (wizardStepKey !== "sasaran" && row.kode_indikator) {
+    setFieldValue("kode_indikator", String(row.kode_indikator).trim());
   }
 }

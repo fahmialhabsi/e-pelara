@@ -1,9 +1,12 @@
-// src/routes/renstraRoutes.jsx
+﻿// src/routes/renstraRoutes.jsx
 import React from "react";
 import TargetRenstraList from "../features/renstra/pages/TargetRenstraList";
 
 const ListRenstraOPD = React.lazy(() =>
   import("../features/renstra/pages/ListRenstraOPD")
+);
+const RenstraRpjmdLinkTesterPage = React.lazy(() =>
+  import("../features/renstra/audit/pages/RenstraRpjmdLinkTesterPage")
 );
 const FormRenstraOPD = React.lazy(() =>
   import("../features/renstra/components/FormRenstraOPD")
@@ -107,7 +110,7 @@ const TargetRenstra = React.lazy(() =>
 );
 
 // /* Input Tabel Renstra */
-// ✅ Tujuan Tabel
+// Tujuan Tabel
 const RenstraTabelTujuanForm = React.lazy(() =>
   import("../features/renstra/tujuan/components/RenstraTabelTujuanForm")
 );
@@ -121,7 +124,7 @@ const RenstraTabelTujuanEditPage = React.lazy(() =>
   import("../features/renstra/tujuan/pages/RenstraTabelTujuanEditPage")
 );
 
-// ✅ Sasaran Tabel
+// Sasaran Tabel
 const RenstraTabelSasaranForm = React.lazy(() =>
   import("../features/renstra/sasaran/components/RenstraTabelSasaranForm")
 );
@@ -135,7 +138,7 @@ const RenstraTabelSasaranEditPage = React.lazy(() =>
   import("../features/renstra/sasaran/pages/RenstraTabelSasaranEditPage")
 );
 
-// ✅ Program Tabel
+// Program Tabel
 const RenstraTabelProgramForm = React.lazy(() =>
   import("../features/renstra/program/components/RenstraTabelProgramForm")
 );
@@ -156,7 +159,7 @@ const RenstraTabelProgramFormWrapper = React.lazy(() =>
   )
 );
 
-// ✅ Kegiatan Tabel
+// Kegiatan Tabel
 const RenstraTabelKegiatanForm = React.lazy(() =>
   import("../features/renstra/kegiatan/components/RenstraTabelKegiatanForm")
 );
@@ -170,7 +173,7 @@ const RenstraTabelKegiatanEditPage = React.lazy(() =>
   import("../features/renstra/kegiatan/pages/RenstraTabelKegiatanEditPage")
 );
 
-// ✅ Sub Kegiatan Tabel
+// Sub Kegiatan Tabel
 const RenstraTabelSubKegiatanForm = React.lazy(() =>
   import(
     "../features/renstra/subkegiatan/components/RenstraTabelSubKegiatanForm"
@@ -190,7 +193,7 @@ const RenstraTabelSubKegiatanEditPage = React.lazy(() =>
   )
 );
 
-// ✅ Tabel Strategi & Kebijakan
+// Tabel Strategi & Kebijakan
 const RenstraTabelStrategiKebijakanListPage = React.lazy(() =>
   import("../features/renstra/strategiKebijakan/pages/RenstraTabelStrategiKebijakanListPage")
 );
@@ -201,7 +204,7 @@ const RenstraTabelStrategiKebijakanEditPage = React.lazy(() =>
   import("../features/renstra/strategiKebijakan/pages/RenstraTabelStrategiKebijakanEditPage")
 );
 
-// ✅ Tabel Prioritas (Nasional / Daerah / Gubernur)
+// Tabel Prioritas (Nasional / Daerah / Gubernur)
 const RenstraTabelPrioritasListPage = React.lazy(() =>
   import("../features/renstra/prioritas/pages/RenstraTabelPrioritasListPage")
 );
@@ -219,6 +222,7 @@ const renstraRoutes = [
   { path: "renstra/:babId", element: <DynamicBabPage tahun={2025} /> },
   { path: "renstra/cascading", element: <FormCascadingRenstra /> },
 
+  { path: "renstra/audit/keterhubungan", element: <RenstraRpjmdLinkTesterPage /> },
   { path: "renstra/tujuan", element: <TujuanRenstraListPage /> },
   { path: "renstra/tujuan/add", element: <TujuanRenstraAddPage /> },
   { path: "renstra/tujuan/edit/:id", element: <TujuanRenstraEditPage /> },
@@ -262,7 +266,7 @@ const renstraRoutes = [
   { path: "renstra/target", element: <TargetRenstraList /> },
   { path: "renstra/target/add", element: <TargetRenstra /> },
 
-  // ✅ Input Tabel Renstra Tujuan
+  // Input Tabel Renstra Tujuan
   {
     path: "renstra/tabel/tujuan",
     element: <RenstraTabelTujuanListPage />,
@@ -276,11 +280,11 @@ const renstraRoutes = [
     element: <RenstraTabelTujuanEditPage />,
   },
   {
-    path: "renstra/tabel/tujuan/by/:tujuanId", // 🔹 route baru untuk filter by tujuan
+    path: "renstra/tabel/tujuan/by/:tujuanId", // route baru untuk filter by tujuan
     element: <RenstraTabelTujuanForm />,
   },
 
-  // ✅ Input Tabel Renstra Sasaran
+  // Input Tabel Renstra Sasaran
   {
     path: "renstra/tabel/sasaran",
     element: <RenstraTabelSasaranListPage />,
@@ -298,7 +302,7 @@ const renstraRoutes = [
     element: <RenstraTabelSasaranForm />,
   },
 
-  // ✅ Input Tabel Renstra Program
+  // Input Tabel Renstra Program
   { path: "renstra/tabel/program", element: <RenstraTabelProgramListPage /> },
   {
     path: "renstra/tabel/program/add",
@@ -309,7 +313,7 @@ const renstraRoutes = [
     element: <RenstraTabelProgramEditPage />,
   },
 
-  // ✅ Input Tabel Renstra Kegiatan
+  // Input Tabel Renstra Kegiatan
   { path: "renstra/tabel/kegiatan", element: <RenstraTabelKegiatanListPage /> },
   {
     path: "renstra/tabel/kegiatan/add",
@@ -320,7 +324,7 @@ const renstraRoutes = [
     element: <RenstraTabelKegiatanEditPage />,
   },
 
-  // ✅ Input Tabel Renstra Sub Kegiatan
+  // Input Tabel Renstra Sub Kegiatan
   {
     path: "renstra/tabel/subkegiatan",
     element: <RenstraTabelSubKegiatanListPage />,
@@ -334,15 +338,18 @@ const renstraRoutes = [
     element: <RenstraTabelSubKegiatanEditPage />,
   },
 
-  // ✅ Tabel Strategi & Arah Kebijakan
+  // Tabel Strategi & Arah Kebijakan
   { path: "renstra/tabel/strategi-kebijakan",           element: <RenstraTabelStrategiKebijakanListPage /> },
   { path: "renstra/tabel/strategi-kebijakan/add",       element: <RenstraTabelStrategiKebijakanAddPage /> },
   { path: "renstra/tabel/strategi-kebijakan/edit/:id",  element: <RenstraTabelStrategiKebijakanEditPage /> },
 
-  // ✅ Tabel Prioritas Nasional / Daerah / Gubernur
+  // Tabel Prioritas Nasional / Daerah / Gubernur
   { path: "renstra/tabel/prioritas/:jenis",            element: <RenstraTabelPrioritasListPage /> },
   { path: "renstra/tabel/prioritas/:jenis/add",        element: <RenstraTabelPrioritasAddPage /> },
   { path: "renstra/tabel/prioritas/:jenis/edit/:id",   element: <RenstraTabelPrioritasEditPage /> },
 ];
 
 export default renstraRoutes;
+
+
+

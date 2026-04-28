@@ -1,5 +1,5 @@
 // src/features/renstra/kebijakan/components/kebijakanRenstraForm.jsx
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import { Form, Button, Card, Space, App } from "antd";
 import { useNavigate } from "react-router-dom";
 import { useKebijakanRenstraForm } from "@/hooks/templatesUseRenstra/useKebijakanRenstraForm";
@@ -33,13 +33,52 @@ const KebijakanRenstraForm = ({ initialData = null, renstraAktif }) => {
   const strategiOptions = Array.isArray(dropdowns?.["renstra-strategi"])
     ? dropdowns["renstra-strategi"]
     : [];
-  const arahKebijakanOptions = Array.isArray(dropdowns?.["arah-kebijakan"])
+  const arahKebijakanOptionsRaw = Array.isArray(dropdowns?.["arah-kebijakan"])
     ? dropdowns["arah-kebijakan"]
     : [];
 
+  const selectedRenstraStrategi = useMemo(() => {
+    const sid = Number(watch("strategi_id"));
+    if (!Number.isFinite(sid) || sid <= 0) return null;
+    return strategiOptions.find((x) => Number(x?.id) === sid) ?? null;
+  }, [strategiOptions, watch]);
+
+  const expectedRpjmdStrategiId = useMemo(() => {
+    const rid = Number(selectedRenstraStrategi?.rpjmd_strategi_id);
+    return Number.isFinite(rid) && rid > 0 ? rid : null;
+  }, [selectedRenstraStrategi?.rpjmd_strategi_id]);
+
+  const expectedArahKodePrefix = useMemo(() => {
+    const kode = String(selectedRenstraStrategi?.kode_strategi || "").trim();
+    if (!kode) return "";
+    // SSTx-... -> ASSTx-...
+    return kode.replace(/^SST/i, "ASST");
+  }, [selectedRenstraStrategi?.kode_strategi]);
+
+  // Filter Arah Kebijakan RPJMD: hanya yang turunan dari Strategi RPJMD pada RenstraStrategi terpilih.
+  const arahKebijakanOptions = useMemo(() => {
+    let list = arahKebijakanOptionsRaw;
+
+    if (expectedRpjmdStrategiId) {
+      list = list.filter((x) => Number(x?.strategi_id) === Number(expectedRpjmdStrategiId));
+    }
+
+    // Tambahan filter kode: hanya ASST{kode_strategi}.* agar user tidak salah pilih.
+    // Contoh: Strategi Renstra SST2-01-03.1 -> Arah RPJMD harus ASST2-01-03.1.1 / .2 dst.
+    const pref = expectedArahKodePrefix;
+    if (pref) {
+      const filtered = list.filter((x) => String(x?.kode_arah || "").startsWith(`${pref}.`));
+      // Jika sudah ada filter chain (strategi_id), jangan sampai dropdown kosong total hanya karena kode tidak selaras.
+      if (expectedRpjmdStrategiId) return filtered.length ? filtered : list;
+      return filtered;
+    }
+
+    return list;
+  }, [arahKebijakanOptionsRaw, expectedRpjmdStrategiId, expectedArahKodePrefix]);
+
   const handleArahKebijakanChange = useCallback(
     (value) => {
-      const selected = arahKebijakanOptions.find(
+      const selected = arahKebijakanOptionsRaw.find(
         (item) => Number(item.id) === Number(value)
       );
       const teks = selected?.deskripsi || "";
@@ -69,6 +108,44 @@ const KebijakanRenstraForm = ({ initialData = null, renstraAktif }) => {
     }
   }, [initialData, renstraAktif?.id, setValue]);
 
+  // Jika data lama punya rpjmd_arah_id yang sudah tidak ada (mis. perubahan ID setelah clone/import),
+  // coba auto-fix berdasarkan kode_arah (no_arah_rpjmd). Jika tidak bisa, kosongkan agar user memilih ulang.
+  useEffect(() => {
+    if (!initialData) return;
+    if (!arahKebijakanOptions.length) return;
+
+    const current = watch("rpjmd_arah_id");
+    if (!current) return;
+
+    const exists = arahKebijakanOptions.some((x) => Number(x.id) === Number(current));
+    if (exists) return;
+
+    const kode = String(initialData.no_arah_rpjmd || "").trim();
+    const byKode = kode
+      ? arahKebijakanOptions.find((x) => String(x.kode_arah || "").trim() === kode)
+      : null;
+
+    if (byKode?.id) {
+      setValue("rpjmd_arah_id", byKode.id);
+      handleArahKebijakanChange(byKode.id);
+      message.warning(
+        "Arah Kebijakan RPJMD pada data lama tidak ditemukan. Sistem menyesuaikan otomatis berdasarkan kode Arah Kebijakan.",
+      );
+      return;
+    }
+
+    // tidak bisa auto-fix → force pilih ulang
+    setValue("rpjmd_arah_id", "");
+    message.error("Arah Kebijakan RPJMD pada data ini tidak valid. Silakan pilih ulang Arah Kebijakan RPJMD.");
+  }, [
+    initialData,
+    arahKebijakanOptions,
+    setValue,
+    watch,
+    handleArahKebijakanChange,
+    message,
+  ]);
+
   useEffect(() => {
     const strategiId = watch("strategi_id");
     if (
@@ -86,6 +163,52 @@ const KebijakanRenstraForm = ({ initialData = null, renstraAktif }) => {
     initialData,
     setValue,
   ]);
+
+  // Jika strategi berubah dan arah kebijakan yang terpilih tidak termasuk chain-nya, kosongkan agar user pilih ulang.
+  
+  useEffect(() => {
+    const currentArah = watch("rpjmd_arah_id");
+    if (!currentArah) return;
+    if (!expectedRpjmdStrategiId) return;
+
+    const ok = arahKebijakanOptionsRaw.some(
+      (x) =>
+        Number(x?.id) === Number(currentArah) &&
+        Number(x?.strategi_id) === Number(expectedRpjmdStrategiId),
+    );
+    if (ok) return;
+
+    
+
+    setValue("rpjmd_arah_id", "");
+    setValue("no_arah_rpjmd", "");
+    setValue("isi_arah_rpjmd", "");
+    setValue("kode_kebjkn", "");
+  }, [watch, expectedRpjmdStrategiId, arahKebijakanOptionsRaw, setValue]);
+
+  
+
+  // Jika strategi berubah dan arah kebijakan tidak sesuai prefix kode (ASST...), kosongkan agar user tidak salah pilih.
+  useEffect(() => {
+    const currentArah = watch("rpjmd_arah_id");
+    if (!currentArah) return;
+    const pref = expectedArahKodePrefix;
+    if (!pref) return;
+
+    const ok = arahKebijakanOptionsRaw.some(
+      (x) =>
+        Number(x?.id) === Number(currentArah) &&
+        String(x?.kode_arah || "").startsWith(`${pref}.`),
+    );
+    if (ok) return;
+
+    setValue("rpjmd_arah_id", "");
+    setValue("no_arah_rpjmd", "");
+    setValue("isi_arah_rpjmd", "");
+    setValue("kode_kebjkn", "");
+  }, [watch, expectedArahKodePrefix, arahKebijakanOptionsRaw, setValue]);
+
+  
 
   return (
     <Card
@@ -129,6 +252,10 @@ const KebijakanRenstraForm = ({ initialData = null, renstraAktif }) => {
           }))}
           onChange={(val) => {
             setValue("strategi_id", val);
+            setValue("rpjmd_arah_id", "");
+            setValue("no_arah_rpjmd", "");
+            setValue("isi_arah_rpjmd", "");
+            setValue("kode_kebjkn", "");
             if (!initialData && triggerKodeOtomatis) triggerKodeOtomatis(val);
           }}
         />

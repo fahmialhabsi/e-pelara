@@ -1,3 +1,4 @@
+// frontend/src/shared/components/IndikatorEditModal.jsx
 /**
  * IndikatorEditModal.jsx
  * Modal edit indikator RPJMD — semua tipe (tujuan, sasaran, strategi, dll.)

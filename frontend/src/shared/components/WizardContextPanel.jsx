@@ -21,7 +21,7 @@ const STATUS = {
   pending: { bg: "#f8f9fa", border: "#dee2e6", label: "#adb5bd", badge: "#adb5bd" },
 };
 
-function HierarchyItem({ icon, label, value, status, isLast }) {
+function HierarchyItem({ icon, label, value, subValue, status, isLast }) {
   const c = STATUS[status] || STATUS.pending;
   const isDone    = status === "done";
   const isActive  = status === "active";
@@ -96,6 +96,11 @@ function HierarchyItem({ icon, label, value, status, isLast }) {
         >
           {value || "Belum dipilih"}
         </div>
+        {subValue && (
+          <div style={{ fontSize: 10, color: "#5a5a8a", marginTop: 3, fontStyle: "italic", lineHeight: 1.4 }}>
+            ↳ {subValue}
+          </div>
+        )}
       </div>
 
       {/* Connector line */}
@@ -235,6 +240,13 @@ export default function WizardContextPanel({
             icon={item.icon}
             label={item.label}
             value={labelMap[item.key]}
+            subValue={
+              item.key === "tujuan"         ? (values.indikator_tujuan_label         || null) :
+              item.key === "sasaran"        ? (values.indikator_sasaran_label        || null) :
+              item.key === "strategi"       ? (values.indikator_strategi_label       || null) :
+              item.key === "arah_kebijakan" ? (values.indikator_arah_kebijakan_label || null) :
+              undefined
+            }
             status={getStatus(item.stepIdx)}
             isLast={i === HIERARCHY.length - 1}
           />

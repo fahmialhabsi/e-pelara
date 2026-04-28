@@ -1,0 +1,10 @@
+diff a/frontend/src/features/renstra/audit/pages/RenstraRpjmdLinkTesterPage.jsx b/frontend/src/features/renstra/audit/pages/RenstraRpjmdLinkTesterPage.jsx	(rejected hunks)
+@@ -1,7 +1,7 @@
+ import React, { useMemo, useState, useCallback } from "react";
+ import { useNavigate } from "react-router-dom";
+-import { useQuery } from "@tanstack/react-query";
++import { useQuery, useQueryClient } from "@tanstack/react-query";
+ import {
+   Alert,
+   Button,
+   Card,

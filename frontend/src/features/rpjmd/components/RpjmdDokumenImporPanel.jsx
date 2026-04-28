@@ -1,3 +1,4 @@
+// frontend/src/features/rpjmd/components/RpjmdDokumenImporPanel.jsx
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Badge, Button, Form, Nav, OverlayTrigger, Spinner, Tab, Table, Tooltip } from "react-bootstrap";
 import { Link } from "react-router-dom";
@@ -150,16 +151,16 @@ const GRID_INDIKATOR_JENIS_THROUGH_CAPAIAN = [
   { key: "definisi_operasional", label: "Definisi Operasional", truncate: 40 },
   { key: "metode_penghitungan", label: "Metode Penghitungan", truncate: 40 },
   { key: "baseline", label: "Baseline", truncate: 20 },
-  { key: "target_tahun_1", label: "Target Tahun 1", truncate: 14 },
-  { key: "target_tahun_2", label: "Target Tahun 2", truncate: 14 },
-  { key: "target_tahun_3", label: "Target Tahun 3", truncate: 14 },
-  { key: "target_tahun_4", label: "Target Tahun 4", truncate: 14 },
-  { key: "target_tahun_5", label: "Target Tahun 5", truncate: 14 },
-  { key: "capaian_tahun_1", label: "capaian_tahun_1", truncate: 14 },
-  { key: "capaian_tahun_2", label: "capaian_tahun_2", truncate: 14 },
-  { key: "capaian_tahun_3", label: "capaian_tahun_3", truncate: 14 },
-  { key: "capaian_tahun_4", label: "capaian_tahun_4", truncate: 14 },
-  { key: "capaian_tahun_5", label: "capaian_tahun_5", truncate: 14 },
+  { key: "target_tahun_1", label: "Target Tahun 1", truncate: 80 },
+  { key: "target_tahun_2", label: "Target Tahun 2", truncate: 80 },
+  { key: "target_tahun_3", label: "Target Tahun 3", truncate: 80 },
+  { key: "target_tahun_4", label: "Target Tahun 4", truncate: 80 },
+  { key: "target_tahun_5", label: "Target Tahun 5", truncate: 80 },
+  { key: "capaian_tahun_1", label: "capaian_tahun_1", truncate: 80 },
+  { key: "capaian_tahun_2", label: "capaian_tahun_2", truncate: 80 },
+  { key: "capaian_tahun_3", label: "capaian_tahun_3", truncate: 80 },
+  { key: "capaian_tahun_4", label: "capaian_tahun_4", truncate: 80 },
+  { key: "capaian_tahun_5", label: "capaian_tahun_5", truncate: 80 },
 ];
 
 const GRID_INDIKATOR_SUMBER_KET_RKPD_TIPE = [
@@ -187,7 +188,7 @@ const GRID_INDIKATOR_SUMBER_KET_TIPE_DOC = [
 
 /** Kolom grid tab Indikator tujuan — urutan & label sama header template Excel `indikatortujuans`. */
 const INDIKATOR_TUJUAN_GRID_COLS = [
-  { key: "nama_indikator", label: "nama_indikator", truncate: 72 },
+  { key: "nama_indikator", label: "nama_indikator", truncate: 200 },
   { key: "indikator_kinerja", label: "indikator_kinerja", truncate: 28 },
   { key: "tolok_ukur_kinerja", label: "tolok_ukur_kinerja", truncate: 40 },
   { key: "target_kinerja", label: "target_kinerja", truncate: 40 },
@@ -195,23 +196,23 @@ const INDIKATOR_TUJUAN_GRID_COLS = [
   { key: "metode_penghitungan", label: "metode_penghitungan", truncate: 40 },
   { key: "kriteria_kuantitatif", label: "kriteria_kuantitatif", truncate: 36 },
   { key: "kriteria_kualitatif", label: "kriteria_kualitatif", truncate: 36 },
-  { key: "target_tahun_1", label: "target_tahun_1", truncate: 14 },
-  { key: "target_tahun_2", label: "target_tahun_2", truncate: 14 },
-  { key: "target_tahun_3", label: "target_tahun_3", truncate: 14 },
-  { key: "target_tahun_4", label: "target_tahun_4", truncate: 14 },
-  { key: "target_tahun_5", label: "target_tahun_5", truncate: 14 },
+  { key: "target_tahun_1", label: "target_tahun_1", truncate: 80 },
+  { key: "target_tahun_2", label: "target_tahun_2", truncate: 80 },
+  { key: "target_tahun_3", label: "target_tahun_3", truncate: 80 },
+  { key: "target_tahun_4", label: "target_tahun_4", truncate: 80 },
+  { key: "target_tahun_5", label: "target_tahun_5", truncate: 80 },
   { key: "sumber_data", label: "sumber_data", truncate: 36 },
-  { key: "capaian_tahun_1", label: "capaian_tahun_1", truncate: 14 },
-  { key: "capaian_tahun_2", label: "capaian_tahun_2", truncate: 14 },
-  { key: "capaian_tahun_3", label: "capaian_tahun_3", truncate: 14 },
-  { key: "capaian_tahun_4", label: "capaian_tahun_4", truncate: 14 },
-  { key: "capaian_tahun_5", label: "capaian_tahun_5", truncate: 14 },
+  { key: "capaian_tahun_1", label: "capaian_tahun_1", truncate: 80 },
+  { key: "capaian_tahun_2", label: "capaian_tahun_2", truncate: 80 },
+  { key: "capaian_tahun_3", label: "capaian_tahun_3", truncate: 80 },
+  { key: "capaian_tahun_4", label: "capaian_tahun_4", truncate: 80 },
+  { key: "capaian_tahun_5", label: "capaian_tahun_5", truncate: 80 },
   { key: "satuan", label: "satuan", truncate: 16 },
 ];
 
 /** `indikatorsasarans` — pola kolom selaras tab Indikator Tujuan (tanpa ID internal). */
 const INDIKATOR_SASARAN_GRID_COLS = [
-  { key: "nama_indikator", label: "Nama Indikator", truncate: 72 },
+  { key: "nama_indikator", label: "Nama Indikator", truncate: 200 },
   ...GRID_INDIKATOR_JENIS_THROUGH_CAPAIAN,
   ...GRID_INDIKATOR_SUMBER_KET_RKPD_TIPE,
 ];
@@ -236,7 +237,7 @@ const INDIKATOR_PROGRAM_GRID_COLS = [
 /** `indikatorkegiatans` — acuan indikator sasaran + isi indikator (tanpa kode / FK hierarki / program_id di pratinjau). */
 const INDIKATOR_KEGIATAN_GRID_COLS = [
   { key: "indikator_sasaran_id", label: "Indik. Sasaran (acuan)", truncate: 10 },
-  { key: "nama_indikator", label: "Nama Indikator", truncate: 72 },
+  { key: "nama_indikator", label: "Nama Indikator", truncate: 200 },
   ...GRID_INDIKATOR_JENIS_THROUGH_CAPAIAN,
   { key: "sumber_data", label: "Sumber Data", truncate: 36 },
   { key: "tipe_indikator", label: "Tipe Indikator", truncate: 10 },
@@ -246,7 +247,7 @@ const INDIKATOR_KEGIATAN_GRID_COLS = [
 const INDIKATOR_SUB_KEGIATAN_GRID_COLS = [
   { key: "kegiatan_id", label: "Kegiatan (acuan)", truncate: 10 },
   { key: "sub_kegiatan_id", label: "Sub kegiatan ID", truncate: 10 },
-  { key: "nama_indikator", label: "Nama Indikator", truncate: 72 },
+  { key: "nama_indikator", label: "Nama Indikator", truncate: 200 },
   { key: "jenis", label: "Jenis (IKU/IKK)", truncate: 20 },
   { key: "tolok_ukur_kinerja", label: "Tolok Ukur Kinerja", truncate: 40 },
   { key: "target_kinerja", label: "Target Kinerja", truncate: 40 },
@@ -257,16 +258,16 @@ const INDIKATOR_SUB_KEGIATAN_GRID_COLS = [
   { key: "definisi_operasional", label: "Definisi Operasional", truncate: 40 },
   { key: "metode_penghitungan", label: "Metode Penghitungan", truncate: 40 },
   { key: "baseline", label: "Baseline", truncate: 20 },
-  { key: "target_tahun_1", label: "Target Tahun 1", truncate: 14 },
-  { key: "target_tahun_2", label: "Target Tahun 2", truncate: 14 },
-  { key: "target_tahun_3", label: "Target Tahun 3", truncate: 14 },
-  { key: "target_tahun_4", label: "Target Tahun 4", truncate: 14 },
-  { key: "target_tahun_5", label: "Target Tahun 5", truncate: 14 },
-  { key: "capaian_tahun_1", label: "capaian_tahun_1", truncate: 14 },
-  { key: "capaian_tahun_2", label: "capaian_tahun_2", truncate: 14 },
-  { key: "capaian_tahun_3", label: "capaian_tahun_3", truncate: 14 },
-  { key: "capaian_tahun_4", label: "capaian_tahun_4", truncate: 14 },
-  { key: "capaian_tahun_5", label: "capaian_tahun_5", truncate: 14 },
+  { key: "target_tahun_1", label: "Target Tahun 1", truncate: 80 },
+  { key: "target_tahun_2", label: "Target Tahun 2", truncate: 80 },
+  { key: "target_tahun_3", label: "Target Tahun 3", truncate: 80 },
+  { key: "target_tahun_4", label: "Target Tahun 4", truncate: 80 },
+  { key: "target_tahun_5", label: "Target Tahun 5", truncate: 80 },
+  { key: "capaian_tahun_1", label: "capaian_tahun_1", truncate: 80 },
+  { key: "capaian_tahun_2", label: "capaian_tahun_2", truncate: 80 },
+  { key: "capaian_tahun_3", label: "capaian_tahun_3", truncate: 80 },
+  { key: "capaian_tahun_4", label: "capaian_tahun_4", truncate: 80 },
+  { key: "capaian_tahun_5", label: "capaian_tahun_5", truncate: 80 },
   { key: "sumber_data", label: "Sumber Data", truncate: 36 },
   { key: "tipe_indikator", label: "Tipe Indikator", truncate: 10 },
 ];
@@ -285,11 +286,11 @@ const DEFAULT_INDIKATOR_GRID_COLS = [
   { key: "kode_indikator", label: "Kode indikator", truncate: 32 },
   { key: "nama_indikator", label: "Nama indikator", truncate: 160 },
   { key: "satuan", label: "Satuan", truncate: 24 },
-  { key: "target_tahun_1", label: "Target tahun 1", truncate: 16 },
-  { key: "target_tahun_2", label: "Target tahun 2", truncate: 16 },
-  { key: "target_tahun_3", label: "Target tahun 3", truncate: 16 },
-  { key: "target_tahun_4", label: "Target tahun 4", truncate: 16 },
-  { key: "target_tahun_5", label: "Target tahun 5", truncate: 16 },
+  { key: "target_tahun_1", label: "Target tahun 1", truncate: 80 },
+  { key: "target_tahun_2", label: "Target tahun 2", truncate: 80 },
+  { key: "target_tahun_3", label: "Target tahun 3", truncate: 80 },
+  { key: "target_tahun_4", label: "Target tahun 4", truncate: 80 },
+  { key: "target_tahun_5", label: "Target tahun 5", truncate: 80 },
 ];
 
 function gridColsForIndikatorTable(tableKey) {
@@ -1524,7 +1525,8 @@ export default function RpjmdDokumenImporPanel({ periodeId }) {
                         className="small align-top text-break"
                         style={{
                           maxWidth:
-                            c.key === "nama_indikator" || c.key === "nama_sub_kegiatan" ? 220 : 120,
+                            c.key === "nama_indikator" || c.key === "nama_sub_kegiatan" ? 340 :
+                            c.key.includes("target_tahun_") || c.key.includes("capaian_tahun_") ? 240 : 120,
                           whiteSpace: "normal",
                           wordBreak: "break-word",
                         }}

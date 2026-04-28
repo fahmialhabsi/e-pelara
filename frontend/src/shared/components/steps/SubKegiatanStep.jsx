@@ -45,7 +45,12 @@ export default function SubKegiatanStep({ options, tabKey, setTabKey }) {
     if (!saved) { setRestored(true); return; }
     try {
       const parsed = JSON.parse(saved);
-      Object.entries(parsed).forEach(([key, val]) => setFieldValue(key, val, false));
+      Object.entries(parsed).forEach(([key, val]) => {
+        const cur = values?.[key];
+        const curEmpty = cur == null || (typeof cur === "string" && cur.trim() === "");
+        if (!curEmpty) return;
+        setFieldValue(key, val, false);
+      });
     } catch { /* ignore */ }
     validateForm().finally(() => setRestored(true));
   }, [setFieldValue, validateForm]);

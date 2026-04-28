@@ -91,6 +91,10 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false,
       },
+      kode_program_full: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
       locked_pagu: {
         type: DataTypes.BOOLEAN,
         defaultValue: false,

@@ -18,6 +18,12 @@ import {
   fetchRpjmdTujuanSasaran31,
   fetchRpjmdImportIndikatorTujuan,
 } from "@/features/rpjmd/services/rpjmdImportReadApi";
+import {
+  fetchIndikatorTujuanByTujuan,
+  fetchIndikatorSasaranBySasaran,
+  fetchIndikatorStrategiByStrategi,
+  fetchIndikatorArahByArahKebijakan,
+} from "@/features/rpjmd/services/indikatorRpjmdApi";
 import IndikatorInputContextSummary from "./indikatorStep/IndikatorInputContextSummary";
 import {
   listLooksPersistedFromServer,
@@ -71,11 +77,172 @@ const StepTemplate = ({
   const [rpjmdTujuanSasaran31, setRpjmdTujuanSasaran31] = useState([]);
   const [rpjmdImporIndikatorTujuan, setRpjmdImporIndikatorTujuan] = useState([]);
   const [rpjmdPdfImportRefsLoading, setRpjmdPdfImportRefsLoading] = useState(false);
+  // Opsi Indikator Tujuan untuk dropdown "Pilih Indikator Tujuan" di Step Sasaran.
+  const [indikatorTujuanOptions, setIndikatorTujuanOptions] = useState([]);
+  // Opsi Indikator Sasaran untuk dropdown "Pilih Indikator Sasaran" di Step Strategi.
+  const [indikatorSasaranOptions, setIndikatorSasaranOptions] = useState([]);
+  // Opsi Indikator Strategi untuk dropdown "Pilih Indikator Strategi" di Step Arah Kebijakan.
+  const [indikatorStrategiOptions, setIndikatorStrategiOptions] = useState([]);
+  // Opsi Indikator Arah Kebijakan untuk dropdown "Pilih Indikator Arah Kebijakan" di Step Program.
+  const [indikatorArahKebijakanOptions, setIndikatorArahKebijakanOptions] = useState([]);
 
   const wizardMisiId =
     values.misi_id != null && String(values.misi_id).trim() !== ""
       ? String(values.misi_id).trim()
       : "";
+
+  // Fetch opsi Indikator Tujuan saat Step Sasaran aktif dan tujuan_id tersedia.
+  useEffect(() => {
+    if (stepKey !== "sasaran" || !values.tujuan_id) {
+      setIndikatorTujuanOptions([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchIndikatorTujuanByTujuan(values.tujuan_id);
+        if (cancelled) return;
+        const raw = Array.isArray(res.data?.data)
+          ? res.data.data
+          : Array.isArray(res.data)
+          ? res.data
+          : [];
+        setIndikatorTujuanOptions(
+          raw
+            .filter((r) => r.id && (r.kode_indikator || r.nama_indikator))
+            .map((r) => ({
+              value: String(r.id),
+              label: [r.kode_indikator, r.nama_indikator].filter(Boolean).join(" - "),
+            }))
+        );
+      } catch {
+        if (!cancelled) setIndikatorTujuanOptions([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [stepKey, values.tujuan_id]);
+
+  // Fetch opsi Indikator Sasaran saat Step Strategi aktif dan sasaran_id tersedia.
+  useEffect(() => {
+    if (stepKey !== "strategi" || !values.sasaran_id) {
+      setIndikatorSasaranOptions([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchIndikatorSasaranBySasaran(values.sasaran_id, {
+          tahun,
+          jenis_dokumen: dokumen,
+        });
+        if (cancelled) return;
+        const raw = Array.isArray(res.data?.data)
+          ? res.data.data
+          : Array.isArray(res.data)
+          ? res.data
+          : [];
+        setIndikatorSasaranOptions(
+          raw
+            .filter((r) => r.id && (r.kode_indikator || r.nama_indikator))
+            .map((r) => ({
+              value: String(r.id),
+              label: [r.kode_indikator, r.nama_indikator].filter(Boolean).join(" - "),
+            }))
+        );
+      } catch {
+        if (!cancelled) setIndikatorSasaranOptions([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [stepKey, values.sasaran_id, tahun, dokumen]);
+
+  // Saat sasaran berubah, reset pilihan indikator sasaran (anak dari sasaran).
+  useEffect(() => {
+    setFieldValue("indikator_sasaran_id", "");
+    setFieldValue("indikator_sasaran_label", "");
+  }, [values.sasaran_id, setFieldValue]);
+
+  // Fetch opsi Indikator Strategi saat Step Arah Kebijakan aktif dan strategi_id tersedia.
+  useEffect(() => {
+    if (stepKey !== "arah_kebijakan" || !values.strategi_id) {
+      setIndikatorStrategiOptions([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchIndikatorStrategiByStrategi(values.strategi_id, {
+          tahun,
+          jenis_dokumen: dokumen,
+        });
+        if (cancelled) return;
+        const raw = Array.isArray(res.data?.data)
+          ? res.data.data
+          : Array.isArray(res.data)
+          ? res.data
+          : [];
+        setIndikatorStrategiOptions(
+          raw
+            .filter((r) => r.id && (r.kode_indikator || r.nama_indikator))
+            .map((r) => ({
+              value: String(r.id),
+              label: [r.kode_indikator, r.nama_indikator].filter(Boolean).join(" - "),
+            }))
+        );
+      } catch {
+        if (!cancelled) setIndikatorStrategiOptions([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [stepKey, values.strategi_id, tahun, dokumen]);
+
+  // Saat strategi berubah, reset pilihan indikator strategi (anak dari strategi).
+  useEffect(() => {
+    setFieldValue("indikator_strategi_id", "");
+    setFieldValue("indikator_strategi_label", "");
+  }, [values.strategi_id, setFieldValue]);
+
+  // Fetch opsi Indikator Arah Kebijakan saat Step Program aktif dan arah_kebijakan_id tersedia.
+  useEffect(() => {
+    if (stepKey !== "program" || !values.arah_kebijakan_id) {
+      setIndikatorArahKebijakanOptions([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetchIndikatorArahByArahKebijakan(values.arah_kebijakan_id, {
+          tahun,
+          jenis_dokumen: dokumen,
+        });
+        if (cancelled) return;
+        const raw = Array.isArray(res.data?.data)
+          ? res.data.data
+          : Array.isArray(res.data)
+          ? res.data
+          : [];
+        setIndikatorArahKebijakanOptions(
+          raw
+            .filter((r) => r.id && (r.kode_indikator || r.nama_indikator))
+            .map((r) => ({
+              value: String(r.id),
+              label: [r.kode_indikator, r.nama_indikator].filter(Boolean).join(" - "),
+              kode_indikator: r.kode_indikator || "",
+              penanggung_jawab: r.penanggung_jawab ?? null,
+            }))
+        );
+      } catch {
+        if (!cancelled) setIndikatorArahKebijakanOptions([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [stepKey, values.arah_kebijakan_id, tahun, dokumen]);
+
+  // Saat arah_kebijakan berubah, reset pilihan indikator arah kebijakan (anak dari arah kebijakan).
+  useEffect(() => {
+    setFieldValue("indikator_arah_kebijakan_id", "");
+    setFieldValue("indikator_arah_kebijakan_label", "");
+  }, [values.arah_kebijakan_id, setFieldValue]);
 
   useEffect(() => {
     if (
@@ -163,6 +330,7 @@ const StepTemplate = ({
     tahun,
     dokumen,
     programId: values.program_id,
+    arahKebijakanId: values.arah_kebijakan_id,
     kegiatanId: values.kegiatan_id,
     indikatorProgramId: values.indikator_program_id,
     kegiatanKodeIndikator: values.kegiatan_kode_indikator,
@@ -236,6 +404,7 @@ const StepTemplate = ({
     penanggungJawabOptions.length > 0
       ? penanggungJawabOptions
       : wizardOpdFallback;
+
 
   const { fields } = useIndikatorFields(
     values,
@@ -340,11 +509,14 @@ const StepTemplate = ({
         stepKey={stepKey}
         values={values}
         tujuanOptions={tujuanOptions}
+        indikatorTujuanOptions={indikatorTujuanOptions}
+        indikatorSasaranOptions={indikatorSasaranOptions}
+        indikatorStrategiOptions={indikatorStrategiOptions}
+        indikatorArahKebijakanOptions={indikatorArahKebijakanOptions}
         sasaranOptions={sasaranOptions}
         programOptions={programOptions}
         strategiOptions={strategiOptions}
         arahKebijakanOptions={arahKebijakanOptions}
-        arahKebijakanIndikatorOptions={options?.arah_kebijakan_indikator || []}
         subKegiatanOptions={subKegiatanOptions}
         kegiatanOptions={kegiatanOptions}
         programIndikatorOptions={programIndikatorOptions}

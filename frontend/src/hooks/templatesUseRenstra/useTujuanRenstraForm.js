@@ -4,7 +4,7 @@ import api from "@/services/api";
 import { useRenstraFormTemplate } from "./useRenstraFormTemplate";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWatch } from "react-hook-form";
-import { message } from "antd";
+import { App } from "antd";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -33,8 +33,14 @@ const generatePayload = (formData) => ({
 });
 
 export const useTujuanRenstraForm = (initialData, renstraAktif) => {
+  const { message } = App.useApp();
   const [mutationResultData, setMutationResultData] = useState(null);
   const renstraId = initialData?.renstra_id || renstraAktif?.id;
+  const opdId =
+    renstraAktif?.opd_id ??
+    initialData?.renstra?.opd_id ??
+    initialData?.opd_id ??
+    null;
 
   const defaultValues = useMemo(
     () => ({
@@ -55,7 +61,7 @@ export const useTujuanRenstraForm = (initialData, renstraAktif) => {
     initialData?.tahun_mulai;
 
   const { data: tujuanRpjmdList = [], isLoading: isTujuanLoading } = useQuery({
-    queryKey: ["tujuan-rpjmd-dropdown", tahun],
+    queryKey: ["tujuan-rpjmd-dropdown", tahun, opdId],
     queryFn: () =>
       api
         .get("/tujuan", {
@@ -64,6 +70,7 @@ export const useTujuanRenstraForm = (initialData, renstraAktif) => {
             ...(tahun != null && tahun !== ""
               ? { tahun }
               : {}),
+            ...(opdId != null && opdId !== "" ? { opd_id: opdId } : {}),
             limit: 500,
           },
         })

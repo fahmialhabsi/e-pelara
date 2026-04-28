@@ -95,6 +95,8 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
    *  setelah batch hydrateDraftFromIndikatorRow), effect ini re-fire dan
    *  stripAllPersistedRpjmdIndicatorDrafts mengosongkan semua field tab form. */
   const didRestoreRef = useRef(false);
+  /** true jika tujuan_id saat ini sudah punya indikator di DB — cegah fetchNextKode menimpa kode yang sudah ada. */
+  const hasExistingRef = useRef(false);
 
   const [filteredTujuanOptions, setFilteredTujuanOptions] = useState([]);
   const [tujuanSourceRows, setTujuanSourceRows] = useState([]);
@@ -170,6 +172,8 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
 
   useEffect(() => {
     setFieldValue("rpjmd_import_indikator_tujuan_id", "");
+    setFieldValue("indikator_tujuan_id", "");
+    setFieldValue("indikator_tujuan_label", "");
   }, [values.tujuan_id, setFieldValue]);
 
   const fetchTujuanByMisi = useCallback(
@@ -264,16 +268,21 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
         setFieldValue("kode_indikator", "");
         return;
       }
-
+      // Jika DB sudah punya indikator untuk tujuan ini, jangan timpa kode yang baru di-restore.
+      if (hasExistingRef.current) return;
       try {
         const res = await fetchNextKodeIndikatorTujuan(tujuanId, {
           tahun: values.tahun,
           jenis_dokumen: values.jenis_dokumen,
         });
+        // Double-check setelah await — indikator fetch mungkin sudah selesai lebih cepat.
+        if (hasExistingRef.current) return;
         setFieldValue("kode_indikator", res.data?.kode || "");
       } catch (err) {
-        console.error("Gagal mengambil kode indikator:", err.message);
-        setFieldValue("kode_indikator", "");
+        if (!hasExistingRef.current) {
+          console.error("Gagal mengambil kode indikator:", err.message);
+          setFieldValue("kode_indikator", "");
+        }
       }
     }, 500),
     [setFieldValue, values.tahun, values.jenis_dokumen]
@@ -305,6 +314,8 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
   }, [values, setFieldValue, generateKeteranganFrom]);
 
   useEffect(() => {
+    // Reset flag setiap kali tujuan berubah, sebelum fetch berjalan.
+    hasExistingRef.current = false;
     if (!values.tujuan_id) return;
     let cancelled = false;
     (async () => {
@@ -318,8 +329,14 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
           : [];
         const mapped = raw.map(mapApiIndikatorToListRow);
         setFieldValue("tujuan", mapped);
-        /* Draft isi dari dropdown Nama Indikator (impor / 3.1 / 2.28), bukan auto baris pertama DB. */
-        if (mapped.length === 0) {
+        if (mapped.length > 0) {
+          // Ada indikator tersimpan: set flag, batalkan fetchNextKode, restore nama + kode.
+          hasExistingRef.current = true;
+          fetchNextKode.cancel();
+          const first = mapped[0];
+          setFieldValue("nama_indikator", first.nama_indikator || "");
+          setFieldValue("kode_indikator", first.kode_indikator || "");
+        } else {
           clearIndikatorDraftScalars(setFieldValue);
         }
       } catch {
@@ -332,7 +349,16 @@ export default function TujuanStep({ options, tabKey, setTabKey, onNext }) {
     return () => {
       cancelled = true;
     };
-  }, [values.tujuan_id, setFieldValue]);
+  }, [values.tujuan_id, setFieldValue, fetchNextKode]);
+
+  // Sinkronisasi: saat Nama Indikator dikosongkan (user hapus pilihan), bersihkan Kode Indikator.
+  // Guard hasExistingRef: saat tujuan baru dipilih & belum ada record, kode tetap boleh muncul dari fetchNextKode.
+  useEffect(() => {
+    if (!hasExistingRef.current) return;
+    if (!String(values.nama_indikator || "").trim()) {
+      setFieldValue("kode_indikator", "");
+    }
+  }, [values.nama_indikator, setFieldValue]);
 
   const handleNextStep = async () => {
     const tujuanList = dedupeRpjmdIndikatorDraftRows(

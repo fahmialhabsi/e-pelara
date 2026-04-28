@@ -213,12 +213,21 @@ export default function IndikatorInputContextSummary({
         label: "Misi",
         text: formatMisi(misi) || "— belum dipilih —",
         show: true,
+        warn: false,
       },
       {
         key: "tujuan",
         label: "Tujuan",
         text: formatTujuan(tujuanRow, tujuanId) || "— belum dipilih —",
         show: stepKey !== "misi",
+        warn: false,
+      },
+      {
+        key: "indikator_tujuan",
+        label: "Indikator Tujuan",
+        text: values.indikator_tujuan_label || "— belum dipilih —",
+        show: STEPS_AFTER_SASARAN.includes(stepKey),
+        warn: !values.indikator_tujuan_label && STEPS_AFTER_SASARAN.includes(stepKey),
       },
       {
         key: "sasaran",
@@ -226,6 +235,13 @@ export default function IndikatorInputContextSummary({
         text:
           formatSasaran(sasaranRow, values.sasaran_id) || "— belum dipilih —",
         show: STEPS_AFTER_SASARAN.includes(stepKey),
+      },
+      {
+        key: "indikator_sasaran",
+        label: "Indikator Sasaran",
+        text: values.indikator_sasaran_label || "— belum dipilih —",
+        show: STEPS_AFTER_STRATEGI.includes(stepKey),
+        warn: !values.indikator_sasaran_label && STEPS_AFTER_STRATEGI.includes(stepKey),
       },
       {
         key: "strategi",
@@ -238,6 +254,14 @@ export default function IndikatorInputContextSummary({
           );
         })(),
         show: STEPS_AFTER_STRATEGI.includes(stepKey),
+        warn: false,
+      },
+      {
+        key: "indikator_strategi",
+        label: "Indikator Strategi",
+        text: values.indikator_strategi_label || "— belum dipilih —",
+        show: STEPS_AFTER_ARAH.includes(stepKey),
+        warn: !values.indikator_strategi_label && STEPS_AFTER_ARAH.includes(stepKey),
       },
       {
         key: "arah_kebijakan",
@@ -320,13 +344,16 @@ export default function IndikatorInputContextSummary({
     subKegiatanOptions,
   ]);
 
+  const hasWarning = rows.some((r) => r.warn);
+
   return (
-    <Alert variant="light" className="border py-2 mb-3 small">
+    <Alert variant={hasWarning ? "warning" : "light"} className="border py-2 mb-3 small">
       <div className="fw-semibold mb-2">{title}</div>
       <ul className="mb-0 ps-3">
         {rows.map((r) => (
-          <li key={r.key}>
-            <span className="text-muted">{r.label}:</span> {r.text}
+          <li key={r.key} style={r.warn ? { color: "#856404" } : {}}>
+            <span className="text-muted">{r.label}:</span>{" "}
+            {r.warn ? <span>⚠ {r.text}</span> : r.text}
           </li>
         ))}
       </ul>

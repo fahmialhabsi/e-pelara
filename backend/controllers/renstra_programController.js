@@ -8,6 +8,8 @@ exports.create = async (req, res) => {
     nama_program,
     renstra_id,
     rpjmd_program_id,
+    rpjmd_arah_id,
+    renstra_kebijakan_id,
     opd_penanggung_jawab,
     bidang_opd_penanggung_jawab,
   } = req.body;
@@ -67,6 +69,8 @@ exports.create = async (req, res) => {
       nama_program: nama_program.trim(),
       renstra_id: renstraIdNum,
       rpjmd_program_id: rpjmd_program_id.trim(),
+      rpjmd_arah_id,
+      renstra_kebijakan_id,
       opd_penanggung_jawab: opd_penanggung_jawab || "",
       bidang_opd_penanggung_jawab: bidang_opd_penanggung_jawab || "",
     });

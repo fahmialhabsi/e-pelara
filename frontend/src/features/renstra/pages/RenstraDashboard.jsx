@@ -1,4 +1,4 @@
-// src/features/renstra/pages/RenstraDashboard.jsx
+﻿// src/features/renstra/pages/RenstraDashboard.jsx
 import { useEffect, useState } from "react";
 import { Card, CardBody, Row, Col, Spinner } from "react-bootstrap";
 import { useAuth } from "../../../hooks/useAuth";
@@ -7,17 +7,16 @@ import { Navigate, useNavigate } from "react-router-dom";
 import api from "../../../services/api";
 import GenerateRenstraButton from "../components/GenerateRenstraButton";
 
-/** Kartu & akses cepat — path mengarah ke daftar yang dipakai pengguna (tabel vs hierarki). */
+/** Kartu & akses cepat - path mengarah ke daftar yang dipakai pengguna (tabel vs hierarki). */
 const STAT_CONFIG = [
-  { key: "tujuan",          label: "Tujuan",           color: "primary",   icon: "🎯", path: "/renstra/tabel/tujuan" },
-  { key: "sasaran",         label: "Sasaran",          color: "success",   icon: "📌", path: "/renstra/tabel/sasaran" },
-  { key: "strategi",        label: "Strategi",         color: "danger",    icon: "🗺️", path: "/renstra/strategi" },
-  { key: "arah_kebijakan",  label: "Arah Kebijakan",   color: "dark",      icon: "🧭", path: "/renstra/kebijakan" },
-  { key: "program",         label: "Program",          color: "info",      icon: "📋", path: "/renstra/tabel/program" },
-  { key: "kegiatan",        label: "Kegiatan",         color: "warning",   icon: "⚙️", path: "/renstra/tabel/kegiatan" },
-  { key: "sub_kegiatan",    label: "Sub Kegiatan",     color: "secondary", icon: "📎", path: "/renstra/tabel/subkegiatan" },
+  { key: "tujuan",         label: "Tujuan",         color: "primary",   path: "/renstra/tabel/tujuan" },
+  { key: "sasaran",        label: "Sasaran",        color: "success",   path: "/renstra/tabel/sasaran" },
+  { key: "strategi",       label: "Strategi",       color: "danger",    path: "/renstra/strategi" },
+  { key: "arah_kebijakan", label: "Arah Kebijakan", color: "dark",      path: "/renstra/kebijakan" },
+  { key: "program",        label: "Program",        color: "info",      path: "/renstra/tabel/program" },
+  { key: "kegiatan",       label: "Kegiatan",       color: "warning",   path: "/renstra/tabel/kegiatan" },
+  { key: "sub_kegiatan",   label: "Sub Kegiatan",   color: "secondary", path: "/renstra/tabel/subkegiatan" },
 ];
-
 const formatRupiah = (val) => {
   const n = Number(val) || 0;
   if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(2)} M`;
@@ -104,7 +103,7 @@ const RenstraDashboard = () => {
           api.get("/renstra-sasaran", { params: { renstra_id: renstraId } }),
           api.get("/renstra-program", { params: { renstra_id: renstraId } }),
           api.get("/renstra-kegiatan", { params: { renstra_id: renstraId } }),
-          // Daftar halaman /renstra/strategi & /renstra/kebijakan tanpa filter renstra_id — samakan hitungan kartu.
+          // Daftar halaman /renstra/strategi & /renstra/kebijakan tanpa filter renstra_id - samakan hitungan kartu.
           api.get("/renstra-strategi"),
           api.get("/renstra-kebijakan"),
           api.get("/renstra-subkegiatan", { params: { renstra_id: renstraId } }),
@@ -162,7 +161,7 @@ const RenstraDashboard = () => {
 
   const namaOpd = renstraAktif?.nama_opd || "OPD";
   const periodeTeks = renstraAktif
-    ? `${renstraAktif.tahun_mulai} – ${renstraAktif.tahun_akhir}`
+    ? `${renstraAktif.tahun_mulai} - ${renstraAktif.tahun_akhir}`
     : tahun || "-";
 
   return (
@@ -170,14 +169,24 @@ const RenstraDashboard = () => {
       {/* Header */}
       <div className="mb-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
         <div>
-          <h2 className="fw-bold text-primary mb-1">📊 Dashboard Renstra</h2>
-          <p className="text-muted mb-0 small">{namaOpd} · Periode {periodeTeks}</p>
+          <h2 className="fw-bold text-primary mb-1">Dashboard Renstra</h2>
+          <p className="text-muted mb-0 small">{namaOpd} - Periode {periodeTeks}</p>
         </div>
         <div className="d-flex gap-2 align-items-center flex-wrap">
           {renstraAktif && (
             <span className="badge bg-success fs-6 px-3 py-2">
-              ✅ Renstra Aktif
+              Renstra Aktif
             </span>
+          )}
+          {renstraAktif?.id && (
+            <button
+              className="btn btn-outline-primary btn-sm"
+              onClick={() => navigate("/renstra/audit/keterhubungan")}
+              disabled={loadingStats}
+              title="Uji cepat keterhubungan Renstra <-> RPJMD (cascading)"
+            >
+              Uji Keterhubungan
+            </button>
           )}
           {renstraAktif?.id && (
             <GenerateRenstraButton
@@ -222,7 +231,6 @@ const RenstraDashboard = () => {
       {!loadingStats && !renstraAktif && (
         <Card className="mb-3 border-warning shadow-sm">
           <CardBody className="text-center py-4">
-            <div className="fs-4 mb-2">⚠️</div>
             <strong>Renstra OPD Belum Dikonfigurasi</strong>
             <p className="text-muted mt-1 mb-3 small">
               Silakan buat dan aktifkan Renstra OPD terlebih dahulu.
@@ -256,7 +264,7 @@ const RenstraDashboard = () => {
               onMouseLeave={(e) => (e.currentTarget.style.transform = "none")}
             >
               <CardBody className="py-3">
-                <div className="fs-3 mb-1">{stat.icon}</div>
+                <div className="text-muted small fw-semibold mb-1">{stat.label}</div>
                 <div className={`fs-2 fw-bold text-${stat.color}`}>
                   {loadingStats ? (
                     <Spinner animation="border" size="sm" variant={stat.color} />
@@ -264,8 +272,7 @@ const RenstraDashboard = () => {
                     stats[stat.key] ?? 0
                   )}
                 </div>
-                <div className="text-muted small fw-semibold">{stat.label}</div>
-              </CardBody>
+</CardBody>
             </Card>
           </Col>
         ))}
@@ -282,7 +289,7 @@ const RenstraDashboard = () => {
                   className={`btn btn-outline-${s.color} w-100 btn-sm`}
                   onClick={() => navigate(s.path)}
                 >
-                  {s.icon} {s.label}
+                  {s.label}
                 </button>
               </Col>
             ))}
@@ -294,7 +301,7 @@ const RenstraDashboard = () => {
       {renstraAktif && (
         <Card className="shadow-sm border-0 mb-4">
           <CardBody>
-            <h6 className="fw-bold mb-3">💰 Ringkasan Pagu Renstra ({paguSummary?.count ?? 0} Program)</h6>
+            <h6 className="fw-bold mb-3">Ringkasan Pagu Renstra ({paguSummary?.count ?? 0} Program)</h6>
             {loadingPagu ? (
               <div className="text-center py-2">
                 <Spinner animation="border" size="sm" /> Memuat data pagu...
@@ -342,3 +349,6 @@ const RenstraDashboard = () => {
 };
 
 export default RenstraDashboard;
+
+
+

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Button, Card, Typography, App } from "antd";
+import React, { useEffect } from "react";
+import { Button, Card } from "antd";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useWatch } from "react-hook-form";
@@ -11,42 +11,15 @@ import SelectWithLabelValue from "@/shared/components/form/SelectWithLabelValue"
 import InputField from "@/shared/components/form/InputField";
 import { normalizeListItems } from "@/utils/apiResponse";
 
-const { Text } = Typography;
-
 const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
   const navigate = useNavigate();
-  const { message } = App.useApp();
 
-  // 🔄 Data program RPJMD (filter by tahun_mulai dari renstraAktif, jenis_dokumen = "rpjmd")
-  const { data: programOptions = [], isLoading: isLoadingProgram } = useQuery({
-    queryKey: [
-      "program-rpjmd",
-      renstraAktif?.tahun_mulai,   // ✅ field yang benar di model RenstraOPD
-    ],
-    queryFn: async () =>
-      normalizeListItems(
-        (
-          await api.get("/programs/all", {
-            params: {
-              tahun: renstraAktif?.tahun_mulai,   // ✅ bukan tahun_awal
-              jenis_dokumen: "rpjmd",              // ✅ selalu ambil dari RPJMD
-              limit: 500,
-            },
-          })
-        ).data
-      ),
-    enabled: !!renstraAktif,
-  });
-
-  const { data: opdOptions = [] } = useQuery({
-    queryKey: ["opd-penanggung-jawab"],
-    queryFn: async () =>
-      normalizeListItems((await api.get("/opd-penanggung-jawab")).data),
-  });
-
-  // Yup schema
   const schema = () =>
     Yup.object({
+      rpjmd_arah_id: Yup.string().required("Arah Kebijakan RPJMD wajib dipilih"),
+      renstra_kebijakan_id: Yup.string().required(
+        "Kebijakan Renstra wajib dipilih"
+      ),
       program_rpjmd_id: Yup.string().required("Program RPJMD wajib dipilih"),
       kode_program: Yup.string().required("Kode Program wajib diisi"),
       nama_program: Yup.string().required("Nama Program wajib diisi"),
@@ -59,6 +32,12 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
     });
 
   const defaultValues = {
+    rpjmd_arah_id: initialData?.rpjmd_arah_id
+      ? String(initialData.rpjmd_arah_id)
+      : "",
+    renstra_kebijakan_id: initialData?.renstra_kebijakan_id
+      ? String(initialData.renstra_kebijakan_id)
+      : "",
     program_rpjmd_id: initialData?.program_rpjmd_id
       ? String(initialData.program_rpjmd_id)
       : initialData?.rpjmd_program_id
@@ -69,10 +48,13 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
     renstra_id:
       typeof renstraAktif?.id === "number" ? renstraAktif.id : undefined,
     opd_penanggung_jawab: initialData?.opd_penanggung_jawab || "",
-    bidang_opd_penanggung_jawab: initialData?.bidang_opd_penanggung_jawab || "",
+    bidang_opd_penanggung_jawab:
+      initialData?.bidang_opd_penanggung_jawab || "",
   };
 
   const generatePayload = (data) => ({
+    rpjmd_arah_id: data.rpjmd_arah_id,
+    renstra_kebijakan_id: data.renstra_kebijakan_id,
     rpjmd_program_id: data.program_rpjmd_id,
     kode_program: data.kode_program,
     nama_program: data.nama_program,
@@ -94,14 +76,82 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
 
   const {
     control,
-    getValues,
     setValue,
     handleSubmit,
     formState: { errors },
   } = form;
 
+  const arahKebijakanId = useWatch({ control, name: "rpjmd_arah_id" });
+  const kebijakanRenstraId = useWatch({
+    control,
+    name: "renstra_kebijakan_id",
+  });
   const programId = useWatch({ control, name: "program_rpjmd_id" });
   const opdTerpilih = useWatch({ control, name: "opd_penanggung_jawab" });
+
+  const { data: arahKebijakanOptions = [], isLoading: isLoadingArah } =
+    useQuery({
+      queryKey: ["arah-kebijakan-rpjmd", renstraAktif?.tahun_mulai],
+      queryFn: async () =>
+        normalizeListItems(
+          (
+            await api.get("/arah-kebijakan", {
+              params: {
+                tahun: renstraAktif?.tahun_mulai,
+                jenis_dokumen: "rpjmd",
+                limit: 1000,
+              },
+            })
+          ).data
+        ),
+      enabled: !!renstraAktif?.tahun_mulai,
+    });
+
+  const { data: kebijakanRenstraOptions = [], isLoading: isLoadingKebijakan } =
+    useQuery({
+      queryKey: [
+        "renstra-kebijakan-by-arah",
+        renstraAktif?.id,
+        arahKebijakanId,
+      ],
+      queryFn: async () =>
+        normalizeListItems(
+          (
+            await api.get("/renstra-kebijakan", {
+              params: {
+                rpjmd_arah_id: arahKebijakanId,
+                renstra_id: renstraAktif?.id,
+                limit: 1000,
+              },
+            })
+          ).data
+        ),
+      enabled: !!renstraAktif?.id && !!arahKebijakanId,
+    });
+
+  const { data: programOptions = [], isLoading: isLoadingProgram } = useQuery({
+    queryKey: ["program-rpjmd", renstraAktif?.tahun_mulai, arahKebijakanId],
+    queryFn: async () =>
+      normalizeListItems(
+        (
+          await api.get("/programs/all", {
+            params: {
+              tahun: renstraAktif?.tahun_mulai,
+              jenis_dokumen: "rpjmd",
+              arah_kebijakan_id: arahKebijakanId,
+              limit: 500,
+            },
+          })
+        ).data
+      ),
+    enabled: !!renstraAktif?.tahun_mulai && !!arahKebijakanId,
+  });
+
+  const { data: opdOptions = [] } = useQuery({
+    queryKey: ["opd-penanggung-jawab"],
+    queryFn: async () =>
+      normalizeListItems((await api.get("/opd-penanggung-jawab")).data),
+  });
 
   useEffect(() => {
     if (!programId) return;
@@ -111,11 +161,10 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
     );
     if (!selected) return;
 
-    setValue("kode_program", selected.kode_program);
-    setValue("nama_program", selected.nama_program);
+    setValue("kode_program", selected.kode_program || "");
+    setValue("nama_program", selected.nama_program || "");
   }, [programId, programOptions, setValue]);
 
-  // 🔹 Auto-fill OPD dan Bidang dari renstraAktif untuk form baru
   useEffect(() => {
     if (!initialData && renstraAktif) {
       if (renstraAktif.nama_opd) {
@@ -127,7 +176,6 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
     }
   }, [renstraAktif, initialData, setValue]);
 
-  // Filter bidang dari OPD yang dipilih
   const bidangOptions = opdOptions
     .filter((item) => item.nama_opd === opdTerpilih)
     .map((item) => ({
@@ -136,9 +184,7 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
     }));
 
   return (
-    <Card
-      title={initialData ? "Edit Program Renstra" : "Tambah Program Renstra"}
-    >
+    <Card title={initialData ? "Edit Program Renstra" : "Tambah Program Renstra"}>
       <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
         <Button onClick={() => navigate("/dashboard-renstra")}>
           🔙 Kembali
@@ -149,7 +195,45 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)}>
-        {/* Program */}
+        <SelectWithLabelValue
+          name="rpjmd_arah_id"
+          label="Arah Kebijakan RPJMD"
+          control={control}
+          errors={errors}
+          required
+          loading={isLoadingArah}
+          options={arahKebijakanOptions.map((item) => ({
+            label: `${item.kode_arah} - ${item.deskripsi}`,
+            value: String(item.id),
+          }))}
+          onChange={(val) => {
+            setValue("rpjmd_arah_id", val);
+            setValue("renstra_kebijakan_id", "");
+            setValue("program_rpjmd_id", "");
+            setValue("kode_program", "");
+            setValue("nama_program", "");
+          }}
+        />
+
+        <SelectWithLabelValue
+          name="renstra_kebijakan_id"
+          label="Kebijakan Renstra"
+          control={control}
+          errors={errors}
+          required
+          loading={isLoadingKebijakan}
+          options={kebijakanRenstraOptions.map((item) => ({
+            label: `${item.kode_kebjkn} - ${item.deskripsi}`,
+            value: String(item.id),
+          }))}
+          onChange={(val) => {
+            setValue("renstra_kebijakan_id", val);
+            setValue("program_rpjmd_id", "");
+            setValue("kode_program", "");
+            setValue("nama_program", "");
+          }}
+        />
+
         <SelectWithLabelValue
           name="program_rpjmd_id"
           label="Program RPJMD"
@@ -180,19 +264,21 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
           disabled
         />
 
-        {/* OPD & Bidang */}
         <SelectWithLabelValue
           name="opd_penanggung_jawab"
           label="OPD Penanggung Jawab"
           control={control}
           errors={errors}
           required
-          options={Array.from(
-            new Set(opdOptions.map((opd) => opd.nama_opd))
-          ).map((opdName) => ({ label: opdName, value: opdName }))}
+          options={Array.from(new Set(opdOptions.map((opd) => opd.nama_opd))).map(
+            (opdName) => ({
+              label: opdName,
+              value: opdName,
+            })
+          )}
           onChange={(val) => {
             setValue("opd_penanggung_jawab", val);
-            setValue("bidang_opd_penanggung_jawab", ""); // reset bidang
+            setValue("bidang_opd_penanggung_jawab", "");
           }}
         />
 
