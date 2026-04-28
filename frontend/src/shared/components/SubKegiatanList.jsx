@@ -216,8 +216,10 @@ export default function SubKegiatanList() {
   const doDelete = async () => {
     try {
       await api.delete(`/sub-kegiatan/${delId}`);
+      // Hapus item dari state local tanpa refetch
+      setOriginalData((prev) => prev.filter((item) => item.id !== delId));
       setShowDel(false);
-      fetchData();
+      setDelId(null);
     } catch {
       setError("Gagal menghapus data.");
     }

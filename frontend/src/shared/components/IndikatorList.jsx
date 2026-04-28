@@ -142,16 +142,20 @@ function buildExportRow(row, rowIndex) {
   return o;
 }
 
-function TdEllipsis({ children, title }) {
+function TdWrap({ children, title, minWidth = 260, maxWidth = 520 }) {
   const text = children == null || children === "" ? "—" : String(children);
   const tip = title != null ? String(title) : text;
+
   return (
     <td
       style={{
-        maxWidth: 220,
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
+        minWidth,
+        maxWidth,
+        whiteSpace: "normal",
+        wordBreak: "break-word",
+        overflowWrap: "anywhere",
+        verticalAlign: "top",
+        lineHeight: 1.45,
       }}
       title={tip.length > 0 ? tip : undefined}
     >
@@ -515,7 +519,12 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
                 hover
                 responsive
                 className="small"
-                style={{ fontSize: 12, borderRadius: 6, overflow: "hidden" }}
+                style={{
+                  fontSize: 12,
+                  borderRadius: 6,
+                  overflow: "hidden",
+                  minWidth: 1500,
+                }}
               >
                 <thead style={{ background: "#f1f3f9" }}>
                   <tr>
@@ -547,13 +556,13 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
                         <tr>
                           <td>{idx + 1 + (page - 1) * pageSize}</td>
                           <td>{scalarCell(i.kode_indikator)}</td>
-                          <TdEllipsis title={scalarCell(i.nama_indikator)}>
+                          <TdWrap title={scalarCell(i.nama_indikator)} minWidth={360} maxWidth={520}>
                             {i.nama_indikator}
-                          </TdEllipsis>
+                          </TdWrap>
                           <td>{scalarCell(i.satuan)}</td>
-                          <TdEllipsis title={scalarCell(i.target_kinerja)}>
+                          <TdWrap title={scalarCell(i.target_kinerja)} minWidth={360} maxWidth={520}>
                             {i.target_kinerja}
-                          </TdEllipsis>
+                          </TdWrap>
                           <td>{scalarCell(i.baseline)}</td>
                           {[1, 2, 3, 4, 5].map((n) => (
                             <td key={`c${n}`} className="text-end">

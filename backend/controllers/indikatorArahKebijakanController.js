@@ -273,6 +273,7 @@ exports.findAll = async (req, res) => {
       limit: limitQ,
       perPage,
     } = req.query;
+
     const rawLimit = Number(limitQ ?? perPage ?? 50) || 50;
     const limit = Math.min(Math.max(1, rawLimit), MAX_LIMIT);
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
@@ -280,16 +281,17 @@ exports.findAll = async (req, res) => {
 
     const tahunStr = String(tahun).trim();
 
-    // Gunakan periode_id sebagai filter utama agar konsisten dengan modul import
     const periode =
       (await getPeriodeFromTahun(tahunStr)) || (await getPeriodeAktif());
+
+    const jdFilter = /^rpjmd$/i.test(String(jenis_dokumen).trim())
+      ? { [Op.like]: "RPJMD%" }
+      : String(jenis_dokumen).trim();
+
     let where;
     if (periode?.id) {
       where = { periode_id: periode.id };
     } else {
-      const jdFilter = /^rpjmd$/i.test(String(jenis_dokumen).trim())
-        ? { [Op.like]: "RPJMD%" }
-        : String(jenis_dokumen).trim();
       where = { jenis_dokumen: jdFilter, tahun: tahunStr };
     }
 
@@ -316,15 +318,16 @@ exports.findAll = async (req, res) => {
       distinct: true,
     });
 
-    // Legacy/import: baseline sering NULL padahal capaian_tahun_5 terisi → tampilkan baseline fallback agar UI list tidak kosong.
     fillBaselineFallback(rows);
+
     await fillPenanggungJawabFallback({
       rows,
       tahun: tahunStr,
-      jenis_dokumen: jdFilter,
+      jenis_dokumen,
     });
 
     const totalPages = Math.max(1, Math.ceil(count / limit));
+
     return res.json({
       status: "success",
       data: rows,

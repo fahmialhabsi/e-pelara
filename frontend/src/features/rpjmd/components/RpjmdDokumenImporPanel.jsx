@@ -293,6 +293,30 @@ const DEFAULT_INDIKATOR_GRID_COLS = [
   { key: "target_tahun_5", label: "Target tahun 5", truncate: 80 },
 ];
 
+const indikatorColStyle = (key) => {
+  if (key === "nama_indikator") {
+    return { minWidth: 520, maxWidth: 620 };
+  }
+
+  if (key === "target_kinerja") {
+    return { minWidth: 420, maxWidth: 520 };
+  }
+
+  if (key === "kode_indikator") {
+    return { minWidth: 180, maxWidth: 220 };
+  }
+
+  if (key === "satuan") {
+    return { minWidth: 100, maxWidth: 140 };
+  }
+
+  if (key.includes("target_tahun_") || key.includes("capaian_tahun_")) {
+    return { minWidth: 72, maxWidth: 90 };
+  }
+
+  return { minWidth: 100, maxWidth: 140 };
+};
+
 function gridColsForIndikatorTable(tableKey) {
   return INDIKATOR_GRID_COLS_BY_TABLE[tableKey] ?? DEFAULT_INDIKATOR_GRID_COLS;
 }
@@ -305,10 +329,15 @@ function indikatorGridCell(row, col, opdMap) {
     if (name) return truncate(name, col.truncate ?? 48);
   }
   // Jangan truncate untuk kolom-kolom yang harus fully visible
-  if (col.key === "nama_indikator" || col.key === "nama_sub_kegiatan" ||
-      col.key.includes("target_tahun_") || col.key.includes("capaian_tahun_")) {
-    return String(v);
-  }
+  if (
+  col.key === "nama_indikator" ||
+  col.key === "nama_sub_kegiatan" ||
+  col.key === "target_kinerja" ||
+  col.key.includes("target_tahun_") ||
+  col.key.includes("capaian_tahun_")
+) {
+  return String(v);
+}
   const max = col.truncate ?? 48;
   return truncate(String(v), max);
 }
@@ -1493,7 +1522,10 @@ export default function RpjmdDokumenImporPanel({ periodeId }) {
                   <th
                     key={c.key}
                     className="small text-wrap text-break"
-                    style={{ maxWidth: 112, verticalAlign: "bottom" }}
+                    style={{
+                      ...indikatorColStyle(c.key),
+                      verticalAlign: "bottom",
+                    }}
                     title={c.label}
                   >
                     {c.label}
@@ -1526,24 +1558,21 @@ export default function RpjmdDokumenImporPanel({ periodeId }) {
                   <tr key={r.id}>
                     {cols.map((c) => (
                       <td
-                        key={c.key}
-                        className="small align-top text-break"
-                        style={{
-                          maxWidth:
-                            c.key === "nama_indikator" || c.key === "nama_sub_kegiatan" ? 340 :
-                            c.key.includes("target_tahun_") || c.key.includes("capaian_tahun_") ? 240 : 120,
-                          whiteSpace: "normal",
-                          wordBreak: "break-word",
-                          minHeight: c.key === "nama_indikator" || c.key === "nama_sub_kegiatan" ||
-                                     c.key.includes("target_tahun_") || c.key.includes("capaian_tahun_") ? 60 : "auto",
-                          paddingTop: 8,
-                          paddingBottom: 8,
-                          verticalAlign: "top",
-                        }}
-                        title={String(indikatortujuansCellRaw(r, c.key) ?? "")}
-                      >
-                        {indikatorGridCell(r, c, opdMap)}
-                      </td>
+                          key={c.key}
+                          className="small align-top"
+                          style={{
+                            ...indikatorColStyle(c.key),
+                            whiteSpace: "normal",
+                            wordBreak: "break-word",
+                            overflowWrap: "anywhere",
+                            paddingTop: 8,
+                            paddingBottom: 8,
+                            verticalAlign: "top",
+                          }}
+                          title={String(indikatortujuansCellRaw(r, c.key) ?? "")}
+                        >
+                          {indikatorGridCell(r, c, opdMap)}
+                        </td>
                     ))}
                     {actionsCell(tableKey, r, { stickyWideTable: true })}
                   </tr>
