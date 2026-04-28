@@ -304,6 +304,11 @@ function indikatorGridCell(row, col, opdMap) {
     const name = resolveOpdDisplayName(opdMap, v);
     if (name) return truncate(name, col.truncate ?? 48);
   }
+  // Jangan truncate untuk kolom-kolom yang harus fully visible
+  if (col.key === "nama_indikator" || col.key === "nama_sub_kegiatan" ||
+      col.key.includes("target_tahun_") || col.key.includes("capaian_tahun_")) {
+    return String(v);
+  }
   const max = col.truncate ?? 48;
   return truncate(String(v), max);
 }
@@ -1529,6 +1534,11 @@ export default function RpjmdDokumenImporPanel({ periodeId }) {
                             c.key.includes("target_tahun_") || c.key.includes("capaian_tahun_") ? 240 : 120,
                           whiteSpace: "normal",
                           wordBreak: "break-word",
+                          minHeight: c.key === "nama_indikator" || c.key === "nama_sub_kegiatan" ||
+                                     c.key.includes("target_tahun_") || c.key.includes("capaian_tahun_") ? 60 : "auto",
+                          paddingTop: 8,
+                          paddingBottom: 8,
+                          verticalAlign: "top",
                         }}
                         title={String(indikatortujuansCellRaw(r, c.key) ?? "")}
                       >
