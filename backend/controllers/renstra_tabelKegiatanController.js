@@ -15,6 +15,7 @@ const {
   validateKegiatanAgainstProgram,
 } = require("../services/renstraValidationService");
 const updateKegiatanPagu = require("../helpers/updateKegiatanPagu");
+const updateProgramPagu = require("../helpers/updateProgramPagu");
 
 // ------------------ CREATE ------------------
 exports.create = async (req, res) => {
@@ -156,20 +157,38 @@ exports.update = async (req, res) => {
 // ------------------ DELETE ------------------
 exports.delete = async (req, res) => {
   const t = await sequelize.transaction();
+
   try {
     const id = req.params.id;
-    const kegiatan = await RenstraTabelKegiatan.findByPk(id);
+
+    const kegiatan = await RenstraTabelKegiatan.findByPk(id, {
+      transaction: t,
+    });
 
     if (!kegiatan) {
       await t.rollback();
-      return res
-        .status(404)
-        .json({ message: "Data tidak ditemukan", blocked: true, warnings: {} });
+      return res.status(404).json({
+        message: "Data tidak ditemukan",
+        blocked: true,
+        warnings: {},
+      });
     }
 
     const deletedData = kegiatan.toJSON();
+    const programId = deletedData.program_id;
+
+    if (!programId) {
+      await t.rollback();
+      return res.status(400).json({
+        error: "Program ID pada data kegiatan kosong",
+        data: deletedData,
+      });
+    }
+
     await kegiatan.destroy({ transaction: t });
-    await updateKegiatanPagu(kegiatan.id, t);
+
+    await updateProgramPagu(programId, t);
+
     await t.commit();
 
     res.status(200).json({

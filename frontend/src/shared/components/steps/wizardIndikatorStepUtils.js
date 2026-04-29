@@ -468,6 +468,7 @@ export function clearIndikatorDraftScalars(
   keys = RPJMD_INDIKATOR_DRAFT_KEYS,
 ) {
   for (const key of keys) {
+    if (key === "penanggung_jawab") continue;
     setFieldValue(key, "");
   }
 }
@@ -479,17 +480,21 @@ export function hydrateDraftFromIndikatorRow(
   row,
   setFieldValue,
   extraKeys = [],
+  wizardStepKey = null,
 ) {
   if (!row) return;
   const src = collectPlainRow(row);
   const merged = flattenIndikatorRowForWizard(row);
   const keys = [...RPJMD_INDIKATOR_DRAFT_KEYS, ...extraKeys];
   for (const key of keys) {
+    // PATCH: Jangan pernah timpa kode_indikator pada step Sasaran
+    if (key === "kode_indikator" && (wizardStepKey === "sasaran" || wizardStepKey === "arah_kebijakan")) continue;
+
     let v = merged[key];
     if (v === undefined) v = getVal(src, key);
     if (v === undefined) continue;
-    if (key === "penanggung_jawab" && v != null && v !== "") {
-      setFieldValue(key, String(v));
+    if (key === "penanggung_jawab") {
+      if (v != null && String(v).trim() !== "") setFieldValue(key, String(v));
       continue;
     }
     if (key === "anggaran" || key === "target" || key === "realisasi") {

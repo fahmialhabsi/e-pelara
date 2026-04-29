@@ -19,10 +19,11 @@ module.exports = (sequelize, DataTypes) => {
         as: "sasarans",
       });
 
-      RenstraOPD.hasMany(models.RenstraSubkegiatan, {
-        foreignKey: "renstra_opd_id",
-        as: "subkegiatans",
-      });
+      // Ini membuat Sequelize menganggap tabel renstra_subkegiatan punya kolom renstra_opd_id, padahal tidak ada.
+      // RenstraOPD.hasMany(models.RenstraSubkegiatan, {
+      //   foreignKey: "renstra_opd_id",
+      //   as: "subkegiatans",
+      // });
 
       RenstraOPD.belongsTo(models.OpdPenanggungJawab, {
         foreignKey: "opd_id",

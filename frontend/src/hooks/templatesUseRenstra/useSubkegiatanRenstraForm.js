@@ -341,12 +341,18 @@ export function useSubkegiatanRenstraForm(
 
       if (onSuccess) onSuccess();
     } catch (e) {
-      console.error("Gagal submit:", e);
-      alert("Gagal menyimpan data subkegiatan");
-      setError("Gagal menyimpan data subkegiatan");
-    } finally {
-      setIsSubmitting(false);
-    }
+  console.error("Gagal submit:", e);
+
+  const backendMessage =
+    e.response?.data?.message ||
+    e.response?.data?.error ||
+    "Gagal menyimpan data subkegiatan.";
+
+  alert(backendMessage);
+  setError(backendMessage);
+} finally {
+  setIsSubmitting(false);
+}
   };
 
   return {

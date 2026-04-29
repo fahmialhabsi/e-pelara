@@ -25,7 +25,7 @@ const STRATEGI_LIST_ORDER = [
 const strategiController = {
   async getAll(req, res) {
     try {
-      const { sasaran_id, tahun, jenis_dokumen, search } = req.query;
+      const { sasaran_id, tahun, jenis_dokumen, search, include_mismatched_kode } = req.query;
 
       if (!tahun || !jenis_dokumen) {
         return res.status(400).json({
@@ -79,6 +79,38 @@ const strategiController = {
             { [Op.like]: `%${esc}%` }
           ),
         ];
+      }
+
+      // Untuk dropdown Renstra (pilih Strategi RPJMD berdasarkan Sasaran),
+      // cegah pilihan "salah jalur" dengan memfilter prefix kode strategi (SST...)
+      // berdasarkan nomor Sasaran (ST... -> SST...). Jika perlu melihat semua (termasuk
+      // yang kodenya tidak selaras), kirim `include_mismatched_kode=1`.
+      const allowMismatchedKode =
+        String(include_mismatched_kode || "").trim() === "1" ||
+        String(include_mismatched_kode || "").trim().toLowerCase() === "true";
+
+      if (sasaran_id && !allowMismatchedKode) {
+        const sas = await Sasaran.findByPk(Number(sasaran_id), {
+          attributes: ["id", "nomor"],
+        });
+        if (sas?.nomor) {
+          const prefix = String(sas.nomor).replace(/^ST/, "SST");
+          const altPrefix = prefix.startsWith("SST")
+            ? prefix.replace(/^SST/, "ST")
+            : prefix.startsWith("ST")
+            ? prefix.replace(/^ST/, "SST")
+            : prefix;
+
+          where[Op.and] = [
+            ...(Array.isArray(where[Op.and]) ? where[Op.and] : []),
+            {
+              [Op.or]: [
+                { kode_strategi: { [Op.like]: `${prefix}.%` } },
+                { kode_strategi: { [Op.like]: `${altPrefix}.%` } },
+              ],
+            },
+          ];
+        }
       }
 
       // Pagination

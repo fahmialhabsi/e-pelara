@@ -9,6 +9,10 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "sasaran_id",
         as: "indikatorSasaran",
       });
+      this.belongsTo(models.IndikatorArahKebijakan, {
+        foreignKey: "indikator_arah_kebijakan_id",
+        as: "indikatorArahKebijakan",
+      });
       this.hasMany(models.IndikatorKegiatan, {
         foreignKey: "indikator_program_id",
         as: "kegiatans",
@@ -37,7 +41,8 @@ module.exports = (sequelize, DataTypes) => {
         autoIncrement: true,
         allowNull: false,
       },
-      sasaran_id: { type: DataTypes.INTEGER, allowNull: false },
+      sasaran_id: { type: DataTypes.INTEGER, allowNull: true },
+      indikator_arah_kebijakan_id: { type: DataTypes.INTEGER, allowNull: true },
       kode_indikator: { type: DataTypes.STRING(100), allowNull: false },
       nama_indikator: { type: DataTypes.TEXT, allowNull: false },
       tipe_indikator: { type: DataTypes.ENUM("Output"), allowNull: false },
@@ -113,7 +118,6 @@ module.exports = (sequelize, DataTypes) => {
     const tx = options?.transaction;
     const exists = await IndikatorProgram.findOne({
       where: {
-        sasaran_id: instance.sasaran_id,
         kode_indikator: instance.kode_indikator,
         jenis_dokumen: instance.jenis_dokumen,
         tahun: instance.tahun,
@@ -122,7 +126,7 @@ module.exports = (sequelize, DataTypes) => {
     });
     if (exists) {
       throw new Error(
-        "Data dengan kombinasi sasaran_id (indikator sasaran), kode_indikator, jenis_dokumen, dan tahun sudah ada."
+        "Data dengan kombinasi kode_indikator, jenis_dokumen, dan tahun sudah ada."
       );
     }
   });
@@ -132,7 +136,6 @@ module.exports = (sequelize, DataTypes) => {
     for (const instance of instances) {
       const exists = await IndikatorProgram.findOne({
         where: {
-          sasaran_id: instance.sasaran_id,
           kode_indikator: instance.kode_indikator,
           jenis_dokumen: instance.jenis_dokumen,
           tahun: instance.tahun,
@@ -141,7 +144,7 @@ module.exports = (sequelize, DataTypes) => {
       });
       if (exists) {
         throw new Error(
-          `Data duplikat: kode_indikator=${instance.kode_indikator}, sasaran_id=${instance.sasaran_id}`
+          `Data duplikat: kode_indikator=${instance.kode_indikator}`
         );
       }
     }

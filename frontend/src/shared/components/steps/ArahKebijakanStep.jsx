@@ -1,3 +1,4 @@
+// frontend/src/shared/components/steps/ArahKebijakanStep.jsx
 // ArahKebijakanStep.jsx — Input Indikator Arah Kebijakan RPJMD
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
@@ -75,7 +76,12 @@ export default function ArahKebijakanStep({ options, tabKey, setTabKey, onNext }
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        Object.entries(parsed).forEach(([key, val]) => setFieldValue(key, val));
+        Object.entries(parsed).forEach(([key, val]) => {
+          const cur = values?.[key];
+          const curEmpty = cur == null || (typeof cur === "string" && cur.trim() === "");
+          if (!curEmpty) return;
+          setFieldValue(key, val);
+        });
       } catch { /* ignore */ }
     }
   }, [setFieldValue]);
@@ -198,7 +204,8 @@ export default function ArahKebijakanStep({ options, tabKey, setTabKey, onNext }
         }
         setFieldValue("arah_kebijakan", mapped);
         if (mapped.length > 0) {
-          hydrateDraftFromIndikatorRow(mapped[0], setFieldValue);
+          hydrateDraftFromIndikatorRow(mapped[0], setFieldValue, [], "arah_kebijakan");
+
         } else {
           clearIndikatorDraftScalars(setFieldValue);
         }

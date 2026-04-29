@@ -4,6 +4,7 @@ const {
   IndikatorStrategi,
   Strategi,
   Sasaran,
+  Program,
   OpdPenanggungJawab,
 } = require("../models");
 const { Op } = require("sequelize");
@@ -16,6 +17,9 @@ const {
   sendValidationErrors,
   fromSequelizeValidationError,
 } = require("../utils/validationErrorResponse");
+const {
+  attachPaguByIndikatorKode,
+} = require("../services/paguAggregatorService");
 
 const MAX_LIMIT = 200;
 
@@ -147,20 +151,40 @@ exports.findAll = async (req, res) => {
     const offset = (pageNum - 1) * limit;
 
     const tahunStr = String(tahun).trim();
-    const effectiveJenisDokumen = await preferPeriodeNamaIfExists({
-      model: IndikatorStrategi,
-      jenis_dokumen,
-      tahun: tahunStr,
-    });
+
+    // Gunakan periode_id sebagai filter utama agar konsisten dengan modul import
+    // (modul import juga menggunakan WHERE periode_id = X, bukan jenis_dokumen + tahun).
+    const periode =
+      (await getPeriodeFromTahun(tahunStr)) || (await getPeriodeAktif());
+    let where;
+    if (periode?.id) {
+      where = { periode_id: periode.id };
+    } else {
+      const effectiveJenisDokumen = await preferPeriodeNamaIfExists({
+        model: IndikatorStrategi,
+        jenis_dokumen,
+        tahun: tahunStr,
+      });
+      where = { jenis_dokumen: effectiveJenisDokumen, tahun: tahunStr };
+    }
 
     const { count, rows } = await IndikatorStrategi.findAndCountAll({
-      where: { jenis_dokumen: effectiveJenisDokumen, tahun: tahunStr },
+      where,
       include: [
         {
           model: Strategi,
           as: "strategi",
           attributes: ["id", "kode_strategi", "deskripsi"],
           required: false,
+          include: [
+            {
+              model: Program,
+              as: "Program",
+              attributes: ["id", "total_pagu_anggaran"],
+              through: { attributes: [] },
+              required: false,
+            },
+          ],
         },
         {
           model: OpdPenanggungJawab,
@@ -177,6 +201,10 @@ exports.findAll = async (req, res) => {
     });
 
     const totalPages = Math.max(1, Math.ceil(count / limit));
+
+    await attachPaguByIndikatorKode(rows);
+
+    
     return res.json({
       status: "success",
       data: rows,
@@ -251,16 +279,12 @@ exports.getNextKode = async (req, res) => {
       return res.status(400).json({ message: "strategi_id wajib diisi." });
 
     const strategi = await Strategi.findByPk(strategi_id, {
+      attributes: ["id", "kode_strategi"],
       include: [{ model: Sasaran, as: "Sasaran", attributes: ["nomor"] }],
     });
     if (!strategi)
       return res.status(404).json({ message: "Strategi tidak ditemukan." });
 
-    /**
-     * Selaras allocateKodeStrategiGroup (helpers/rpjmdImportAutoKodeIndikator.js):
-     * kode indikator strategi = STR + sasaran.nomor tanpa "ST" + urutan (-01, -02, …).
-     * Bukan prefix kode_strategi (SST…).
-     */
     const nomor = String(strategi?.Sasaran?.nomor || "").trim();
     if (!nomor || nomor.length < 3) {
       return res.status(404).json({
@@ -268,7 +292,17 @@ exports.getNextKode = async (req, res) => {
           "Sasaran induk tidak memiliki nomor; tidak dapat membentuk kode indikator STR…",
       });
     }
-    const prefix = `STR${nomor.slice(2)}`;
+
+    /**
+     * Format kode indikator strategi: STR{sasaran_base}-{strategi_nomor_padded2}.{strategi_nomor_raw}-{seq}
+     * Contoh: sasaran ST2-01-03, strategi SST2-01-03.1 → prefix STR2-01-03-01.1 → kode STR2-01-03-01.1-01
+     * Strategi nomor diambil dari kode_strategi (bagian setelah titik terakhir, mis. "1" dari "SST2-01-03.1").
+     */
+    const kodeStrategi = String(strategi.kode_strategi || "").trim();
+    const sasaranBase = nomor.slice(2); // hapus prefix "ST"
+    const prefix = kodeStrategi.startsWith("SST")
+      ? kodeStrategi.replace(/^SST/, "IST")
+      : `IST${sasaranBase}`;
 
     const result = await IndikatorStrategi.findOne({
       where: {

@@ -1,3 +1,4 @@
+// frontend/src/shared/components/IndikatorList.jsx
 import React, { useState, useEffect, useCallback, Fragment } from "react";
 import {
   Table,
@@ -27,6 +28,7 @@ import {
   LEVEL_DOKUMEN_OPTIONS,
   JENIS_IKU_OPTIONS,
 } from "../../utils/constants";
+import api from "@/services/api";
 
 /* Urutan = hirarki RPJMD: Tujuan → Sasaran → Strategi → Arah → Program → Kegiatan → Sub Kegiatan */
 const types = [
@@ -76,6 +78,83 @@ function scalarCell(v) {
   }
   return String(v);
 }
+
+const toNumber = (value) => Number(value) || 0;
+
+const formatRupiah = (value) =>
+  new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(toNumber(value));
+
+const formatPaguDisplay = (value) => {
+  const num = toNumber(value);
+  return num > 0 ? formatRupiah(num) : "-";
+};
+
+const getPaguIndikator = (row, selectedType) => {
+  if (!row) return 0;
+
+  if (selectedType === "program") {
+  const kegiatanRows = Array.isArray(row.kegiatans) ? row.kegiatans : [];
+
+  const totalDariKegiatan = kegiatanRows.reduce((sum, keg) => {
+    return sum + toNumber(keg.total_pagu_anggaran ?? keg.pagu_anggaran);
+  }, 0);
+
+  return (
+    row.program?.total_pagu_anggaran ??
+    row.Program?.total_pagu_anggaran ??
+    row.total_pagu_program ??
+    row.pagu_program ??
+    totalDariKegiatan ??
+    0
+  );
+}
+
+  if (selectedType === "kegiatan") {
+  return (
+    row.pagu ??
+    row.total_pagu_anggaran ??
+    row.indikatorProgram?.pagu ??
+    row.indikatorProgram?.total_pagu_anggaran ??
+    row.IndikatorProgram?.pagu ??
+    row.IndikatorProgram?.total_pagu_anggaran ??
+    row.indikator_program?.pagu ??
+    row.indikator_program?.total_pagu_anggaran ??
+    row.kegiatan?.total_pagu_anggaran ??
+    row.Kegiatan?.total_pagu_anggaran ??
+    0
+  );
+  }
+    
+
+  if (selectedType === "sub_kegiatan_indikator") {
+    return (
+      row.subKegiatan?.pagu_anggaran ??
+      row.SubKegiatan?.pagu_anggaran ??
+      row.sub_kegiatan?.pagu_anggaran ??
+      row.pagu_anggaran ??
+      row.total_pagu_sub_kegiatan ??
+      0
+    );
+  }
+
+  return 0;
+};
+
+const shouldShowPaguColumn = (selectedType) =>
+  [
+    "tujuan",
+    "sasaran",
+    "strategi",
+    "arah_kebijakan",
+    "program",
+    "kegiatan",
+    "sub_kegiatan_indikator",
+  ].includes(selectedType);
 
 /**
  * Kolom ekspor Excel (urutan stabil). Sumber field = response API list/detail.
@@ -141,16 +220,20 @@ function buildExportRow(row, rowIndex) {
   return o;
 }
 
-function TdEllipsis({ children, title }) {
+function TdWrap({ children, title, minWidth = 260, maxWidth = 520 }) {
   const text = children == null || children === "" ? "—" : String(children);
   const tip = title != null ? String(title) : text;
+
   return (
     <td
       style={{
-        maxWidth: 220,
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
+        minWidth,
+        maxWidth,
+        whiteSpace: "normal",
+        wordBreak: "break-word",
+        overflowWrap: "anywhere",
+        verticalAlign: "top",
+        lineHeight: 1.45,
       }}
       title={tip.length > 0 ? tip : undefined}
     >
@@ -164,6 +247,9 @@ function TdEllipsis({ children, title }) {
  */
 export default function IndikatorList({ defaultType = "tujuan" }) {
   const navigate = useNavigate();
+  const [subKegiatanPaguMap, setSubKegiatanPaguMap] = useState({});
+  const [kegiatanPaguMap, setKegiatanPaguMap] = useState({});
+  const [programPaguMap, setProgramPaguMap] = useState({});
   const location = useLocation();
   const query = new URLSearchParams(location.search);
   const { dokumen, tahun } = useDokumen();
@@ -217,6 +303,9 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
         tahun,
       });
       setItems(data);
+
+      console.log("INDIKATOR ITEMS SAMPLE:", data?.[0]);
+
       setTotalPages(meta.totalPages || 1);
     } catch (err) {
       console.error(err);
@@ -276,6 +365,60 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
   useEffect(() => {
     fetchItems();
   }, [fetchItems]);
+
+  useEffect(() => {
+  const fetchPaguMap = async () => {
+    if (
+      !["program", "kegiatan", "sub_kegiatan_indikator"].includes(selectedType) ||
+      !tahun
+    ) {
+      return;
+    }
+
+    try {
+      const res = await api.get("/sub-kegiatan", {
+        params: {
+          periode_id: 2,
+          tahun,
+          jenis_dokumen: "rpjmd",
+          page: 1,
+          limit: 1000,
+        },
+      });
+
+      const rows = Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+
+      const subMap = {};
+      const kegiatanMap = {};
+      const programMap = {};
+
+      rows.forEach((row) => {
+        subMap[String(row.id)] = Number(row.pagu_anggaran) || 0;
+
+        if (row.kegiatan?.id) {
+          kegiatanMap[String(row.kegiatan.id)] =
+            Number(row.kegiatan.total_pagu_anggaran) || 0;
+        }
+
+        if (row.kegiatan?.program?.id) {
+          programMap[String(row.kegiatan.program.id)] =
+            Number(row.kegiatan.program.total_pagu_anggaran) || 0;
+        }
+      });
+
+      setSubKegiatanPaguMap(subMap);
+      setKegiatanPaguMap(kegiatanMap);
+      setProgramPaguMap(programMap);
+    } catch (err) {
+      console.error("Gagal memuat pagu:", err);
+      setSubKegiatanPaguMap({});
+      setKegiatanPaguMap({});
+      setProgramPaguMap({});
+    }
+  };
+
+  fetchPaguMap();
+}, [selectedType, tahun]);
 
   const handleAdd = () => {
     setFormKey((k) => k + 1);
@@ -341,7 +484,71 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
     }
   };
 
+  const getDisplayedPagu = (row) => {
+    if (!row) return 0;
+    
+    if (
+      ["tujuan", "sasaran", "strategi", "arah_kebijakan"].includes(selectedType)
+    ) {
+      return (
+        row.pagu ??
+        row.total_pagu_anggaran ??
+        row.total_pagu ??
+        0
+      );
+    }
+
+  if (selectedType === "sub_kegiatan_indikator") {
+    return (
+      row.pagu ??
+      row.total_pagu_anggaran ??
+      row.subKegiatan?.pagu ??
+      row.subKegiatan?.total_pagu_anggaran ??
+      row.subKegiatan?.pagu_anggaran ??
+      row.SubKegiatan?.pagu ??
+      row.SubKegiatan?.total_pagu_anggaran ??
+      row.SubKegiatan?.pagu_anggaran ??
+      row.sub_kegiatan?.pagu ??
+      row.sub_kegiatan?.total_pagu_anggaran ??
+      row.sub_kegiatan?.pagu_anggaran ??
+      0
+    );
+  }
+
+  if (selectedType === "kegiatan") {
+  return (
+    row.pagu ??
+    row.total_pagu_anggaran ??
+    row.indikatorProgram?.pagu ??
+    row.indikatorProgram?.total_pagu_anggaran ??
+    row.IndikatorProgram?.pagu ??
+    row.IndikatorProgram?.total_pagu_anggaran ??
+    row.indikator_program?.pagu ??
+    row.indikator_program?.total_pagu_anggaran ??
+    row.kegiatan?.total_pagu_anggaran ??
+    row.Kegiatan?.total_pagu_anggaran ??
+    0
+  );
+}
+
+  if (selectedType === "program") {
+  return (
+    row.pagu ??
+    row.total_pagu_anggaran ??
+    row.total_pagu_program ??
+    row.pagu_program ??
+    row.program?.total_pagu_anggaran ??
+    row.Program?.total_pagu_anggaran ??
+    0
+  );
+}
+
+  return 0;
+};
+
   const selectedTypeLabel = types.find((t) => t.value === selectedType)?.label || "";
+
+  const tableColSpan = shouldShowPaguColumn(selectedType) ? 20 : 19;
 
   return (
     <div className={`container-fluid px-3 ${darkMode ? "dark-mode" : ""}`}>
@@ -514,7 +721,12 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
                 hover
                 responsive
                 className="small"
-                style={{ fontSize: 12, borderRadius: 6, overflow: "hidden" }}
+                style={{
+                  fontSize: 12,
+                  borderRadius: 6,
+                  overflow: "hidden",
+                  minWidth: 1500,
+                }}
               >
                 <thead style={{ background: "#f1f3f9" }}>
                   <tr>
@@ -535,8 +747,11 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
                     <th className="text-center" style={{ whiteSpace: "nowrap" }} title="Target Th. IV">T.IV</th>
                     <th className="text-center" style={{ whiteSpace: "nowrap" }} title="Target Th. V">T.V</th>
                     <th style={{ whiteSpace: "nowrap" }}>Tipe</th>
-                    <th style={{ whiteSpace: "nowrap" }}>Detail</th>
-                    <th style={{ whiteSpace: "nowrap" }}>Aksi</th>
+                      {shouldShowPaguColumn(selectedType) && (
+                        <th style={{ whiteSpace: "nowrap" }}>Pagu</th>
+                      )}
+                      <th style={{ whiteSpace: "nowrap" }}>Detail</th>
+                      <th style={{ whiteSpace: "nowrap" }}>Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -546,13 +761,13 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
                         <tr>
                           <td>{idx + 1 + (page - 1) * pageSize}</td>
                           <td>{scalarCell(i.kode_indikator)}</td>
-                          <TdEllipsis title={scalarCell(i.nama_indikator)}>
+                          <TdWrap title={scalarCell(i.nama_indikator)} minWidth={360} maxWidth={520}>
                             {i.nama_indikator}
-                          </TdEllipsis>
+                          </TdWrap>
                           <td>{scalarCell(i.satuan)}</td>
-                          <TdEllipsis title={scalarCell(i.target_kinerja)}>
+                          <TdWrap title={scalarCell(i.target_kinerja)} minWidth={360} maxWidth={520}>
                             {i.target_kinerja}
-                          </TdEllipsis>
+                          </TdWrap>
                           <td>{scalarCell(i.baseline)}</td>
                           {[1, 2, 3, 4, 5].map((n) => (
                             <td key={`c${n}`} className="text-end">
@@ -565,7 +780,16 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
                             </td>
                           ))}
                           <td>{scalarCell(i.tipe_indikator)}</td>
-                          <td className="text-center">
+
+                            {shouldShowPaguColumn(selectedType) && (
+                              <td className="text-end">
+                                <span className="badge bg-info text-dark">
+                                  {formatPaguDisplay(getDisplayedPagu(i))}
+                                </span>
+                              </td>
+                            )}
+
+                            <td className="text-center">
                             <Button
                               size="sm"
                               variant={expandedRowId === i.id ? "secondary" : "outline-info"}
@@ -603,7 +827,7 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
                         </tr>
                         {expandedRowId === i.id && (
                           <tr>
-                            <td colSpan={19} style={{ background: "#f8f9fa", padding: 0 }}>
+                            <td colSpan={tableColSpan} style={{ background: "#f8f9fa", padding: 0 }}>
                               <div
                                 style={{
                                   padding: "12px 20px",
@@ -628,6 +852,12 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
                                     scalarCell(i.opdPenanggungJawab?.nama_opd) ||
                                     scalarCell(i.nama_opd_penanggung) ||
                                     scalarCell(i.penanggung_jawab)],
+                                  [
+                                    "Pagu terkait",
+                                    shouldShowPaguColumn(selectedType)
+                                      ? formatPaguDisplay(getDisplayedPagu(i))
+                                      : "",
+                                  ],
                                   ["Keterangan", scalarCell(i.keterangan)],
                                   ["Rekomendasi AI", scalarCell(i.rekomendasi_ai)],
                                 ].map(([label, val]) => (
@@ -648,7 +878,7 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={19} className="text-center py-4" style={{ color: "#adb5bd" }}>
+                      <td colSpan={tableColSpan} className="text-center py-4" style={{ color: "#adb5bd" }}>
                         Tidak ada data yang sesuai filter.
                       </td>
                     </tr>

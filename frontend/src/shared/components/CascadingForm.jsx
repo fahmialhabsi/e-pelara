@@ -478,6 +478,27 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
       nextData[lvKey] = isMultiField(lvKey) ? [] : "";
       abortControllers.current[lvKey]?.abort?.();
     });
+
+    // Auto-fill prioritas berdasarkan histori cascading untuk misi ini (agar user tidak bingung).
+    // Hanya berlaku di new mode, dan hanya mengisi field yang kosong (tidak override pilihan user).
+    if (!isEditMode && level.key === "misi" && nextData.misi && baseParams.jenis_dokumen && baseParams.tahun) {
+      try {
+        const res = await api.get("/cascading/suggest-prioritas", {
+          params: {
+            misi_id: nextData.misi,
+            jenis_dokumen: baseParams.jenis_dokumen,
+            tahun: baseParams.tahun,
+          },
+        });
+        const sug = res?.data?.data || {};
+        if (!nextData.priorNasional && sug.prior_nas_id) nextData.priorNasional = normalizeId(sug.prior_nas_id);
+        if (!nextData.priorDaerah   && sug.prior_daerah_id) nextData.priorDaerah = normalizeId(sug.prior_daerah_id);
+        if (!nextData.priorKepda    && sug.prior_kepda_id) nextData.priorKepda = normalizeId(sug.prior_kepda_id);
+      } catch (err) {
+        console.warn("Gagal auto-fill prioritas:", err?.message || err);
+      }
+    }
+
     setData(nextData);
     setOptions((prev) => {
       const cleared = { ...prev };
@@ -500,7 +521,7 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
         childLevel.key === "arahKebijakan" ? nextData.strategi : null,
       );
     }
-  }, [data, fetchChildOptions]);
+  }, [data, fetchChildOptions, isEditMode, baseParams.jenis_dokumen, baseParams.tahun]);
 
   // ── handleSubmit ──────────────────────────────────────────────────────────
   const handleSubmit = async (event) => {

@@ -17,6 +17,7 @@ async function assertKebijakanConsistency({ strategi_id, rpjmd_arah_id, renstra_
   if (!sid || !aid || !rid) {
     return {
       ok: false,
+      code: "PAYLOAD_INVALID",
       message: "strategi_id, rpjmd_arah_id, dan renstra_id wajib diisi (angka).",
     };
   }
@@ -25,15 +26,33 @@ async function assertKebijakanConsistency({ strategi_id, rpjmd_arah_id, renstra_
     attributes: ["id", "renstra_id", "rpjmd_strategi_id"],
   });
   if (!renstraStrategi) {
-    return { ok: false, message: "strategi_id tidak valid: RenstraStrategi tidak ditemukan." };
+    return {
+      ok: false,
+      code: "RENSTRA_STRATEGI_NOT_FOUND",
+      message: "strategi_id tidak valid: RenstraStrategi tidak ditemukan.",
+    };
   }
   if (Number(renstraStrategi.renstra_id) !== Number(rid)) {
-    return { ok: false, message: "strategi_id tidak konsisten dengan renstra_id pada payload." };
+    return {
+      ok: false,
+      code: "RENSTRA_SCOPE_MISMATCH",
+      message: "strategi_id tidak konsisten dengan renstra_id pada payload.",
+      details: {
+        renstra_strategi_id: sid,
+        expected_renstra_id: Number(renstraStrategi.renstra_id),
+        payload_renstra_id: rid,
+      },
+    };
   }
 
   const arah = await ArahKebijakan.findByPk(aid, { attributes: ["id", "strategi_id"] });
   if (!arah) {
-    return { ok: false, message: "rpjmd_arah_id tidak valid: Arah Kebijakan RPJMD tidak ditemukan." };
+    return {
+      ok: false,
+      code: "RPJMD_ARAH_NOT_FOUND",
+      message: "rpjmd_arah_id tidak valid: Arah Kebijakan RPJMD tidak ditemukan.",
+      details: { rpjmd_arah_id: aid },
+    };
   }
   if (
     arah.strategi_id != null &&
@@ -42,8 +61,15 @@ async function assertKebijakanConsistency({ strategi_id, rpjmd_arah_id, renstra_
   ) {
     return {
       ok: false,
+      code: "CHAIN_MISMATCH",
       message:
         "Arah Kebijakan RPJMD tidak konsisten: arah kebijakan bukan turunan dari Strategi RPJMD yang dipilih pada RenstraStrategi.",
+      details: {
+        renstra_strategi_id: sid,
+        expected_rpjmd_strategi_id: Number(renstraStrategi.rpjmd_strategi_id),
+        target_rpjmd_arah_id: aid,
+        target_rpjmd_arah_strategi_id: Number(arah.strategi_id),
+      },
     };
   }
 
@@ -54,7 +80,7 @@ exports.create = async (req, res) => {
   try {
     // Enforce untuk data baru: wajib konsisten parent-child Renstra→RPJMD.
     const chk = await assertKebijakanConsistency(req.body);
-    if (!chk.ok) return res.status(400).json({ error: chk.message });
+    if (!chk.ok) return res.status(400).json({ error: chk.message, code: chk.code, details: chk.details });
 
     const data = await RenstraKebijakan.create(req.body);
     res.status(201).json(data);
@@ -65,7 +91,15 @@ exports.create = async (req, res) => {
 
 exports.findAll = async (req, res) => {
   try {
+    const { renstra_id, strategi_id, rpjmd_arah_id } = req.query;
+
+    const where = {};
+    if (renstra_id) where.renstra_id = renstra_id;
+    if (strategi_id) where.strategi_id = strategi_id;
+    if (rpjmd_arah_id) where.rpjmd_arah_id = rpjmd_arah_id;
+
     const data = await RenstraKebijakan.findAll({
+      where,
       include: [
         {
           model: RenstraOPD,
@@ -80,13 +114,12 @@ exports.findAll = async (req, res) => {
         {
           model: ArahKebijakan,
           as: "arah_kebijakan",
-          attributes: ["kode_arah", "deskripsi"], // Asumsi ArahKebijakan masih pakai 'kode_arah'
+          attributes: ["kode_arah", "deskripsi"],
         },
-        // RELASI KE RENSTRAKEBIJAKAN DENGAN ALIAS "KEBIJAKAN" DIHAPUS
-        // JIKA TIDAK MEMILIKI TUJUAN FUNGSI SESPESIFIK
       ],
       order: [["id", "ASC"]],
     });
+
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -201,7 +234,7 @@ exports.update = async (req, res) => {
         rpjmd_arah_id: updateData.rpjmd_arah_id ?? existing.rpjmd_arah_id,
         renstra_id: updateData.renstra_id ?? existing.renstra_id,
       });
-      if (!chk.ok) return res.status(400).json({ error: chk.message });
+      if (!chk.ok) return res.status(400).json({ error: chk.message, code: chk.code, details: chk.details });
     }
 
     const [updated] = await RenstraKebijakan.update(updateData, {

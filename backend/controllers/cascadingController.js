@@ -264,6 +264,75 @@ exports.statistikSankey = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/cascading/suggest-prioritas?misi_id=&jenis_dokumen=&tahun=&sasaran_id=
+ * Mengembalikan prioritas yang paling sering dipakai (mode) untuk misi tertentu
+ * pada konteks jenis_dokumen+tahun. Dipakai untuk auto-fill form agar user tidak bingung.
+ */
+exports.suggestPrioritas = async (req, res) => {
+  try {
+    const misiId = Number(req.query?.misi_id);
+    const jenis_dokumen = String(req.query?.jenis_dokumen ?? "").trim().toLowerCase();
+    const tahun = String(req.query?.tahun ?? "").trim();
+    const sasaranId = req.query?.sasaran_id != null && req.query?.sasaran_id !== ""
+      ? Number(req.query?.sasaran_id)
+      : null;
+
+    if (!Number.isFinite(misiId) || misiId <= 0) {
+      return res.status(400).json({ success: false, code: "MISI_ID_REQUIRED", message: "misi_id wajib diisi." });
+    }
+    if (!jenis_dokumen || !tahun) {
+      return res.status(400).json({ success: false, code: "CONTEXT_REQUIRED", message: "jenis_dokumen dan tahun wajib diisi." });
+    }
+
+    const where = { misi_id: misiId, jenis_dokumen, tahun };
+    if (Number.isFinite(sasaranId) && sasaranId > 0) where.sasaran_id = sasaranId;
+
+    const rows = await Cascading.findAll({
+      where,
+      attributes: ["prior_nas_id", "prior_daerah_id", "prior_kepda_id"],
+      raw: true,
+    });
+
+    const modeOf = (arr) => {
+      const counts = new Map();
+      for (const v of arr) {
+        const n = v == null ? null : Number(v);
+        if (!Number.isFinite(n) || n <= 0) continue;
+        counts.set(n, (counts.get(n) || 0) + 1);
+      }
+      let best = null;
+      let bestCount = 0;
+      for (const [k, c] of counts.entries()) {
+        if (c > bestCount) { best = k; bestCount = c; }
+      }
+      return { id: best, count: bestCount };
+    };
+
+    const priorNas = modeOf(rows.map((r) => r.prior_nas_id));
+    const priorDa  = modeOf(rows.map((r) => r.prior_daerah_id));
+    const priorKd  = modeOf(rows.map((r) => r.prior_kepda_id));
+
+    return res.json({
+      success: true,
+      data: {
+        scanned_count: rows.length,
+        prior_nas_id: priorNas.id,
+        prior_daerah_id: priorDa.id,
+        prior_kepda_id: priorKd.id,
+        confidence: {
+          prior_nas_id: priorNas.count,
+          prior_daerah_id: priorDa.count,
+          prior_kepda_id: priorKd.count,
+        },
+      },
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
 exports.create = async (req, res) => {
   const { jenis_dokumen, tahun, strategi_ids, arah_kebijakan_ids, ...data } =
     req.body;

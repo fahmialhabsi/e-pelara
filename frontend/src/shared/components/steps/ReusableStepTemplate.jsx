@@ -40,7 +40,12 @@ export default function ReusableStepTemplate({
       sessionStorage.getItem("form_rpjmd");
     if (saved) {
       const parsed = JSON.parse(saved);
-      Object.entries(parsed).forEach(([k, v]) => setFieldValue(k, v));
+      Object.entries(parsed).forEach(([k, v]) => {
+        const cur = values?.[k];
+        const curEmpty = cur == null || (typeof cur === "string" && cur.trim() === "");
+        if (!curEmpty) return;
+        setFieldValue(k, v);
+      });
     }
   }, [setFieldValue]);
 

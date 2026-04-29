@@ -1,18 +1,67 @@
+// frontend/src/shared/components/KegiatanNestedView.jsx
 import React from "react";
 import { Accordion, ListGroup, Button } from "react-bootstrap";
 
 const capitalize = (text = "") =>
-  text.toLowerCase().replace(/^\w|\s\w/g, (c) => c.toUpperCase());
+  String(text || "")
+    .toLowerCase()
+    .replace(/^\w|\s\w/g, (c) => c.toUpperCase());
+
+const toNumber = (value) => Number(value) || 0;
+
+const formatRupiah = (value) =>
+  `Rp ${toNumber(value).toLocaleString("id-ID")}`;
+
+const getKegiatanPagu = (keg) => {
+  return toNumber(keg?.total_pagu_anggaran ?? keg?.pagu_anggaran);
+};
+
+const sumKegiatanList = (kegiatanList) => {
+  return (kegiatanList || []).reduce(
+    (total, keg) => total + getKegiatanPagu(keg),
+    0
+  );
+};
+
+const sumProgramMap = (programMap) => {
+  return Object.values(programMap || {}).reduce(
+    (total, kegiatanList) => total + sumKegiatanList(kegiatanList),
+    0
+  );
+};
+
+const sumSasaranMap = (sasaranMap) => {
+  return Object.values(sasaranMap || {}).reduce(
+    (total, programMap) => total + sumProgramMap(programMap),
+    0
+  );
+};
+
+const sumGrouped = (grouped) => {
+  return Object.values(grouped || {}).reduce(
+    (total, sasaranMap) => total + sumSasaranMap(sasaranMap),
+    0
+  );
+};
 
 export default function KegiatanNestedView({ data, onEdit, onDelete }) {
   const grouped = {};
 
   data.forEach((keg) => {
-    const tujuan = keg.program?.sasaran?.Tujuan;
-    const sasaran = keg.program?.sasaran;
-    const program = keg.program;
+    const tujuan = keg.program?.sasaran?.Tujuan ?? {
+      no_tujuan: "-",
+      isi_tujuan: "Tidak Ada Tujuan",
+    };
 
-    if (!tujuan || !sasaran || !program) return;
+    const sasaran = keg.program?.sasaran ?? {
+      nomor: "-",
+      isi_sasaran: "Tidak Ada Sasaran",
+    };
+
+    const program = keg.program ?? {
+      kode_program: "-",
+      nama_program: "Tidak Ada Program",
+    };
 
     const tujuanKey = `${tujuan.no_tujuan} - ${tujuan.isi_tujuan}`;
     const sasaranKey = `${sasaran.nomor} - ${sasaran.isi_sasaran}`;
@@ -20,146 +69,178 @@ export default function KegiatanNestedView({ data, onEdit, onDelete }) {
 
     if (!grouped[tujuanKey]) grouped[tujuanKey] = {};
     if (!grouped[tujuanKey][sasaranKey]) grouped[tujuanKey][sasaranKey] = {};
-    if (!grouped[tujuanKey][sasaranKey][programKey])
+    if (!grouped[tujuanKey][sasaranKey][programKey]) {
       grouped[tujuanKey][sasaranKey][programKey] = [];
+    }
 
     grouped[tujuanKey][sasaranKey][programKey].push(keg);
   });
 
+  const totalPaguOpd = sumGrouped(grouped);
+
   return (
-    <Accordion defaultActiveKey="0" alwaysOpen>
-      {Object.entries(grouped).map(([tujuan, sasaranMap], i) => (
-        <Accordion.Item eventKey={i.toString()} key={tujuan}>
-          <Accordion.Header>
-            <span
-              style={{
-                fontWeight: "bold",
-                color: "#0f172a",
-                textTransform: "uppercase",
-              }}
-            >
-              {tujuan}
-            </span>
-          </Accordion.Header>
-          <Accordion.Body>
-            <Accordion alwaysOpen>
-              {Object.entries(sasaranMap).map(([sasaran, programMap], j) => (
-                <Accordion.Item
-                  eventKey={`s-${i}-${j}`}
-                  key={`${tujuan}-${sasaran}`}
-                >
-                  <Accordion.Header>
-                    <span style={{ fontWeight: "bold", color: "#1e3a8a" }}>
-                      {sasaran}
-                    </span>
-                  </Accordion.Header>
-                  <Accordion.Body>
-                    <Accordion alwaysOpen>
-                      {Object.entries(programMap).map(
-                        ([program, kegiatanList], k) => {
-                          const firstKegiatan = kegiatanList?.[0]; // Ambil contoh data
+    <>
+      <div className="mb-3 p-3 border rounded bg-light">
+        <div className="fw-bold text-primary">
+          Total Pagu RPJMD:{" "}
+          <span className="badge bg-info text-dark">
+            {formatRupiah(totalPaguOpd)}
+          </span>
+        </div>
+      </div>
 
-                          return (
-                            <Accordion.Item
-                              eventKey={`p-${i}-${j}-${k}`}
-                              key={`${tujuan}-${sasaran}-${program}`}
-                            >
-                              <Accordion.Header>
-                                <span
-                                  style={{
-                                    fontWeight: "bold",
-                                    color: "#3b82f6",
-                                    textTransform: "capitalize",
-                                  }}
-                                >
-                                  {capitalize(program)}
-                                </span>
-                              </Accordion.Header>
-                              <Accordion.Body>
-                                {/* ✅ Tambah OPD Penanggung Jawab */}
-                                <div className="mb-3 ps-3 text-muted small">
-                                  <span className="fw-semibold">
-                                    🏛️ OPD Penanggung Jawab:
-                                  </span>{" "}
-                                  <span className="badge bg-success">
-                                    {firstKegiatan?.opd?.nama_opd || "-"}
-                                    {firstKegiatan?.bidang_opd_penanggung_jawab ||
-                                      "-"}
-                                  </span>
-                                </div>
+      <Accordion defaultActiveKey="0" alwaysOpen>
+        {Object.entries(grouped).map(([tujuan, sasaranMap], i) => (
+          <Accordion.Item eventKey={i.toString()} key={tujuan}>
+            <Accordion.Header>
+              <div className="d-flex flex-column">
+                <span style={{ fontWeight: "bold", color: "#0f172a" }}>
+                  {tujuan}
+                </span>
+                <small className="text-muted">
+                  Total Pagu Tujuan: {formatRupiah(sumSasaranMap(sasaranMap))}
+                </small>
+              </div>
+            </Accordion.Header>
 
-                                <ListGroup>
-                                  {kegiatanList.map((keg) => (
-                                    <ListGroup.Item
-                                      key={keg.id}
-                                      className="d-flex justify-content-between align-items-start"
+            <Accordion.Body>
+              <Accordion alwaysOpen>
+                {Object.entries(sasaranMap).map(([sasaran, programMap], j) => (
+                  <Accordion.Item
+                    eventKey={`s-${i}-${j}`}
+                    key={`${tujuan}-${sasaran}`}
+                  >
+                    <Accordion.Header>
+                      <div className="d-flex flex-column">
+                        <span style={{ fontWeight: "bold", color: "#1e3a8a" }}>
+                          {sasaran}
+                        </span>
+                        <small className="text-muted">
+                          Total Pagu Sasaran:{" "}
+                          {formatRupiah(sumProgramMap(programMap))}
+                        </small>
+                      </div>
+                    </Accordion.Header>
+
+                    <Accordion.Body>
+                      <Accordion alwaysOpen>
+                        {Object.entries(programMap).map(
+                          ([program, kegiatanList], k) => {
+                            const firstKegiatan = kegiatanList?.[0];
+                            const totalPaguProgram =
+                              sumKegiatanList(kegiatanList);
+
+                            return (
+                              <Accordion.Item
+                                eventKey={`p-${i}-${j}-${k}`}
+                                key={`${tujuan}-${sasaran}-${program}`}
+                              >
+                                <Accordion.Header>
+                                  <div className="d-flex flex-column">
+                                    <span
+                                      style={{
+                                        fontWeight: "bold",
+                                        color: "#3b82f6",
+                                      }}
                                     >
-                                      <div>
-                                        <span
-                                          style={{
-                                            fontWeight: "bold",
-                                            fontStyle: "italic",
-                                            color: "#0f766e",
-                                            textTransform: "capitalize",
-                                            fontSize: "1rem",
-                                          }}
-                                        >
-                                          {keg.kode_kegiatan} -{" "}
-                                          {capitalize(keg.nama_kegiatan)}
-                                        </span>
+                                      {capitalize(program)}
+                                    </span>
+                                    <small className="text-muted">
+                                      Total Pagu Program:{" "}
+                                      {formatRupiah(totalPaguProgram)}
+                                    </small>
+                                  </div>
+                                </Accordion.Header>
 
-                                        {/* 💰 Tambah Total Pagu Anggaran */}
-                                        <div className="mt-1 text-muted small">
-                                          💰 Total Pagu Kegiatan:{" "}
-                                          {keg.total_pagu_anggaran?.toLocaleString(
-                                            "id-ID"
-                                          ) || "0"}
-                                        </div>
+                                <Accordion.Body>
+                                  <div className="mb-3 ps-3 text-muted small">
+                                    <span className="fw-semibold">
+                                      🏛️ OPD Penanggung Jawab:
+                                    </span>{" "}
+                                    <span className="badge bg-success">
+                                      {firstKegiatan?.opd?.nama_opd ||
+                                        firstKegiatan?.program?.opd?.nama_opd ||
+                                        firstKegiatan?.opd_penanggung_jawab ||
+                                        "-"}
+                                    </span>
+                                  </div>
 
-                                        {/* 📁 Bidang Penanggung Jawab */}
-                                        <div className="mt-2 text-muted small">
-                                          <span className="fw-semibold">
-                                            📁 Bidang Penanggung Jawab:
-                                          </span>{" "}
-                                          <span className="badge bg-secondary">
-                                            {keg.bidang_opd_penanggung_jawab ||
-                                              "-"}
+                                  <ListGroup>
+                                    {kegiatanList.map((keg) => (
+                                      <ListGroup.Item
+                                        key={keg.id}
+                                        className="d-flex justify-content-between align-items-start"
+                                      >
+                                        <div>
+                                          <span
+                                            style={{
+                                              fontWeight: "bold",
+                                              fontStyle: "italic",
+                                              color: "#0f766e",
+                                              fontSize: "1rem",
+                                            }}
+                                          >
+                                            {keg.kode_kegiatan} -{" "}
+                                            {capitalize(keg.nama_kegiatan)}
                                           </span>
-                                        </div>
-                                      </div>
 
-                                      <div className="ms-2 d-flex gap-2">
-                                        <Button
-                                          variant="outline-primary"
-                                          size="sm"
-                                          onClick={() => onEdit?.(keg)}
-                                        >
-                                          Ubah
-                                        </Button>
-                                        <Button
-                                          variant="outline-danger"
-                                          size="sm"
-                                          onClick={() => onDelete?.(keg.id)}
-                                        >
-                                          Hapus
-                                        </Button>
-                                      </div>
-                                    </ListGroup.Item>
-                                  ))}
-                                </ListGroup>
-                              </Accordion.Body>
-                            </Accordion.Item>
-                          );
-                        }
-                      )}
-                    </Accordion>
-                  </Accordion.Body>
-                </Accordion.Item>
-              ))}
-            </Accordion>
-          </Accordion.Body>
-        </Accordion.Item>
-      ))}
-    </Accordion>
+                                          <div className="mt-2 text-muted small">
+                                            <span className="fw-semibold">
+                                              💰 Total Pagu Kegiatan:
+                                            </span>{" "}
+                                            <span className="badge bg-info text-dark">
+                                              {formatRupiah(
+                                                keg.total_pagu_anggaran ??
+                                                  keg.pagu_anggaran
+                                              )}
+                                            </span>
+                                          </div>
+
+                                          <div className="mt-2 text-muted small">
+                                            <span className="fw-semibold">
+                                              📁 Bidang Penanggung Jawab:
+                                            </span>{" "}
+                                            <span className="badge bg-secondary">
+                                              {keg.bidang_opd_penanggung_jawab ||
+                                                keg.opd?.nama_bidang_opd ||
+                                                "-"}
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        <div className="ms-2 d-flex gap-2">
+                                          <Button
+                                            variant="outline-primary"
+                                            size="sm"
+                                            onClick={() => onEdit?.(keg)}
+                                          >
+                                            Ubah
+                                          </Button>
+                                          <Button
+                                            variant="outline-danger"
+                                            size="sm"
+                                            onClick={() => onDelete?.(keg.id)}
+                                          >
+                                            Hapus
+                                          </Button>
+                                        </div>
+                                      </ListGroup.Item>
+                                    ))}
+                                  </ListGroup>
+                                </Accordion.Body>
+                              </Accordion.Item>
+                            );
+                          }
+                        )}
+                      </Accordion>
+                    </Accordion.Body>
+                  </Accordion.Item>
+                ))}
+              </Accordion>
+            </Accordion.Body>
+          </Accordion.Item>
+        ))}
+      </Accordion>
+    </>
   );
 }

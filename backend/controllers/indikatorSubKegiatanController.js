@@ -1,8 +1,9 @@
-// controllers/indikatorSubKegiatanController.js
+// backend/controllers/indikatorSubKegiatanController.js
 const {
   sequelize,
   IndikatorSubKegiatan,
   SubKegiatan,
+  Kegiatan,
   OpdPenanggungJawab,
   Program,
 } = require("../models");
@@ -17,6 +18,9 @@ const {
   fromSequelizeValidationError,
 } = require("../utils/validationErrorResponse");
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
+const {
+  attachPaguByIndikatorKode,
+} = require("../services/paguAggregatorService");
 
 const MAX_LIMIT = 200;
 
@@ -201,39 +205,120 @@ exports.create = async (req, res) => {
     const rows = Array.isArray(req.body) ? req.body : [req.body];
 
     if (!rows.every((r) => r.indikator_id)) {
-      return sendValidationErrors(res, 400,
+      return sendValidationErrors(
+        res,
+        400,
         { indikator_id: ["Semua data harus memiliki indikator_id"] },
         { message: "Semua data harus memiliki indikator_id" }
       );
     }
 
-    const tahun  = rows[0]?.tahun || new Date().getFullYear();
-    const periode = (await getPeriodeFromTahun(tahun)) || (await getPeriodeAktif());
+    const tahun = rows[0]?.tahun || new Date().getFullYear();
+    const periode =
+      (await getPeriodeFromTahun(tahun)) || (await getPeriodeAktif());
+
     const withDefaults = rows.map((r) => applyDefaults(r, periode));
 
     const t = await sequelize.transaction();
+
     try {
-      const created = await IndikatorSubKegiatan.bulkCreate(withDefaults, {
-        fields: Object.keys(withDefaults[0]),
-        transaction: t,
+      const savedRows = [];
+
+      for (const data of withDefaults) {
+        const where = {
+          kode_indikator: data.kode_indikator,
+          periode_id: data.periode_id,
+          jenis_dokumen: data.jenis_dokumen,
+          sub_kegiatan_id: data.sub_kegiatan_id,
+        };
+
+        try {
+          const [record, created] = await IndikatorSubKegiatan.findOrCreate({
+            where,
+            defaults: data,
+            transaction: t,
+          });
+
+          savedRows.push({ record, created });
+        } catch (err) {
+          if (err.name === "SequelizeUniqueConstraintError") {
+            const record = await IndikatorSubKegiatan.findOne({
+              where,
+              transaction: t,
+            });
+
+            if (record) {
+              savedRows.push({ record, created: false });
+              continue;
+            }
+          }
+
+          throw err;
+        }
+      }
+
+      console.log("AUTO SAVE INDIKATOR SUB KEGIATAN:", {
+        created: savedRows.filter((r) => r.created).length,
+        existing: savedRows.filter((r) => !r.created).length,
       });
+
       await t.commit();
-      return res.status(201).json({ status: "success", data: created });
+
+      return res.status(200).json({
+        status: "success",
+        message: savedRows.some((r) => r.created)
+          ? "Data indikator sub kegiatan berhasil disimpan."
+          : "Data indikator sub kegiatan sudah tersimpan.",
+        data: savedRows.map((r) => r.record),
+        meta: {
+          created: savedRows.filter((r) => r.created).length,
+          existing: savedRows.filter((r) => !r.created).length,
+        },
+      });
     } catch (err) {
       await t.rollback();
-      if (err.name === "SequelizeUniqueConstraintError") {
-        return sendValidationErrors(res, 409,
-          { kode_indikator: ["Data sudah ada untuk kombinasi ini."] },
-          { message: "Data duplikat." }
+
+      if (err.name === "SequelizeValidationError") {
+        return sendValidationErrors(
+          res,
+          400,
+          fromSequelizeValidationError(err),
+          { message: err.message }
         );
       }
-      if (err.name === "SequelizeValidationError") {
-        return sendValidationErrors(res, 400, fromSequelizeValidationError(err), { message: err.message });
+
+      if (err.name === "SequelizeUniqueConstraintError") {
+        return res.status(200).json({
+          status: "success",
+          message: "Data indikator sub kegiatan sudah tersimpan.",
+          data: [],
+          meta: {
+            created: 0,
+            existing: withDefaults.length,
+          },
+        });
       }
-      return res.status(500).json({ status: "error", message: err.message });
+
+      console.error("CREATE INDIKATOR SUB KEGIATAN ERROR:", {
+        name: err.name,
+        message: err.message,
+        errors: err.errors?.map((e) => ({
+          path: e.path,
+          message: e.message,
+          value: e.value,
+        })),
+      });
+
+      return res.status(500).json({
+        status: "error",
+        message: err.message,
+      });
     }
   } catch (err) {
-    return res.status(500).json({ status: "error", message: err.message });
+    return res.status(500).json({
+      status: "error",
+      message: err.message,
+    });
   }
 };
 
@@ -312,7 +397,36 @@ exports.findAll = async (req, res) => {
           {
             model: SubKegiatan,
             as: "subKegiatan",
-            attributes: ["id", "kegiatan_id", "kode_sub_kegiatan", "nama_sub_kegiatan"],
+            attributes: [
+              "id",
+              "kode_sub_kegiatan",
+              "nama_sub_kegiatan",
+              "pagu_anggaran"
+            ],
+            include: [
+              {
+                model: Kegiatan,
+                as: "kegiatan",
+                attributes: [
+                  "id",
+                  "kode_kegiatan",
+                  "nama_kegiatan",
+                  "total_pagu_anggaran"
+                ],
+                include: [
+                  {
+                    model: Program,
+                    as: "program",
+                    attributes: [
+                      "id",
+                      "kode_program",
+                      "nama_program",
+                      "total_pagu_anggaran"
+                    ]
+                  }
+                ]
+              }
+            ],
             required: false,
           },
           {
@@ -333,6 +447,9 @@ exports.findAll = async (req, res) => {
 
     fillBaselineFallback(rows);
     await fillPenanggungJawabFallbackFromProgram(rows);
+
+    await attachPaguByIndikatorKode(rows);
+
     return res.json({
       status: "success",
       data: rows,
@@ -416,69 +533,33 @@ exports.getNextKode = async (req, res) => {
         ? String(jenis_dokumen).trim().toLowerCase()
         : null;
 
-    // Basis IPSK: ambil dari kode indikator kegiatan (IPK-... -> ...), lalu tambahkan .NN
     const rawKegKode =
       indikator_kegiatan_kode_indikator != null
         ? String(indikator_kegiatan_kode_indikator).trim()
         : "";
-    const kegBase = rawKegKode.toUpperCase().startsWith("IPK-")
-      ? rawKegKode.slice(4).trim()
-      : rawKegKode;
-
-    const useIpsk = kegBase && kegBase.length > 0;
-    const prefix = useIpsk
-      ? `IPSK-${kegBase}`
+    const prefix = rawKegKode.startsWith("IK")
+      ? `ISK${rawKegKode.slice(2)}`
       : subKegiatan.kode_sub_kegiatan || `SK-${sub_kegiatan_id}`;
 
-    if (!useIpsk) {
-      const result = await IndikatorSubKegiatan.findOne({
-        where: {
-          sub_kegiatan_id,
-          ...(tahunStr ? { tahun: tahunStr } : {}),
-          ...(jenisLc
-            ? {
-                [Op.and]: [
-                  sqlWhere(fn("LOWER", fn("TRIM", col("jenis_dokumen"))), jenisLc),
-                ],
-              }
-            : {}),
-          kode_indikator: { [Op.like]: `${prefix}-%` },
-        },
-        attributes: [
-          [
-            sequelize.fn(
-              "MAX",
-              sequelize.literal(
-                "CAST(SUBSTRING_INDEX(kode_indikator,'-',-1) AS UNSIGNED)",
-              ),
-            ),
-            "maxNumber",
-          ],
-        ],
-        raw: true,
-      });
-      const next = (result?.maxNumber || 0) + 1;
-      return res.json({
-        status: "success",
-        next_kode: `${prefix}-${String(next).padStart(2, "0")}`,
-      });
-    }
-
-    // Untuk IPSK-... gunakan suffix .NN (2 digit) agar kode tetap mudah dibaca.
-    const dotResult = await IndikatorSubKegiatan.findOne({
+    const result = await IndikatorSubKegiatan.findOne({
       where: {
+        sub_kegiatan_id,
         ...(tahunStr ? { tahun: tahunStr } : {}),
         ...(jenisLc
-          ? { [Op.and]: [sqlWhere(fn("LOWER", fn("TRIM", col("jenis_dokumen"))), jenisLc)] }
+          ? {
+              [Op.and]: [
+                sqlWhere(fn("LOWER", fn("TRIM", col("jenis_dokumen"))), jenisLc),
+              ],
+            }
           : {}),
-        kode_indikator: { [Op.like]: `${prefix}.%` },
+        kode_indikator: { [Op.like]: `${prefix}-%` },
       },
       attributes: [
         [
           sequelize.fn(
             "MAX",
             sequelize.literal(
-              "CAST(SUBSTRING_INDEX(kode_indikator,'.',-1) AS UNSIGNED)",
+              "CAST(SUBSTRING_INDEX(kode_indikator,'-',-1) AS UNSIGNED)",
             ),
           ),
           "maxNumber",
@@ -487,10 +568,10 @@ exports.getNextKode = async (req, res) => {
       raw: true,
     });
 
-    const next = (dotResult?.maxNumber || 0) + 1;
+    const next = (result?.maxNumber || 0) + 1;
     return res.json({
       status: "success",
-      next_kode: `${prefix}.${String(next).padStart(2, "0")}`,
+      next_kode: `${prefix}-${String(next).padStart(2, "0")}`,
     });
   } catch (err) {
     return res.status(500).json({ status: "error", message: err.message });

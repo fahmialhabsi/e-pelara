@@ -1,3 +1,4 @@
+// frontend/src/features/rpjmd/services/indikatorRpjmdApi.js
 import api from "@/services/api";
 import apiAI from "@/services/apiAI";
 import { normalizeListItems } from "@/utils/apiResponse";
@@ -271,6 +272,14 @@ export async function fetchIndikatorProgramByProgram(programId, params = {}) {
   });
 }
 
+/** GET /indikator-program?kode_prefix=IP...&tahun=&jenis_dokumen=
+ *  Fallback: cari indikator program via prefix kode saat program_id belum terhubung ke DB. */
+export async function fetchIndikatorProgramByKodePrefix(kodePrefix, params = {}) {
+  return api.get("/indikator-program", {
+    params: { kode_prefix: kodePrefix, ...params },
+  });
+}
+
 /** GET /indikator-kegiatan?kegiatan_id=&tahun=&jenis_dokumen=&indikator_program_id= */
 export async function fetchIndikatorKegiatanByKegiatan(
   kegiatanId,
@@ -278,6 +287,16 @@ export async function fetchIndikatorKegiatanByKegiatan(
 ) {
   return api.get("/indikator-kegiatan", {
     params: { kegiatan_id: kegiatanId, ...params },
+  });
+}
+
+/** GET /indikator-sub-kegiatan?sub_kegiatan_id=&tahun=&jenis_dokumen= */
+export async function fetchIndikatorSubKegiatanBySubKegiatan(
+  subKegiatanId,
+  params = {},
+) {
+  return api.get("/indikator-sub-kegiatan", {
+    params: { sub_kegiatan_id: subKegiatanId, ...params },
   });
 }
 

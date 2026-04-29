@@ -1,6 +1,9 @@
+// backend/controllers/indikatorTujuanController.js
 const {
   sequelize,
   Tujuan,
+  Sasaran,
+  Program,
   IndikatorTujuan,
   SubKegiatan,
 } = require("../models");
@@ -18,6 +21,9 @@ const {
   fromSequelizeValidationError,
 } = require("../utils/validationErrorResponse");
 const { syncIndikatorKinerjaFromJenis } = require("../utils/syncIndikatorKinerjaFromJenis");
+const {
+  attachPaguByIndikatorKode,
+} = require("../services/paguAggregatorService");
 
 const allowedFields = [
   "misi_id",
@@ -131,7 +137,7 @@ async function getNextKode(req, res) {
     const existing = await IndikatorTujuan.findAll({
       attributes: ["kode_indikator"],
       where: {
-        kode_indikator: { [Op.like]: `${tujuan.no_tujuan}-%` },
+        kode_indikator: { [Op.like]: `I${tujuan.no_tujuan}-%` },
         tahun: Number(tahun),
         jenis_dokumen: jenis_dokumen.toUpperCase(),
       },
@@ -143,7 +149,7 @@ async function getNextKode(req, res) {
       .filter(Number.isFinite);
 
     const nextSuffix = String(Math.max(...suffixes, 0) + 1).padStart(2, "0");
-    const kode = `${tujuan.no_tujuan}-${nextSuffix}`;
+    const kode = `I${tujuan.no_tujuan}-${nextSuffix}`;
 
     res.json({ kode });
   } catch (err) {
@@ -420,23 +426,38 @@ async function findAll(req, res) {
     };
     if (periode_id) where.periode_id = periode_id;
 
-    const { Tujuan, OpdPenanggungJawab } = require("../models");
+    const { OpdPenanggungJawab } = require("../models");
 
     const include = [
-      {
-        model: Tujuan,
-        as: "Tujuan",
-        attributes: ["id", "no_tujuan", "isi_tujuan", "misi_id"],
-        where: misi_id ? { misi_id: parseInt(misi_id, 10) } : undefined,
-        required: !!misi_id,
-      },
-      {
-        model: OpdPenanggungJawab,
-        as: "opdPenanggungJawab",
-        attributes: ["id", "nama_opd"],
-        required: false,
-      },
-    ];
+    {
+      model: Tujuan,
+      as: "Tujuan",
+      attributes: ["id", "no_tujuan", "isi_tujuan", "misi_id"],
+      where: misi_id ? { misi_id: parseInt(misi_id, 10) } : undefined,
+      required: !!misi_id,
+      include: [
+        {
+          model: Sasaran,
+          as: "Tujuan",
+          required: false,
+          include: [
+            {
+              model: Program,
+              as: "Program",
+              attributes: ["id", "total_pagu_anggaran"],
+              required: false,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      model: OpdPenanggungJawab,
+      as: "opdPenanggungJawab",
+      attributes: ["id", "nama_opd"],
+      required: false,
+    },
+  ];
 
     const { count, rows } = await IndikatorTujuan.findAndCountAll({
       where,
@@ -446,6 +467,8 @@ async function findAll(req, res) {
       offset,
       distinct: true,
     });
+
+    await attachPaguByIndikatorKode(rows);
 
     return res.status(200).json({
       data: rows,
@@ -510,9 +533,10 @@ async function listByTujuan(req, res) {
       return res.status(400).json({ message: "tujuan_id diperlukan" });
     }
 
-    // Tampilkan hanya data final (bukan referensi impor)
+    // Tampilkan SEMUA indikator tujuan (baik yang user input langsung maupun dari impor)
     const result = await IndikatorTujuan.findAll({
-      where: { tujuan_id, is_import_reference: false },
+      where: { tujuan_id },
+      order: [["kode_indikator", "ASC"]],
     });
     return res.status(200).json({ data: result });
   } catch (err) {
@@ -529,7 +553,7 @@ async function generateKodeIndikator(kodeTujuan, tahun, jenis_dokumen) {
     );
   }
 
-  const cleanKodeTujuan = String(kodeTujuan).trim();
+  const cleanKodeTujuan = `I${String(kodeTujuan).trim()}`;
   const cleanTahun = parseInt(tahun, 10);
   const cleanJenisDokumen = String(jenis_dokumen).trim().toUpperCase();
 

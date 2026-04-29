@@ -23,3 +23,6 @@ Catatan penting:
 - Script Phase 5 ini tidak otomatis menyentuh produksi. Jalankan manual pada DB target.
 - Semua constraint punya nama eksplisit: `fk_<child>__<childcol>__<parent>`.
 - Semua index Phase 5 punya nama eksplisit: `idx_fk_<table>__<col>`.
+
+Phase 6:
+- Aktivasi FK yang ditunda: `renstra_tujuan.rpjmd_tujuan_id -> tujuan.id` ada di `scripts/sql/phase6_fk/00_README.md`.

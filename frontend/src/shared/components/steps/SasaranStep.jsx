@@ -74,7 +74,12 @@ export default function SasaranStep({ options, tabKey, setTabKey, onNext }) {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        Object.entries(parsed).forEach(([key, val]) => setFieldValue(key, val));
+        Object.entries(parsed).forEach(([key, val]) => {
+          const cur = values?.[key];
+          const curEmpty = cur == null || (typeof cur === "string" && cur.trim() === "");
+          if (!curEmpty) return;
+          setFieldValue(key, val);
+        });
       } catch {
         /* ignore */
       }
@@ -159,17 +164,10 @@ export default function SasaranStep({ options, tabKey, setTabKey, onNext }) {
     return () => fetchSasaranByTujuan.cancel();
   }, [fetchSasaranByTujuan]);
 
-  useEffect(() => {
-    const list = values.sasaran;
-    if (Array.isArray(list) && list.length > 0) return;
-
-    const selected = sasaranOptions.find(
-      (s) => String(s.value) === String(values.sasaran_id || "")
-    );
-    if (selected?.nomor != null && selected.nomor !== "") {
-      setFieldValue("kode_indikator", `${selected.nomor}.01`);
-    }
-  }, [values.sasaran_id, values.sasaran, sasaranOptions, setFieldValue]);
+  // PATCH: Jangan pernah timpa kode_indikator dengan nomor sasaran pada step Sasaran
+  // Kode indikator hanya boleh diisi dari next-kode API (lihat IndikatorTabContent.jsx)
+  // useEffect ini di-nonaktifkan agar tidak overwrite kode_indikator
+  // (lihat issue: RPJMD wizard overwrite kode_indikator)
 
   useEffect(() => {
     if (values.capaian_tahun_5) {
@@ -191,7 +189,7 @@ export default function SasaranStep({ options, tabKey, setTabKey, onNext }) {
         const mapped = raw.map(mapApiIndikatorToListRow);
         setFieldValue("sasaran", mapped);
         if (mapped.length > 0) {
-          hydrateDraftFromIndikatorRow(mapped[0], setFieldValue);
+          hydrateDraftFromIndikatorRow(mapped[0], setFieldValue, [], "sasaran");
         } else {
           clearIndikatorDraftScalars(setFieldValue);
         }

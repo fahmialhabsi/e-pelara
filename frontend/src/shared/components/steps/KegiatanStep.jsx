@@ -4,6 +4,7 @@ import StepTemplate from "./StepTemplate";
 import {
   createIndikatorKegiatanBatch,
   fetchIndikatorKegiatanByKegiatan,
+  fetchIndikatorProgramByProgram,
   fetchKegiatanByProgram,
   updateIndikatorKegiatan,
 } from "@/features/rpjmd/services/indikatorRpjmdApi";
@@ -42,10 +43,11 @@ const KEGIATAN_DRAFT_CLEAR_KEYS = [
 function isLegacyKodeIndikatorKegiatan(kode) {
   const s = kode == null ? "" : String(kode).trim().toUpperCase();
   if (!s) return true;
-  // Data impor lama sering pakai pola "IK-..." (legacy) bukan "IPK-...".
+  // Legacy: "IK-..." (IK langsung diikuti dash, tanpa digit) — pola impor lama.
   if (s.startsWith("IK-")) return true;
-  if (!s.startsWith("IPK-")) return true;
-  return false;
+  // Valid new format: IK{digit}-... (mis: IK3-01-01.1.1-01-01-01) atau IPK-...
+  if (/^IK\d/.test(s) || s.startsWith("IPK-")) return false;
+  return true;
 }
 
 function firstPenanggungJawabFromWizardContext(values) {
@@ -124,6 +126,8 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
     }
   }, [restored, setFieldValue, values]);
 
+  const [programIndikatorOptions, setProgramIndikatorOptions] = useState([]);
+
   useEffect(() => {
     if (!restored || !values.program_id || !options?.program?.length) return;
 
@@ -138,8 +142,39 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
     }
   }, [restored, options?.program, values.program_id, setFieldValue]);
 
+  // Fetch indikator program options (hanya dengan program_id, jangan arah_kebijakan_id)
   useEffect(() => {
-    if (!values.program_id) return;
+    if (!restored || !values.program_id || !values.tahun || !values.jenis_dokumen) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const jd = String(values.jenis_dokumen || "").trim().toLowerCase();
+        const res = await fetchIndikatorProgramByProgram(String(values.program_id), {
+          tahun: String(values.tahun),
+          jenis_dokumen: jd,
+        });
+        if (cancelled) return;
+        const opts = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
+        const mapped = opts
+          .filter((r) => r.id && (r.kode_indikator || r.nama_indikator))
+          .map((r) => ({
+            value: String(r.id),
+            label: `${r.kode_indikator} - ${r.nama_indikator}`,
+            penanggung_jawab: r.penanggung_jawab || "",
+          }));
+        setProgramIndikatorOptions(mapped);
+      } catch (err) {
+        console.error("Gagal fetch indikator program:", err);
+        setProgramIndikatorOptions([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [restored, values.program_id, values.tahun, values.jenis_dokumen]);
+
+  useEffect(() => {
+    // Simpan jika ada program_id (context dari Step Program) atau indikator_program_id (saat user select di Step Kegiatan)
+    if (!values.program_id && !values.indikator_program_id) return;
 
     const stringified = JSON.stringify(values);
     localStorage.setItem("form_rpjmd", stringified);
@@ -433,7 +468,7 @@ export default function KegiatanStep({ options, tabKey, setTabKey, onNext }) {
       </Alert>
       <StepTemplate
         stepKey={stepKey}
-        options={{ ...options, kegiatan: kegiatanOptions }}
+        options={{ ...options, kegiatan: kegiatanOptions, programIndikatorOptions }}
         stepOptions={kegiatanOptions}
         tabKey={tabKey}
         setTabKey={setTabKey}

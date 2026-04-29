@@ -1,8 +1,42 @@
+// frontend/src/shared/components/SubKegiatanNestedView.jsx
 import React from "react";
 import { Accordion, ListGroup, Button } from "react-bootstrap";
 
 const capitalize = (text = "") =>
   text.toLowerCase().replace(/^\w|\s\w/g, (c) => c.toUpperCase());
+
+const toNumber = (value) => Number(value) || 0;
+
+const formatRupiah = (value) =>
+  `Rp ${toNumber(value).toLocaleString("id-ID")}`;
+
+const sumProgramMap = (programMap) => {
+  const programKeys = Object.keys(programMap || {});
+
+  return programKeys.reduce((total, programKey) => {
+    const kegiatanMap = programMap[programKey] || {};
+    const firstSub = Object.values(kegiatanMap)?.[0]?.[0];
+
+    return (
+      total +
+      toNumber(firstSub?.kegiatan?.program?.total_pagu_anggaran)
+    );
+  }, 0);
+};
+
+const sumSasaranMap = (sasaranMap) => {
+  return Object.values(sasaranMap || {}).reduce(
+    (total, programMap) => total + sumProgramMap(programMap),
+    0
+  );
+};
+
+const sumGrouped = (grouped) => {
+  return Object.values(grouped || {}).reduce(
+    (total, sasaranMap) => total + sumSasaranMap(sasaranMap),
+    0
+  );
+};
 
 export default function SubKegiatanNestedView({ data, onEdit, onDelete }) {
   const grouped = {};
@@ -46,12 +80,29 @@ export default function SubKegiatanNestedView({ data, onEdit, onDelete }) {
     grouped[tujuanKey][sasaranKey][programKey][kegiatanKey].push(item);
   });
 
+  const totalPaguOpd = sumGrouped(grouped);
+
   return (
+  <>
+    <div className="mb-3 p-3 border rounded bg-light">
+      <div className="fw-bold text-primary">
+        Total Pagu RPJMD:{" "}
+        <span className="badge bg-info text-dark">
+          {formatRupiah(totalPaguOpd)}
+        </span>
+      </div>
+    </div>
+
     <Accordion defaultActiveKey="0" alwaysOpen>
       {Object.entries(grouped).map(([tujuan, sasaranMap], i) => (
         <Accordion.Item eventKey={i.toString()} key={tujuan}>
           <Accordion.Header style={{ fontWeight: "bold", color: "#0f172a" }}>
-            {tujuan}
+            <div className="d-flex flex-column">
+              <span>{tujuan}</span>
+              <small className="text-muted">
+                Total Pagu Tujuan: {formatRupiah(sumSasaranMap(sasaranMap))}
+              </small>
+            </div>
           </Accordion.Header>
           <Accordion.Body>
             <Accordion alwaysOpen>
@@ -61,7 +112,12 @@ export default function SubKegiatanNestedView({ data, onEdit, onDelete }) {
                   key={`${tujuan}-${sasaran}`}
                 >
                   <Accordion.Header style={{ color: "#1e3a8a" }}>
-                    {sasaran}
+                    <div className="d-flex flex-column">
+                      <span>{sasaran}</span>
+                      <small className="text-muted">
+                        Total Pagu Sasaran: {formatRupiah(sumProgramMap(programMap))}
+                      </small>
+                    </div>
                   </Accordion.Header>
                   <Accordion.Body>
                     <Accordion alwaysOpen>
@@ -246,6 +302,7 @@ export default function SubKegiatanNestedView({ data, onEdit, onDelete }) {
           </Accordion.Body>
         </Accordion.Item>
       ))}
-    </Accordion>
+      </Accordion>
+      </>
   );
 }

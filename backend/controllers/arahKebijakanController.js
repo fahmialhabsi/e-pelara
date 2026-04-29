@@ -7,6 +7,7 @@ const {
   Tujuan,
   Program,
   ProgramArahKebijakan,
+  RenstraStrategi,
 } = require("../models");
 const { Op } = require("sequelize");
 const { getPeriodeFromTahun } = require("../utils/periodeHelper");
@@ -150,7 +151,13 @@ module.exports = {
   async getAll(req, res) {
     try {
       const jenis_dokumen = (req.query.jenis_dokumen || "").toLowerCase();
-      const { tahun, search, strategi_id } = req.query;
+      const {
+  tahun,
+  search,
+  strategi_id,
+  renstra_strategi_id,
+  include_mismatched_kode,
+} = req.query;
 
       if (!jenis_dokumen || !tahun) {
         return res
@@ -176,13 +183,54 @@ module.exports = {
         where.deskripsi = { [Op.like]: `%${search}%` };
       }
 
-      if (strategi_id) {
+      if (renstra_strategi_id) {
+  const renstraStrategi = await RenstraStrategi.findByPk(renstra_strategi_id, {
+    attributes: ["id", "rpjmd_strategi_id"],
+  });
+
+  if (!renstraStrategi?.rpjmd_strategi_id) {
+    return listResponse(
+      res,
+      200,
+      "Daftar arah kebijakan berhasil diambil",
+      [],
+      {
+        totalItems: 0,
+        totalPages: 0,
+        currentPage: page,
+      }
+    );
+  }
+
+  where.strategi_id = Number(renstraStrategi.rpjmd_strategi_id);
+}
+
+      if (strategi_id  && !renstra_strategi_id) {
         const ids = strategi_id
           .split(",")
           .map((id) => parseInt(id, 10))
           .filter(Boolean);
         if (ids.length === 1) where.strategi_id = ids[0];
         else if (ids.length > 1) where.strategi_id = { [Op.in]: ids };
+
+        const allowMismatchedKode =
+          String(include_mismatched_kode || "").trim() === "1" ||
+          String(include_mismatched_kode || "").trim().toLowerCase() === "true";
+
+        // Untuk dropdown Renstra (Arah Kebijakan RPJMD), filter prefix kode_arah (ASST...)
+        // berdasarkan Strategi yang dipilih, agar item yang kodenya "nyasar" tidak ikut muncul.
+        if (!allowMismatchedKode && ids.length === 1) {
+          const selectedStrategi = await Strategi.findByPk(ids[0], {
+            include: [{ model: Sasaran, as: "Sasaran", attributes: ["id", "nomor"] }],
+            attributes: ["id", "kode_strategi"],
+          });
+          if (selectedStrategi) {
+            const prefix = arahKodePrefixFromStrategi(selectedStrategi);
+            if (prefix) {
+              where.kode_arah = { [Op.like]: `${prefix}.%` };
+            }
+          }
+        }
       }
 
       const { count, rows } = await ArahKebijakan.findAndCountAll({

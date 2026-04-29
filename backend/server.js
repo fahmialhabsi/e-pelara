@@ -184,6 +184,7 @@ const renstra_tabelSasaranRoutes = require("./routes/renstra_tabelSasaranRoutes"
 const renstra_tabelTujuanRoutes = require("./routes/renstra_tabelTujuanRoutes");
 const renstra_tabelStrategiKebijakanRoutes = require("./routes/renstra_tabelStrategiKebijakanRoutes");
 const renstra_tabelPrioritasRoutes = require("./routes/renstra_tabelPrioritasRoutes");
+const renstraRpjmdMappingRoutes = require("./routes/renstra_rpjmdMappingRoutes");
 
 // USE RPKD
 const rkpdRoutes = require("./routes/rkpdRoutes");
@@ -343,6 +344,7 @@ app.use(
   renstra_tabelStrategiKebijakanRoutes,
 );
 app.use("/api/renstra-tabel-prioritas", renstra_tabelPrioritasRoutes);
+app.use("/api/renstra-rpjmd-mapping", renstraRpjmdMappingRoutes);
 
 // USE RKPD
 app.use("/api/rkpd", rkpdRoutes);

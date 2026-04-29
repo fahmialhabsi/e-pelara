@@ -22,6 +22,14 @@ router.get(
   programController.listAll // bikin method baru di controller
 );
 
+// AUTO CLONE program dari arah kebijakan
+router.post(
+  "/auto-clone",
+  verifyToken,
+  allowRoles(adminOnly), // atau readOnly kalau mau trigger dari semua role
+  programController.autoClone
+);
+
 // GET program by ID
 router.get(
   "/:id",

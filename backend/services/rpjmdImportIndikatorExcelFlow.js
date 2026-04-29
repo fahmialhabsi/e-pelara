@@ -6,7 +6,18 @@ const path = require("path");
 const XLSX = require("xlsx");
 const sequelize = require("../config/database");
 const tenantContext = require("../lib/tenantContext");
-const { ImportLog, Tujuan, Sasaran, Strategi, ArahKebijakan, SubKegiatan, IndikatorSasaran, IndikatorProgram } = require("../models");
+const {
+  ImportLog,
+  Tujuan,
+  Sasaran,
+  Strategi,
+  ArahKebijakan,
+  SubKegiatan,
+  IndikatorSasaran,
+  IndikatorArahKebijakan,
+  IndikatorProgram,
+  IndikatorKegiatan,
+} = require("../models");
 const indSvc = require("./rpjmdImportIndikatorService");
 const { nodeErrorMessage } = require("../utils/nodeErrorMessage");
 const { fillMissingKodeIndikatorsForSheet } = require("../helpers/rpjmdImportAutoKodeIndikator");
@@ -158,6 +169,20 @@ const EXPLICIT_HEADER_ALIASES = {
   "kriteria kualitatif": "kriteria_kualitatif",
   "tolok ukur kinerja": "tolok_ukur_kinerja",
   "target kinerja": "target_kinerja",
+  // 🔥 RELASI HIERARKI (WAJIB)
+  "indikator arah kebijakan": "rel_kode_indikator_arah",
+  "indikator arah kebijakan (acuan)": "rel_kode_indikator_arah",
+  "indikator arah kebijakan id": "rel_kode_indikator_arah",
+
+  "indikator program": "rel_kode_indikator_program",
+  "indikator program (acuan)": "rel_kode_indikator_program",
+
+  "kegiatan": "rel_kode_indikator_kegiatan",
+  "kegiatan (acuan)": "rel_kode_indikator_kegiatan",
+
+  "sub kegiatan id": "sub_kegiatan_id",
+  "sub_kegiatan id": "sub_kegiatan_id",
+  "sub kegiatan": "sub_kegiatan_id",
 };
 
 function headerToDataKey(rawHeader) {
@@ -410,6 +435,7 @@ function emptyRelationMaps() {
     /** `strategi_id` → id arah kebijakan terurut (pemetaan otomatis per strategi). */
     arahIdsByStrategi: new Map(),
     arahByNorm: new Map(),
+    indikatorArahByKode: new Map(),
     indikatorSasaranByKode: new Map(),
     indikatorSasaranByNama: new Map(),
     /** Urutan id indikator sasaran per periode (sasaran_id RPJMD, lalu kode) — sheet indikatorprograms. */
@@ -417,6 +443,7 @@ function emptyRelationMaps() {
     /** `sasaran_id` (entitas sasaran) → id indikator sasaran terurut. */
     indikatorSasaranIdsBySasaran: new Map(),
     indikatorProgramByKode: new Map(),
+    indikatorKegiatanByKode: new Map(),
     /** Urutan id indikator program (FK `sasaran_id` = baris indikator sasaran, lalu kode) — sheet indikatorkegiatans. */
     indikatorProgramOrderedIds: [],
     /** id indikator sasaran → id indikator program terurut. */
@@ -488,25 +515,43 @@ async function loadRelationMaps(periodeId, tables) {
       }).then((rows) => ({ tag: "indsas", rows })),
     );
   }
+  if (set.has("indikatorprograms")) {
+    jobs.push(
+      IndikatorArahKebijakan.findAll({
+        where: { periode_id: pid },
+        attributes: ["id", "kode_indikator", "nama_indikator"],
+        raw: true,
+      }).then((rows) => ({ tag: "indarah", rows })),
+    );
+  }
   if (set.has("indikatorkegiatans")) {
     jobs.push(
       IndikatorProgram.findAll({
-        subQuery: false,
-        attributes: ["id", "kode_indikator", "sasaran_id"],
-        include: [
-          {
-            model: IndikatorSasaran,
-            as: "indikatorSasaran",
-            attributes: ["id"],
-            where: { periode_id: pid },
-            required: true,
-          },
+        attributes: [
+          "id",
+          "kode_indikator",
+          "sasaran_id",
+          "indikator_arah_kebijakan_id",
         ],
+        raw: true,
       })
-        .then((rows) => rows.map((r) => r.get({ plain: true })))
         .then((rows) => ({ tag: "indprog", rows })),
     );
   }
+  if (set.has("indikatorsubkegiatans")) {
+      jobs.push(
+        IndikatorKegiatan.findAll({
+          attributes: [
+            "id",
+            "kode_indikator",
+            "nama_indikator",
+            "indikator_program_id",
+          ],
+          raw: true,
+        })
+          .then((rows) => ({ tag: "indkeg", rows })),
+      );
+    }
   if (set.has("indikatorsubkegiatans")) {
     jobs.push(
       SubKegiatan.findAll({
@@ -519,6 +564,20 @@ async function loadRelationMaps(periodeId, tables) {
 
   const chunks = await Promise.all(jobs);
   for (const ch of chunks) {
+    if (ch.tag === "indarah") {
+      for (const r of ch.rows) {
+        putMap(out.indikatorArahByKode, r.kode_indikator, r.id);
+      }
+      continue;
+    }
+
+    if (ch.tag === "indkeg") {
+      for (const r of ch.rows) {
+        putMap(out.indikatorKegiatanByKode, r.kode_indikator, r.id);
+      }
+      continue;
+    }
+
     if (ch.tag === "tujuan") {
       const firstInt = (row) => {
         const m = String(row.no_tujuan || "").match(/\d+/);
@@ -526,6 +585,7 @@ async function loadRelationMaps(periodeId, tables) {
         const n = parseInt(m[0], 10);
         return Number.isFinite(n) ? n : null;
       };
+      
       const rows = [...ch.rows].sort((a, b) => {
         const ia = firstInt(a);
         const ib = firstInt(b);
@@ -911,6 +971,15 @@ function resolveRelationsForRow(table, payload, maps, opts = {}) {
     return "";
   };
 
+    const resolveByKode = (map, raw, label) => {
+    const val = String(raw || "").trim();
+    if (!val) return null;
+    const lk = lookupId(map, val, label);
+    if (lk.id) return lk.id;
+    if (lk.err) errs.push(lk.err);
+    return null;
+  };
+
   if (table === "indikatortujuans") {
     if (!toInt(p.tujuan_id)) {
       const raw = pick(p, ["tujuan_nama", "tujuan_isi", "isi_tujuan", "tujuan_kode", "no_tujuan"]);
@@ -1164,7 +1233,25 @@ function resolveRelationsForRow(table, payload, maps, opts = {}) {
         }
       }
     }
-  } else if (table === "indikatorprograms") {
+    } else if (table === "indikatorprograms") {
+    const rawArah = pick(p, [
+      "rel_kode_indikator_arah",
+      "indikator_arah_kebijakan_kode",
+      "kode_indikator_arah",
+    ]);
+
+    if (!toInt(p.indikator_arah_kebijakan_id) && rawArah) {
+      const id = resolveByKode(
+        maps.indikatorArahByKode,
+        rawArah,
+        "indikator arah kebijakan"
+      );
+
+      if (id) {
+        p.indikator_arah_kebijakan_id = id;
+      }
+    }
+
     if (!toInt(p.indikator_sasaran_id)) {
       const rawKode = pick(p, ["indikator_sasaran_kode", "indikator_sasaran_kode_indikator"]);
       const rawNama = pick(p, ["indikator_sasaran_nama", "indikator_sasaran_nama_indikator"]);
@@ -1235,7 +1322,12 @@ function resolveRelationsForRow(table, payload, maps, opts = {}) {
     }
   } else if (table === "indikatorkegiatans") {
     if (!toInt(p.indikator_program_id)) {
-      const raw = pick(p, ["indikator_program_kode", "program_indikator_kode"]);
+      const raw = pick(p, [
+        "rel_kode_indikator_program",
+        "indikator_program_kode",
+        "program_indikator_kode",
+        "kode_indikator_program",
+      ]);
       const hasExplicit = String(raw || "").trim();
       let id = null;
       if (hasExplicit) {
@@ -1296,6 +1388,23 @@ function resolveRelationsForRow(table, payload, maps, opts = {}) {
       }
     }
   } else if (table === "indikatorsubkegiatans") {
+        const rawKegiatan = pick(p, [
+          "rel_kode_indikator_kegiatan",
+          "indikator_kegiatan_kode",
+          "kode_indikator_kegiatan",
+        ]);
+
+        if (!toInt(p.indikator_kegiatan_id) && rawKegiatan) {
+          const id = resolveByKode(
+            maps.indikatorKegiatanByKode,
+            rawKegiatan,
+            "indikator kegiatan"
+          );
+
+          if (id) {
+            p.indikator_kegiatan_id = id;
+          }
+        }
     if (!toInt(p.sub_kegiatan_id)) {
       /**
        * Ekspor template: acuan kegiatan kadang di kolom `periode_id` (salah label) — sama pola indikator program/kegiatan.
@@ -1369,6 +1478,7 @@ function stripInternalIndikatorProgramPayloadKeys(table, payload) {
   delete payload.sasaran_id;
   delete payload.periode_id;
   delete payload.program_id;
+  delete payload.rel_kode_indikator_arah;
 }
 
 /**
@@ -1392,6 +1502,8 @@ function stripIndikatorKegiatanImportPayload(table, payload, opts = {}) {
     "indikator_program_kode",
     "program_indikator_kode",
     "periode_id",
+    "rel_kode_indikator_program",
+    "kode_indikator_program",
   ];
   for (const k of keys) delete payload[k];
   // Preview perlu menampilkan acuan (indikator_program_id) agar operator dapat memverifikasi baris.
@@ -1403,6 +1515,9 @@ function stripIndikatorKegiatanImportPayload(table, payload, opts = {}) {
 function stripIndikatorSubKegiatanImportPayload(table, payload, opts = {}) {
   if (table !== "indikatorsubkegiatans" || !payload || typeof payload !== "object") return;
   for (const k of ["kode_sub_kegiatan", "nama_sub_kegiatan", "created_at", "updated_at"]) delete payload[k];
+  delete payload.rel_kode_indikator_kegiatan;
+  delete payload.kode_indikator_kegiatan;
+  delete payload.indikator_kegiatan_kode;
   if (!opts.forPreview) delete payload.kegiatan_id;
 }
 

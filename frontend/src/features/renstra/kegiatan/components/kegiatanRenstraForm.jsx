@@ -36,6 +36,7 @@ const KegiatanRenstraForm = ({
 
   const programRenstraId = watch("program_renstra_id");
   const kodeKegiatan = watch("kode_kegiatan");
+  const bidangOpd = watch("bidang_opd");
 
   useEffect(() => {
     if (!programOptions.length || programRenstraId == null) return;
@@ -111,18 +112,31 @@ const KegiatanRenstraForm = ({
           help={errors.kode_kegiatan?.message}
         >
           <Select
-            value={kodeKegiatan || undefined}
-            onChange={(val, option) => {
-              setValue("kode_kegiatan", val);
-              setValue("nama_kegiatan", option?.nama_kegiatan || val);
+            value={watch("kegiatan_id") || undefined}
+            onChange={(val) => {
+            const selected = kegiatanOptions.find(
+              (item) => Number(item.value) === Number(val)
+            );
+
+            console.log("SELECTED:", selected);
+
+              setValue("kegiatan_id", Number(val));
+              setValue("kode_kegiatan", selected?.kode_kegiatan || "");
+              setValue("nama_kegiatan", selected?.nama_kegiatan || "");
+              setValue("bidang_opd", selected?.bidang_opd || "", {
+                shouldDirty: true,
+                shouldValidate: true,
+              });
             }}
             placeholder="Pilih Kegiatan"
           >
-            {kegiatanOptions.map((k, idx) => (
+            {kegiatanOptions.map((k) => (
               <Select.Option
-                key={k.kode_kegiatan || `k-${idx}`}
-                value={k.kode_kegiatan}
-                nama_kegiatan={k.nama_kegiatan} // ambil nama_kegiatan dari option
+                key={k.id}
+                value={Number(k.id)}
+                kode_kegiatan={k.kode_kegiatan}
+                nama_kegiatan={k.nama_kegiatan}
+                bidang_opd={k.bidang_opd}
               >
                 {k.label}
               </Select.Option>
@@ -135,7 +149,7 @@ const KegiatanRenstraForm = ({
           <input
             type="text"
             readOnly
-            {...form.register("bidang_opd")}
+            value={bidangOpd || ""}
             style={{
               width: "100%",
               padding: 8,
@@ -146,7 +160,10 @@ const KegiatanRenstraForm = ({
         </Form.Item>
 
         {/* Hidden Fields */}
+        <input type="hidden" {...form.register("kegiatan_id")} />
+        <input type="hidden" {...form.register("kode_kegiatan")} />
         <input type="hidden" {...form.register("nama_kegiatan")} />
+        <input type="hidden" {...form.register("bidang_opd")} />
         <input type="hidden" {...form.register("renstra_id")} />
         <input type="hidden" {...form.register("program_renstra_id")} />
 

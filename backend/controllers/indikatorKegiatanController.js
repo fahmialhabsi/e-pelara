@@ -1,9 +1,12 @@
+// backend/controllers/indikatorKegiatanController.js
 const {
   sequelize,
   IndikatorKegiatan,
   IndikatorProgram,
+  IndikatorSubKegiatan,
   Program,
   Kegiatan,
+  SubKegiatan,
   OpdPenanggungJawab,
 } = require("../models");
 const { Op, fn, col, where: sqlWhere } = require("sequelize");
@@ -17,6 +20,9 @@ const {
   sendValidationErrors,
   fromSequelizeValidationError,
 } = require("../utils/validationErrorResponse");
+const {
+  attachPaguByIndikatorKode,
+} = require("../services/paguAggregatorService");
 
 const allowedFields = [
   "misi_id",
@@ -163,6 +169,18 @@ async function findIndikatorKegiatan(where, safeLimit, offset) {
     where,
     include: [
       {
+        model: Kegiatan,
+        as: "kegiatan",
+        attributes: [
+          "id",
+          "kode_kegiatan",
+          "nama_kegiatan",
+          "total_pagu_anggaran",
+        ],
+        required: false,
+      },
+      
+      {
         model: Program,
         as: "program",
         attributes: { exclude: ["createdAt", "updatedAt"] },
@@ -170,9 +188,14 @@ async function findIndikatorKegiatan(where, safeLimit, offset) {
       {
         model: IndikatorProgram,
         as: "indikatorProgram",
-        attributes: ["id", "penanggung_jawab"],
-        required: false,
-        include: [
+        attributes: [
+            "id",
+            "kode_indikator",
+            "nama_indikator",
+            "penanggung_jawab",
+          ],
+          required: false,
+          include: [
           {
             model: OpdPenanggungJawab,
             as: "opdPenanggungJawab",
@@ -262,13 +285,11 @@ exports.getAll = async (req, res) => {
     const safeLimit = Math.min(Number(limit) || 50, MAX_LIMIT);
     const offset = (Number(page) - 1) * safeLimit;
 
-    const effectiveJenisDokumen = await preferPeriodeNamaIfExists({
-      model: IndikatorKegiatan,
-      jenis_dokumen,
-      tahun,
-    });
+    const jdFilter = /^rpjmd$/i.test(String(jenis_dokumen).trim())
+      ? { [Op.like]: "RPJMD%" }
+      : String(jenis_dokumen).trim();
 
-    const where = { jenis_dokumen: effectiveJenisDokumen, tahun };
+    const where = { jenis_dokumen: jdFilter, tahun };
     let selectedKegiatan = null;
 
     if (
@@ -308,6 +329,9 @@ exports.getAll = async (req, res) => {
     // Legacy/import: baseline & PJ sering NULL padahal sudah ada data pendukung (capaian th.5 / indikator program / program OPD).
     fillBaselineFallback(rows);
     await fillPenanggungJawabFallback(rows);
+
+    await attachPaguByIndikatorKode(rows);
+    
 
     if (count === 0 && kegiatan_id && jenis_dokumen !== "rpjmd") {
       const sourceKegiatan =
@@ -369,7 +393,12 @@ exports.getById = async (req, res) => {
         {
           model: IndikatorProgram,
           as: "indikatorProgram",
-          attributes: ["id", "penanggung_jawab"],
+          attributes: [
+            "id",
+            "kode_indikator",
+            "nama_indikator",
+            "penanggung_jawab",
+          ],
           required: false,
           include: [
             {
@@ -495,7 +524,7 @@ exports.bulkCreateDetail = async (req, res) => {
 exports.getNextKode = async (req, res) => {
   try {
     const { kegiatan_id } = req.params;
-    const { tahun, jenis_dokumen } = req.query;
+    const { tahun, jenis_dokumen, indikator_program_kode_indikator } = req.query;
 
     if (!kegiatan_id) {
       return res.status(400).json({ message: "kegiatan_id wajib diisi." });
@@ -521,8 +550,10 @@ exports.getNextKode = async (req, res) => {
         ? String(jenis_dokumen).trim().toLowerCase()
         : null;
 
-    // Standar kode indikator kegiatan (RPJMD): IPK-<kode_kegiatan>-NN
-    const prefix = `IPK-${String(kegiatan.kode_kegiatan).trim()}`;
+    const progKode = String(indikator_program_kode_indikator || "").trim();
+    const prefix = progKode.startsWith("IP")
+      ? `IK${progKode.slice(2)}`
+      : `IK-${String(kegiatan.kode_kegiatan).trim()}`;
 
     const andParts = [
       { tahun: tahunStr },

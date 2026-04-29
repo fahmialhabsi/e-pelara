@@ -1785,111 +1785,145 @@ async function createIndikatorSubKegiatan(periodeId, body, opts = {}) {
   const pid = assertPeriodeId(periodeId);
   const b = body || {};
   const core = pickIndikatorCore(b);
+
   if (!core.nama_indikator?.trim()) {
     const e = new Error("nama_indikator wajib diisi.");
     e.code = "BAD_REQUEST";
     throw e;
   }
+
   const tipeRaw = str(b.tipe_indikator, 32);
   const allowed = ["Outcome", "Output", "Impact", "Process", "Input"];
   const tipe_indikator = allowed.includes(tipeRaw) ? tipeRaw : "Output";
+
   return runInOptionalTransaction(opts.transaction, async (tx) => {
     const extra = pickIndikatorTujuanExtra(b);
-    let sub_kegiatan_id = toInt(b.sub_kegiatan_id);
-    if (!sub_kegiatan_id && toInt(b.kegiatan_id)) {
-      const kid = toInt(b.kegiatan_id);
-      const firstSub = await SubKegiatan.findOne({
-        where: { kegiatan_id: kid, periode_id: pid },
-        order: [["id", "ASC"]],
-        transaction: tx,
-      });
-      sub_kegiatan_id = firstSub ? toInt(firstSub.id) : null;
-    }
-    if (!sub_kegiatan_id) {
+
+    let sub_kegiatan_id = toInt(b.sub_kegiatan_id) || null;
+
+    /**
+     * WAJIB: parent indikator kegiatan
+     * Ini hasil resolver dari rel_kode_indikator_kegiatan.
+     */
+    const indikator_kegiatan_id = toInt(b.indikator_kegiatan_id);
+
+    if (!indikator_kegiatan_id) {
       const e = new Error(
-        "Indikator sub kegiatan memerlukan sub_kegiatan_id atau kegiatan_id yang memiliki sub kegiatan di periode ini.",
+        "Indikator sub kegiatan memerlukan indikator_kegiatan_id. Pastikan rel_kode_indikator_kegiatan valid."
       );
       e.code = "BAD_REQUEST";
       throw e;
     }
-    const sub = await SubKegiatan.findByPk(sub_kegiatan_id, {
+
+    const indikatorKegiatan = await IndikatorKegiatan.findByPk(indikator_kegiatan_id, {
       transaction: tx,
-      include: [
-        {
-          model: Kegiatan,
-          as: "kegiatan",
-          include: [
-            {
-              model: Program,
-              as: "program",
-              include: [{ model: Sasaran, as: "sasaran", include: [{ model: Tujuan, as: "Tujuan" }] }],
-            },
-          ],
-        },
-      ],
     });
-    if (!sub || toInt(sub.periode_id) !== pid) {
-      const e = new Error("Sub kegiatan tidak ditemukan atau tidak termasuk periode ini.");
+
+    if (!indikatorKegiatan) {
+      const e = new Error("Indikator kegiatan parent tidak ditemukan.");
       e.code = "BAD_REQUEST";
       throw e;
     }
-    const kegiatan_id = toInt(sub.kegiatan_id);
-    const program_id = toInt(sub.kegiatan?.program_id);
-    const sasaran_id = toInt(sub.kegiatan?.program?.sasaran_id);
-    const tujuan_id = toInt(sub.kegiatan?.program?.sasaran?.tujuan_id);
-    const misi_id = toInt(sub.kegiatan?.program?.sasaran?.Tujuan?.misi_id);
-    if (!misi_id) {
-      const e = new Error("Rantai hierarki sub kegiatan tidak lengkap (misi).");
-      e.code = "BAD_REQUEST";
-      throw e;
+
+    /**
+     * Hirarki utama diambil dari parent indikator kegiatan,
+     * bukan dari master_sub_kegiatan.
+     */
+    const kegiatan_id = toInt(indikatorKegiatan.kegiatan_id) || null;
+    const program_id = toInt(indikatorKegiatan.program_id) || null;
+    const sasaran_id = toInt(indikatorKegiatan.sasaran_id) || null;
+    const tujuan_id = toInt(indikatorKegiatan.tujuan_id) || null;
+    const misi_id = toInt(indikatorKegiatan.misi_id) || null;
+
+    // if (!misi_id) {
+    //   const e = new Error("Rantai hierarki indikator kegiatan tidak lengkap.");
+    //   e.code = "BAD_REQUEST";
+    //   throw e;
+    // }
+
+    /**
+     * OPTIONAL:
+     * Kalau sub_kegiatan_id ada, validasi.
+     * Kalau kosong, biarkan null.
+     */
+    if (sub_kegiatan_id) {
+      const sub = await SubKegiatan.findByPk(sub_kegiatan_id, {
+        transaction: tx,
+      });
+
+      if (!sub || toInt(sub.periode_id) !== pid) {
+        const e = new Error(`Sub kegiatan ID tidak valid: ${sub_kegiatan_id}`);
+        e.code = "BAD_REQUEST";
+        throw e;
+      }
     }
+
     const kodeHolder = { ...core, sub_kegiatan_id };
+
     if (!String(kodeHolder.kode_indikator || "").trim()) {
       await allocateKodeSubKegiatanGroup([kodeHolder]);
       core.kode_indikator = kodeHolder.kode_indikator;
     }
+
     if (!String(core.kode_indikator || "").trim()) {
-      const e = new Error(
-        "kode_indikator tidak dapat dibuat otomatis (pastikan sub kegiatan memiliki kode_sub_kegiatan di basis data).",
-      );
+      const e = new Error("kode_indikator wajib diisi untuk indikator sub kegiatan.");
       e.code = "BAD_REQUEST";
       throw e;
     }
-    await assertUniqueKodePeriodeJenis(IndikatorSubKegiatan, pid, core.jenis_dokumen, core.kode_indikator, null, {
-      transaction: tx,
-    });
-    const master = await createMasterIndikator(tx, {
-      misi_id,
-      tujuan_id,
-      sasaran_id,
-      program_id,
-      kegiatan_id,
-      kode_indikator: core.kode_indikator,
-      nama_indikator: core.nama_indikator,
-      satuan: core.satuan,
-      jenis_indikator: core.jenis_indikator,
-      tipe_indikator: tipe_indikator,
-      jenis_dokumen: core.jenis_dokumen,
-      tahun: core.tahun,
-      stage: "kegiatan",
-    });
+
+    await assertUniqueKodePeriodeJenis(
+      IndikatorSubKegiatan,
+      pid,
+      core.jenis_dokumen,
+      core.kode_indikator,
+      null,
+      { transaction: tx }
+    );
+
+    let master = null;
+
+    if (misi_id) {
+      master = await createMasterIndikator(tx, {
+        misi_id,
+        tujuan_id,
+        sasaran_id,
+        program_id,
+        kegiatan_id,
+        kode_indikator: core.kode_indikator,
+        nama_indikator: core.nama_indikator,
+        satuan: core.satuan,
+        jenis_indikator: core.jenis_indikator,
+        tipe_indikator,
+        jenis_dokumen: core.jenis_dokumen,
+        tahun: core.tahun,
+        stage: "kegiatan",
+      });
+    }
+
     const row = await IndikatorSubKegiatan.create(
       {
         ...core,
         ...extra,
         periode_id: pid,
-        indikator_id: String(master.id),
+        indikator_id: master ? String(master.id) : String(core.kode_indikator),
+
+        indikator_kegiatan_id,
+
+        // sekarang boleh NULL
         sub_kegiatan_id,
+
         kegiatan_id,
         program_id,
         sasaran_id,
         tujuan_id,
         misi_id,
-        tipe_indikator: tipe_indikator,
+
+        tipe_indikator,
         penanggung_jawab: toInt(b.penanggung_jawab) || null,
       },
-      { transaction: tx },
+      { transaction: tx }
     );
+
     return row.get({ plain: true });
   });
 }
@@ -1899,6 +1933,7 @@ async function updateIndikatorSubKegiatan(periodeId, id, body, opts = {}) {
   const pid = assertPeriodeId(periodeId);
   const row = await findOwnedSubKegiatan(periodeId, id, { transaction: tx });
   const b = body || {};
+
   const data = pickDefined(pickIndikatorCore(b), [
     "kode_indikator",
     "nama_indikator",
@@ -1908,26 +1943,82 @@ async function updateIndikatorSubKegiatan(periodeId, id, body, opts = {}) {
     "tahun",
     ...TARGET_KEYS,
   ]);
+
   Object.assign(data, pickIndikatorTujuanExtra(b));
+
   const tipe = str(b.tipe_indikator, 32);
   const allowed = ["Outcome", "Output", "Impact", "Process", "Input"];
+
   if (tipe) data.tipe_indikator = allowed.includes(tipe) ? tipe : "Output";
-  if (b.penanggung_jawab !== undefined) data.penanggung_jawab = toInt(b.penanggung_jawab) || null;
-  const mergedJenis = data.jenis_dokumen !== undefined ? data.jenis_dokumen : row.get("jenis_dokumen");
-  const mergedKode = data.kode_indikator !== undefined ? data.kode_indikator : row.get("kode_indikator");
-  if (data.kode_indikator !== undefined || data.jenis_dokumen !== undefined) {
-    await assertUniqueKodePeriodeJenis(IndikatorSubKegiatan, pid, mergedJenis, mergedKode, row.id, { transaction: tx });
+
+  if (b.penanggung_jawab !== undefined) {
+    data.penanggung_jawab = toInt(b.penanggung_jawab) || null;
   }
+
+  /**
+   * sub_kegiatan_id sekarang OPTIONAL.
+   *
+   * Rule:
+   * - tidak dikirim  => pakai existing
+   * - dikirim kosong => set NULL
+   * - dikirim angka  => validasi ke master SubKegiatan
+   */
+  let sub_kegiatan_id =
+    b.sub_kegiatan_id !== undefined
+      ? toInt(b.sub_kegiatan_id)
+      : toInt(row.get("sub_kegiatan_id"));
+
+  if (sub_kegiatan_id) {
+    const sub = await SubKegiatan.findByPk(sub_kegiatan_id, {
+      transaction: tx,
+    });
+
+    if (!sub || toInt(sub.periode_id) !== pid) {
+      const e = new Error(`Sub kegiatan ID tidak valid: ${sub_kegiatan_id}`);
+      e.code = "BAD_REQUEST";
+      throw e;
+    }
+  }
+
+  if (b.sub_kegiatan_id !== undefined) {
+    data.sub_kegiatan_id = sub_kegiatan_id || null;
+  }
+
+  const mergedJenis =
+    data.jenis_dokumen !== undefined
+      ? data.jenis_dokumen
+      : row.get("jenis_dokumen");
+
+  const mergedKode =
+    data.kode_indikator !== undefined
+      ? data.kode_indikator
+      : row.get("kode_indikator");
+
+  if (data.kode_indikator !== undefined || data.jenis_dokumen !== undefined) {
+    await assertUniqueKodePeriodeJenis(
+      IndikatorSubKegiatan,
+      pid,
+      mergedJenis,
+      mergedKode,
+      row.id,
+      { transaction: tx }
+    );
+  }
+
   await row.update(data, { transaction: tx });
+
   const plain = row.get({ plain: true });
   const mid = toInt(plain.indikator_id);
+
   if (mid) {
     await Indikator.update(
       {
         kode_indikator: data.kode_indikator,
         nama_indikator: data.nama_indikator,
         satuan: data.satuan,
-        jenis_indikator: data.jenis_indikator ? masterJenisLower(data.jenis_indikator) : undefined,
+        jenis_indikator: data.jenis_indikator
+          ? masterJenisLower(data.jenis_indikator)
+          : undefined,
         tipe_indikator: data.tipe_indikator || masterTipe(b.tipe_indikator),
         jenis_dokumen: data.jenis_dokumen,
         tahun: data.tahun,
@@ -1935,6 +2026,7 @@ async function updateIndikatorSubKegiatan(periodeId, id, body, opts = {}) {
       { where: { id: mid }, transaction: tx }
     );
   }
+
   return row.get({ plain: true });
 }
 
@@ -1942,16 +2034,17 @@ async function upsertIndikatorSubKegiatanImport(periodeId, body, opts = {}) {
   const tx = opts.transaction;
   const pid = assertPeriodeId(periodeId);
   const kode = str(body?.kode_indikator, 100);
+  const core = pickIndikatorCore(body);
+  const variants = jenisDokumenVariants(core.jenis_dokumen);
+
   if (!kode || !String(kode).trim()) {
-    // Idempotent import: bila kode tidak diisi (auto-generate), coba update baris existing berbasis sub_kegiatan_id + nama indikator.
-    const core = pickIndikatorCore(body);
-    const variants = jenisDokumenVariants(core.jenis_dokumen);
-    const skid = toInt(body.sub_kegiatan_id);
+    const indikatorKegiatanId = toInt(body.indikator_kegiatan_id);
     const nama = str(body?.nama_indikator, 65535);
-    if (skid && nama && String(nama).trim()) {
+
+    if (indikatorKegiatanId && nama && String(nama).trim()) {
       const foundByName = await IndikatorSubKegiatan.findOne({
         where: {
-          sub_kegiatan_id: skid,
+          indikator_kegiatan_id: indikatorKegiatanId,
           periode_id: pid,
           nama_indikator: String(nama).trim(),
           jenis_dokumen: { [Op.in]: variants },
@@ -1960,24 +2053,42 @@ async function upsertIndikatorSubKegiatanImport(periodeId, body, opts = {}) {
         transaction: tx,
         order: [["id", "ASC"]],
       });
+
       if (foundByName) {
-        const row0 = await updateIndikatorSubKegiatan(periodeId, foundByName.id, body, opts);
-        return attachImportMeta(row0, "update", { matchedBy: "sub_kegiatan_id+nama" });
+        const row0 = await updateIndikatorSubKegiatan(
+          periodeId,
+          foundByName.id,
+          body,
+          opts
+        );
+
+        return attachImportMeta(row0, "update", {
+          matchedBy: "indikator_kegiatan_id+nama",
+        });
       }
     }
+
     const row = await createIndikatorSubKegiatan(periodeId, body, opts);
     return attachImportMeta(row, "create");
   }
-  const skid = toInt(body.sub_kegiatan_id);
-  const core = pickIndikatorCore(body);
-  const variants = jenisDokumenVariants(core.jenis_dokumen);
+
+  const indikatorKegiatanId = toInt(body.indikator_kegiatan_id);
+
   const whereSub = {
     kode_indikator: String(kode).trim(),
     periode_id: pid,
     jenis_dokumen: { [Op.in]: variants },
   };
-  if (skid) whereSub.sub_kegiatan_id = skid;
-  const found = await IndikatorSubKegiatan.findOne({ where: whereSub, transaction: tx });
+
+  if (indikatorKegiatanId) {
+    whereSub.indikator_kegiatan_id = indikatorKegiatanId;
+  }
+
+  const found = await IndikatorSubKegiatan.findOne({
+    where: whereSub,
+    transaction: tx,
+  });
+
   if (!found) {
     try {
       const row = await createIndikatorSubKegiatan(periodeId, body, opts);
@@ -1986,15 +2097,29 @@ async function upsertIndikatorSubKegiatanImport(periodeId, body, opts = {}) {
       if (isMysqlDuplicateKodeIndikator(err)) {
         const b2 = { ...body };
         delete b2.kode_indikator;
+
         await allocateKodeSubKegiatanGroup([b2]);
+
         if (!String(b2.kode_indikator || "").trim()) throw err;
+
         const row2 = await createIndikatorSubKegiatan(periodeId, b2, opts);
-        return attachImportMeta(row2, "create", { kodeRegeneratedAfterKodeConflict: true });
+
+        return attachImportMeta(row2, "create", {
+          kodeRegeneratedAfterKodeConflict: true,
+        });
       }
+
       throw err;
     }
   }
-  const row = await updateIndikatorSubKegiatan(periodeId, found.id, body, opts);
+
+  const row = await updateIndikatorSubKegiatan(
+    periodeId,
+    found.id,
+    body,
+    opts
+  );
+
   return attachImportMeta(row, "update");
 }
 

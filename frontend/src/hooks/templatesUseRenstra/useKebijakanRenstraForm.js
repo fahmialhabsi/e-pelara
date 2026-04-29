@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import * as Yup from "yup";
 import api from "@/services/api";
-import { message } from "antd";
+import { App } from "antd";
 import { useRenstraFormTemplate } from "./useRenstraFormTemplate";
 
 const schema = Yup.object().shape({
@@ -46,6 +46,8 @@ const generatePayload = (formData) => ({
 
 export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
   const [mutationResultData, setMutationResultData] = useState(null);
+  const { message } = App.useApp();
+  const [arahKebijakanFiltered, setArahKebijakanFiltered] = useState([]);
 
   const {
     form,
@@ -65,20 +67,52 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
     fetchOptions: {
       "renstra-strategi": () =>
         api.get("/renstra-strategi").then((res) => res.data?.data || []),
-      "arah-kebijakan": () =>
-        api
-          .get("/arah-kebijakan", {
-            params: {
-              jenis_dokumen: "RPJMD",
-              tahun: renstraAktif?.tahun_mulai,
-            },
-          })
-          .then((res) => res.data?.data || []),
+      
     },
     onMutationSuccess: (data) => setMutationResultData(data),
   });
 
   const { control, setValue, watch, reset } = form;
+
+  const selectedStrategiId = watch("strategi_id");
+
+  useEffect(() => {
+  const loadArahKebijakan = async () => {
+    if (!selectedStrategiId) {
+      setArahKebijakanFiltered([]);
+      setValue("rpjmd_arah_id", "");
+      return;
+    }
+
+    try {
+      const res = await api.get("/arah-kebijakan", {
+        params: {
+          jenis_dokumen: "rpjmd",
+          tahun: initialData?.tahun || renstraAktif?.tahun_mulai,
+          page: 1,
+          limit: 1000,
+          renstra_strategi_id: selectedStrategiId,
+        },
+      });
+
+      setArahKebijakanFiltered(res.data?.data || []);
+      setValue("rpjmd_arah_id", "");
+      setValue("no_arah_rpjmd", "");
+      setValue("isi_arah_rpjmd", "");
+      setValue("kode_kebjkn", "");
+    } catch (err) {
+      console.error("Gagal load arah kebijakan filtered:", err);
+      setArahKebijakanFiltered([]);
+    }
+  };
+
+  loadArahKebijakan();
+}, [
+  selectedStrategiId,
+  initialData?.tahun,
+  renstraAktif?.tahun_mulai,
+  setValue,
+]);
 
   useEffect(() => {
     if (!initialData) {
@@ -155,12 +189,17 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
 
   const totalLoading = isSubmitting || isDropdownsLoading;
 
+  const dropdownsFinal = {
+  ...dropdowns,
+  "arah-kebijakan": arahKebijakanFiltered,
+};
+
   return {
     form,
     onSubmit,
     isSubmitting: form.formState.isSubmitting,
     isLoading: totalLoading,
-    dropdowns,
+    dropdowns: dropdownsFinal,
     handleArahKebijakanChange,
     handleStrategiChange,
   };

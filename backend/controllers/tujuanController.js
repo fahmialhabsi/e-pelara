@@ -1,5 +1,5 @@
 "use strict";
-const { Tujuan, Misi, Sasaran, sequelize } = require("../models");
+const { Tujuan, Misi, Sasaran, Program, OpdPenanggungJawab, sequelize } = require("../models");
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
 const { Op } = require("sequelize");
 const { getPeriodeFromTahun } = require("../utils/periodeHelper");
@@ -146,12 +146,93 @@ const applyMisiFilter = (where, misiIds = []) => {
   where.misi_id = misiIds.length === 1 ? misiIds[0] : { [Op.in]: misiIds };
 };
 
+async function resolveTujuanIdsForOpd({ opdId, jenisDokumen, tahun, periodeId }) {
+  const parsedOpdId = parseId(opdId);
+  if (!parsedOpdId) return [];
+  if (!Program) return [];
+
+  const normalizedDokumen = String(jenisDokumen || "").toLowerCase();
+  const parsedTahun = parseInt(String(tahun), 10);
+  if (!Number.isFinite(parsedTahun)) return [];
+
+  const sasaranWhere = {
+    jenis_dokumen: normalizedDokumen,
+    tahun: String(tahun),
+    ...(periodeId ? { periode_id: periodeId } : {}),
+  };
+
+  const programWhere = {
+    opd_penanggung_jawab: parsedOpdId,
+    tahun: parsedTahun,
+    ...(periodeId ? { periode_id: periodeId } : {}),
+    [Op.or]: [
+      { jenis_dokumen: null },
+      { jenis_dokumen: normalizedDokumen },
+      sequelize.where(
+        sequelize.fn("lower", sequelize.col("Program.jenis_dokumen")),
+        normalizedDokumen,
+      ),
+    ],
+  };
+
+  const rows = await Program.findAll({
+    where: programWhere,
+    attributes: [],
+    include: [
+      {
+        model: Sasaran,
+        as: "sasaran",
+        required: true,
+        attributes: ["tujuan_id"],
+        where: sasaranWhere,
+      },
+    ],
+    raw: true,
+  });
+
+  const ids = new Set();
+  rows.forEach((r) => {
+    const tid = r["sasaran.tujuan_id"];
+    const n = parseInt(String(tid ?? ""), 10);
+    if (Number.isFinite(n) && n > 0) ids.add(n);
+  });
+
+  return Array.from(ids);
+}
+
 // === Controller ===
 
 const tujuanController = {
   async getAll(req, res) {
     try {
-      const { misi_id, jenis_dokumen, tahun, limit, offset } = req.query;
+      const { misi_id, jenis_dokumen, tahun, limit, offset, opd_id } = req.query;
+      const isSuperAdmin =
+        String(req.user?.role || "")
+          .trim()
+          .toUpperCase()
+          .replace(/\s+/g, "_") === "SUPER_ADMIN";
+
+      // Untuk halaman Renstra (dropdown Tujuan RPJMD), FE saat ini sering tidak mengirim opd_id.
+      // Default-kan ke OPD user (token) supaya daftar tidak menampilkan semua OPD.
+      const effectiveOpdRaw =
+        opd_id != null &&
+        String(opd_id).trim() !== "" &&
+        String(opd_id).toLowerCase() !== "all"
+          ? String(opd_id).trim()
+          : !isSuperAdmin && req.user?.opd != null
+          ? String(req.user.opd).trim()
+          : null;
+
+      // Token user menyimpan `opd` sebagai nama OPD (string). Endpoint ini butuh OPD ID numerik
+      // (untuk join ke `program.opd_penanggung_jawab`). Jadi, lakukan resolve nama->id bila perlu.
+      let resolvedOpdId = effectiveOpdRaw ? parseId(effectiveOpdRaw) : null;
+      if (!resolvedOpdId && effectiveOpdRaw && !isSuperAdmin) {
+        const opdRow = await OpdPenanggungJawab.findOne({
+          where: { nama_opd: effectiveOpdRaw },
+          attributes: ["id"],
+        });
+        resolvedOpdId = opdRow ? Number(opdRow.id) : null;
+      }
 
       if (!jenis_dokumen || !tahun) {
         return res
@@ -195,12 +276,39 @@ const tujuanController = {
         applyMisiFilter(where, misiIds);
       }
 
-      console.log("🔍 Params getAll Tujuan:", {
+      const hasOpdFilter =
+        resolvedOpdId !== undefined &&
+        resolvedOpdId !== null &&
+        Number.isFinite(Number(resolvedOpdId)) &&
+        Number(resolvedOpdId) > 0;
+      if (hasOpdFilter) {
+        const tujuanIds = await resolveTujuanIdsForOpd({
+          opdId: resolvedOpdId,
+          jenisDokumen: normalizedDokumen,
+          tahun: String(tahun),
+          periodeId: periode_id,
+        });
+
+        if (!tujuanIds.length) {
+          return listResponse(res, 200, "Daftar tujuan berhasil diambil", [], {
+            totalItems: 0,
+            limit: parsedLimit,
+            offset: parsedOffset,
+            resolvedDokumen: normalizedDokumen,
+            filteredByOpdId: resolvedOpdId,
+          });
+        }
+
+        where.id = { [Op.in]: tujuanIds };
+      }
+
+      console.log("[tujuan.getAll] params", {
         jenis_dokumen,
         tahun,
         misi_id,
+        opd_raw: effectiveOpdRaw,
+        opd_id: resolvedOpdId,
       });
-      console.log("🔍 Where clause:", where);
 
       let resolvedDokumen = normalizedDokumen;
       let { rows: tujuans, totalItems } = await fetchTujuanList({
@@ -209,7 +317,7 @@ const tujuanController = {
         offset: parsedOffset,
       });
 
-      if (!tujuans.length && hasMisiFilter && resolvedDokumen !== "rpjmd") {
+      if (!tujuans.length && !hasOpdFilter && hasMisiFilter && resolvedDokumen !== "rpjmd") {
         const fallbackWhere = {
           jenis_dokumen: "rpjmd",
           tahun: String(tahun),
@@ -236,7 +344,7 @@ const tujuanController = {
         }
       }
 
-      console.log("✅ Tujuan count:", tujuans.length);
+      console.log("[tujuan.getAll] count", tujuans.length);
 
       return listResponse(res, 200, "Daftar tujuan berhasil diambil", tujuans, {
         totalItems,
@@ -245,7 +353,7 @@ const tujuanController = {
         resolvedDokumen,
       });
     } catch (err) {
-      console.error("❌ Error getAll Tujuan:", err);
+      console.error("[tujuan.getAll] error", err);
       return res.status(500).json({ message: err.message });
     }
   },

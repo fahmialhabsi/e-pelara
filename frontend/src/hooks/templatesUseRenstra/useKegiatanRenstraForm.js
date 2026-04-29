@@ -10,6 +10,7 @@ const schema = yup.object({
   kode_kegiatan: yup.string().required("Kode kegiatan wajib diisi"),
   nama_kegiatan: yup.string().required("Nama kegiatan wajib diisi"),
   renstra_id: yup.number().nullable(),
+  kegiatan_id: yup.number().required("Kegiatan wajib dipilih"),
   bidang_opd: yup.string(),
 });
 
@@ -95,12 +96,14 @@ export function useKegiatanRenstraForm(
       const raw = res.data?.data ?? res.data;
       const rows = Array.isArray(raw) ? raw : [];
       const options = rows.map((k) => ({
+        id: k.id ?? k.value ?? k.kegiatan_rpjmd_id,
         value: k.value ?? k.kegiatan_rpjmd_id ?? k.id,
         label:
           k.label ||
           `${k.kode_kegiatan ?? ""} - ${k.nama_kegiatan ?? ""}`.trim(),
         kode_kegiatan: k.kode_kegiatan,
         nama_kegiatan: k.nama_kegiatan,
+        bidang_opd: k.bidang_opd ?? "",
         rpjmd_program_id: k.rpjmd_program_id,
       }));
       // Edit: jika kode tidak ada di hasil API (format beda / data lama), sisipkan opsi dari record
@@ -319,7 +322,8 @@ export function useKegiatanRenstraForm(
     setIsSubmitting(true);
     try {
       await api.post("/renstra-kegiatan", {
-        program_id: data.program_renstra_id,
+        program_renstra_id: data.program_renstra_id,
+        kegiatan_id: data.kegiatan_id,
         kode_kegiatan: data.kode_kegiatan,
         nama_kegiatan: data.nama_kegiatan,
         renstra_id: data.renstra_id,

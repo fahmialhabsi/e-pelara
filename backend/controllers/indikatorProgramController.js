@@ -1,3 +1,4 @@
+// backend/controllers/indikatorProgramController.js
 const {
   sequelize,
   Program,
@@ -18,6 +19,9 @@ const {
   sendValidationErrors,
   fromSequelizeValidationError,
 } = require("../utils/validationErrorResponse");
+const {
+  attachPaguByIndikatorKode,
+} = require("../services/paguAggregatorService");
 
 const allowedFields = [
   "kode_indikator",
@@ -55,7 +59,7 @@ const allowedFields = [
   "sasaran_id",
   "indikator_id",
   "program_id",
-  "arah_kebijakan_id",
+  "indikator_arah_kebijakan_id",
 ];
 
 const MAX_LIMIT = 200;
@@ -278,7 +282,7 @@ exports.bulkCreateDetail = async (req, res) => {
 
 exports.findAll = async (req, res) => {
   try {
-    const { jenis_dokumen, tahun, page = 1, perPage = 50, program_id } =
+    const { jenis_dokumen, tahun, page = 1, perPage = 50, program_id, indikator_arah_kebijakan_id, arah_kebijakan_id, kode_prefix } =
       req.query;
 
     if (!jenis_dokumen || !tahun) {
@@ -302,51 +306,22 @@ exports.findAll = async (req, res) => {
       ...(docJenisWhere ? [docJenisWhere] : []),
     ];
 
-    let pid = null;
-    if (program_id != null && String(program_id).trim() !== "") {
-      pid = Number.parseInt(String(program_id), 10);
-      if (!Number.isNaN(pid)) {
-        const prog = await Program.findByPk(pid, {
-          attributes: ["id", "sasaran_id"],
-        });
-        const sasaranKeys = [];
-        if (prog?.sasaran_id != null) {
-          const indikSasaran = await IndikatorSasaran.findOne({
-            where: {
-              sasaran_id: prog.sasaran_id,
-              tahun: tahunStr,
-              [Op.and]: [
-                ...(docJenisWhereSasaran ? [docJenisWhereSasaran] : []),
-              ],
-            },
-            attributes: ["id", "sasaran_id"],
-          });
-          if (indikSasaran?.id != null) sasaranKeys.push(Number(indikSasaran.id));
-          sasaranKeys.push(Number(prog.sasaran_id));
-        }
-        const uniqSasaran = [...new Set(sasaranKeys.filter((n) => Number.isFinite(n)))];
-        /**
-         * Hook duplicate (beforeCreate) hanya cek kode_indikator + jenis_dokumen + tahun,
-         * tanpa program_id â€” data lama sering program_id NULL.
-         * GET harus mengembalikan baris yang sama konteks program:
-         *   (program_id = :pid) OR (program_id IS NULL AND sasaran_id âˆˆ {FK indikator sasaran, sasaran RPJMD}).
-         */
-        if (uniqSasaran.length > 0) {
-          andParts.push({
-            [Op.or]: [
-              { program_id: pid },
-              {
-                [Op.and]: [
-                  { program_id: { [Op.is]: null } },
-                  { sasaran_id: { [Op.in]: uniqSasaran } },
-                ],
-              },
-            ],
-          });
-        } else {
-          andParts.push({ program_id: pid });
-        }
-      }
+    const kodePrefixStr = kode_prefix != null ? String(kode_prefix).trim() : "";
+    const iakId = indikator_arah_kebijakan_id != null ? Number.parseInt(String(indikator_arah_kebijakan_id), 10) : NaN;
+    const akId = arah_kebijakan_id != null ? Number.parseInt(String(arah_kebijakan_id), 10) : NaN;
+    if (kodePrefixStr) {
+      andParts.push({ kode_indikator: { [Op.like]: `${kodePrefixStr}%` } });
+    } else if (Number.isFinite(iakId)) {
+      andParts.push({ indikator_arah_kebijakan_id: iakId });
+    } else if (Number.isFinite(akId)) {
+      andParts.push(
+        sequelize.literal(
+          `\`IndikatorProgram\`.\`indikator_arah_kebijakan_id\` IN (SELECT id FROM indikatorarahkebijakans WHERE arah_kebijakan_id = ${akId})`
+        )
+      );
+    } else if (program_id != null && String(program_id).trim() !== "") {
+      const pid = Number.parseInt(String(program_id), 10);
+      if (!Number.isNaN(pid)) andParts.push({ program_id: pid });
     }
 
     const where = { [Op.and]: andParts };
@@ -354,6 +329,18 @@ exports.findAll = async (req, res) => {
     const { count, rows } = await IndikatorProgram.findAndCountAll({
       where,
       include: [
+      {
+          model: Program,
+          as: "program",
+          attributes: [
+            "id",
+            "kode_program",
+            "nama_program",
+            "total_pagu_anggaran",
+            "opd_penanggung_jawab",
+          ],
+          required: false,
+        },
         {
           model: OpdPenanggungJawab,
           as: "opdPenanggungJawab",
@@ -386,6 +373,8 @@ exports.findAll = async (req, res) => {
       order: [["id", "ASC"]],
       distinct: true,
     });
+
+    await attachPaguByIndikatorKode(rows);
 
     return res.status(200).json({
       status: "success",
@@ -464,18 +453,15 @@ exports.getNextKode = async (req, res) => {
       jenis_dokumen,
     });
 
-    // Basis kode indikator program mengikuti kode indikator Arah Kebijakan jika tersedia.
-    // Jika tidak ada, fallback ke kode program (masih deterministik dan mudah diaudit).
-    const baseFromArah = extractProgramBaseFromArahKodeIndikator(
-      arah_kebijakan_kode_indikator
-    );
-    const base = baseFromArah || String(program.kode_program).trim();
-    const prefix = `IP-${base}`;
+    const arKode = String(arah_kebijakan_kode_indikator || "").trim();
+    const prefix = arKode.startsWith("AR")
+      ? `IP${arKode.slice(2)}`
+      : `IP-${String(program.kode_program).trim()}`;
 
     const andParts = [
       ...(tahunWhere ? [tahunWhere] : []),
       ...(docJenisWhere ? [docJenisWhere] : []),
-      { kode_indikator: { [Op.like]: `${prefix}.%` } },
+      { kode_indikator: { [Op.like]: `${prefix}-%` } },
     ];
 
     const result = await IndikatorProgram.findOne({
@@ -485,7 +471,7 @@ exports.getNextKode = async (req, res) => {
           sequelize.fn(
             "MAX",
             sequelize.literal(
-              "CAST(SUBSTRING_INDEX(kode_indikator,'.',-1) AS UNSIGNED)"
+              "CAST(SUBSTRING_INDEX(kode_indikator,'-',-1) AS UNSIGNED)"
             )
           ),
           "maxNumber",
@@ -495,7 +481,7 @@ exports.getNextKode = async (req, res) => {
     });
 
     const next = (result?.maxNumber || 0) + 1;
-    const nextKode = `${prefix}.${String(next).padStart(2, "0")}`;
+    const nextKode = `${prefix}-${String(next).padStart(2, "0")}`;
 
     return res.json({ next_kode: nextKode });
   } catch (err) {
@@ -523,7 +509,7 @@ exports.update = async (req, res) => {
       tahun: req.body.tahun || indikatorProgram.tahun || defaultDokumen.tahun,
     };
 
-    // ðŸ”„ Ikuti nilai capaian_tahun_5 jika tersedia
+    // ðŸ"„ Ikuti nilai capaian_tahun_5 jika tersedia
     if (updateData.capaian_tahun_5) {
       updateData.baseline = updateData.capaian_tahun_5;
       updateData.target_awal = updateData.capaian_tahun_5;

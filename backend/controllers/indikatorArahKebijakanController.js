@@ -1,9 +1,11 @@
-// controllers/indikatorArahKebijakanController.js
+// backend/controllers/indikatorArahKebijakanController.js
 const {
   sequelize,
   IndikatorArahKebijakan,
   IndikatorStrategi,
+  Strategi,
   ArahKebijakan,
+  Program,
   OpdPenanggungJawab,
 } = require("../models");
 const { Op } = require("sequelize");
@@ -16,6 +18,12 @@ const {
   sendValidationErrors,
   fromSequelizeValidationError,
 } = require("../utils/validationErrorResponse");
+const {
+  autoCloneProgramByArahKebijakan,
+} = require("../services/autoCloneProgramService");
+const {
+  attachPaguByIndikatorKode,
+} = require("../services/paguAggregatorService");
 
 const MAX_LIMIT = 200;
 
@@ -173,6 +181,11 @@ const applyDefaults = (data, periode) => {
   return item;
 };
 
+function buildKodeIndikatorFromKodeArah(kodeArah) {
+  return String(kodeArah || "").replace(/^ASST/, "AR");
+}
+
+
 /* ── POST / (bulk create) ── */
 exports.create = async (req, res) => {
   try {
@@ -183,7 +196,7 @@ exports.create = async (req, res) => {
         res,
         400,
         { indikator_id: ["Semua data harus memiliki indikator_id"] },
-        { message: "Semua data harus memiliki indikator_id" },
+        { message: "Semua data harus memiliki indikator_id" }
       );
     }
 
@@ -193,37 +206,67 @@ exports.create = async (req, res) => {
     const withDefaults = rows.map((r) => applyDefaults(r, periode));
 
     const t = await sequelize.transaction();
+
     try {
       const created = await IndikatorArahKebijakan.bulkCreate(withDefaults, {
         fields: Object.keys(withDefaults[0]),
         transaction: t,
       });
+
       await t.commit();
-      return res.status(201).json({ status: "success", data: created });
+
+      const first = withDefaults[0];
+
+      await autoCloneProgramByArahKebijakan({
+        arahKebijakanId: first.arah_kebijakan_id,
+        strategiId: first.strategi_id,
+        sasaranId: first.sasaran_id,
+        rpjmdId: first.sasaran_id,
+        periodeId: first.periode_id,
+        tahun: first.tahun,
+        jenisDokumen: first.jenis_dokumen,
+        datasetKey: "kepmendagri_provinsi_900_2024",
+      });
+
+      return res.status(201).json({
+        status: "success",
+        data: created,
+        auto_clone: true,
+      });
     } catch (err) {
       await t.rollback();
+
       if (err.name === "SequelizeUniqueConstraintError") {
         return sendValidationErrors(
           res,
           409,
           { kode_indikator: ["Data sudah ada untuk kombinasi ini."] },
-          { message: "Data duplikat." },
+          { message: "Data duplikat." }
         );
       }
+
       if (err.name === "SequelizeValidationError") {
         return sendValidationErrors(
           res,
           400,
           fromSequelizeValidationError(err),
-          { message: err.message },
+          { message: err.message }
         );
       }
-      return res.status(500).json({ status: "error", message: err.message });
+
+      return res.status(500).json({
+        status: "error",
+        message: err.message,
+      });
     }
   } catch (err) {
-    return res.status(500).json({ status: "error", message: err.message });
+    return res.status(500).json({
+      status: "error",
+      message: err.message,
+    });
   }
 };
+    
 
 /* ── GET / ── */
 exports.findAll = async (req, res) => {
@@ -235,26 +278,52 @@ exports.findAll = async (req, res) => {
       limit: limitQ,
       perPage,
     } = req.query;
+
     const rawLimit = Number(limitQ ?? perPage ?? 50) || 50;
     const limit = Math.min(Math.max(1, rawLimit), MAX_LIMIT);
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const offset = (pageNum - 1) * limit;
 
     const tahunStr = String(tahun).trim();
-    const effectiveJenisDokumen = await preferPeriodeNamaIfExists({
-      model: IndikatorArahKebijakan,
-      jenis_dokumen,
-      tahun: tahunStr,
-    });
+
+    const periode =
+      (await getPeriodeFromTahun(tahunStr)) || (await getPeriodeAktif());
+
+    const jdFilter = /^rpjmd$/i.test(String(jenis_dokumen).trim())
+      ? { [Op.like]: "RPJMD%" }
+      : String(jenis_dokumen).trim();
+
+    let where;
+    if (periode?.id) {
+      where = { periode_id: periode.id };
+    } else {
+      where = { jenis_dokumen: jdFilter, tahun: tahunStr };
+    }
 
     const { count, rows } = await IndikatorArahKebijakan.findAndCountAll({
-      where: { jenis_dokumen: effectiveJenisDokumen, tahun: tahunStr },
+      where,
       include: [
         {
           model: ArahKebijakan,
           as: "arahKebijakan",
           attributes: ["id", "kode_arah", "deskripsi"],
           required: false,
+          include: [
+            {
+              model: Strategi,
+              as: "Strategi",
+              required: false,
+              include: [
+                {
+                  model: Program,
+                  as: "Program",
+                  attributes: ["id", "total_pagu_anggaran"],
+                  through: { attributes: [] },
+                  required: false,
+                },
+              ],
+            },
+          ],
         },
         {
           model: OpdPenanggungJawab,
@@ -270,15 +339,18 @@ exports.findAll = async (req, res) => {
       distinct: true,
     });
 
-    // Legacy/import: baseline sering NULL padahal capaian_tahun_5 terisi → tampilkan baseline fallback agar UI list tidak kosong.
+    const totalPages = Math.max(1, Math.ceil(count / limit));
+
     fillBaselineFallback(rows);
+
     await fillPenanggungJawabFallback({
       rows,
       tahun: tahunStr,
-      jenis_dokumen: effectiveJenisDokumen,
+      jenis_dokumen,
     });
 
-    const totalPages = Math.max(1, Math.ceil(count / limit));
+    await attachPaguByIndikatorKode(rows);
+
     return res.json({
       status: "success",
       data: rows,
@@ -377,7 +449,10 @@ exports.getNextKode = async (req, res) => {
         .status(404)
         .json({ message: "Arah Kebijakan tidak ditemukan." });
 
-    const prefix = arahKebijakan.kode_arah || `AK-${arah_kebijakan_id}`;
+    const rawKodeArah = arahKebijakan.kode_arah || "";
+    const prefix = rawKodeArah.startsWith("ASST")
+      ? buildKodeIndikatorFromKodeArah(rawKodeArah)
+      : (rawKodeArah || `AK-${arah_kebijakan_id}`);
 
     const result = await IndikatorArahKebijakan.findOne({
       where: {

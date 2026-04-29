@@ -18,6 +18,7 @@ import {
   mapApiIndikatorToListRow,
 } from "@/shared/components/steps/wizardIndikatorStepUtils";
 import { WIZARD_STEPS_WITH_RPJMD_INDICATOR_IMPORT } from "@/shared/constants/rpjmdIndikatorWizardSteps";
+import api from "@/services/api";
 
 const URU_TAHUN_COL_BY_CAPAIAN = {
   capaian_tahun_1: "tahun_2021",
@@ -69,6 +70,35 @@ function buildMergedStrategiNamaIndikatorOptions(values) {
       _rowKey: rowKey,
     });
   });
+  return out;
+}
+
+function buildMergedProgramNamaIndikatorOptions(values) {
+  const out = [];
+  const rows = Array.isArray(values.program) ? values.program : [];
+
+  rows.forEach((r, idx) => {
+    if (!r || typeof r !== "object") return;
+
+    const nama = String(r.nama_indikator || r.indikator || "").trim();
+    if (!nama) return;
+
+    const shortNama = nama.length > 90 ? `${nama.slice(0, 90)}…` : nama;
+
+    const rowKey =
+      String(r.id ?? "").trim() ||
+      String(r.kode_indikator ?? "").trim() ||
+      String(idx);
+
+    out.push({
+      value: `ip:${rowKey}`,
+      label: shortNama,
+      row: r,
+      _src: "ip",
+      _rowKey: rowKey,
+    });
+  });
+
   return out;
 }
 
@@ -142,6 +172,10 @@ export default function IndikatorTabContent({
   const mergedIndikatorImportOptions = useMemo(() => {
     if (wizardStepKey === "strategi") {
       return buildMergedStrategiNamaIndikatorOptions(values);
+    }
+
+    if (wizardStepKey === "program") {
+      return buildMergedProgramNamaIndikatorOptions(values);
     }
 
     const out = [];
@@ -261,6 +295,8 @@ export default function IndikatorTabContent({
     values.tujuan_no_tujuan_code,
     values.strategi_id,
     values.strategi,
+    values.program,
+    values.program_id,
     rpjmdTujuanSasaran31,
     urusanKinerja228,
   ]);
@@ -446,11 +482,11 @@ export default function IndikatorTabContent({
 
         // Dropdown Sasaran
         if (field.name === "sasaran_id") {
-          const sasaranOptions = (
-            stepOptions.length > 0 ? stepOptions : []
-          ).map((s) => ({
+          const sasaranOptions = (stepOptions.length > 0 ? stepOptions : []).map((s) => ({
             value: s.id,
             label: `${s.nomor} - ${s.isi_sasaran}`,
+            nomor: s.nomor,
+            row: s,
           }));
 
           return (
@@ -464,9 +500,33 @@ export default function IndikatorTabContent({
                     (opt) => opt.value === values[field.name],
                   ) || null
                 }
-                onChange={(selected) =>
-                  setFieldValue(field.name, selected?.value || "")
-                }
+                onChange={async (selected) => {
+                  const sasaranId = selected?.value || "";
+
+                  setFieldValue("sasaran_id", sasaranId);
+                  setFieldValue("sasaran_label", selected?.label || "");
+                  setFieldValue("rpjmd_import_indikator_tujuan_id", "");
+                  setFieldValue("rpjmd_import_indikator_strategi_id", "");
+
+                  if (!sasaranId) {
+                    setFieldValue("kode_indikator", "");
+                    return;
+                  }
+
+                  try {
+                    const res = await api.get(`/indikator-sasaran/${sasaranId}/next-kode`);
+                    const nextKode = res.data?.next_kode || "";
+                    setFieldValue("kode_indikator", nextKode);
+                    // cegah overwrite async dari logic lain
+                    setTimeout(() => {
+                      setFieldValue("kode_indikator", nextKode);
+                    }, 100);
+                  } catch (err) {
+                    console.error("Gagal mengambil kode indikator sasaran:", err);
+                    // fallback: tetap pakai format next-kode, jangan pernah fallback ke selected.nomor saja
+                    setFieldValue("kode_indikator", `${selected?.nomor || ""}-01`);
+                  }
+                }}
                 placeholder="Pilih Sasaran"
                 isClearable
               />
@@ -480,6 +540,10 @@ export default function IndikatorTabContent({
           tabKey === 1 &&
           field.name === "nama_indikator"
         ) {
+          // PATCH: Global guard — pada step Sasaran, jangan pernah timpa kode_indikator dari row import
+          // atau dari hydrateDraftFromIndikatorRow/applyRpjmdTujuanSasaran31Row
+          // Kode indikator hanya boleh diisi dari next-kode API (lihat handler dropdown Sasaran)
+          // Step Tujuan boleh ambil dari row import, step lain tidak
           return (
             <Form.Group as={Col} md={12} key={field.name}>
               <Form.Label>{field.label}</Form.Label>
@@ -501,6 +565,26 @@ export default function IndikatorTabContent({
                     );
                     setFieldValue("rpjmd_import_indikator_tujuan_id", "");
                     setFieldValue("rpjmd_import_indikator_strategi_id", "");
+                    return;
+                  }
+                  if (opt._src === "ip") {
+                    const kodeWizard = values.kode_indikator;
+
+                    setFieldValue("rpjmd_import_indikator_tujuan_id", "");
+                    setFieldValue("rpjmd_import_indikator_strategi_id", "");
+
+                    hydrateDraftFromIndikatorRow(opt.row, setFieldValue, [], wizardStepKey);
+
+                    const rowKode = String(opt.row?.kode_indikator ?? "").trim();
+
+                    setFieldValue(
+                      "kode_indikator",
+                      rowKode || (kodeWizard == null ? "" : String(kodeWizard).trim())
+                    );
+
+                    const mapped = { ...mapApiIndikatorToListRow(opt.row) };
+                    setFieldValue("program", [mapped]);
+
                     return;
                   }
                   if (opt.row) {
@@ -530,7 +614,7 @@ export default function IndikatorTabContent({
                         "rpjmd_import_indikator_tujuan_id",
                         opt._rowKey ?? opt.row.id,
                       );
-                      hydrateDraftFromIndikatorRow(opt.row, setFieldValue);
+                      hydrateDraftFromIndikatorRow(opt.row, setFieldValue, [], wizardStepKey);
 
                       // Hanya step Tujuan yang boleh mengadopsi kode indikator dari baris impor (T1-...).
                       // Step lain (Sasaran/Strategi/Arah/Program/Kegiatan/Sub) memakai kode otomatis masing-masing.
@@ -773,25 +857,28 @@ export default function IndikatorTabContent({
             ? (opdList.find((opt) => String(opt.value) === rawStr) ?? null)
             : null;
 
+          const isTujuanStep = wizardStepKey === "tujuan";
           return (
             <Form.Group as={Col} md={6} key={field.name}>
-              <Form.Label>{field.label}</Form.Label>
+              <Form.Label>
+                {field.label}
+                {!isTujuanStep && (
+                  <small className="text-muted ms-1">(otomatis dari step sebelumnya)</small>
+                )}
+              </Form.Label>
               <Select
                 name={field.name}
                 options={opdList}
                 getOptionLabel={(o) => o.label}
                 getOptionValue={(o) => o.value}
                 value={selectedOption}
-                onChange={(opt) =>
-                  setFieldValue(
-                    field.name,
-                    opt != null && opt.value !== "" && opt.value != null
-                      ? String(opt.value)
-                      : "",
-                  )
+                onChange={
+                  isTujuanStep
+                    ? (opt) => setFieldValue(field.name, opt?.value ?? "")
+                    : () => {}
                 }
-                placeholder={field.placeholder || "Pilih OPD"}
-                isClearable
+                placeholder={isTujuanStep ? "Pilih OPD..." : "Diisi otomatis"}
+                isDisabled={!isTujuanStep}
               />
             </Form.Group>
           );
