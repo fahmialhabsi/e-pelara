@@ -4,6 +4,7 @@ const {
   IndikatorStrategi,
   Strategi,
   Sasaran,
+  Program,
   OpdPenanggungJawab,
 } = require("../models");
 const { Op } = require("sequelize");
@@ -16,6 +17,9 @@ const {
   sendValidationErrors,
   fromSequelizeValidationError,
 } = require("../utils/validationErrorResponse");
+const {
+  attachPaguByIndikatorKode,
+} = require("../services/paguAggregatorService");
 
 const MAX_LIMIT = 200;
 
@@ -172,6 +176,15 @@ exports.findAll = async (req, res) => {
           as: "strategi",
           attributes: ["id", "kode_strategi", "deskripsi"],
           required: false,
+          include: [
+            {
+              model: Program,
+              as: "Program",
+              attributes: ["id", "total_pagu_anggaran"],
+              through: { attributes: [] },
+              required: false,
+            },
+          ],
         },
         {
           model: OpdPenanggungJawab,
@@ -188,6 +201,10 @@ exports.findAll = async (req, res) => {
     });
 
     const totalPages = Math.max(1, Math.ceil(count / limit));
+
+    await attachPaguByIndikatorKode(rows);
+
+    
     return res.json({
       status: "success",
       data: rows,

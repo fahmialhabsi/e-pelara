@@ -1,4 +1,4 @@
-// SubKegiatanList.jsx
+// frontend/src/shared/components/SubKegiatanList.jsx
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Table,

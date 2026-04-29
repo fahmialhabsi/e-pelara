@@ -1,4 +1,4 @@
-// components/rpjmd/TujuanList.jsx
+// frontend/src/shared/components/TujuanList.jsx
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Table,
@@ -50,8 +50,58 @@ const highlightText = (text, keyword) => {
   );
 };
 
+const toNumber = (v) => Number(v) || 0;
+
+const sumTujuanFromPrograms = (programList = []) => {
+  const map = {};
+
+  programList.forEach((p) => {
+    const tujuan =
+      p?.sasaran?.Tujuan ||
+      p?.sasaran?.tujuan ||
+      p?.Sasaran?.Tujuan ||
+      p?.Sasaran?.tujuan ||
+      p?.Tujuan ||
+      p?.tujuan;
+    if (!tujuan) return;
+
+    const key = `${String(tujuan.no_tujuan || "").trim().toUpperCase()}__${String(
+      tujuan.isi_tujuan || ""
+    ).trim().toLowerCase()}`;
+
+    if (!map[key]) {
+      map[key] = {
+        kode: tujuan.no_tujuan,
+        nama: tujuan.isi_tujuan,
+        total: 0,
+      };
+    }
+
+    map[key].total += toNumber(
+      p.total_pagu_anggaran ?? p.pagu_anggaran
+    );
+  });
+
+  return map;
+};
+
+const formatRupiah = (value) =>
+  new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(toNumber(value));
+
+  const formatPaguDisplay = (value) => {
+  const num = toNumber(value);
+  return num > 0 ? formatRupiah(num) : "-";
+};
+
 export default function TujuanList() {
   const navigate = useNavigate();
+  const [tujuanPaguMap, setTujuanPaguMap] = useState({});
+  const programPaguCacheRef = useRef({});
   const { user } = useAuth();
   const { dokumen, tahun } = usePeriodeAktif();
   const [darkMode, setDarkMode] = useDarkMode();
@@ -100,6 +150,40 @@ export default function TujuanList() {
     if (user?.tahun) fetchPeriode();
   }, [user]);
 
+  useEffect(() => {
+  const fetchProgramPagu = async () => {
+    const cacheKey = `${String(dokumen || "").toLowerCase()}__${String(tahun || "")}`;
+
+    if (programPaguCacheRef.current[cacheKey]) {
+      setTujuanPaguMap(programPaguCacheRef.current[cacheKey]);
+      return;
+    }
+
+    try {
+      const res = await api.get("/programs", {
+        params: {
+          jenis_dokumen: dokumen,
+          tahun,
+          limit: 10000,
+        },
+      });
+
+      const programList = normalizeListItems(res.data);
+      const map = sumTujuanFromPrograms(programList);
+
+      programPaguCacheRef.current[cacheKey] = map;
+      setTujuanPaguMap(map);
+    } catch (err) {
+      console.error("Fetch program pagu error:", err);
+      setTujuanPaguMap({});
+    }
+  };
+
+  if (dokumen && tahun) {
+    fetchProgramPagu();
+  }
+}, [dokumen, tahun]);
+
   const fetchTujuan = useCallback(async () => {
     setLoading(true);
     try {
@@ -107,8 +191,8 @@ export default function TujuanList() {
         params: {
           jenis_dokumen: dokumen,
           tahun,
-          page,
           limit,
+          offset: (page - 1) * limit,
           search: searchQuery,
         },
       });
@@ -130,7 +214,17 @@ export default function TujuanList() {
 
       const sortedList = [...matched, ...others];
       setTujuanList(sortedList);
-      setTotalPages(meta.totalPages || 1);
+      const totalItems =
+        meta.totalItems ??
+        meta.total ??
+        res.data?.totalItems ??
+        res.data?.total ??
+        res.data?.pagination?.total ??
+        list.length;
+
+      const computedTotalPages = Math.max(1, Math.ceil(Number(totalItems) / Number(limit)));
+
+      setTotalPages(meta.totalPages || res.data?.pagination?.totalPages || computedTotalPages);
 
       if (keyword && matched.length === 0) {
         setErrorMsg("Tidak ada yang cocok dengan pencarian.");
@@ -391,22 +485,28 @@ export default function TujuanList() {
               <tr>
                 <th style={{ width: "10%" }}>Kode</th>
                 <th>Uraian Misi/Tujuan</th>
+                <th style={{ width: "20%" }}>Total Pagu</th>
                 <th style={{ width: "15%" }}>Aksi</th>
               </tr>
             </thead>
             <tbody>
               {tujuanList.length > 0 ? (
-                tujuanList.map((t) => {
+                tujuanList.map((t, idx) => {
                   const isi = t.isi_tujuan.toLowerCase();
                   const keyword = searchQuery.toLowerCase();
                   const match = keyword && isi.includes(keyword);
 
                   return (
                     <React.Fragment key={t.id}>
-                      <tr>
+                    {(idx === 0 ||
+                      tujuanList[idx - 1]?.Misi?.no_misi !== t.Misi?.no_misi) && (
+                      <tr className="table-light">
                         <td>{t.Misi?.no_misi || ""}</td>
-                        <td colSpan={2}>{t.Misi?.isi_misi || ""}</td>
+                        <td colSpan={3}>{t.Misi?.isi_misi || ""}</td>
                       </tr>
+                    )}
+
+  
                       <tr
                         ref={(el) => {
                           if (match) {
@@ -419,6 +519,17 @@ export default function TujuanList() {
                       >
                         <td>{t.no_tujuan}</td>
                         <td>{highlightText(t.isi_tujuan, searchQuery)}</td>
+                        <td>
+                          <span className="badge bg-info text-dark">
+                            {(() => {
+                              const key = `${String(t.no_tujuan || "").trim().toUpperCase()}__${String(
+                                t.isi_tujuan || ""
+                              ).trim().toLowerCase()}`;
+                              return formatPaguDisplay(tujuanPaguMap[key]?.total);
+                            })()}
+                          </span>
+                        </td>
+
                         <td>
                           <Button
                             size="sm"
@@ -441,7 +552,7 @@ export default function TujuanList() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={3} className="text-center text-danger">
+                  <td colSpan={4} className="text-center text-danger">
                     {searchQuery
                       ? "Tidak ada yang cocok dengan pencarian."
                       : "Tidak ada data."}

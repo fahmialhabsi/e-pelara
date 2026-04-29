@@ -1,6 +1,9 @@
+// backend/controllers/indikatorTujuanController.js
 const {
   sequelize,
   Tujuan,
+  Sasaran,
+  Program,
   IndikatorTujuan,
   SubKegiatan,
 } = require("../models");
@@ -18,6 +21,9 @@ const {
   fromSequelizeValidationError,
 } = require("../utils/validationErrorResponse");
 const { syncIndikatorKinerjaFromJenis } = require("../utils/syncIndikatorKinerjaFromJenis");
+const {
+  attachPaguByIndikatorKode,
+} = require("../services/paguAggregatorService");
 
 const allowedFields = [
   "misi_id",
@@ -420,23 +426,38 @@ async function findAll(req, res) {
     };
     if (periode_id) where.periode_id = periode_id;
 
-    const { Tujuan, OpdPenanggungJawab } = require("../models");
+    const { OpdPenanggungJawab } = require("../models");
 
     const include = [
-      {
-        model: Tujuan,
-        as: "Tujuan",
-        attributes: ["id", "no_tujuan", "isi_tujuan", "misi_id"],
-        where: misi_id ? { misi_id: parseInt(misi_id, 10) } : undefined,
-        required: !!misi_id,
-      },
-      {
-        model: OpdPenanggungJawab,
-        as: "opdPenanggungJawab",
-        attributes: ["id", "nama_opd"],
-        required: false,
-      },
-    ];
+    {
+      model: Tujuan,
+      as: "Tujuan",
+      attributes: ["id", "no_tujuan", "isi_tujuan", "misi_id"],
+      where: misi_id ? { misi_id: parseInt(misi_id, 10) } : undefined,
+      required: !!misi_id,
+      include: [
+        {
+          model: Sasaran,
+          as: "Tujuan",
+          required: false,
+          include: [
+            {
+              model: Program,
+              as: "Program",
+              attributes: ["id", "total_pagu_anggaran"],
+              required: false,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      model: OpdPenanggungJawab,
+      as: "opdPenanggungJawab",
+      attributes: ["id", "nama_opd"],
+      required: false,
+    },
+  ];
 
     const { count, rows } = await IndikatorTujuan.findAndCountAll({
       where,
@@ -446,6 +467,8 @@ async function findAll(req, res) {
       offset,
       distinct: true,
     });
+
+    await attachPaguByIndikatorKode(rows);
 
     return res.status(200).json({
       data: rows,

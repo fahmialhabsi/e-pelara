@@ -1,3 +1,4 @@
+// backend/controllers/indikatorProgramController.js
 const {
   sequelize,
   Program,
@@ -18,6 +19,9 @@ const {
   sendValidationErrors,
   fromSequelizeValidationError,
 } = require("../utils/validationErrorResponse");
+const {
+  attachPaguByIndikatorKode,
+} = require("../services/paguAggregatorService");
 
 const allowedFields = [
   "kode_indikator",
@@ -325,6 +329,18 @@ exports.findAll = async (req, res) => {
     const { count, rows } = await IndikatorProgram.findAndCountAll({
       where,
       include: [
+      {
+          model: Program,
+          as: "program",
+          attributes: [
+            "id",
+            "kode_program",
+            "nama_program",
+            "total_pagu_anggaran",
+            "opd_penanggung_jawab",
+          ],
+          required: false,
+        },
         {
           model: OpdPenanggungJawab,
           as: "opdPenanggungJawab",
@@ -357,6 +373,8 @@ exports.findAll = async (req, res) => {
       order: [["id", "ASC"]],
       distinct: true,
     });
+
+    await attachPaguByIndikatorKode(rows);
 
     return res.status(200).json({
       status: "success",

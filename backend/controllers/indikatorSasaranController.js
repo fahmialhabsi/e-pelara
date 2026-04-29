@@ -19,6 +19,9 @@ const {
   sendValidationErrors,
   fromSequelizeValidationError,
 } = require("../utils/validationErrorResponse");
+const {
+  attachPaguByIndikatorKode,
+} = require("../services/paguAggregatorService");
 
 async function buildJenisDokumenClause({ model, jenis_dokumen, tahun }) {
   const jd = String(jenis_dokumen ?? "").trim();
@@ -231,6 +234,9 @@ exports.findAll = async (req, res) => {
     perPage = 50,
     sasaran_id,
   } = req.query;
+
+  
+
   await ensureClonedOnce(jenis_dokumen, tahun);
   const limit = Math.min(parseInt(perPage), MAX_LIMIT),
     offset = (page - 1) * limit;
@@ -262,7 +268,7 @@ exports.findAll = async (req, res) => {
           {
             model: Program,
             as: "program",
-            attributes: ["id", "nama_program", "kode_program"],
+            attributes: ["id", "nama_program", "kode_program", "total_pagu_anggaran"],
           },
           {
             model: OpdPenanggungJawab,
@@ -278,10 +284,15 @@ exports.findAll = async (req, res) => {
     order: [["id", "ASC"]],
     distinct: true,
   });
-
+  
   fillBaselineFallback(rows);
   fillPenanggungJawabFallbackFromPrograms(rows);
 
+  const totalPages = Math.max(1, Math.ceil(count / limit));
+   
+  
+  await attachPaguByIndikatorKode(rows);
+  
   return res.json({
     status: "success",
     data: rows,

@@ -1,8 +1,9 @@
-// controllers/indikatorSubKegiatanController.js
+// backend/controllers/indikatorSubKegiatanController.js
 const {
   sequelize,
   IndikatorSubKegiatan,
   SubKegiatan,
+  Kegiatan,
   OpdPenanggungJawab,
   Program,
 } = require("../models");
@@ -17,6 +18,9 @@ const {
   fromSequelizeValidationError,
 } = require("../utils/validationErrorResponse");
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
+const {
+  attachPaguByIndikatorKode,
+} = require("../services/paguAggregatorService");
 
 const MAX_LIMIT = 200;
 
@@ -393,7 +397,36 @@ exports.findAll = async (req, res) => {
           {
             model: SubKegiatan,
             as: "subKegiatan",
-            attributes: ["id", "kegiatan_id", "kode_sub_kegiatan", "nama_sub_kegiatan"],
+            attributes: [
+              "id",
+              "kode_sub_kegiatan",
+              "nama_sub_kegiatan",
+              "pagu_anggaran"
+            ],
+            include: [
+              {
+                model: Kegiatan,
+                as: "kegiatan",
+                attributes: [
+                  "id",
+                  "kode_kegiatan",
+                  "nama_kegiatan",
+                  "total_pagu_anggaran"
+                ],
+                include: [
+                  {
+                    model: Program,
+                    as: "program",
+                    attributes: [
+                      "id",
+                      "kode_program",
+                      "nama_program",
+                      "total_pagu_anggaran"
+                    ]
+                  }
+                ]
+              }
+            ],
             required: false,
           },
           {
@@ -414,6 +447,9 @@ exports.findAll = async (req, res) => {
 
     fillBaselineFallback(rows);
     await fillPenanggungJawabFallbackFromProgram(rows);
+
+    await attachPaguByIndikatorKode(rows);
+
     return res.json({
       status: "success",
       data: rows,

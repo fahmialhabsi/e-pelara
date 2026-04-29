@@ -15,6 +15,10 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "program_id",
         as: "program",
       });
+      this.belongsTo(models.Kegiatan, {
+        foreignKey: "kegiatan_id",
+        as: "kegiatan",
+      });
       this.belongsTo(models.IndikatorProgram, {
         foreignKey: "indikator_program_id",
         as: "indikatorProgram",
@@ -40,6 +44,11 @@ module.exports = (sequelize, DataTypes) => {
       tujuan_id: DataTypes.INTEGER.UNSIGNED,
       sasaran_id: DataTypes.INTEGER.UNSIGNED,
       program_id: DataTypes.INTEGER.UNSIGNED,
+      kegiatan_id: DataTypes.INTEGER.UNSIGNED,
+      indikator_program_id: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: false,
+      },
       indikator_program_id: {
         type: DataTypes.INTEGER.UNSIGNED,
         allowNull: false,

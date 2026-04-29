@@ -1,9 +1,12 @@
+// backend/controllers/indikatorKegiatanController.js
 const {
   sequelize,
   IndikatorKegiatan,
   IndikatorProgram,
+  IndikatorSubKegiatan,
   Program,
   Kegiatan,
+  SubKegiatan,
   OpdPenanggungJawab,
 } = require("../models");
 const { Op, fn, col, where: sqlWhere } = require("sequelize");
@@ -17,6 +20,9 @@ const {
   sendValidationErrors,
   fromSequelizeValidationError,
 } = require("../utils/validationErrorResponse");
+const {
+  attachPaguByIndikatorKode,
+} = require("../services/paguAggregatorService");
 
 const allowedFields = [
   "misi_id",
@@ -163,6 +169,18 @@ async function findIndikatorKegiatan(where, safeLimit, offset) {
     where,
     include: [
       {
+        model: Kegiatan,
+        as: "kegiatan",
+        attributes: [
+          "id",
+          "kode_kegiatan",
+          "nama_kegiatan",
+          "total_pagu_anggaran",
+        ],
+        required: false,
+      },
+      
+      {
         model: Program,
         as: "program",
         attributes: { exclude: ["createdAt", "updatedAt"] },
@@ -170,9 +188,14 @@ async function findIndikatorKegiatan(where, safeLimit, offset) {
       {
         model: IndikatorProgram,
         as: "indikatorProgram",
-        attributes: ["id", "penanggung_jawab"],
-        required: false,
-        include: [
+        attributes: [
+            "id",
+            "kode_indikator",
+            "nama_indikator",
+            "penanggung_jawab",
+          ],
+          required: false,
+          include: [
           {
             model: OpdPenanggungJawab,
             as: "opdPenanggungJawab",
@@ -307,6 +330,9 @@ exports.getAll = async (req, res) => {
     fillBaselineFallback(rows);
     await fillPenanggungJawabFallback(rows);
 
+    await attachPaguByIndikatorKode(rows);
+    
+
     if (count === 0 && kegiatan_id && jenis_dokumen !== "rpjmd") {
       const sourceKegiatan =
         selectedKegiatan?.jenis_dokumen === "rpjmd"
@@ -367,7 +393,12 @@ exports.getById = async (req, res) => {
         {
           model: IndikatorProgram,
           as: "indikatorProgram",
-          attributes: ["id", "penanggung_jawab"],
+          attributes: [
+            "id",
+            "kode_indikator",
+            "nama_indikator",
+            "penanggung_jawab",
+          ],
           required: false,
           include: [
             {

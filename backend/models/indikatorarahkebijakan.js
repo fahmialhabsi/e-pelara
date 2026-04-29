@@ -1,3 +1,4 @@
+// backend/models/indikatorarahkebijakan.js
 "use strict";
 const { Model } = require("sequelize");
 

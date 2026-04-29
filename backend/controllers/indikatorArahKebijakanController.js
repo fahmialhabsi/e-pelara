@@ -3,7 +3,9 @@ const {
   sequelize,
   IndikatorArahKebijakan,
   IndikatorStrategi,
+  Strategi,
   ArahKebijakan,
+  Program,
   OpdPenanggungJawab,
 } = require("../models");
 const { Op } = require("sequelize");
@@ -19,6 +21,9 @@ const {
 const {
   autoCloneProgramByArahKebijakan,
 } = require("../services/autoCloneProgramService");
+const {
+  attachPaguByIndikatorKode,
+} = require("../services/paguAggregatorService");
 
 const MAX_LIMIT = 200;
 
@@ -303,6 +308,22 @@ exports.findAll = async (req, res) => {
           as: "arahKebijakan",
           attributes: ["id", "kode_arah", "deskripsi"],
           required: false,
+          include: [
+            {
+              model: Strategi,
+              as: "Strategi",
+              required: false,
+              include: [
+                {
+                  model: Program,
+                  as: "Program",
+                  attributes: ["id", "total_pagu_anggaran"],
+                  through: { attributes: [] },
+                  required: false,
+                },
+              ],
+            },
+          ],
         },
         {
           model: OpdPenanggungJawab,
@@ -318,6 +339,8 @@ exports.findAll = async (req, res) => {
       distinct: true,
     });
 
+    const totalPages = Math.max(1, Math.ceil(count / limit));
+
     fillBaselineFallback(rows);
 
     await fillPenanggungJawabFallback({
@@ -326,7 +349,7 @@ exports.findAll = async (req, res) => {
       jenis_dokumen,
     });
 
-    const totalPages = Math.max(1, Math.ceil(count / limit));
+    await attachPaguByIndikatorKode(rows);
 
     return res.json({
       status: "success",
