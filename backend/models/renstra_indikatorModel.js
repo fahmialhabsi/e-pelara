@@ -4,11 +4,56 @@ const { Model } = require("sequelize");
 module.exports = (sequelize, DataTypes) => {
   class IndikatorRenstra extends Model {
     static associate(models) {
-      // Relasi dengan RenstraOPD
       IndikatorRenstra.belongsTo(models.RenstraOPD, {
         foreignKey: "renstra_id",
         targetKey: "id",
         as: "renstra",
+      });
+
+      IndikatorRenstra.belongsTo(models.RenstraKebijakan, {
+        foreignKey: "ref_id",
+        targetKey: "id",
+        as: "kebijakan",
+      });
+
+      IndikatorRenstra.hasMany(models.RenstraTabelArahKebijakan, {
+        foreignKey: "indikator_id",
+        as: "tabel_arah_kebijakan",
+      });
+
+      IndikatorRenstra.belongsTo(models.RenstraStrategi, {
+        foreignKey: "ref_id",
+        targetKey: "id",
+        constraints: false,
+        as: "strategi",
+      });
+
+      IndikatorRenstra.hasMany(models.RenstraTabelStrategi, {
+        foreignKey: "indikator_id",
+        as: "tabel_strategi",
+      });
+
+      IndikatorRenstra.belongsTo(models.RenstraKegiatan, {
+        foreignKey: "ref_id",
+        targetKey: "id",
+        constraints: false,
+        as: "kegiatan",
+      });
+
+      IndikatorRenstra.hasMany(models.RenstraTabelKegiatan, {
+        foreignKey: "indikator_id",
+        as: "tabel_kegiatan",
+      });
+      IndikatorRenstra.belongsTo(models.RenstraSubkegiatan, {
+        foreignKey: "ref_id",
+        targetKey: "id",
+        constraints: false,
+        as: "sub_kegiatan",
+      });
+
+      IndikatorRenstra.hasMany(models.RenstraTabelSubkegiatan, {
+        foreignKey: "indikator_id",
+        as: "tabel_sub_kegiatan",
       });
     }
   }
@@ -17,6 +62,7 @@ module.exports = (sequelize, DataTypes) => {
     {
       id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
       ref_id: { type: DataTypes.INTEGER, allowNull: false },
+      source_indikator_id: DataTypes.INTEGER,
       stage: DataTypes.ENUM(
         "tujuan",
         "sasaran",
@@ -31,13 +77,13 @@ module.exports = (sequelize, DataTypes) => {
       satuan: DataTypes.STRING,
       definisi_operasional: DataTypes.TEXT,
       metode_penghitungan: DataTypes.TEXT,
-      baseline: DataTypes.STRING,
-      target_tahun_1: DataTypes.STRING,
-      target_tahun_2: DataTypes.STRING,
-      target_tahun_3: DataTypes.STRING,
-      target_tahun_4: DataTypes.STRING,
-      target_tahun_5: DataTypes.STRING,
-      target_tahun_6: DataTypes.STRING,
+      baseline: DataTypes.DECIMAL(15, 2),
+      target_tahun_1: DataTypes.DECIMAL(15, 2),
+      target_tahun_2: DataTypes.DECIMAL(15, 2),
+      target_tahun_3: DataTypes.DECIMAL(15, 2),
+      target_tahun_4: DataTypes.DECIMAL(15, 2),
+      target_tahun_5: DataTypes.DECIMAL(15, 2),
+      target_tahun_6: DataTypes.DECIMAL(15, 2),
       lokasi: DataTypes.STRING(255),
       pagu_tahun_1: DataTypes.DECIMAL(20, 2),
       pagu_tahun_2: DataTypes.DECIMAL(20, 2),
@@ -67,5 +113,9 @@ module.exports = (sequelize, DataTypes) => {
     }
   );
 
+  
+
   return IndikatorRenstra;
 };
+
+

@@ -1,6 +1,6 @@
 // src/features/renstra/tujuan/pages/RenstraTabelTujuanListPage.jsx
 import React from "react";
-import { Table, Button, Empty, Popconfirm, Typography } from "antd";
+import { Table, Button, Empty, Popconfirm, Typography, Tag, Card } from "antd";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import api from "@/services/api";
@@ -9,11 +9,23 @@ import {
   formatNumber,
   formatNumberShort,
   StandardRenstraExpandedRow,
-  renstraTabelListTableProps,
-  renstraTabelListPageShellStyle,
 } from "@/features/renstra/shared/components/RenstraTabelListCommon";
 
 const { Text } = Typography;
+
+const pageStyle = {
+  padding: 0,
+  width: "100%",
+};
+
+const cardBodyStyle = {
+  width: "100%",
+};
+
+const tableWrapperStyle = {
+  width: "100%",
+  overflowX: "auto",
+};
 
 const RenstraTabelTujuanListPage = () => {
   const navigate = useNavigate();
@@ -35,6 +47,23 @@ const RenstraTabelTujuanListPage = () => {
   });
 
   const handleDelete = (id) => deleteMutation.mutate(id);
+
+  const renderStatusRevisi = (status) => {
+  const value = status || "draft";
+
+  const colorMap = {
+    draft: "orange",
+    verifikasi: "blue",
+    approved: "green",
+    ditolak: "red",
+  };
+
+  return (
+      <Tag color={colorMap[value] || "default"}>
+        {String(value).toUpperCase()}
+      </Tag>
+    );
+  };
 
   if (isLoading) return <SpinnerFullscreen tip="Memuat daftar..." />;
 
@@ -61,7 +90,7 @@ const RenstraTabelTujuanListPage = () => {
       title: "Kode",
       dataIndex: "kode_tujuan",
       key: "kode_tujuan",
-      width: 96,
+      width: 90,
       ellipsis: true,
       fixed: "left",
     },
@@ -69,22 +98,30 @@ const RenstraTabelTujuanListPage = () => {
       title: "Tujuan",
       dataIndex: "nama_tujuan",
       key: "nama_tujuan",
-      width: 220,
+      width: 260,
       ellipsis: true,
     },
     {
       title: "Indikator",
-      dataIndex: ["indikator", "nama_indikator"],
       key: "indikator",
-      width: 200,
+      width: 240,
       ellipsis: true,
+      render: (_, record) =>
+        record.indikator?.nama_indikator ||
+        record.nama_indikator ||
+        record.indikator_nama ||
+        "-",
     },
     {
       title: "Lokasi",
-      dataIndex: "lokasi",
       key: "lokasi",
-      width: 140,
+      width: 150,
       ellipsis: true,
+      render: (_, record) =>
+        record.lokasi ||
+        record.opd?.bidang_opd ||
+        record.opd?.sub_bidang_opd ||
+        "-",
     },
     {
       title: "Target akhir",
@@ -111,10 +148,37 @@ const RenstraTabelTujuanListPage = () => {
       ),
     },
     {
+      title: "Pagu RPJMD",
+      dataIndex: "pagu_rpjmd_acuan",
+      key: "pagu_rpjmd_acuan",
+      width: 120,
+      align: "right",
+      render: (v) => (
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>
+          {formatNumberShort(v)}
+        </span>
+      ),
+    },
+    {
+      title: "Versi",
+      dataIndex: "versi",
+      key: "versi",
+      width: 72,
+      align: "center",
+      render: (v) => v || 1,
+    },
+    {
+      title: "Status",
+      dataIndex: "status_revisi",
+      key: "status_revisi",
+      width: 112,
+      align: "center",
+      render: renderStatusRevisi,
+    },
+    {
       title: "Aksi",
       key: "aksi",
-      width: 168,
-      fixed: "right",
+      width: 190,
       render: (_, record) => (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <Button
@@ -123,6 +187,12 @@ const RenstraTabelTujuanListPage = () => {
             onClick={() => navigate(`/renstra/tabel/tujuan/edit/${record.id}`)}
           >
             Edit
+          </Button>
+          <Button
+            size="small"
+            onClick={() => navigate(`/renstra/tabel/tujuan/history/${record.id}`)}
+          >
+            History
           </Button>
           <Popconfirm
             title="Hapus data ini?"
@@ -140,7 +210,8 @@ const RenstraTabelTujuanListPage = () => {
   ];
 
   return (
-    <div style={renstraTabelListPageShellStyle}>
+  <Card title="Renstra Tabel Tujuan" bodyStyle={cardBodyStyle}>
+    <div style={pageStyle}>
       <div
         style={{
           display: "flex",
@@ -153,30 +224,43 @@ const RenstraTabelTujuanListPage = () => {
         <Button onClick={() => navigate("/dashboard-renstra")}>
           Kembali
         </Button>
+
         <Button
           type="primary"
           onClick={() => navigate("/renstra/tabel/tujuan/add")}
         >
           Tambah
         </Button>
+
         <Text type="secondary" style={{ marginLeft: 8 }}>
-          Klik baris untuk melihat target &amp; pagu periode (th. ke-1 s/d ke-6).
+          Klik baris untuk melihat target &amp; pagu periode (th. ke-1 s/d ke-5).
         </Text>
       </div>
 
-      <Table
-        dataSource={data}
-        columns={columns}
-        rowKey="id"
-        {...renstraTabelListTableProps}
-        expandable={{
-          expandRowByClick: true,
-          expandedRowRender: (record) => <StandardRenstraExpandedRow record={record} />,
-          rowExpandable: () => true,
-        }}
-      />
+      <div style={tableWrapperStyle}>
+        <Table
+          dataSource={data}
+          columns={columns}
+          rowKey="id"
+          size="small"
+          bordered
+          pagination={{
+            pageSize: 10,
+            showSizeChanger: true,
+          }}
+          scroll={{ x: "max-content" }}
+          expandable={{
+            expandRowByClick: true,
+            expandedRowRender: (record) => (
+              <StandardRenstraExpandedRow record={record} />
+            ),
+            rowExpandable: () => true,
+          }}
+        />
+      </div>
     </div>
-  );
+  </Card>
+);
 };
 
 export default RenstraTabelTujuanListPage;

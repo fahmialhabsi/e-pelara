@@ -82,10 +82,6 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
   } = form;
 
   const arahKebijakanId = useWatch({ control, name: "rpjmd_arah_id" });
-  const kebijakanRenstraId = useWatch({
-    control,
-    name: "renstra_kebijakan_id",
-  });
   const programId = useWatch({ control, name: "program_rpjmd_id" });
   const opdTerpilih = useWatch({ control, name: "opd_penanggung_jawab" });
 
@@ -183,6 +179,14 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
       value: item.nama_bidang_opd,
     }));
 
+  if (!renstraAktif) {
+    return (
+      <Card>
+        <p>Renstra belum dipilih. Silakan pilih Renstra terlebih dahulu.</p>
+      </Card>
+    );
+  }
+
   return (
     <Card title={initialData ? "Edit Program Renstra" : "Tambah Program Renstra"}>
       <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
@@ -222,6 +226,7 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
           errors={errors}
           required
           loading={isLoadingKebijakan}
+          disabled={!arahKebijakanId}
           options={kebijakanRenstraOptions.map((item) => ({
             label: `${item.kode_kebjkn} - ${item.deskripsi}`,
             value: String(item.id),
@@ -241,6 +246,7 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
           errors={errors}
           required
           loading={isLoadingProgram}
+          disabled={!arahKebijakanId}
           options={programOptions.map((item) => ({
             label: `${item.kode_program} - ${item.nama_program}`,
             value: String(item.id),

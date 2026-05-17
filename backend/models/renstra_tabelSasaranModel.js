@@ -14,6 +14,7 @@ module.exports = (sequelize, DataTypes) => {
 
   RenstraTabelSasaran.init(
     {
+      renstra_id: DataTypes.INTEGER,
       tujuan_id: DataTypes.INTEGER,
       sasaran_id: DataTypes.INTEGER,
       indikator_id: DataTypes.INTEGER,
@@ -36,6 +37,11 @@ module.exports = (sequelize, DataTypes) => {
       nama_sasaran: DataTypes.STRING(255),
       target_akhir_renstra: DataTypes.DECIMAL(10, 0),
       pagu_akhir_renstra: DataTypes.DECIMAL(20, 2),
+      pagu_rpjmd_acuan: DataTypes.DECIMAL(20, 2),
+      versi: DataTypes.INTEGER,
+      status_revisi: DataTypes.STRING(20),
+      last_revised_at: DataTypes.DATE,
+      last_revised_by: DataTypes.INTEGER,
     },
     {
       sequelize,

@@ -1,4 +1,5 @@
-const { RenstraSasaran, Sasaran, RenstraTujuan } = require("../models");
+const { RenstraSasaran, Sasaran, RenstraTujuan, IndikatorSasaran } = require("../models");
+const { Op } = require("sequelize");
 
 function toInt(v) {
   const n = Number.parseInt(String(v ?? "").trim(), 10);
@@ -188,18 +189,44 @@ exports.getSasaranRpjmd = async (req, res) => {
 
     // Langkah 2: ambil Sasaran dari tabel RPJMD menggunakan rpjmd_tujuan_id
     const sasaran = await Sasaran.findAll({
-      where: {
-        tujuan_id: rpjmdTujuanId,
-        jenis_dokumen: "rpjmd",
-      },
-      attributes: ["id", "nomor", "isi_sasaran"],
-      order: [["nomor", "ASC"]],
-    });
+        where: {
+          tujuan_id: rpjmdTujuanId,
+          jenis_dokumen: "rpjmd",
+        },
+        attributes: ["id", "nomor", "isi_sasaran"],
+        order: [["nomor", "ASC"]],
+        raw: true,
+      });
 
-    res.status(200).json({
-      message: "success",
-      data: sasaran,
-    });
+      const sasaranIds = sasaran.map((item) => item.id);
+
+      const indikatorSasaranRows = await IndikatorSasaran.findAll({
+        where: {
+          sasaran_id: sasaranIds,
+          jenis_dokumen: {
+            [Op.in]: ["rpjmd", "RPJMD", "RPJMD 2025-2029"],
+          },
+        },
+        attributes: ["id", "sasaran_id"],
+        raw: true,
+      });
+
+      const indikatorMap = new Map(
+        indikatorSasaranRows.map((item) => [
+          Number(item.sasaran_id),
+          Number(item.id),
+        ])
+      );
+
+      const data = sasaran.map((item) => ({
+        ...item,
+        ref_id: indikatorMap.get(Number(item.id)) ?? null,
+      }));
+
+      res.status(200).json({
+        message: "success",
+        data,
+      });
   } catch (err) {
     console.error("❌ ERROR getSasaranRpjmd:", err);
     res.status(500).json({

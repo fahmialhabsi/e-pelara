@@ -1,6 +1,5 @@
 // src/shared/components/utils/renstraTabelKegiatanSchema.js
 import * as Yup from "yup";
-import api from "@/services/api";
 
 /**
  * Membuat Yup schema async untuk validasi realtime pagu
@@ -34,41 +33,15 @@ export const createAsyncSchema = (excludeId = null) => {
     nama_kegiatan: Yup.string().required(),
 
     ...[1, 2, 3, 4, 5, 6].reduce((acc, i) => {
-      acc[`target_tahun_${i}`] = Yup.number()
-        .typeError("Harus angka")
-        .required();
+  acc[`target_tahun_${i}`] = Yup.number()
+    .typeError("Harus angka")
+    .required();
 
-      acc[`pagu_tahun_${i}`] = Yup.number()
-        .typeError("Harus angka")
-        .required()
-        .test(
-          `max-available-tahun-${i}`,
-          `❌ Pagu Tahun ${i} melebihi sisa pagu program`,
-          async function (value) {
-            const { tabel_program_id } = this.parent;
-            if (tabel_program_id == null || tabel_program_id === "") return true;
+  acc[`pagu_tahun_${i}`] = Yup.number()
+    .typeError("Harus angka")
+    .required();
 
-            try {
-              const res = await api.get(
-                "/renstra-tabel-kegiatan/available-pagu",
-                {
-                  params: {
-                    program_id: Number(tabel_program_id),
-                    exclude_id: excludeId || this.parent.id || null,
-                  },
-                }
-              );
-              const available = res.data.available || {};
-              const max = Number(available[i] ?? Infinity);
-              return value <= max;
-            } catch (err) {
-              console.error("Gagal fetch availablePagu:", err);
-              return true;
-            }
-          }
-        );
-
-      return acc;
-    }, {}),
+  return acc;
+}, {}),
   });
 };

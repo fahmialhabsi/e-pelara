@@ -10,6 +10,9 @@ const cookieParser = require("cookie-parser");
 const logger = require("./utils/logger");
 const connectRedis = require("./utils/redisClient"); // versi retry otomatis
 const masterReferensiRoutes = require("./routes/masterReferensiRoutes");
+const dashboardAgregatPaguRoutes = require("./routes/dashboardAgregatPaguRoutes");
+
+
 
 // === HUBUNGKAN REDIS CLIENT ===
 (async () => {
@@ -57,9 +60,15 @@ app.use(
           false,
         );
       }
+
       return callback(null, true);
     },
     credentials: true,
+
+    // STEP R12:
+    // Agar frontend bisa membaca header Content-Disposition
+    // untuk mengambil nama file download dari backend.
+    exposedHeaders: ["Content-Disposition"],
   }),
 );
 
@@ -182,9 +191,26 @@ const renstra_tabelKegiatanRoutes = require("./routes/renstra_tabelKegiatanRoute
 const renstra_tabelSubKegiatanRoutes = require("./routes/renstra_tabelSubKegiatanRoutes");
 const renstra_tabelSasaranRoutes = require("./routes/renstra_tabelSasaranRoutes");
 const renstra_tabelTujuanRoutes = require("./routes/renstra_tabelTujuanRoutes");
-const renstra_tabelStrategiKebijakanRoutes = require("./routes/renstra_tabelStrategiKebijakanRoutes");
+const renstra_tabelStrategiRoutes = require("./routes/renstra_tabelStrategiRoutes");
+const renstra_tabelArahKebijakanRoutes = require("./routes/renstra_tabelArahKebijakanRoutes");
 const renstra_tabelPrioritasRoutes = require("./routes/renstra_tabelPrioritasRoutes");
 const renstraRpjmdMappingRoutes = require("./routes/renstra_rpjmdMappingRoutes");
+const renstraChainRoutes = require("./routes/renstra_chainRoutes");
+const renstra_pagu_cacheRoutes = require("./routes/renstra_pagu_cacheRoutes");
+
+// Manajemen Risiko (MR)
+const mrPlanningRiskRoutes = require("./routes/mr_planningRiskRoutes");
+const mrSmokeTestRoutes = require("./routes/mrSmokeTestRoutes");
+const mrPlanningRiskAnalysisRoutes = require("./routes/mr_planningRiskAnalysisRoutes");
+const mrPlanningRootCauseRoutes = require("./routes/mr_planningRootCauseRoutes");
+const mrPlanningMitigationRoutes = require("./routes/mr_planningMitigationRoutes");
+const mrPlanningMonitoringRoutes = require("./routes/mr_planningMonitoringRoutes");
+const mrPlanningDeviationRoutes = require("./routes/mr_planningDeviationRoutes");
+const mrPlanningWarningRoutes = require("./routes/mr_planningWarningRoutes");
+const mrPlanningContextRoutes = require("./routes/mr_planningContextRoutes");
+const mrReferenceDropdownRoutes = require("./routes/mr_referenceDropdownRoutes");
+const mrPlanningReportRoutes = require("./routes/mr_planningReportRoutes");
+const mrNarrativeDraftRoutes = require("./routes/mr_NarrativeDraftRoutes");
 
 // USE RPKD
 const rkpdRoutes = require("./routes/rkpdRoutes");
@@ -319,6 +345,7 @@ app.use("/api/dashboard-rpjmd", dashboardRpjmdRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/cascading", cascadingRoutes);
 app.use("/api", kinerjaRoutes);
+app.use("/api/dashboard", dashboardAgregatPaguRoutes);
 
 // USE RENSTRA ROUTES
 app.use("/api/renstra-docs", renstraRoutes);
@@ -339,12 +366,28 @@ app.use("/api/renstra-tabel-sasaran", renstra_tabelSasaranRoutes);
 app.use("/api/renstra-tabel-program", renstra_tabelProgramRoutes);
 app.use("/api/renstra-tabel-kegiatan", renstra_tabelKegiatanRoutes);
 app.use("/api/renstra-tabel-subkegiatan", renstra_tabelSubKegiatanRoutes);
-app.use(
-  "/api/renstra-tabel-strategi-kebijakan",
-  renstra_tabelStrategiKebijakanRoutes,
-);
+app.use("/api/renstra-tabel-strategi", renstra_tabelStrategiRoutes);
+app.use("/api/renstra-tabel-arah-kebijakan", renstra_tabelArahKebijakanRoutes);
 app.use("/api/renstra-tabel-prioritas", renstra_tabelPrioritasRoutes);
 app.use("/api/renstra-rpjmd-mapping", renstraRpjmdMappingRoutes);
+app.use("/api/renstra-chain", renstraChainRoutes);
+app.use("/api/renstra-pagu-cache", require("./routes/renstra_pagu_cacheRoutes"));
+
+// USE MANAJEMEN RISIKO (MR)
+app.use("/api/mr-planning-risk", mrPlanningRiskRoutes);
+app.use("/api/mr-smoke", mrSmokeTestRoutes);
+app.use("/api/mr-planning-risk-analysis", mrPlanningRiskAnalysisRoutes);
+app.use("/api/mr-planning-root-cause", mrPlanningRootCauseRoutes);
+app.use("/api/mr-planning-mitigation", mrPlanningMitigationRoutes);
+app.use("/api/mr-planning-monitoring", mrPlanningMonitoringRoutes);
+app.use("/api/mr-planning-deviation", mrPlanningDeviationRoutes);
+app.use("/api/mr-planning-warning", mrPlanningWarningRoutes);
+app.use("/api/mr-planning-context", mrPlanningContextRoutes);
+app.use("/api/mr-reference-items", mrReferenceDropdownRoutes);
+app.use("/api/mr-report", mrPlanningReportRoutes);
+app.use("/api/mr-planning-risk", mrNarrativeDraftRoutes);
+
+
 
 // USE RKPD
 app.use("/api/rkpd", rkpdRoutes);

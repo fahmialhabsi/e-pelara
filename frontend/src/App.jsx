@@ -62,6 +62,7 @@ import LkDashboard from "./features/lk-dispang/pages/LkDashboard";
 import LakipDashboard from "./features/lakip/pages/LAKIPDashboard";
 import CloningData from "./admin/ClonePeriodePage";
 import ClonedDataTable from "./admin/ClonedDataTable";
+import mrRoutes from "./routes/mrRoutes";
 const TenantManagementPage = React.lazy(() => import("./admin/TenantManagementPage"));
 const SubscriptionAdminPage = React.lazy(() =>
   import("./admin/SubscriptionAdminPage"),
@@ -622,7 +623,7 @@ function InnerApp() {
             />
             <Route path="pricing" element={<PricingPage />} />
             {/* Inject dynamic routes here */}
-            {[...rpjmdRoutes, ...renstraRoutes].map(
+            {[...rpjmdRoutes, ...renstraRoutes, ...mrRoutes].map(
               ({ path, element, role }, index) => (
                 <Route
                   key={index}
@@ -633,7 +634,7 @@ function InnerApp() {
                     </DokumenTahunGuard>
                   }
                 />
-              ),
+              )
             )}
             <Route path="*" element={<NotFoundPage />} />
           </Route>

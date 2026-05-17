@@ -1,0 +1,15 @@
+node_modules
+dist
+build
+coverage
+backend/node_modules
+backend/dist
+frontend/node_modules
+frontend/dist
+frontend/rkpd-admin/node_modules
+frontend/rkpd-admin/dist
+frontend/rkpd-dashboard/node_modules
+frontend/rkpd-dashboard/dist
+backup
+.claude
+.cursor

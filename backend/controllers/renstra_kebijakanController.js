@@ -100,27 +100,27 @@ exports.findAll = async (req, res) => {
 
     const data = await RenstraKebijakan.findAll({
       where,
-      include: [
-        {
-          model: RenstraOPD,
-          as: "renstra",
-          attributes: ["bidang_opd", "sub_bidang_opd"],
-        },
-        {
-          model: RenstraStrategi,
-          as: "strategi",
-          attributes: ["kode_strategi", "deskripsi"],
-        },
-        {
-          model: ArahKebijakan,
-          as: "arah_kebijakan",
-          attributes: ["kode_arah", "deskripsi"],
-        },
+      attributes: [
+        "id",
+        "strategi_id",
+        "rpjmd_arah_id",
+        "kode_kebjkn",
+        "deskripsi",
+        "prioritas",
+        "no_arah_rpjmd",
+        "isi_arah_rpjmd",
+        "renstra_id",
       ],
       order: [["id", "ASC"]],
+      raw: true,
     });
 
-    res.json(data);
+    const result = data.map((row) => ({
+      ...row,
+      ref_id: row.rpjmd_arah_id,
+    }));
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

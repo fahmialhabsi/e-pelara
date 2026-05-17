@@ -26,11 +26,9 @@ module.exports = (sequelize, DataTypes) => {
         as: "subKegiatans",
       });
 
-      RenstraKegiatan.hasMany(models.IndikatorRenstra, {
-        foreignKey: "ref_id",
-        constraints: false,
-        scope: { stage: "kegiatan" },
-        as: "indikators",
+      RenstraKegiatan.hasMany(models.RenstraTabelKegiatan, {
+        foreignKey: "kegiatan_id",
+        as: "tabelKegiatans",
       });
 
       RenstraKegiatan.hasMany(models.RenstraTabelSubkegiatan, {

@@ -1,7 +1,7 @@
+// File: frontend/src/features/renstra/indikator/kebijakan/components/IndikatorKebijakanRenstraForm.jsx
 import React, { useEffect, useState } from "react";
 import { Form, Button, Card, Typography, App } from "antd";
 import { useNavigate } from "react-router-dom";
-import * as Yup from "yup";
 import api from "@/services/api";
 import { useRenstraFormTemplate } from "@/hooks/templatesUseRenstra/useRenstraFormTemplate";
 import { generateKode } from "@/utils/kodeUtils";
@@ -12,45 +12,37 @@ import InputField from "@/shared/components/form/InputField";
 
 const { Text } = Typography;
 
-const schema = Yup.object().shape({
-  kebijakan_renstra_id: Yup.number().required(
-    "Kebijakan Renstra wajib dipilih"
-  ),
-  kode_indikator: Yup.string().required("Kode indikator wajib diisi"),
-  nama_indikator: Yup.string().required("Nama indikator wajib diisi"),
-  satuan: Yup.string().required("Satuan wajib diisi"),
-  target_tahun_1: Yup.string().required("Target (th. ke-1) wajib diisi"),
-});
-
 const IndikatorKebijakanRenstraForm = ({
   initialData = null,
   renstraAktif,
 }) => {
   const navigate = useNavigate();
-  const { message } = App.useApp(); // ✅ gunakan message context
+  const { message } = App.useApp();
   const [existingList, setExistingList] = useState([]);
-  const [previewKebijakan, setPreviewKebijakan] = useState("");
+  const [preview, setPreview] = useState("");
 
-  // Fetch data indikator yang sudah ada
   useEffect(() => {
     const fetchExisting = async () => {
       try {
-        const res = await api.get("/indikator-kebijakan-renstra");
-        setExistingList(res.data);
+        const res = await api.get("/indikator-renstra", {
+          params: { jenis: "kebijakan" },
+        });
+
+        setExistingList(Array.isArray(res.data) ? res.data : []);
       } catch (err) {
-        message.error("Gagal memuat data indikator.");
+        message.error("Gagal memuat data indikator kebijakan.");
       }
     };
+
     fetchExisting();
   }, [message]);
 
   const { form, onSubmit, isSubmitting, dropdowns } = useRenstraFormTemplate({
     initialData,
     renstraAktif,
-    endpoint: "/indikator-kebijakan-renstra",
-    schema,
+    endpoint: "/indikator-renstra",
+    queryKeys: ["indikator-renstra", "kebijakan"],
     redirectPath: "/renstra/indikator-kebijakan",
-    queryKeys: ["indikator-kebijakan-renstra"],
     defaultValues: {
       kebijakan_renstra_id: "",
       kode_indikator: "",
@@ -58,36 +50,58 @@ const IndikatorKebijakanRenstraForm = ({
       satuan: "",
       target_tahun_1: "",
     },
+    schema: {
+      kebijakan_renstra_id: (yup) =>
+        yup.number().required("Kebijakan Renstra wajib dipilih"),
+      kode_indikator: (yup) =>
+        yup.string().required("Kode indikator wajib diisi"),
+      nama_indikator: (yup) =>
+        yup.string().required("Nama indikator wajib diisi"),
+      satuan: (yup) => yup.string().required("Satuan wajib diisi"),
+      target_tahun_1: (yup) =>
+        yup.string().required("Target (th. ke-1) wajib diisi"),
+    },
     fetchOptions: {
       "kebijakan-renstra": async () => {
         const res = await api.get("/kebijakan-renstra");
-        return res.data;
+        return Array.isArray(res.data) ? res.data : [];
       },
     },
-    generatePayload: (data) => ({
-      kebijakan_renstra_id: data.kebijakan_renstra_id,
-      kode_indikator: data.kode_indikator,
-      nama_indikator: data.nama_indikator,
-      satuan: data.satuan,
-      target_tahun_1: data.target_tahun_1,
+    generatePayload: (formData) => ({
+      jenis: "kebijakan",
+      kebijakan_renstra_id: formData.kebijakan_renstra_id,
+      kode_indikator: formData.kode_indikator,
+      nama_indikator: formData.nama_indikator,
+      satuan: formData.satuan,
+      target_tahun_1: formData.target_tahun_1,
     }),
     kodeGenerator: (watch, setValue) => {
-      const kebijakanId = watch("kebijakan_renstra_id");
-      const options = dropdowns["kebijakan-renstra"];
-      if (!kebijakanId || !options) return;
+  const kebijakanId = watch("kebijakan_renstra_id");
+  const options = dropdowns["kebijakan-renstra"];
+  if (!kebijakanId || !options) return;
 
-      const selected = options.find((item) => item.id === kebijakanId);
-      if (selected) {
-        setPreviewKebijakan(selected.nama_kebijakan);
-        const prefix = `IK${selected.kode_kebijakan}`;
-        const kode = generateKode({
-          prefix,
-          dataList: existingList,
-          field: "kode_indikator",
-          padding: 2,
-        });
-        setValue("kode_indikator", kode);
-      }
+  const selected = options.find((x) => x.id === kebijakanId);
+
+  if (selected) {
+    setPreviewKebijakan(selected.nama_kebijakan);
+
+    const prefix = `IK${selected.kode_kebijakan}`;
+
+    const filteredExistingList = existingList.filter(
+      (item) =>
+        item.jenis === "kebijakan" &&
+        Number(item.kebijakan_renstra_id) === Number(kebijakanId)
+    );
+
+    const kode = generateKode({
+      prefix,
+      dataList: filteredExistingList,
+      field: "kode_indikator",
+      padding: 2,
+    });
+
+    setValue("kode_indikator", kode);
+  }
     },
   });
 
@@ -109,10 +123,10 @@ const IndikatorKebijakanRenstraForm = ({
     >
       <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
         <Button onClick={() => navigate("/dashboard-renstra")}>
-          🔙 Kembali
+          🔙 Kembali ke Dashboard
         </Button>
         <Button onClick={() => navigate("/renstra/indikator-kebijakan")}>
-          📄 Daftar Indikator Kebijakan
+          📄 Lihat Daftar Indikator Kebijakan
         </Button>
       </div>
 
@@ -135,20 +149,20 @@ const IndikatorKebijakanRenstraForm = ({
           onChange={(val) => setValue("kebijakan_renstra_id", val)}
         />
 
-        {previewKebijakan && (
+        {preview && (
           <Text
             type="secondary"
             style={{ marginTop: -8, display: "block", marginBottom: 12 }}
           >
-            {previewKebijakan}
+            {preview}
           </Text>
         )}
 
         <Form.Item label="Kode Indikator">
           <div
             style={{
+              padding: "8px 12px",
               background: "#f5f5f5",
-              padding: 8,
               borderRadius: 4,
             }}
           >

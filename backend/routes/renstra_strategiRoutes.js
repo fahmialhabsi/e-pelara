@@ -19,6 +19,13 @@ router.get(
 );
 
 router.get(
+  "/options",
+  verifyToken,
+  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
+  controller.getStrategiOptions
+);
+
+router.get(
   "/",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),

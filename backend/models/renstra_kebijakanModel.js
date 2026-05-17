@@ -18,6 +18,10 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "strategi_id",
         as: "strategi",
       });
+      RenstraKebijakan.hasMany(models.RenstraTabelArahKebijakan, {
+        foreignKey: "kebijakan_id",
+        as: "tabel_arah_kebijakan",
+      });
     }
   }
 

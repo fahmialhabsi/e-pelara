@@ -21,6 +21,10 @@ const { ensureClonedOnce } = require("../utils/autoCloneHelper");
 const {
   attachPaguByIndikatorKode,
 } = require("../services/paguAggregatorService");
+const {
+  queuePaguPrefix,
+  queuePaguPrefixes,
+} = require("../services/paguCachedIncrementalQueueService");
 
 const MAX_LIMIT = 200;
 
@@ -264,6 +268,12 @@ exports.create = async (req, res) => {
 
       await t.commit();
 
+      queuePaguPrefixes(
+        savedRows
+          .map(({ record }) => record.kode_indikator)
+          .filter(Boolean)
+      );
+
       return res.status(200).json({
         status: "success",
         message: savedRows.some((r) => r.created)
@@ -448,7 +458,19 @@ exports.findAll = async (req, res) => {
     fillBaselineFallback(rows);
     await fillPenanggungJawabFallbackFromProgram(rows);
 
-    await attachPaguByIndikatorKode(rows);
+    for (const row of rows) {
+      const pagu = Number(row.pagu_cached ?? row.get?.("pagu_cached") ?? 0);
+
+      if (typeof row.setDataValue === "function") {
+        row.setDataValue("pagu", pagu);
+        row.setDataValue("total_pagu", pagu);
+        row.setDataValue("total_pagu_anggaran", pagu);
+      } else {
+        row.pagu = pagu;
+        row.total_pagu = pagu;
+        row.total_pagu_anggaran = pagu;
+      }
+    }
 
     return res.json({
       status: "success",
@@ -615,7 +637,12 @@ exports.update = async (req, res) => {
 
     const tahun   = req.body?.tahun || record.tahun || new Date().getFullYear();
     const periode = (await getPeriodeFromTahun(tahun)) || (await getPeriodeAktif());
+    const oldKode = record.kode_indikator;
     await record.update(applyDefaults(req.body, periode));
+
+    const newKode = record.kode_indikator;
+
+
 
     await record.reload({
       include: [
@@ -637,6 +664,8 @@ exports.update = async (req, res) => {
     fillBaselineFallback([record]);
     await fillPenanggungJawabFallbackFromProgram([record]);
 
+    queuePaguPrefixes([oldKode, newKode].filter(Boolean));
+
     return res.json({ status: "success", data: record.get({ plain: true }) });
   } catch (err) {
     if (err.name === "SequelizeValidationError")
@@ -652,7 +681,11 @@ exports.delete = async (req, res) => {
   try {
     const record = await IndikatorSubKegiatan.findByPk(req.params.id);
     if (!record) return res.status(404).json({ message: "Indikator tidak ditemukan." });
+    const oldKode = record.kode_indikator;
     await record.destroy();
+
+    queuePaguPrefix(oldKode);
+
     return res.status(204).send();
   } catch (err) {
     return res.status(500).json({ status: "error", message: err.message });

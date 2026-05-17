@@ -15,7 +15,7 @@ const RenstraTabelSasaranEditPage = () => {
     queryKey: ["renstra-opd-aktif"],
     queryFn: async () => {
       const res = await api.get("/renstra-opd/aktif");
-      return res.data.data;
+      return res.data?.data ?? res.data;
     },
   });
 
@@ -23,13 +23,14 @@ const RenstraTabelSasaranEditPage = () => {
     queryKey: ["renstra-tabel-sasaran", id],
     queryFn: async () => {
       const res = await api.get(`/renstra-tabel-sasaran/${id}`);
-      return res.data;
+      return res.data?.data ?? res.data;
     },
     enabled: !!id,
   });
 
-  if (loadingRenstra || loadingDetail)
+  if (loadingRenstra || loadingDetail) {
     return <SpinnerSasaranFullscreen tip="Memuat data untuk edit..." />;
+  }
 
   return (
     <RenstraTabelSasaranForm

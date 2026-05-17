@@ -1,30 +1,86 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Card, Button, Alert, InputNumber } from "antd";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { Card, Button, Alert, Input } from "antd";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { FormProvider, Controller } from "react-hook-form";
+import { FormProvider, useWatch } from "react-hook-form";
+import Decimal from "decimal.js";
 
 import InputField from "@/shared/components/form/InputField";
 import SelectWithLabelValue from "@/shared/components/form/SelectWithLabelValue";
+import CurrencyInputField from "@/shared/components/form/CurrencyInputField";
 import { useRenstraFormTemplate } from "@/hooks/templatesUseRenstra/useRenstraFormTemplate";
-import { createAsyncSchema } from "@/shared/components/utils/renstraTabelKegiatanSchema";
+import * as Yup from "yup";
 import generatePayloadRenstraTabelKegiatan from "@/shared/components/utils/generatePayloadRenstraTabelKegiatan";
 import api from "@/services/api";
-import Decimal from "decimal.js";
+
+const YEARS = [1, 2, 3, 4, 5];
+const ALL_YEARS = [1, 2, 3, 4, 5, 6];
+const ENDPOINT = "/renstra-tabel-kegiatan";
+const REDIRECT = "/renstra/tabel/kegiatan";
+
+const getKegiatanRefId = (item) =>
+  item?.rpjmd_kegiatan_id ??
+  item?.kegiatan_id ??
+  item?.id ??
+  null;
+
+const sanitizeKegiatanPayload = (payload = {}) => {
+  const cleaned = { ...payload };
+
+  // bukan bagian request body
+  delete cleaned.id;
+  delete cleaned.tabel_program_id;
+
+  // metadata workflow/backend
+  delete cleaned.versi;
+  delete cleaned.status_revisi;
+  delete cleaned.last_revised_at;
+  delete cleaned.last_revised_by;
+  delete cleaned.createdAt;
+  delete cleaned.updatedAt;
+  delete cleaned.created_at;
+  delete cleaned.updated_at;
+
+  // nested include dari GET detail/list
+  delete cleaned.program;
+  delete cleaned.indikator_detail;
+  delete cleaned.kegiatan;
+  delete cleaned.subkegiatans;
+  delete cleaned.renstra;
+  delete cleaned.histories;
+  delete cleaned.children;
+
+  // readonly / hasil hitung backend
+  delete cleaned.pagu_rpjmd_acuan;
+  delete cleaned.pagu_akhir_renstra;
+  delete cleaned.target_akhir_renstra;
+
+  // tahun ke-6 selalu dipaksa backend
+  delete cleaned.target_tahun_6;
+  delete cleaned.pagu_tahun_6;
+
+  return cleaned;
+};
+
+const buildKegiatanPayload = (data) =>
+  sanitizeKegiatanPayload(generatePayloadRenstraTabelKegiatan(data));
 
 const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
   const navigate = useNavigate();
-  const [availablePagu, setAvailablePagu] = useState({});
-  const [inputPagu, setInputPagu] = useState(() => {
-    const init = {};
-    for (let i = 1; i <= 6; i++) {
-      init[i] = initialData?.[`pagu_tahun_${i}`] || 0;
-    }
-    return init;
-  });
+  const [searchParams] = useSearchParams();
+  const renstraId = renstraAktif?.id;
+
+  const isApproved = initialData?.status_revisi === "approved";
+  const isRevisiMode = isApproved && searchParams.get("mode") === "revisi";
+  const isAuditMode = isApproved && !isRevisiMode;
+  const [paguInfoMessage, setPaguInfoMessage] = useState("");
   const [serverWarnings, setServerWarnings] = useState({});
   const [blocked, setBlocked] = useState(false);
-  const [schema, setSchema] = useState(null);
+  const [existingDataInfo, setExistingDataInfo] = useState(null);
+  const [existingDataId, setExistingDataId] = useState(null);
+  const [alasanRevisi, setAlasanRevisi] = useState("");
+  const [submitRevisiLoading, setSubmitRevisiLoading] = useState(false);
+  const [serverMessage, setServerMessage] = useState("");
 
   const defaultValues = useMemo(() => {
     const values = {
@@ -35,6 +91,11 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
       program_id: initialData?.program_id ?? null,
       kegiatan_id: initialData?.kegiatan_id ?? null,
       indikator_id: initialData?.indikator_id ?? null,
+      indikator:
+        initialData?.indikator_detail?.nama_indikator ||
+        initialData?.indikator?.nama_indikator ||
+        initialData?.indikator ||
+        "",
       baseline: initialData?.baseline ?? "",
       satuan_target: initialData?.satuan_target ?? "",
       lokasi: initialData?.lokasi ?? "",
@@ -42,18 +103,45 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
       kode_kegiatan: initialData?.kode_kegiatan ?? "",
       nama_kegiatan: initialData?.nama_kegiatan ?? "",
       target_akhir_renstra: initialData?.target_akhir_renstra ?? "",
-      pagu_akhir_renstra: initialData?.pagu_akhir_renstra ?? "",
-    };
-    for (let i = 1; i <= 6; i++) {
-      values[`target_tahun_${i}`] = initialData?.[`target_tahun_${i}`] ?? "";
-      values[`pagu_tahun_${i}`] = initialData?.[`pagu_tahun_${i}`] ?? 0;
-    }
-    return values;
-  }, [initialData]);
+      pagu_rpjmd_acuan: Number(initialData?.pagu_rpjmd_acuan || 0),
+      pagu_akhir_renstra: Number(initialData?.pagu_akhir_renstra || 0),
+      alasan_revisi: "",
+      };
 
-  useEffect(() => {
-    setSchema(createAsyncSchema(initialData?.id));
-  }, [initialData?.id]);
+      ALL_YEARS.forEach((i) => {
+        values[`target_tahun_${i}`] =
+          i === 6 ? 0 : initialData?.[`target_tahun_${i}`] ?? "";
+        values[`pagu_tahun_${i}`] =
+          i === 6 ? 0 : Number(initialData?.[`pagu_tahun_${i}`] || 0);
+      });
+      return values;
+    }, [initialData]);
+
+    const schema = () =>
+    Yup.object({
+      tabel_program_id: Yup.mixed().nullable(),
+      program_id: Yup.number()
+        .typeError("Program wajib dipilih")
+        .required("Program wajib dipilih"),
+      kegiatan_id: Yup.number()
+        .typeError("Kegiatan wajib dipilih")
+        .required("Kegiatan wajib dipilih"),
+      indikator_id: Yup.number()
+        .typeError("Indikator wajib dipilih")
+        .required("Indikator wajib dipilih"),
+      baseline: Yup.number().typeError("Baseline harus angka").nullable(),
+      satuan_target: Yup.string().required("Satuan target wajib diisi"),
+      lokasi: Yup.string().required("Lokasi wajib diisi"),
+      target_tahun_1: Yup.number().typeError("Harus angka").required(),
+      target_tahun_2: Yup.number().typeError("Harus angka").required(),
+      target_tahun_3: Yup.number().typeError("Harus angka").required(),
+      target_tahun_4: Yup.number().typeError("Harus angka").required(),
+      target_tahun_5: Yup.number().typeError("Harus angka").required(),
+      target_tahun_6: Yup.number().typeError("Harus angka").required(),
+      alasan_revisi: initialData
+      ? Yup.string().required("Alasan revisi wajib diisi")
+      : Yup.string().nullable(),
+    });
 
   const { form, onSubmit, isSubmitting } = useRenstraFormTemplate({
     initialData,
@@ -63,7 +151,7 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
     defaultValues,
     queryKeys: ["renstra-tabel-kegiatan"],
     redirectPath: "/renstra/tabel/kegiatan",
-    generatePayload: generatePayloadRenstraTabelKegiatan,
+    generatePayload: buildKegiatanPayload,
     onError: (err) => {
       setServerWarnings(err?.response?.data?.warnings || {});
       setBlocked(err?.response?.data?.blocked || false);
@@ -76,19 +164,132 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
 
   const {
     control,
-    watch,
     setValue,
+    getValues,
     formState: { errors },
   } = form;
 
-  const selectedTabelProgramId = watch("tabel_program_id");
-  const selectedRenstraProgramId = watch("program_id");
-  const selectedKegiatanId = watch("kegiatan_id");
-  const selectedIndikatorId = watch("indikator_id");
+
+  const formTitle = initialData
+  ? isRevisiMode
+    ? "Revisi Renstra Tabel Kegiatan"
+    : isAuditMode
+    ? "Detail Renstra Tabel Kegiatan"
+    : "Edit Renstra Tabel Kegiatan"
+  : "Tambah Renstra Tabel Kegiatan";
+
+  const selectedTabelProgramId = useWatch({
+    control,
+    name: "tabel_program_id",
+  });
+
+  const selectedRenstraProgramId = useWatch({
+    control,
+    name: "program_id",
+  });
+
+  const selectedKegiatanId = useWatch({
+    control,
+    name: "kegiatan_id",
+  });
+
+  const selectedIndikatorId = useWatch({
+    control,
+    name: "indikator_id",
+  });
+
+  const setValueIfChanged = useCallback(
+  (name, nextValue, options = {}) => {
+    const currentValue = getValues(name);
+
+    if (String(currentValue ?? "") !== String(nextValue ?? "")) {
+      setValue(name, nextValue, {
+        shouldDirty: false,
+        shouldValidate: false,
+        ...options,
+      });
+    }
+  },
+  [getValues, setValue]
+);
+
+  useEffect(() => {
+    if (!initialData) return;
+
+    setValueIfChanged(
+      "indikator",
+      initialData?.indikator_detail?.nama_indikator ||
+        initialData?.indikator?.nama_indikator ||
+        initialData?.indikator ||
+        ""
+    );
+  }, [initialData?.id, initialData?.indikator_id, setValueIfChanged]);
+
+  useEffect(() => {
+  if (
+    initialData ||
+    !selectedRenstraProgramId ||
+    !selectedKegiatanId ||
+    !selectedIndikatorId ||
+    !renstraId
+  ) {
+    setExistingDataInfo(null);
+    setExistingDataId(null);
+    setPaguInfoMessage("");
+    return;
+  }
+
+  let cancelled = false;
+
+  (async () => {
+    try {
+      const res = await api.get("/renstra-tabel-kegiatan", {
+        params: {
+          program_id: selectedRenstraProgramId,
+          kegiatan_id: selectedKegiatanId,
+          indikator_id: selectedIndikatorId,
+          renstra_id: renstraId,
+        },
+      });
+
+      const rows = Array.isArray(res.data)
+        ? res.data
+        : res.data?.data ?? [];
+
+      if (cancelled) return;
+
+      if (rows.length > 0) {
+        const latest = rows[0];
+
+        setExistingDataInfo(latest);
+        setExistingDataId(latest.id);
+        setPaguInfoMessage("Data sudah ada. Gunakan Edit jika ingin mengubah.");
+      } else {
+        setExistingDataInfo(null);
+        setExistingDataId(null);
+        setPaguInfoMessage("");
+      }
+    } catch {
+      if (!cancelled) {
+        setExistingDataInfo(null);
+        setExistingDataId(null);
+      }
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+  }, [
+    initialData?.id,
+    selectedRenstraProgramId,
+    selectedKegiatanId,
+    selectedIndikatorId,
+    renstraId,
+  ]);
+  
   const prevTabelProgramId = useRef(undefined);
   const prevProgramIdDirect = useRef(undefined);
-
-  const renstraId = renstraAktif?.id;
 
   // Fetch options — filter by renstra_id agar hanya data OPD ini yang muncul
   const { data: programData } = useQuery({
@@ -107,9 +308,9 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
 
   useEffect(() => {
     if (!hasTabelProgramList) {
-      setValue("tabel_program_id", null);
+      setValueIfChanged("tabel_program_id", null);
     }
-  }, [hasTabelProgramList, setValue]);
+  }, [hasTabelProgramList]);
 
   /** Fallback: master Program Renstra (scope OPD sama) bila belum ada baris Tabel Program */
   const { data: renstraProgramData } = useQuery({
@@ -128,14 +329,64 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
         .then((res) => (Array.isArray(res.data) ? res.data : (res.data?.data ?? []))),
     enabled: !!renstraId,
   });
-  const { data: indikatorData } = useQuery({
-    queryKey: ["indikator-options", renstraId],
-    queryFn: () =>
-      api
-        .get("/indikator-renstra", { params: { renstra_id: renstraId } })
-        .then((res) => (Array.isArray(res.data) ? res.data : (res.data?.data ?? []))),
-    enabled: !!renstraId,
-  });
+  const selectedKegiatan = useMemo(() => {
+  return (kegiatanData || []).find(
+    (k) => Number(k.id) === Number(selectedKegiatanId)
+  );
+}, [kegiatanData, selectedKegiatanId]);
+
+const selectedKegiatanRefId = selectedKegiatanId || null;
+
+const { data: indikatorData = [], isLoading: loadingIndikator } = useQuery({
+  queryKey: ["indikator-renstra", renstraId, "kegiatan", selectedKegiatanRefId],
+  queryFn: async () => {
+    const res = await api.get("/indikator-renstra", {
+      params: {
+        renstra_id: renstraId,
+        stage: "kegiatan",
+        ref_id: selectedKegiatanRefId,
+      },
+    });
+
+    const raw = Array.isArray(res.data)
+      ? res.data
+      : res.data?.data ?? [];
+
+    const kandidatRef = [
+      selectedKegiatan?.ref_id,
+      selectedKegiatan?.rpjmd_kegiatan_id,
+      selectedKegiatan?.ref_kegiatan_id,
+      selectedKegiatan?.kegiatan_id,
+      selectedKegiatan?.id,
+    ]
+      .filter((x) => x !== null && x !== undefined && x !== "")
+      .map(String);
+
+    return raw.filter((item) => {
+      return kandidatRef.includes(String(item.ref_id));
+    });
+  },
+  enabled: !!renstraId && !!selectedKegiatanId,
+});
+  
+const indikatorOptions = useMemo(() => {
+  const rows = Array.isArray(indikatorData) ? [...indikatorData] : [];
+
+  if (
+  initialData?.indikator_id &&
+  !rows.some((i) => Number(i.id) === Number(initialData.indikator_id))
+  ) {
+    rows.unshift({
+      id: initialData.indikator_id,
+      nama_indikator:
+        initialData?.indikator_detail?.nama_indikator ||
+        initialData?.indikator?.nama_indikator ||
+        `Indikator ${initialData.indikator_id}`,
+    });
+  }
+
+  return rows;
+}, [indikatorData?.length, initialData?.indikator_id]);
 
   // Edit: sinkronkan dropdown Program (baris tabel) dari FK program_id yang tersimpan
   useEffect(() => {
@@ -145,47 +396,17 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
     const match = programData.find(
       (p) => Number(p.program_id) === Number(initialData.program_id)
     );
-    if (match) setValue("tabel_program_id", Number(match.id));
-  }, [initialData?.id, initialData?.program_id, programData, setValue]);
-
-  // Realtime fetch available pagu (API mengharapkan PK renstra_tabel_program)
-  useEffect(() => {
-    if (selectedTabelProgramId == null || selectedTabelProgramId === "") {
-      return setAvailablePagu({});
+    if (match) {
+      setValueIfChanged("tabel_program_id", Number(match.id));
     }
+  }, [initialData?.id, initialData?.program_id, programData?.length]);
 
-    const fetchAvailablePagu = async () => {
-      try {
-        const params = {
-          program_id: Number(selectedTabelProgramId),
-          exclude_id: initialData?.id || null,
-          input_pagu: JSON.stringify(inputPagu),
-        };
-
-        const res = await api.get("/renstra-tabel-kegiatan/available-pagu", {
-          params,
-        });
-
-        setAvailablePagu(res.data?.available || {});
-      } catch (err) {
-        console.error("Gagal fetch available pagu:", err);
-        setAvailablePagu({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 });
-      }
-    };
-
-    fetchAvailablePagu();
-  }, [selectedTabelProgramId, inputPagu, initialData?.id]);
-
-  const handlePaguChange = (slotIndex, value) => {
-    setInputPagu((prev) => ({ ...prev, [slotIndex]: Number(value || 0) }));
-    setValue(`pagu_tahun_${slotIndex}`, Number(value || 0));
-  };
 
   // Sinkron FK program + isi otomatis dari baris renstra_tabel_program (data RPJMD yang sudah dijadwalkan di tabel)
   useEffect(() => {
     if (selectedTabelProgramId == null || selectedTabelProgramId === "") {
       if (hasTabelProgramList) {
-        setValue("program_id", null);
+        setValueIfChanged("program_id", null);
       }
       return;
     }
@@ -195,7 +416,7 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
     );
     if (!row) return;
 
-    setValue("program_id", Number(row.program_id));
+    setValueIfChanged("program_id", Number(row.program_id));
 
     if (initialData?.id) {
       prevTabelProgramId.current = selectedTabelProgramId;
@@ -206,39 +427,30 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
       prevTabelProgramId.current !== undefined &&
       prevTabelProgramId.current !== selectedTabelProgramId
     ) {
-      setValue("kegiatan_id", null);
-      setValue("indikator_id", null);
+      setValueIfChanged("kegiatan_id", null);
+      setValueIfChanged("indikator_id", null);
     }
     prevTabelProgramId.current = selectedTabelProgramId;
 
     if (row.lokasi != null && String(row.lokasi).trim() !== "") {
-      setValue("lokasi", row.lokasi);
+      setValueIfChanged("lokasi", row.lokasi);
     }
     if (row.baseline != null && row.baseline !== "") {
-      setValue("baseline", row.baseline);
+      setValueIfChanged("baseline", row.baseline);
     }
-    if (row.satuan_target) setValue("satuan_target", row.satuan_target);
+    if (row.satuan_target) setValueIfChanged("satuan_target", row.satuan_target);
 
     for (let i = 1; i <= 6; i++) {
       const t = row[`target_tahun_${i}`];
-      const p = row[`pagu_tahun_${i}`];
-      if (t != null && t !== "") setValue(`target_tahun_${i}`, t);
-      if (p != null && p !== "") setValue(`pagu_tahun_${i}`, Number(p));
+      if (t != null && t !== "") setValueIfChanged(`target_tahun_${i}`, t);
     }
-    setInputPagu((prev) => {
-      const next = { ...prev };
-      for (let i = 1; i <= 6; i++) {
-        next[i] = Number(row[`pagu_tahun_${i}`] || 0);
-      }
-      return next;
-    });
-  }, [
-    selectedTabelProgramId,
-    programData,
-    setValue,
-    initialData?.id,
-    hasTabelProgramList,
-  ]);
+    
+    }, [
+      selectedTabelProgramId,
+      programData?.length,
+      initialData?.id,
+      hasTabelProgramList,
+    ]);
 
   // Mode tanpa Tabel Program: ganti program → reset kegiatan & indikator (tambah)
   useEffect(() => {
@@ -257,16 +469,15 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
       prevProgramIdDirect.current !== undefined &&
       prevProgramIdDirect.current !== selectedRenstraProgramId
     ) {
-      setValue("kegiatan_id", null);
-      setValue("indikator_id", null);
+      setValueIfChanged("kegiatan_id", null);
+      setValueIfChanged("indikator_id", null);
     }
     prevProgramIdDirect.current = selectedRenstraProgramId;
   }, [
-    hasTabelProgramList,
-    selectedRenstraProgramId,
-    initialData?.id,
-    setValue,
-  ]);
+      hasTabelProgramList,
+      selectedRenstraProgramId,
+      initialData?.id,
+    ]);
 
   const numberFormatter = (value) =>
     `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
@@ -278,10 +489,10 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
       (k) => Number(k.id) === Number(selectedKegiatanId)
     );
     if (!sel) return;
-    setValue("bidang_penanggung_jawab", sel.bidang_opd || "");
-    setValue("kode_kegiatan", sel.kode_kegiatan || "");
-    setValue("nama_kegiatan", sel.nama_kegiatan || "");
-  }, [selectedKegiatanId, setValue, kegiatanData]);
+    setValueIfChanged("bidang_penanggung_jawab", sel.bidang_opd || "");
+    setValueIfChanged("kode_kegiatan", sel.kode_kegiatan || "");
+    setValueIfChanged("nama_kegiatan", sel.nama_kegiatan || "");
+  }, [selectedKegiatanId, kegiatanData?.length]);
 
   // Auto-set baseline & target dari indikator Renstra (menimpa nilai dari Program bila ada)
   useEffect(() => {
@@ -289,64 +500,189 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
       (i) => Number(i.id) === Number(selectedIndikatorId)
     );
     if (!sel) return;
-    if (sel.baseline !== undefined && sel.baseline !== null)
-      setValue("baseline", sel.baseline);
-    if (sel.satuan) setValue("satuan_target", sel.satuan);
-    [1, 2, 3, 4, 5, 6].forEach((i) => {
+    setValueIfChanged("indikator", sel.nama_indikator || sel.kode_indikator || "");
+    if (sel.satuan) setValueIfChanged("satuan_target", sel.satuan);
+    YEARS.forEach((i) => {
       const val = sel[`target_tahun_${i}`];
-      if (val !== undefined && val !== null) setValue(`target_tahun_${i}`, val);
+      if (val !== undefined && val !== null)
+        setValueIfChanged(`target_tahun_${i}`, val);
     });
-  }, [selectedIndikatorId, setValue, indikatorData]);
+
+    setValueIfChanged("target_tahun_6", 0, {
+      shouldDirty: false,
+      shouldValidate: false,
+    });
+
+    if (!initialData?.id) {
+      const paguAcuan = Number(
+        sel.pagu_cached ||
+          sel.total_pagu_rpjmd ||
+          sel.pagu_rpjmd_acuan ||
+          sel.pagu_akhir_renstra ||
+          0
+      );
+
+      const paguDasar = Math.floor(paguAcuan / 5);
+      const sisaPagu = paguAcuan - paguDasar * 5;
+
+      setValueIfChanged("pagu_rpjmd_acuan", paguAcuan);
+
+      for (let i = 1; i <= 4; i++) {
+        setValueIfChanged(`pagu_tahun_${i}`, paguDasar);
+      }
+
+      setValueIfChanged("pagu_tahun_5", paguDasar + sisaPagu);
+      setValueIfChanged("pagu_tahun_6", 0);
+      setValueIfChanged("pagu_akhir_renstra", paguAcuan);
+
+      setPaguInfoMessage(
+        paguAcuan > 0
+          ? "Pagu RPJMD readonly. Pagu Renstra tahun 1–5 dapat direvisi."
+          : "Pagu RPJMD belum tersedia pada indikator terpilih."
+      );
+    }
+  }, [selectedIndikatorId, indikatorData?.length, initialData?.id]);
+
 
   // Hitung target & pagu akhir
-  useEffect(() => {
-    const targetSum = [1, 2, 3, 4, 5, 6].reduce(
-      (sum, i) => sum.plus(new Decimal(watch(`target_tahun_${i}`) || 0)),
-      new Decimal(0)
-    );
-    const paguSum = [1, 2, 3, 4, 5, 6].reduce(
-      (sum, i) => sum.plus(new Decimal(watch(`pagu_tahun_${i}`) || 0)),
-      new Decimal(0)
-    );
-    setValue("target_akhir_renstra", targetSum.div(6).toNumber());
-    setValue("pagu_akhir_renstra", paguSum.toNumber());
-  }, [
-    watch(`target_tahun_1`),
-    watch(`target_tahun_2`),
-    watch(`target_tahun_3`),
-    watch(`target_tahun_4`),
-    watch(`target_tahun_5`),
-    watch(`target_tahun_6`),
-    watch(`pagu_tahun_1`),
-    watch(`pagu_tahun_2`),
-    watch(`pagu_tahun_3`),
-    watch(`pagu_tahun_4`),
-    watch(`pagu_tahun_5`),
-    watch(`pagu_tahun_6`),
-    setValue,
-  ]);
+  const targetValues = useWatch({
+  control,
+  name: YEARS.map((i) => `target_tahun_${i}`),
+});
 
-  return (
-    <Card title={initialData ? "Edit Kegiatan" : "Tambah Kegiatan"}>
-      <Button
-        onClick={() => navigate("/dashboard-renstra")}
-        style={{ marginBottom: 12 }}
-      >
-        🔙 Kembali
-      </Button>
+const targetAkhirRenstra = useMemo(() => {
+  const nums = (targetValues || []).map((v) => new Decimal(v || 0));
+  const total = nums.reduce((sum, value) => sum.plus(value), new Decimal(0));
+
+  if (nums.length === 0) return 0;
+
+  return total
+    .div(nums.length)
+    .toDecimalPlaces(2, Decimal.ROUND_UP)
+    .toNumber();
+}, [targetValues]);
+
+useEffect(() => {
+  setValueIfChanged("target_akhir_renstra", targetAkhirRenstra, {
+    shouldDirty: false,
+    shouldValidate: false,
+  });
+}, [targetAkhirRenstra]);
+  
+  const paguValues = useWatch({
+  control,
+  name: YEARS.map((i) => `pagu_tahun_${i}`),
+});
+
+const paguAkhirRenstra = useMemo(() => {
+  return (paguValues || []).reduce(
+    (total, value) => total + Number(value || 0),
+    0
+  );
+}, [paguValues]);
+
+useEffect(() => {
+  setValueIfChanged("pagu_akhir_renstra", paguAkhirRenstra, {
+    shouldDirty: false,
+    shouldValidate: false,
+  });
+
+  setValueIfChanged("target_tahun_6", 0, {
+    shouldDirty: false,
+    shouldValidate: false,
+  });
+
+  setValueIfChanged("pagu_tahun_6", 0, {
+    shouldDirty: false,
+    shouldValidate: false,
+  });
+}, [paguAkhirRenstra]);
+  
+const handleSubmitRevisi = async (data) => {
+  if (isAuditMode) {
+    setServerMessage(
+      "Data approved dalam mode audit. Klik Buat Revisi untuk mengubah."
+    );
+    return;
+  }
+
+  if (!initialData?.id) {
+    return onSubmit(data);
+  }
+
+  if (!alasanRevisi.trim()) {
+    setServerMessage("Alasan revisi wajib diisi.");
+    return;
+  }
+
+  try {
+    setSubmitRevisiLoading(true);
+    setServerMessage("");
+
+    const payload = buildKegiatanPayload({
+      ...data,
+      renstra_id: renstraId,
+      alasan_revisi: alasanRevisi,
+    });
+
+    if (initialData?.status_revisi === "approved") {
+      await api.post(`${ENDPOINT}/${initialData.id}/revisi`, payload);
+    } else {
+      await api.put(`${ENDPOINT}/${initialData.id}`, payload);
+    }
+
+    setServerMessage("✅ Revisi berhasil disimpan sebagai draft.");
+  } catch (err) {
+    setServerMessage(
+      err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        "Gagal menyimpan revisi."
+    );
+  } finally {
+    setSubmitRevisiLoading(false);
+  }
+};
+
+  const shouldShowSpinner = !renstraAktif;
+
+return (
+  <Card title={formTitle}>
+    {shouldShowSpinner ? (
+      <div>Memuat data Renstra...</div>
+    ) : (
+      <>
+      <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
+        <Button onClick={() => navigate("/dashboard-renstra")}>
+          🔙 Kembali
+        </Button>
+      </div>
 
       <FormProvider {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)}>
+        <form onSubmit={form.handleSubmit(initialData ? handleSubmitRevisi : onSubmit)}>
+          {isAuditMode && (
+            <Alert
+              type="success"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="Data sudah approved"
+              description="Mode audit aktif. Data tidak dapat diubah langsung. Klik Buat Revisi untuk membuat perubahan baru."
+            />
+          )}
           {hasTabelProgramList ? (
             <SelectWithLabelValue
               name="tabel_program_id"
               label="Program"
               control={control}
               errors={errors}
+              disabled={isAuditMode}
               required
               valueAsNumber
               options={(programData || []).map((p) => ({
-                label: `${p.kode_program} - ${p.nama_program}`,
+                label: `${
+                  p.kode_program || p.program?.kode_program || "-"
+                } - ${
+                  p.nama_program || p.program?.nama_program || "-"
+                }`,
                 value: Number(p.id),
               }))}
             />
@@ -365,6 +701,7 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
                 errors={errors}
                 required
                 valueAsNumber
+                disabled={isAuditMode}
                 options={(renstraProgramData || []).map((p) => ({
                   label: `${p.kode_program} - ${p.nama_program}`,
                   value: Number(p.id),
@@ -380,6 +717,7 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
             errors={errors}
             required
             valueAsNumber
+            disabled={isAuditMode}
             options={(kegiatanData || [])
               .filter(
                 (k) =>
@@ -392,6 +730,16 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
               }))}
           />
 
+          {selectedKegiatanId && !loadingIndikator && indikatorData.length === 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="Indikator belum tersedia"
+              description="Tidak ada indikator Renstra dengan stage kegiatan yang cocok dengan ref_id kegiatan terpilih."
+            />
+          )}
+
           <SelectWithLabelValue
             name="indikator_id"
             label="Indikator"
@@ -399,107 +747,117 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
             errors={errors}
             required
             valueAsNumber
-            options={(indikatorData || []).map((i) => ({
+            disabled={isAuditMode || !selectedKegiatanRefId || loadingIndikator}
+            options={(indikatorOptions || []).map((i) => ({
               label: i.nama_indikator,
               value: Number(i.id),
             }))}
           />
 
-          <Controller
-            name="baseline"
+          <InputField
+            name="indikator"
+            label="Nama Indikator"
             control={control}
-            render={({ field }) => (
-              <InputNumber
-                {...field}
-                style={{ width: "100%" }}
-                placeholder="Baseline"
-                formatter={numberFormatter}
-                parser={numberParser}
-              />
-            )}
+            errors={errors}
+            disabled={isAuditMode}
+          />
+
+          <InputField
+            name="baseline"
+            label="Baseline"
+            control={control}
+            errors={errors}
+            disabled={isAuditMode}
           />
           <InputField
             name="satuan_target"
             label="Satuan Target"
             control={control}
             errors={errors}
+            disabled={isAuditMode}
           />
           <InputField
             name="lokasi"
             label="Lokasi"
             control={control}
             errors={errors}
+            disabled={isAuditMode}
           />
           <InputField
             name="kode_kegiatan"
             label="Kode Kegiatan"
             control={control}
             errors={errors}
-            disabled
+            disabled={isAuditMode}
           />
           <InputField
             name="nama_kegiatan"
             label="Nama Kegiatan"
             control={control}
             errors={errors}
-            disabled
+            disabled={isAuditMode}
           />
           <InputField
             name="bidang_penanggung_jawab"
             label="Bidang Penanggung Jawab"
             control={control}
             errors={errors}
+            disabled={isAuditMode}
+          />
+
+          <h4 style={{ marginTop: 24 }}>
+            Target periode (th. ke-1 s/d ke-5)
+          </h4>
+
+          {YEARS.map((i) => (
+          <InputField
+            key={`target_tahun_${i}`}
+            name={`target_tahun_${i}`}
+            label={`Target (th. ke-${i})`}
+            control={control}
+            errors={errors}
+            disabled={isAuditMode}
+          />
+        ))}
+
+          <h4 style={{ marginTop: 24 }}>Pagu RPJMD Acuan</h4>
+
+          <CurrencyInputField
+            name="pagu_rpjmd_acuan"
+            label="Pagu RPJMD Acuan"
+            control={control}
+            errors={errors}
             disabled
           />
 
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Card
-              key={i}
-              size="small"
-              title={`📅 Th. ke-${i}`}
-              style={{ marginBottom: 12 }}
-            >
-              <Controller
-                name={`target_tahun_${i}`}
-                control={control}
-                render={({ field }) => (
-                  <InputNumber
-                    {...field}
-                    style={{ width: "100%" }}
-                    placeholder={`Target (th. ke-${i})`}
-                    formatter={numberFormatter}
-                    parser={numberParser}
-                  />
-                )}
-              />
+          <h4 style={{ marginTop: 24 }}>
+            Pagu Renstra periode (th. ke-1 s/d ke-5)
+          </h4>
 
-              <Controller
-                name={`pagu_tahun_${i}`}
-                control={control}
-                render={({ field }) => (
-                  <InputNumber
-                    {...field}
-                    style={{ width: "100%" }}
-                    placeholder={`Pagu (th. ke-${i})`}
-                    formatter={numberFormatter}
-                    parser={numberParser}
-                    onChange={(value) => handlePaguChange(i, value)}
-                  />
-                )}
-              />
+          {paguInfoMessage && (
+            <Alert
+              type="success"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="Informasi Pagu"
+              description={paguInfoMessage}
+            />
+          )}
 
-              <div
-                style={{
-                  fontSize: 12,
-                  marginTop: 4,
-                  color: availablePagu[i] < 0 ? "red" : "green",
-                }}
-              >
-                Sisa pagu tersedia: {availablePagu[i] ?? 0}
-                {availablePagu[i] < 0 && " ⚠️ Pagu kurang!"}
-              </div>
-            </Card>
+          {YEARS.map((i) => (
+            <CurrencyInputField
+              key={`pagu_tahun_${i}`}
+              name={`pagu_tahun_${i}`}
+              label={`Pagu (th. ke-${i})`}
+              control={control}
+              errors={errors}
+              disabled={isAuditMode || !initialData}
+            />
           ))}
+
+          <h4 style={{ marginTop: 24 }}>
+            Kondisi Akhir Kinerja Periode Renstra
+          </h4>
 
           {blocked && (
             <Alert
@@ -548,12 +906,68 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
             disabled
           />
 
-          <Button type="primary" htmlType="submit" loading={isSubmitting}>
-            💾 Simpan
-          </Button>
+          {initialData && !isAuditMode && (
+          <div style={{ marginTop: 24 }}>
+            <h4>Alasan Revisi</h4>
+            <Input.TextArea
+              rows={4}
+              value={alasanRevisi}
+              onChange={(e) => {
+                setAlasanRevisi(e.target.value);
+                setValueIfChanged("alasan_revisi", e.target.value);
+              }}
+              placeholder="Tuliskan alasan revisi target/pagu kegiatan Renstra..."
+            />
+          </div>
+        )}
+
+        {serverMessage && (
+          <Alert
+            style={{ marginTop: 16 }}
+            type={serverMessage.startsWith("✅") ? "success" : "warning"}
+            showIcon
+            message={serverMessage}
+          />
+        )}
+
+          <div style={{ marginTop: 24 }}>
+            {!existingDataInfo || initialData ? (
+              isAuditMode ? (
+                <Button
+                  type="primary"
+                  onClick={() =>
+                    navigate(`/renstra/tabel/kegiatan/edit/${initialData.id}?mode=revisi`)
+                  }
+                >
+                  Buat Revisi
+                </Button>
+              ) : (
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  loading={initialData ? submitRevisiLoading : isSubmitting}
+                >
+                  {initialData
+                    ? isRevisiMode
+                      ? "Buat Revisi"
+                      : "Simpan Draft"
+                    : "Simpan"}
+                </Button>
+              )
+            ) : (
+              <Alert
+                type="warning"
+                showIcon
+                message="Data sudah ada"
+                description="Gunakan Edit jika ingin mengubah."
+              />
+            )}
+          </div>
         </form>
       </FormProvider>
-    </Card>
+      </>
+     )}
+  </Card>
   );
 };
 

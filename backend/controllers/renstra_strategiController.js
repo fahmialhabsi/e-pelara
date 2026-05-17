@@ -1,4 +1,5 @@
 // controllers/renstra_strategiController.js
+const { Op } = require("sequelize");
 const { RenstraStrategi, RenstraOPD, Strategi, RenstraSasaran } = require("../models");
 
 function toInt(v) {
@@ -91,38 +92,93 @@ exports.create = async (req, res) => {
 
 exports.findAll = async (req, res) => {
   try {
-    const { renstra_id, tahun_mulai } = req.query;
+    const { renstra_id } = req.query;
 
     const whereClause = {};
-    if (renstra_id) whereClause.renstra_id = renstra_id;
+    if (renstra_id) whereClause.renstra_id = Number(renstra_id);
 
     const data = await RenstraStrategi.findAll({
       where: whereClause,
-      include: [
-        {
-          model: RenstraOPD,
-          as: "renstra",
-          attributes: ["id", "bidang_opd", "sub_bidang_opd"],
-          ...(tahun_mulai && {
-            where: { tahun_mulai: parseInt(tahun_mulai, 10) },
-          }),
-        },
+      attributes: [
+        "id",
+        "sasaran_id",
+        "rpjmd_strategi_id",
+        "kode_strategi",
+        "deskripsi",
+        "no_rpjmd",
+        "isi_strategi_rpjmd",
+        "renstra_id",
       ],
+      order: [["id", "ASC"]],
+      raw: true,
     });
 
     return res.json({
       success: true,
-      message: "Data strategi renstra berhasil diambil",
+      message: "Daftar strategi renstra berhasil diambil",
       data,
-      meta: {
-        totalItems: data.length,
-      },
     });
   } catch (err) {
     return res.status(500).json({
       success: false,
       message: "Gagal mengambil data strategi renstra",
       error: err.message,
+    });
+  }
+};
+
+exports.getStrategiOptions = async (req, res) => {
+  try {
+    const { renstra_id } = req.query;
+
+    if (!renstra_id) {
+      return res.status(400).json({
+        success: false,
+        message: "renstra_id wajib diisi",
+      });
+    }
+
+    const renstraSasarans = await RenstraSasaran.findAll({
+      where: { renstra_id },
+      attributes: ["id", "rpjmd_sasaran_id"],
+    });
+
+    const sasaranRpjmdIds = renstraSasarans
+      .map((x) => x.rpjmd_sasaran_id)
+      .filter(Boolean);
+
+    if (!sasaranRpjmdIds.length) {
+      return res.json({
+        success: true,
+        data: [],
+      });
+    }
+
+    const strategi = await Strategi.findAll({
+      where: {
+        sasaran_id: {
+          [Op.in]: sasaranRpjmdIds,
+        },
+      },
+      order: [["kode_strategi", "ASC"]],
+    });
+
+    return res.json({
+      success: true,
+      data: strategi.map((s) => ({
+        id: s.id,
+        ref_id: s.id,
+        kode_strategi: s.kode_strategi,
+        deskripsi: s.deskripsi,
+        sasaran_id: s.sasaran_id,
+      })),
+    });
+  } catch (error) {
+    console.error("❌ getStrategiOptions error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Gagal ambil opsi strategi",
+      error: error.message,
     });
   }
 };
@@ -294,25 +350,18 @@ exports.update = async (req, res) => {
       }
     }
 
-    const [updated] = await RenstraStrategi.update(
-      {
-        kode_strategi: merged.kode_strategi,
-        deskripsi: merged.deskripsi,
-        sasaran_id: merged.sasaran_id,
-        rpjmd_strategi_id: merged.rpjmd_strategi_id,
-        renstra_id: merged.renstra_id,
-        no_rpjmd: merged.no_rpjmd,
-        isi_strategi_rpjmd: merged.isi_strategi_rpjmd,
-      },
-      { where: { id } }
-    );
-
-    if (!updated) {
-      return res.status(404).json({
-        success: false,
-        message: "Data tidak ditemukan",
-      });
-    }
+    await RenstraStrategi.update(
+    {
+      kode_strategi: merged.kode_strategi,
+      deskripsi: merged.deskripsi,
+      sasaran_id: merged.sasaran_id,
+      rpjmd_strategi_id: merged.rpjmd_strategi_id,
+      renstra_id: merged.renstra_id,
+      no_rpjmd: merged.no_rpjmd,
+      isi_strategi_rpjmd: merged.isi_strategi_rpjmd,
+    },
+    { where: { id } }
+  );
 
     const updatedData = await RenstraStrategi.findByPk(id, {
       include: [

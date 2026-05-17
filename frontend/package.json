@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "vite --port 3001",
     "build": "vite build",
+    "lint": "eslint .",
+    "format": "node ./node_modules/prettier/bin/prettier.cjs --write .",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -72,6 +74,7 @@
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.21",
     "eslint": "^8.57.0",
+    "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "^7.34.1",
     "path-browserify": "^1.0.1",
     "postcss": "^8.5.4",

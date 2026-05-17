@@ -1,6 +1,7 @@
-﻿// src/routes/renstraRoutes.jsx
+﻿// frontend/src/routes/renstraRoutes.jsx
 import React from "react";
 import TargetRenstraList from "../features/renstra/pages/TargetRenstraList";
+import path from "path-browserify";
 
 const ListRenstraOPD = React.lazy(() =>
   import("../features/renstra/pages/ListRenstraOPD")
@@ -39,27 +40,6 @@ const SasaranRenstraEditPage = React.lazy(() =>
 const SasaranRenstraListPage = React.lazy(() =>
   import("../features/renstra/sasaran/pages/sasaranRenstraListPage")
 );
-
-const StrategiRenstraAddPage = React.lazy(() =>
-  import("../features/renstra/strategi/pages/strategiRenstraAddPage")
-);
-const StrategiRenstraEditPage = React.lazy(() =>
-  import("../features/renstra/strategi/pages/strategiRenstraEditPage")
-);
-const StrategiRenstraListPage = React.lazy(() =>
-  import("../features/renstra/strategi/pages/strategiRenstraListPage")
-);
-
-const KebijakanRenstraAddPage = React.lazy(() =>
-  import("../features/renstra/kebijakan/pages/kebijakanRenstraAddPage")
-);
-const KebijakanRenstraEditPage = React.lazy(() =>
-  import("../features/renstra/kebijakan/pages/kebijakanRenstraEditPage")
-);
-const KebijakanRenstraListPage = React.lazy(() =>
-  import("../features/renstra/kebijakan/pages/kebijakanRenstraListPage")
-);
-
 const ProgramRenstraAddPage = React.lazy(() =>
   import("../features/renstra/program/pages/programRenstraAddPage")
 );
@@ -114,6 +94,9 @@ const TargetRenstra = React.lazy(() =>
 const RenstraTabelTujuanForm = React.lazy(() =>
   import("../features/renstra/tujuan/components/RenstraTabelTujuanForm")
 );
+const RenstraTabelTujuanHistoryPage = React.lazy(() =>
+  import("../features/renstra/tujuan/pages/RenstraTabelTujuanHistoryPage")
+);
 const RenstraTabelTujuanListPage = React.lazy(() =>
   import("../features/renstra/tujuan/pages/RenstraTabelTujuanListPage")
 );
@@ -137,6 +120,9 @@ const RenstraTabelSasaranAddPage = React.lazy(() =>
 const RenstraTabelSasaranEditPage = React.lazy(() =>
   import("../features/renstra/sasaran/pages/RenstraTabelSasaranEditPage")
 );
+const RenstraTabelSasaranHistoryPage = React.lazy(() =>
+  import("../features/renstra/sasaran/pages/RenstraTabelSasaranHistoryPage")
+);
 
 // Program Tabel
 const RenstraTabelProgramForm = React.lazy(() =>
@@ -148,6 +134,9 @@ const RenstraTabelProgramListPage = React.lazy(() =>
 );
 const RenstraTabelProgramAddPage = React.lazy(() =>
   import("../features/renstra/program/pages/RenstraTabelProgramAddPage")
+);
+const RenstraTabelProgramHistoryPage = React.lazy(() =>
+  import("../features/renstra/program/pages/RenstraTabelProgramHistoryPage")
 );
 const RenstraTabelProgramEditPage = React.lazy(() =>
   import("../features/renstra/program/pages/RenstraTabelProgramEditPage")
@@ -169,6 +158,9 @@ const RenstraTabelKegiatanListPage = React.lazy(() =>
 const RenstraTabelKegiatanAddPage = React.lazy(() =>
   import("../features/renstra/kegiatan/pages/RenstraTabelKegiatanAddPage")
 );
+const RenstraTabelKegiatanHistoryPage = React.lazy(() =>
+  import("../features/renstra/kegiatan/pages/RenstraTabelKegiatanHistoryPage")
+);
 const RenstraTabelKegiatanEditPage = React.lazy(() =>
   import("../features/renstra/kegiatan/pages/RenstraTabelKegiatanEditPage")
 );
@@ -187,21 +179,79 @@ const RenstraTabelSubKegiatanListPage = React.lazy(() =>
 const RenstraTabelSubKegiatanAddPage = React.lazy(() =>
   import("../features/renstra/subkegiatan/pages/RenstraTabelSubKegiatanAddPage")
 );
+const RenstraTabelSubKegiatanHistoryPage = React.lazy(() =>
+  import("../features/renstra/subkegiatan/pages/RenstraTabelSubKegiatanHistoryPage")
+);
 const RenstraTabelSubKegiatanEditPage = React.lazy(() =>
   import(
     "../features/renstra/subkegiatan/pages/RenstraTabelSubKegiatanEditPage"
   )
 );
 
-// Tabel Strategi & Kebijakan
-const RenstraTabelStrategiKebijakanListPage = React.lazy(() =>
-  import("../features/renstra/strategiKebijakan/pages/RenstraTabelStrategiKebijakanListPage")
+// // Master Strategi
+// const StrategiRenstraAddPage = React.lazy(() =>
+//   import("../features/renstra/strategi/pages/StrategiRenstraAddPage")
+// );
+// const StrategiRenstraEditPage = React.lazy(() =>
+//   import("../features/renstra/strategi/pages/StrategiRenstraEditPage")
+// );
+
+// // Master Kebijakan
+// const KebijakanRenstraAddPage = React.lazy(() =>
+//   import("../features/renstra/kebijakan/pages/KebijakanRenstraAddPage")
+// );
+// const KebijakanRenstraEditPage = React.lazy(() =>
+//   import("../features/renstra/kebijakan/pages/KebijakanRenstraEditPage")
+// );
+
+// Master Strategi
+const StrategiRenstraListPage = React.lazy(() =>
+  import("../features/renstra/strategi/pages/strategiRenstraListPage")
 );
-const RenstraTabelStrategiKebijakanAddPage = React.lazy(() =>
-  import("../features/renstra/strategiKebijakan/pages/RenstraTabelStrategiKebijakanAddPage")
+const StrategiRenstraAddPage = React.lazy(() =>
+  import("../features/renstra/strategi/pages/strategiRenstraAddPage")
 );
-const RenstraTabelStrategiKebijakanEditPage = React.lazy(() =>
-  import("../features/renstra/strategiKebijakan/pages/RenstraTabelStrategiKebijakanEditPage")
+const StrategiRenstraEditPage = React.lazy(() =>
+  import("../features/renstra/strategi/pages/strategiRenstraEditPage")
+);
+
+// Master Kebijakan
+const KebijakanRenstraListPage = React.lazy(() =>
+  import("../features/renstra/kebijakan/pages/kebijakanRenstraListPage")
+);
+const KebijakanRenstraAddPage = React.lazy(() =>
+  import("../features/renstra/kebijakan/pages/kebijakanRenstraAddPage")
+);
+const KebijakanRenstraEditPage = React.lazy(() =>
+  import("../features/renstra/kebijakan/pages/kebijakanRenstraEditPage")
+);
+
+// ✅ Strategi
+const RenstraTabelStrategiListPage = React.lazy(() =>
+  import("../features/renstra/strategi/pages/RenstraTabelStrategiListPage")
+);
+const RenstraTabelStrategiAddPage = React.lazy(() =>
+  import("../features/renstra/strategi/pages/RenstraTabelStrategiAddPage")
+);
+const RenstraTabelStrategiEditPage = React.lazy(() =>
+  import("../features/renstra/strategi/pages/RenstraTabelStrategiEditPage")
+);
+const RenstraTabelStrategiHistoryPage = React.lazy(() =>
+  import("../features/renstra/strategi/pages/RenstraTabelStrategiHistoryPage")
+);
+
+// ✅ Arah Kebijakan
+const RenstraTabelArahKebijakanListPage = React.lazy(() =>
+  import("../features/renstra/kebijakan/pages/RenstraTabelArahKebijakanListPage")
+);
+const RenstraTabelArahKebijakanAddPage = React.lazy(() =>
+  import("../features/renstra/kebijakan/pages/RenstraTabelArahKebijakanAddPage")
+);
+const RenstraTabelArahKebijakanEditPage = React.lazy(() =>
+  import("../features/renstra/kebijakan/pages/RenstraTabelArahKebijakanEditPage")
+);
+const RenstraTabelArahKebijakanHistoryPage = React.lazy(() =>
+  import("../features/renstra/kebijakan/pages/RenstraTabelArahKebijakanHistoryPage")
 );
 
 // Tabel Prioritas (Nasional / Daerah / Gubernur)
@@ -280,6 +330,10 @@ const renstraRoutes = [
     element: <RenstraTabelTujuanEditPage />,
   },
   {
+    path: "renstra/tabel/tujuan/history/:id",
+    element: <RenstraTabelTujuanHistoryPage />,
+  },
+  {
     path: "renstra/tabel/tujuan/by/:tujuanId", // route baru untuk filter by tujuan
     element: <RenstraTabelTujuanForm />,
   },
@@ -298,15 +352,26 @@ const renstraRoutes = [
     element: <RenstraTabelSasaranEditPage />,
   },
   {
+    path: "renstra/tabel/sasaran/history/:id",
+    element: <RenstraTabelSasaranHistoryPage />,
+  },
+  {
     path: "renstra/tabel/sasaran/by/:tujuanId",
     element: <RenstraTabelSasaranForm />,
   },
 
   // Input Tabel Renstra Program
-  { path: "renstra/tabel/program", element: <RenstraTabelProgramListPage /> },
+  {
+    path: "renstra/tabel/program",
+    element: <RenstraTabelProgramListPage />
+  },
   {
     path: "renstra/tabel/program/add",
     element: <RenstraTabelProgramAddPage />,
+  },
+  {
+    path: "renstra/tabel/program/history/:id",
+    element: <RenstraTabelProgramHistoryPage />,
   },
   {
     path: "renstra/tabel/program/edit/:id",
@@ -318,6 +383,10 @@ const renstraRoutes = [
   {
     path: "renstra/tabel/kegiatan/add",
     element: <RenstraTabelKegiatanAddPage />,
+  },
+  {
+    path: "renstra/tabel/kegiatan/history/:id",
+    element: <RenstraTabelKegiatanHistoryPage />,
   },
   {
     path: "renstra/tabel/kegiatan/edit/:id",
@@ -334,14 +403,33 @@ const renstraRoutes = [
     element: <RenstraTabelSubKegiatanAddPage />,
   },
   {
+    path: "renstra/tabel/subkegiatan/history/:id",
+    element: <RenstraTabelSubKegiatanHistoryPage />,
+  },
+  {
     path: "renstra/tabel/subkegiatan/edit/:id",
     element: <RenstraTabelSubKegiatanEditPage />,
   },
 
-  // Tabel Strategi & Arah Kebijakan
-  { path: "renstra/tabel/strategi-kebijakan",           element: <RenstraTabelStrategiKebijakanListPage /> },
-  { path: "renstra/tabel/strategi-kebijakan/add",       element: <RenstraTabelStrategiKebijakanAddPage /> },
-  { path: "renstra/tabel/strategi-kebijakan/edit/:id",  element: <RenstraTabelStrategiKebijakanEditPage /> },
+  // Tabel Strategi
+  { path: "renstra/tabel/strategi", element: <RenstraTabelStrategiListPage /> },
+
+  { path: "renstra/tabel/strategi/add", element: <RenstraTabelStrategiAddPage /> },
+
+  { path: "renstra/tabel/strategi/edit/:id", element: <RenstraTabelStrategiEditPage /> },
+
+  { path: "renstra/tabel/strategi/history/:id", element: <RenstraTabelStrategiHistoryPage /> },
+
+
+// Tabel Arah Kebijakan
+  { path: "renstra/tabel/arah-kebijakan", element: <RenstraTabelArahKebijakanListPage /> },
+
+  { path: "renstra/tabel/arah-kebijakan/add", element: <RenstraTabelArahKebijakanAddPage /> },
+
+  { path: "renstra/tabel/arah-kebijakan/edit/:id", element: <RenstraTabelArahKebijakanEditPage /> },
+  
+  { path: "renstra/tabel/arah-kebijakan/history/:id", element: <RenstraTabelArahKebijakanHistoryPage /> },
+
 
   // Tabel Prioritas Nasional / Daerah / Gubernur
   { path: "renstra/tabel/prioritas/:jenis",            element: <RenstraTabelPrioritasListPage /> },
@@ -350,6 +438,3 @@ const renstraRoutes = [
 ];
 
 export default renstraRoutes;
-
-
-

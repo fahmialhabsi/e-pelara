@@ -1,9 +1,8 @@
-// src/features/renstra/strategi/pages/strategiRenstraAddPage.jsx (REFACTORED)
 import React from "react";
-import StrategiRenstraForm from "../components/StrategiRenstraForm";
 import { useQuery } from "@tanstack/react-query";
-import api from "../../../../services/api";
-import { Spin, Alert, Empty } from "antd";
+import { Spin, Alert } from "antd";
+import api from "@/services/api";
+import StrategiRenstraForm from "../components/StrategiRenstraForm";
 
 const StrategiRenstraAddPage = () => {
   const {
@@ -14,21 +13,29 @@ const StrategiRenstraAddPage = () => {
   } = useQuery({
     queryKey: ["renstra-opd-aktif"],
     queryFn: async () => {
-      const res = await api.get("/renstra-opd?is_aktif=true"); // Optimasi: filter di backend
-      return res.data?.data?.[0] || null; // Ambil elemen pertama dari array data
+      const res = await api.get("/renstra-opd?is_aktif=true");
+
+      if (Array.isArray(res.data?.data)) {
+        return res.data.data[0] || null;
+      }
+      return null;
     },
+    retry: 1,
   });
 
   if (isLoading) {
-    return <Spin tip="Memuat data Renstra aktif..." size="large" fullscreen />;
+    return <Spin tip="Memuat data RENSTRA aktif..." size="large" fullscreen />;
   }
 
   if (isError) {
     return (
       <Alert
         type="error"
-        message="Gagal memuat data Renstra OPD"
-        description={error?.response?.data?.message || "Terjadi kesalahan."}
+        message="Gagal Memuat RENSTRA OPD"
+        description={
+          error?.response?.data?.message ||
+          "Terjadi kesalahan saat mengambil data."
+        }
         showIcon
         style={{ margin: 24 }}
       />
@@ -37,13 +44,16 @@ const StrategiRenstraAddPage = () => {
 
   if (!renstraAktif) {
     return (
-      <div style={{ padding: 24 }}>
-        <Empty description="Tidak ada RENSTRA OPD yang aktif. Silakan aktifkan satu Renstra OPD terlebih dahulu." />
-      </div>
+      <Alert
+        type="warning"
+        message="Tidak Ada RENSTRA yang Aktif"
+        description="Aktifkan RENSTRA terlebih dahulu."
+        showIcon
+        style={{ margin: 24 }}
+      />
     );
   }
 
-  // renstraAktif diteruskan ke form untuk mengisi renstra_id dan rpjmd_id
   return <StrategiRenstraForm renstraAktif={renstraAktif} />;
 };
 

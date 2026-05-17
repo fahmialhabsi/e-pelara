@@ -16,10 +16,16 @@ module.exports = (sequelize, DataTypes) => {
         as: "kegiatan",
       });
 
+      // Relasi ke Renstra OPD
+      RenstraTabelKegiatan.belongsTo(models.RenstraOPD, {
+        foreignKey: "renstra_id",
+        as: "renstra",
+      });
+
       // Relasi ke indikator_renstra
       RenstraTabelKegiatan.belongsTo(models.IndikatorRenstra, {
         foreignKey: "indikator_id",
-        as: "indikator",
+        as: "indikator_detail",
       });
 
       // ✅ Tambahkan relasi ke subkegiatan
@@ -32,16 +38,12 @@ module.exports = (sequelize, DataTypes) => {
 
   RenstraTabelKegiatan.init(
     {
+      renstra_id: DataTypes.INTEGER,
       program_id: DataTypes.INTEGER,
       kegiatan_id: DataTypes.INTEGER,
       indikator_id: DataTypes.INTEGER,
       baseline: DataTypes.FLOAT,
       satuan_target: DataTypes.STRING,
-
-      // 🔹 Tambahan biar ikut tersimpan & dikembalikan
-      kode_kegiatan: DataTypes.STRING,
-      nama_kegiatan: DataTypes.STRING,
-      bidang_penanggung_jawab: DataTypes.STRING,
 
       target_tahun_1: DataTypes.FLOAT,
       target_tahun_2: DataTypes.FLOAT,
@@ -56,8 +58,13 @@ module.exports = (sequelize, DataTypes) => {
       pagu_tahun_5: DataTypes.DECIMAL(20, 2),
       pagu_tahun_6: DataTypes.DECIMAL(20, 2),
       lokasi: DataTypes.STRING,
-      target_akhir_renstra: DataTypes.DECIMAL(10, 0),
+      target_akhir_renstra: DataTypes.DECIMAL(15, 2),
       pagu_akhir_renstra: DataTypes.DECIMAL(20, 2),
+      pagu_rpjmd_acuan: DataTypes.DECIMAL(20, 2),
+      versi: DataTypes.INTEGER,
+      status_revisi: DataTypes.STRING,
+      last_revised_at: DataTypes.DATE,
+      last_revised_by: DataTypes.INTEGER,
     },
     {
       sequelize,

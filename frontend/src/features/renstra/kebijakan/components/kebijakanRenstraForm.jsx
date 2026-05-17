@@ -1,13 +1,16 @@
-// src/features/renstra/kebijakan/components/kebijakanRenstraForm.jsx
-import React, { useCallback, useEffect, useMemo } from "react";
-import { Form, Button, Card, Space, App } from "antd";
-import { useNavigate } from "react-router-dom";
-import { useKebijakanRenstraForm } from "@/hooks/templatesUseRenstra/useKebijakanRenstraForm";
-import { BsArrowLeftCircle, BsListCheck } from "react-icons/bs";
+// src/features/renstra/kebijakan/components/KebijakanRenstraForm.jsx
 
+import React from "react";
+import { Button, Card, Space, App } from "antd";
+import { useNavigate } from "react-router-dom";
+import { BsArrowLeftCircle, BsListCheck } from "react-icons/bs";
 import SelectWithLabelValue from "@/shared/components/form/SelectWithLabelValue";
 import InputField from "@/shared/components/form/InputField";
 import TextAreaField from "@/shared/components/form/TextAreaField";
+import { useKebijakanRenstraForm } from "@/hooks/templatesUseRenstra/useKebijakanRenstraForm";
+import { Popconfirm } from "antd";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import api from "@/services/api";
 
 const KebijakanRenstraForm = ({ initialData = null, renstraAktif }) => {
   const navigate = useNavigate();
@@ -19,196 +22,44 @@ const KebijakanRenstraForm = ({ initialData = null, renstraAktif }) => {
     isSubmitting,
     isLoading,
     dropdowns,
-    triggerKodeOtomatis,
+    handleArahKebijakanChange,
+    handleStrategiChange,
   } = useKebijakanRenstraForm(initialData, renstraAktif);
+
+  const queryClient = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => api.delete(`/renstra-kebijakan/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["renstra-kebijakan"] });
+      navigate("/renstra/kebijakan");
+    },
+    onError: () => {
+      message.error("Gagal menghapus data kebijakan");
+    },
+  });
+
+  const isDeleting = deleteMutation.isLoading;
+
+  const handleDelete = () => {
+    if (!initialData?.id) return;
+    deleteMutation.mutate(initialData.id);
+  };
 
   const {
     control,
-    setValue,
-    watch,
     formState: { errors },
+    handleSubmit,
   } = form;
 
-  // ✅ Pastikan dropdowns selalu array
-  const strategiOptions = Array.isArray(dropdowns?.["renstra-strategi"])
-    ? dropdowns["renstra-strategi"]
-    : [];
-  const arahKebijakanOptionsRaw = Array.isArray(dropdowns?.["arah-kebijakan"])
-    ? dropdowns["arah-kebijakan"]
-    : [];
-
-  const selectedRenstraStrategi = useMemo(() => {
-    const sid = Number(watch("strategi_id"));
-    if (!Number.isFinite(sid) || sid <= 0) return null;
-    return strategiOptions.find((x) => Number(x?.id) === sid) ?? null;
-  }, [strategiOptions, watch]);
-
-  const expectedRpjmdStrategiId = useMemo(() => {
-    const rid = Number(selectedRenstraStrategi?.rpjmd_strategi_id);
-    return Number.isFinite(rid) && rid > 0 ? rid : null;
-  }, [selectedRenstraStrategi?.rpjmd_strategi_id]);
-
-  const expectedArahKodePrefix = useMemo(() => {
-    const kode = String(selectedRenstraStrategi?.kode_strategi || "").trim();
-    if (!kode) return "";
-    // SSTx-... -> ASSTx-...
-    return kode.replace(/^SST/i, "ASST");
-  }, [selectedRenstraStrategi?.kode_strategi]);
-
-  // Filter Arah Kebijakan RPJMD: hanya yang turunan dari Strategi RPJMD pada RenstraStrategi terpilih.
-  const arahKebijakanOptions = useMemo(() => {
-    let list = arahKebijakanOptionsRaw;
-
-    if (expectedRpjmdStrategiId) {
-      list = list.filter((x) => Number(x?.strategi_id) === Number(expectedRpjmdStrategiId));
-    }
-
-    // Tambahan filter kode: hanya ASST{kode_strategi}.* agar user tidak salah pilih.
-    // Contoh: Strategi Renstra SST2-01-03.1 -> Arah RPJMD harus ASST2-01-03.1.1 / .2 dst.
-    const pref = expectedArahKodePrefix;
-    if (pref) {
-      const filtered = list.filter((x) => String(x?.kode_arah || "").startsWith(`${pref}.`));
-      // Jika sudah ada filter chain (strategi_id), jangan sampai dropdown kosong total hanya karena kode tidak selaras.
-      if (expectedRpjmdStrategiId) return filtered.length ? filtered : list;
-      return filtered;
-    }
-
-    return list;
-  }, [arahKebijakanOptionsRaw, expectedRpjmdStrategiId, expectedArahKodePrefix]);
-
-  const handleArahKebijakanChange = useCallback(
-    (value) => {
-      const selected = arahKebijakanOptionsRaw.find(
-        (item) => Number(item.id) === Number(value)
-      );
-      const teks = selected?.deskripsi || "";
-      setValue("no_arah_rpjmd", selected?.kode_arah || "");
-      setValue("isi_arah_rpjmd", teks);
-      setValue("deskripsi", teks);
-      setValue("jenisDokumen", selected?.jenisDokumen || "");
-      setValue("tahun", selected?.tahun || "");
-    },
-    [arahKebijakanOptions, setValue]
-  );
-
-  useEffect(() => {
-    if (!initialData && renstraAktif?.id) {
-      setValue("kode_kebjkn", "");
-    } else if (initialData) {
-      setValue("kode_kebjkn", initialData.kode_kebjkn);
-      setValue("strategi_id", initialData.strategi_id);
-      setValue("rpjmd_arah_id", initialData.rpjmd_arah_id);
-      setValue("deskripsi", initialData.deskripsi);
-      setValue("prioritas", initialData.prioritas);
-      setValue("no_arah_rpjmd", initialData.no_arah_rpjmd);
-      setValue("isi_arah_rpjmd", initialData.isi_arah_rpjmd);
-      setValue("jenisDokumen", initialData.jenisDokumen);
-      setValue("tahun", initialData.tahun);
-      setValue("renstra_id", initialData.renstra_id);
-    }
-  }, [initialData, renstraAktif?.id, setValue]);
-
-  // Jika data lama punya rpjmd_arah_id yang sudah tidak ada (mis. perubahan ID setelah clone/import),
-  // coba auto-fix berdasarkan kode_arah (no_arah_rpjmd). Jika tidak bisa, kosongkan agar user memilih ulang.
-  useEffect(() => {
-    if (!initialData) return;
-    if (!arahKebijakanOptions.length) return;
-
-    const current = watch("rpjmd_arah_id");
-    if (!current) return;
-
-    const exists = arahKebijakanOptions.some((x) => Number(x.id) === Number(current));
-    if (exists) return;
-
-    const kode = String(initialData.no_arah_rpjmd || "").trim();
-    const byKode = kode
-      ? arahKebijakanOptions.find((x) => String(x.kode_arah || "").trim() === kode)
-      : null;
-
-    if (byKode?.id) {
-      setValue("rpjmd_arah_id", byKode.id);
-      handleArahKebijakanChange(byKode.id);
-      message.warning(
-        "Arah Kebijakan RPJMD pada data lama tidak ditemukan. Sistem menyesuaikan otomatis berdasarkan kode Arah Kebijakan.",
-      );
-      return;
-    }
-
-    // tidak bisa auto-fix → force pilih ulang
-    setValue("rpjmd_arah_id", "");
-    message.error("Arah Kebijakan RPJMD pada data ini tidak valid. Silakan pilih ulang Arah Kebijakan RPJMD.");
-  }, [
-    initialData,
-    arahKebijakanOptions,
-    setValue,
-    watch,
-    handleArahKebijakanChange,
-    message,
-  ]);
-
-  useEffect(() => {
-    const strategiId = watch("strategi_id");
-    if (
-      !initialData &&
-      strategiId &&
-      strategiOptions.length > 0 &&
-      triggerKodeOtomatis
-    ) {
-      triggerKodeOtomatis(strategiId);
-    }
-  }, [
-    watch("strategi_id"),
-    strategiOptions,
-    triggerKodeOtomatis,
-    initialData,
-    setValue,
-  ]);
-
-  // Jika strategi berubah dan arah kebijakan yang terpilih tidak termasuk chain-nya, kosongkan agar user pilih ulang.
-  
-  useEffect(() => {
-    const currentArah = watch("rpjmd_arah_id");
-    if (!currentArah) return;
-    if (!expectedRpjmdStrategiId) return;
-
-    const ok = arahKebijakanOptionsRaw.some(
-      (x) =>
-        Number(x?.id) === Number(currentArah) &&
-        Number(x?.strategi_id) === Number(expectedRpjmdStrategiId),
+  // 🔴 Guard
+  if (!renstraAktif) {
+    return (
+      <Card>
+        <p>Renstra belum dipilih. Silakan pilih Renstra terlebih dahulu.</p>
+      </Card>
     );
-    if (ok) return;
-
-    
-
-    setValue("rpjmd_arah_id", "");
-    setValue("no_arah_rpjmd", "");
-    setValue("isi_arah_rpjmd", "");
-    setValue("kode_kebjkn", "");
-  }, [watch, expectedRpjmdStrategiId, arahKebijakanOptionsRaw, setValue]);
-
-  
-
-  // Jika strategi berubah dan arah kebijakan tidak sesuai prefix kode (ASST...), kosongkan agar user tidak salah pilih.
-  useEffect(() => {
-    const currentArah = watch("rpjmd_arah_id");
-    if (!currentArah) return;
-    const pref = expectedArahKodePrefix;
-    if (!pref) return;
-
-    const ok = arahKebijakanOptionsRaw.some(
-      (x) =>
-        Number(x?.id) === Number(currentArah) &&
-        String(x?.kode_arah || "").startsWith(`${pref}.`),
-    );
-    if (ok) return;
-
-    setValue("rpjmd_arah_id", "");
-    setValue("no_arah_rpjmd", "");
-    setValue("isi_arah_rpjmd", "");
-    setValue("kode_kebjkn", "");
-  }, [watch, expectedArahKodePrefix, arahKebijakanOptionsRaw, setValue]);
-
-  
+  }
 
   return (
     <Card
@@ -217,28 +68,23 @@ const KebijakanRenstraForm = ({ initialData = null, renstraAktif }) => {
       }
       loading={isLoading}
     >
-      <div style={{ marginBottom: 24 }}>
-        <Space>
-          <Button
-            icon={<BsArrowLeftCircle />}
-            onClick={() => navigate("/dashboard-renstra")}
-          >
-            Kembali
-          </Button>
-          <Button
-            icon={<BsListCheck />}
-            onClick={() => navigate("/renstra/kebijakan")}
-          >
-            Lihat Daftar
-          </Button>
-        </Space>
-      </div>
+      <Space style={{ marginBottom: 16 }}>
+        <Button
+          onClick={() => navigate("/dashboard-renstra")}
+          icon={<BsArrowLeftCircle />}
+        >
+          Kembali
+        </Button>
 
-      <Form
-        layout="vertical"
-        onFinish={form.handleSubmit(onSubmit)}
-        style={{ maxWidth: 700 }}
-      >
+        <Button
+          onClick={() => navigate("/renstra/kebijakan")}
+          icon={<BsListCheck />}
+        >
+          Daftar Kebijakan
+        </Button>
+      </Space>
+
+      <form onSubmit={handleSubmit(onSubmit)} style={{ maxWidth: 700 }}>
         <SelectWithLabelValue
           name="strategi_id"
           label="Strategi Renstra"
@@ -246,18 +92,14 @@ const KebijakanRenstraForm = ({ initialData = null, renstraAktif }) => {
           errors={errors}
           required
           loading={isLoading}
-          options={strategiOptions.map((item) => ({
-            value: item.id,
-            label: `${item.kode_strategi} - ${item.deskripsi}`,
+          disabled={isLoading}
+          options={(dropdowns?.["renstra-strategi"] || []).map((s) => ({
+            value: Number(s.id),
+            label: `${s.kode_strategi ?? s.no_strategi ?? ""} - ${
+              s.deskripsi ?? ""
+            }`.trim(),
           }))}
-          onChange={(val) => {
-            setValue("strategi_id", val);
-            setValue("rpjmd_arah_id", "");
-            setValue("no_arah_rpjmd", "");
-            setValue("isi_arah_rpjmd", "");
-            setValue("kode_kebjkn", "");
-            if (!initialData && triggerKodeOtomatis) triggerKodeOtomatis(val);
-          }}
+          onChange={handleStrategiChange}
         />
 
         <SelectWithLabelValue
@@ -267,16 +109,19 @@ const KebijakanRenstraForm = ({ initialData = null, renstraAktif }) => {
           errors={errors}
           required
           loading={isLoading}
-          options={arahKebijakanOptions.map((item) => ({
-            value: item.id,
-            label: `${item.kode_arah} - ${item.deskripsi}`,
+          disabled={isLoading}
+          options={(dropdowns?.["arah-kebijakan"] || []).map((a) => ({
+            value: Number(a.id),
+            label: `${a.kode_arah ?? a.kode_kebijakan ?? ""} - ${
+              a.deskripsi ?? ""
+            }`.trim(),
           }))}
           onChange={handleArahKebijakanChange}
         />
 
         <InputField
           name="kode_kebjkn"
-          label="Nomor Kebijakan (Kode)"
+          label="Kode Kebijakan"
           control={control}
           errors={errors}
           disabled
@@ -284,31 +129,43 @@ const KebijakanRenstraForm = ({ initialData = null, renstraAktif }) => {
 
         <TextAreaField
           name="deskripsi"
-          label="Isi Kebijakan Renstra"
+          label="Deskripsi Kebijakan"
           control={control}
           errors={errors}
           required
         />
 
-        <SelectWithLabelValue
+        <InputField
           name="prioritas"
           label="Prioritas"
           control={control}
           errors={errors}
-          required
-          options={[
-            { value: "Tinggi", label: "Tinggi" },
-            { value: "Sedang", label: "Sedang" },
-            { value: "Rendah", label: "Rendah" },
-          ]}
         />
 
-        <Form.Item>
-          <Button type="primary" htmlType="submit" loading={isSubmitting}>
+        <Space>
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={isSubmitting || isLoading}
+          >
             {initialData ? "Update Kebijakan" : "Simpan Kebijakan"}
           </Button>
-        </Form.Item>
-      </Form>
+
+          {initialData && (
+            <Popconfirm
+              title="Hapus Kebijakan?"
+              description="Data akan dihapus permanen"
+              onConfirm={handleDelete}
+              okText="Ya, Hapus"
+              cancelText="Batal"
+            >
+              <Button danger loading={isDeleting}>
+                Hapus
+              </Button>
+            </Popconfirm>
+          )}
+        </Space>
+      </form>
     </Card>
   );
 };

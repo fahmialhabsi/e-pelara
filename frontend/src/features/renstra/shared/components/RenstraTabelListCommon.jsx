@@ -13,6 +13,13 @@ export const formatNumberShort = (num) =>
     ? "—"
     : Number(num).toLocaleString("id-ID", { maximumFractionDigits: 0 });
 
+export const formatRupiah = (num) =>
+  num === null || num === undefined || num === ""
+    ? "—"
+    : `Rp ${Number(num).toLocaleString("id-ID", {
+        maximumFractionDigits: 0,
+      })}`;
+
 /** Grid 6 slot periode (target / pagu) untuk baris expand */
 export function TahunGrid({ record, prefix, label }) {
   return (
@@ -41,7 +48,7 @@ export function TahunGrid({ record, prefix, label }) {
             <div style={{ color: "#8c8c8c", fontSize: 11 }}>Th {i}</div>
             <div style={{ fontVariantNumeric: "tabular-nums" }}>
               {prefix === "pagu"
-                ? formatNumberShort(record[`${prefix}_tahun_${i}`])
+                ? formatRupiah(record[`${prefix}_tahun_${i}`])
                 : formatNumber(record[`${prefix}_tahun_${i}`])}
             </div>
           </div>

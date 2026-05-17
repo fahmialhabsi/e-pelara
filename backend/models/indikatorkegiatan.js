@@ -87,6 +87,15 @@ module.exports = (sequelize, DataTypes) => {
       rkpd_id: DataTypes.INTEGER.UNSIGNED,
       jenis_dokumen: { type: DataTypes.STRING, allowNull: false },
       tahun: { type: DataTypes.STRING, allowNull: false },
+      pagu_cached: {
+        type: DataTypes.BIGINT,
+        allowNull: false,
+        defaultValue: 0,
+      },
+      pagu_cached_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
       tenant_id: {
         type: DataTypes.INTEGER.UNSIGNED,
         allowNull: false,

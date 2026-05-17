@@ -204,6 +204,15 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false,
       },
+      pagu_cached: {
+        type: DataTypes.BIGINT,
+        allowNull: false,
+        defaultValue: 0,
+      },
+      pagu_cached_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
       /**
        * Flag pemisah data referensi impor (PDF/Excel) vs data final wizard.
        *   true  → baris ditulis oleh alur "Terapkan" impor (referensi/staging)

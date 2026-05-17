@@ -1,0 +1,8 @@
+{
+  "name": "e-pelara-monorepo",
+  "private": true,
+  "scripts": {
+    "lint": "npm --prefix frontend run lint && npm --prefix frontend/rkpd-admin run lint && npm --prefix backend run lint",
+    "format": "npm --prefix frontend run format && npm --prefix frontend/rkpd-admin run format && npm --prefix backend run format"
+  }
+}

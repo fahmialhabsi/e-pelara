@@ -23,6 +23,9 @@ const {
 const {
   attachPaguByIndikatorKode,
 } = require("../services/paguAggregatorService");
+const {
+  schedulePaguCachedSync,
+} = require("../services/paguCachedAutoSyncService");
 
 const allowedFields = [
   "misi_id",
@@ -438,6 +441,8 @@ exports.create = async (req, res) => {
     sanitized.forEach(normalizeDecimalFields);
     const created = await IndikatorKegiatan.bulkCreate(sanitized);
 
+    schedulePaguCachedSync();
+
     return res.status(201).json(created);
   } catch (err) {
     console.error("❌ create error:", err);
@@ -486,6 +491,9 @@ exports.bulkCreateDetail = async (req, res) => {
 
     try {
       const created = await IndikatorKegiatan.bulkCreate(sanitized);
+
+      schedulePaguCachedSync();
+
       return res.status(201).json(created);
     } catch (err) {
       if (err.name === "SequelizeUniqueConstraintError") {
@@ -602,6 +610,8 @@ exports.update = async (req, res) => {
     await kegiatan.update(updateData);
     normalizeDecimalFields(updateData);
 
+    schedulePaguCachedSync();
+
     return res.status(200).json(kegiatan);
   } catch (err) {
     console.error("❌ update error:", err);
@@ -630,6 +640,9 @@ exports.delete = async (req, res) => {
     }
 
     await kegiatan.destroy();
+
+    schedulePaguCachedSync();
+
     return res.status(204).json();
   } catch (err) {
     console.error("❌ delete error:", err);

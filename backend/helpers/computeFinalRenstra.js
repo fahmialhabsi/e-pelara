@@ -12,19 +12,23 @@ function hitungAkhirSubKegiatan(subKegiatans = []) {
           sub[`target_tahun_${i}`] != null ||
           sub[`pagu_tahun_${i}`] != null
       );
+
       if (hasPerTahun) {
-        let t = 0;
-        let p = 0;
+        let totalTarget = 0;
+        let totalPagu = 0;
+
         for (let i = 1; i <= 6; i++) {
-          t += parseFloat(sub[`target_tahun_${i}`] || 0);
-          p += parseFloat(sub[`pagu_tahun_${i}`] || 0);
+          totalTarget += parseFloat(sub[`target_tahun_${i}`] || 0);
+          totalPagu += parseFloat(sub[`pagu_tahun_${i}`] || 0);
         }
-        acc.target += t / 6;
-        acc.pagu += p;
+
+        acc.target += totalTarget / 6;
+        acc.pagu += totalPagu;
       } else {
         acc.target += parseFloat(sub.target || sub.target_akhir_renstra || 0);
         acc.pagu += parseFloat(sub.pagu || sub.pagu_akhir_renstra || 0);
       }
+
       return acc;
     },
     { target: 0, pagu: 0 }
@@ -33,32 +37,68 @@ function hitungAkhirSubKegiatan(subKegiatans = []) {
 
 /**
  * Hitung target & pagu akhir dari Kegiatan
+ * Sumber utama: semua SubKegiatan di bawah kegiatan tersebut.
+ * Menghasilkan:
+ * - target_akhir_renstra
+ * - pagu_akhir_renstra
+ * - pagu_tahun_1 s/d pagu_tahun_6
+ *
  * @param {Object} kegiatan - kegiatan object
  */
 function hitungAkhirKegiatan(kegiatan) {
-  if (!kegiatan) return { target_akhir_renstra: 0, pagu_akhir_renstra: 0 };
+  const emptyResult = {
+    target_akhir_renstra: 0,
+    pagu_akhir_renstra: 0,
+    pagu_tahun_1: 0,
+    pagu_tahun_2: 0,
+    pagu_tahun_3: 0,
+    pagu_tahun_4: 0,
+    pagu_tahun_5: 0,
+    pagu_tahun_6: 0,
+  };
 
-  let target = 0;
-  let pagu = 0;
+  if (!kegiatan) return emptyResult;
 
-  // Alias Sequelize: hasMany as "subkegiatans" (huruf k kecil)
-  const subs = kegiatan.subKegiatans || kegiatan.subkegiatans;
+  const result = { ...emptyResult };
 
-  // Jika ada subkegiatan tabel, hitung dari situ
+  // Alias Sequelize: hasMany as "subkegiatans" atau "subKegiatans"
+  const subs = kegiatan.subKegiatans || kegiatan.subkegiatans || [];
+
+  // Jika ada subkegiatan, pagu kegiatan dihitung dari total semua subkegiatan
   if (Array.isArray(subs) && subs.length > 0) {
-    const hasilSub = hitungAkhirSubKegiatan(subs);
-    target = hasilSub.target;
-    pagu = hasilSub.pagu;
-  } else {
-    // Jika tidak ada subKegiatans, gunakan field target_tahun_X dan pagu_tahun_X
-    for (let i = 1; i <= 6; i++) {
-      target += parseFloat(kegiatan[`target_tahun_${i}`] || 0);
-      pagu += parseFloat(kegiatan[`pagu_tahun_${i}`] || 0);
-    }
-    target = target / 6; // rata-rata target
+    subs.forEach((sub) => {
+      let totalTargetSub = 0;
+
+      for (let i = 1; i <= 6; i++) {
+        const target = parseFloat(sub[`target_tahun_${i}`] || 0);
+        const pagu = parseFloat(sub[`pagu_tahun_${i}`] || 0);
+
+        totalTargetSub += target;
+        result[`pagu_tahun_${i}`] += pagu;
+        result.pagu_akhir_renstra += pagu;
+      }
+
+      result.target_akhir_renstra += totalTargetSub / 6;
+    });
+
+    return result;
   }
 
-  return { target_akhir_renstra: target, pagu_akhir_renstra: pagu };
+  // Fallback jika tidak ada relasi subkegiatan
+  let totalTarget = 0;
+
+  for (let i = 1; i <= 6; i++) {
+    const target = parseFloat(kegiatan[`target_tahun_${i}`] || 0);
+    const pagu = parseFloat(kegiatan[`pagu_tahun_${i}`] || 0);
+
+    totalTarget += target;
+    result[`pagu_tahun_${i}`] = pagu;
+    result.pagu_akhir_renstra += pagu;
+  }
+
+  result.target_akhir_renstra = totalTarget / 6;
+
+  return result;
 }
 
 /**
@@ -66,7 +106,12 @@ function hitungAkhirKegiatan(kegiatan) {
  * @param {Object} program - program object
  */
 function hitungAkhirProgram(program) {
-  if (!program) return { target_akhir_renstra: 0, pagu_akhir_renstra: 0 };
+  if (!program) {
+    return {
+      target_akhir_renstra: 0,
+      pagu_akhir_renstra: 0,
+    };
+  }
 
   let totalTarget = 0;
   let totalPagu = 0;
@@ -74,12 +119,16 @@ function hitungAkhirProgram(program) {
   if (Array.isArray(program.kegiatans) && program.kegiatans.length > 0) {
     program.kegiatans.forEach((keg) => {
       const hasil = hitungAkhirKegiatan(keg);
+
       totalTarget += hasil.target_akhir_renstra;
       totalPagu += hasil.pagu_akhir_renstra;
     });
   }
 
-  return { target_akhir_renstra: totalTarget, pagu_akhir_renstra: totalPagu };
+  return {
+    target_akhir_renstra: totalTarget,
+    pagu_akhir_renstra: totalPagu,
+  };
 }
 
 module.exports = {

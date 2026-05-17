@@ -24,16 +24,21 @@ if (config.use_env_variable) {
   );
 }
 
+const MODEL_SKIP_FILES = new Set([
+  "mrAssociations.js",
+]);
+
 // Load all model files automatically
 fs.readdirSync(__dirname)
   .filter((file) => {
-    return (
-      file.indexOf(".") !== 0 &&
-      file !== basename &&
-      file.slice(-3) === ".js" &&
-      !file.endsWith(".test.js")
-    );
-  })
+      return (
+        file.indexOf(".") !== 0 &&
+        file !== basename &&
+        file.slice(-3) === ".js" &&
+        !file.endsWith(".test.js") &&
+        !MODEL_SKIP_FILES.has(file)
+      );
+    })
   .forEach((file) => {
     const mod = require(path.join(__dirname, file));
     const candidate = mod && mod.default ? mod.default : mod;
@@ -95,6 +100,16 @@ const uniqueModels = [...new Set(Object.values(db))];
 uniqueModels.forEach((model) => {
   if (model.associate) model.associate(db);
 });
+
+// Run Enterprise MR associations
+try {
+  const applyMrAssociations = require("./mrAssociations");
+  if (typeof applyMrAssociations === "function") {
+    applyMrAssociations(db);
+  }
+} catch (error) {
+  console.warn("[models/index] MR associations tidak dijalankan:", error.message);
+}
 
 console.log("Available models:", Object.keys(db));
 

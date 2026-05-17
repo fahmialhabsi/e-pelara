@@ -27,7 +27,6 @@ const KegiatanRenstraForm = ({
   } = useKegiatanRenstraForm(initialData, renstraAktif);
 
   const {
-    control,
     setValue,
     watch,
     handleSubmit,
@@ -35,16 +34,25 @@ const KegiatanRenstraForm = ({
   } = form;
 
   const programRenstraId = watch("program_renstra_id");
-  const kodeKegiatan = watch("kode_kegiatan");
   const bidangOpd = watch("bidang_opd");
 
   useEffect(() => {
     if (!programOptions.length || programRenstraId == null) return;
+
     const program = programOptions.find(
       (p) => Number(p.id) === Number(programRenstraId)
     );
+
     setPreviewProgram(program?.nama_program || "");
   }, [programOptions, programRenstraId]);
+
+  if (!renstraAktif) {
+    return (
+      <Card>
+        <p>Renstra belum dipilih. Silakan pilih Renstra terlebih dahulu.</p>
+      </Card>
+    );
+  }
 
   if (isLoading) return <div>Loading form...</div>;
 
@@ -70,7 +78,6 @@ const KegiatanRenstraForm = ({
         })}
         style={{ maxWidth: 700 }}
       >
-        {/* Program Select */}
         <Form.Item
           label="Pilih Program Renstra"
           required
@@ -81,12 +88,18 @@ const KegiatanRenstraForm = ({
             value={
               programRenstraId != null ? Number(programRenstraId) : undefined
             }
-            onChange={(val) =>
+            onChange={(val) => {
               setValue(
                 "program_renstra_id",
-                val === undefined ? undefined : Number(val)
-              )
-            }
+                val === undefined ? undefined : Number(val),
+                { shouldDirty: true, shouldValidate: true }
+              );
+
+              setValue("kegiatan_id", undefined);
+              setValue("kode_kegiatan", "");
+              setValue("nama_kegiatan", "");
+              setValue("bidang_opd", "");
+            }}
             loading={isLoading}
             placeholder="Pilih Program Renstra"
           >
@@ -104,23 +117,24 @@ const KegiatanRenstraForm = ({
           </Text>
         )}
 
-        {/* Kegiatan Select */}
         <Form.Item
           label="Pilih Kegiatan Renstra"
           required
-          validateStatus={errors.kode_kegiatan ? "error" : ""}
-          help={errors.kode_kegiatan?.message}
+          validateStatus={errors.kegiatan_id ? "error" : ""}
+          help={errors.kegiatan_id?.message}
         >
           <Select
             value={watch("kegiatan_id") || undefined}
+            disabled={!programRenstraId}
             onChange={(val) => {
-            const selected = kegiatanOptions.find(
-              (item) => Number(item.value) === Number(val)
-            );
+              const selected = kegiatanOptions.find(
+                (item) => Number(item.id) === Number(val)
+              );
 
-            console.log("SELECTED:", selected);
-
-              setValue("kegiatan_id", Number(val));
+              setValue("kegiatan_id", Number(val), {
+                shouldDirty: true,
+                shouldValidate: true,
+              });
               setValue("kode_kegiatan", selected?.kode_kegiatan || "");
               setValue("nama_kegiatan", selected?.nama_kegiatan || "");
               setValue("bidang_opd", selected?.bidang_opd || "", {
@@ -131,20 +145,13 @@ const KegiatanRenstraForm = ({
             placeholder="Pilih Kegiatan"
           >
             {kegiatanOptions.map((k) => (
-              <Select.Option
-                key={k.id}
-                value={Number(k.id)}
-                kode_kegiatan={k.kode_kegiatan}
-                nama_kegiatan={k.nama_kegiatan}
-                bidang_opd={k.bidang_opd}
-              >
+              <Select.Option key={k.id} value={Number(k.id)}>
                 {k.label}
               </Select.Option>
             ))}
           </Select>
         </Form.Item>
 
-        {/* Bidang OPD */}
         <Form.Item label="Bidang Penanggung Jawab">
           <input
             type="text"
@@ -159,7 +166,6 @@ const KegiatanRenstraForm = ({
           />
         </Form.Item>
 
-        {/* Hidden Fields */}
         <input type="hidden" {...form.register("kegiatan_id")} />
         <input type="hidden" {...form.register("kode_kegiatan")} />
         <input type="hidden" {...form.register("nama_kegiatan")} />

@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "lint": "node ../frontend/node_modules/eslint/bin/eslint.js . --ext .js --config .eslintrc.cjs",
+    "format": "node ../frontend/node_modules/prettier/bin/prettier.cjs --write .",
     "reset-password": "node scripts/resetUserPassword.js",
     "db:ensure-reset-cols": "node scripts/ensurePasswordResetColumns.js",
     "check:db-schema": "node scripts/checkDbSchema.js",

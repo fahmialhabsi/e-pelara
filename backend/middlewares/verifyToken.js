@@ -1,5 +1,7 @@
 // middlewares/verifyToken.js
 
+"use strict";
+
 const jwt = require("jsonwebtoken");
 const tenantContext = require("../lib/tenantContext");
 const { Tenant } = require("../models");
@@ -17,16 +19,68 @@ function isExemptFromInactiveTenantCheck(urlPath) {
   return u.startsWith("/api/auth") || u.startsWith("/api/tenants");
 }
 
+const authErrorResponse = ({
+  res,
+  statusCode = 401,
+  message = "Autentikasi gagal.",
+  code = "MR_AUTHENTICATION_FAILED",
+  details = {},
+}) => {
+  return res.status(statusCode).json({
+    success: false,
+    message,
+    blocked: true,
+    audit_mode: false,
+    code,
+    details,
+    meta: {},
+  });
+};
+
+const extractBearerToken = (authHeader) => {
+  if (!authHeader) return null;
+
+  const raw = String(authHeader).trim();
+
+  if (!raw) return null;
+
+  const [scheme, token] = raw.split(" ");
+
+  if (scheme !== "Bearer" || !token) {
+    return {
+      invalidFormat: true,
+      token: null,
+    };
+  }
+
+  return {
+    invalidFormat: false,
+    token,
+  };
+};
+
 const verifyToken = async (req, res, next) => {
   const authHeader = req.header("Authorization");
-  const token = authHeader
-    ? authHeader.replace("Bearer ", "")
-    : (req.cookies?.token || req.query?._token || null);
+  const bearer = extractBearerToken(authHeader);
+
+  if (bearer?.invalidFormat) {
+    return authErrorResponse({
+      res,
+      statusCode: 401,
+      message: "Format token tidak valid. Gunakan Bearer token.",
+      code: "MR_TOKEN_FORMAT_INVALID",
+    });
+  }
+
+  const token = bearer?.token || req.cookies?.token || req.query?._token || null;
 
   if (!token) {
-    return res
-      .status(401)
-      .json({ message: "Token tidak ditemukan atau salah format." });
+    return authErrorResponse({
+      res,
+      statusCode: 401,
+      message: "Akses ditolak. Token tidak tersedia.",
+      code: "MR_TOKEN_MISSING",
+    });
   }
 
   try {
@@ -38,17 +92,33 @@ const verifyToken = async (req, res, next) => {
     );
 
     let decoded;
+
     if (isSsoToken) {
       const ssoSecret = process.env.SSO_SHARED_SECRET;
+
       if (!ssoSecret) {
         console.error("[verifyToken] SSO_SHARED_SECRET tidak dikonfigurasi");
-        return res
-          .status(500)
-          .json({ message: "Konfigurasi SSO tidak lengkap" });
+
+        return authErrorResponse({
+          res,
+          statusCode: 500,
+          message: "Konfigurasi SSO tidak lengkap.",
+          code: "MR_SSO_CONFIG_MISSING",
+        });
       }
+
       decoded = jwt.verify(token, ssoSecret);
       console.log(`[verifyToken] SSO verified OK. role=${decoded.role}`);
     } else {
+      if (!process.env.JWT_SECRET) {
+        return authErrorResponse({
+          res,
+          statusCode: 500,
+          message: "Konfigurasi autentikasi server belum tersedia.",
+          code: "MR_AUTH_CONFIG_MISSING",
+        });
+      }
+
       decoded = jwt.verify(token, process.env.JWT_SECRET);
     }
 
@@ -69,12 +139,14 @@ const verifyToken = async (req, res, next) => {
         );
       } else {
         const parsed = parseInt(switchHeader, 10);
+
         if (!Number.isFinite(parsed) || parsed < 1) {
           console.warn(
             `[tenant] X-Tenant-Id="${switchHeader}" tidak valid — diabaikan.`,
           );
         } else {
           const row = await Tenant.findByPk(parsed, { attributes: ["id"] });
+
           if (!row) {
             console.warn(
               `[tenant] X-Tenant-Id=${parsed} tidak merujuk tenant yang ada — diabaikan.`,
@@ -102,6 +174,11 @@ const verifyToken = async (req, res, next) => {
       tenant_id: effectiveTenantId,
     };
 
+    // Compatibility guard untuk controller/service existing.
+    req.userId = decoded.id;
+    req.userRole = decoded.role;
+    req.role = decoded.role;
+
     if (
       switchHeader != null &&
       isSuperAdminRole(decoded.role) &&
@@ -117,22 +194,64 @@ const verifyToken = async (req, res, next) => {
     }
 
     const urlPath = req.originalUrl || req.url || "";
+
     if (!isExemptFromInactiveTenantCheck(urlPath)) {
       const tmeta = await Tenant.findByPk(effectiveTenantId, {
         attributes: ["id", "is_active"],
       });
+
       if (!tmeta || tmeta.is_active === false) {
-        return res.status(403).json({
+        return authErrorResponse({
+          res,
+          statusCode: 403,
           message:
             "Tenant tidak aktif atau tidak ditemukan. Hubungi administrator.",
+          code: "MR_TENANT_INACTIVE",
+          details: {
+            tenant_id: effectiveTenantId,
+          },
         });
       }
     }
 
-    tenantContext.run({ tenantId: effectiveTenantId }, () => next());
+    return tenantContext.run({ tenantId: effectiveTenantId }, () => next());
   } catch (error) {
-    console.error("Token verification failed:", error);
-    res.status(403).json({ message: "Invalid or expired token" });
+    console.error("Token verification failed:", error?.message);
+
+    if (error?.name === "TokenExpiredError") {
+      return authErrorResponse({
+        res,
+        statusCode: 401,
+        message: "Sesi login telah berakhir. Silakan login kembali.",
+        code: "MR_TOKEN_EXPIRED",
+      });
+    }
+
+    if (error?.name === "JsonWebTokenError") {
+      return authErrorResponse({
+        res,
+        statusCode: 401,
+        message: "Token tidak valid.",
+        code: "MR_TOKEN_INVALID",
+      });
+    }
+
+    if (error?.name === "NotBeforeError") {
+      return authErrorResponse({
+        res,
+        statusCode: 401,
+        message: "Token belum aktif.",
+        code: "MR_TOKEN_NOT_ACTIVE",
+      });
+    }
+
+    return authErrorResponse({
+      res,
+      statusCode: 401,
+      message: "Autentikasi gagal.",
+      code: "MR_AUTHENTICATION_FAILED",
+    });
   }
 };
+
 module.exports = verifyToken;

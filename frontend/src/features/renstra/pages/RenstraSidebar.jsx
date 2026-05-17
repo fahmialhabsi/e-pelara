@@ -192,6 +192,19 @@ const RenstraSidebar = () => {
                     Tabel Sasaran
                   </Link>
                   <Link
+                    to="/renstra/tabel/strategi"
+                    className="btn btn-outline-dark btn-sm"
+                  >
+                    Tabel Strategi
+                  </Link>
+
+                  <Link
+                    to="/renstra/tabel/arah-kebijakan"
+                    className="btn btn-outline-dark btn-sm"
+                  >
+                    Tabel Arah Kebijakan
+                  </Link>
+                  <Link
                     to="/renstra/tabel/program"
                     className="btn btn-outline-warning btn-sm"
                   >
@@ -209,12 +222,7 @@ const RenstraSidebar = () => {
                   >
                     Tabel Sub Kegiatan
                   </Link>
-                  <Link
-                    to="/renstra/tabel/strategi-kebijakan"
-                    className="btn btn-outline-dark btn-sm"
-                  >
-                    Tabel Strategi & Kebijakan
-                  </Link>
+                  
                   <Link
                     to="/renstra/tabel/prioritas/nasional"
                     className="btn btn-outline-danger btn-sm"

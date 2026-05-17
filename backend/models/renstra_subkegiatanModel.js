@@ -34,16 +34,20 @@ module.exports = (sequelize, DataTypes) => {
         scope: { stage: "sub_kegiatan" },
         as: "indikators",
       });
+      this.hasMany(models.RenstraTabelSubkegiatan, {
+        foreignKey: "sub_kegiatan_id",
+        as: "tabel_sub_kegiatan",
+      });
     }
   }
 
   RenstraSubkegiatan.init(
     {
       id: {
-      type: DataTypes.INTEGER,
-      primaryKey: true,
-      autoIncrement: true,
-    },
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true,
+      },
       renstra_program_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
