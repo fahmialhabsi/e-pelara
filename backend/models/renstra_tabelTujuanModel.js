@@ -26,6 +26,7 @@ module.exports = (sequelize, DataTypes) => {
       tujuan_id: DataTypes.INTEGER,
       opd_id: DataTypes.INTEGER,
       indikator_id: DataTypes.INTEGER,
+      pagu_rpjmd_acuan: DataTypes.DECIMAL(20, 2),
       baseline: DataTypes.FLOAT,
       satuan_target: DataTypes.STRING(100),
       target_tahun_1: DataTypes.FLOAT,
@@ -43,8 +44,28 @@ module.exports = (sequelize, DataTypes) => {
       lokasi: DataTypes.STRING(255),
       kode_tujuan: DataTypes.STRING(50),
       nama_tujuan: DataTypes.STRING(255),
-      target_akhir_renstra: DataTypes.DECIMAL(10, 0),
+      target_akhir_renstra: DataTypes.DECIMAL(10, 2),
       pagu_akhir_renstra: DataTypes.DECIMAL(20, 2),
+
+      versi: {
+        type: DataTypes.INTEGER,
+        defaultValue: 1,
+      },
+
+      status_revisi: {
+        type: DataTypes.ENUM("draft", "verifikasi", "approved", "ditolak"),
+        defaultValue: "draft",
+      },
+
+      last_revised_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+
+      last_revised_by: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
     },
     {
       sequelize,

@@ -1,161 +1,246 @@
-// src/features/renstra/kegiatan/pages/RenstraTabelKegiatanListPage.jsx
 import React from "react";
-import { Table, Button, Empty, Popconfirm, Typography } from "antd";
+import {
+  Table,
+  Button,
+  Empty,
+  Popconfirm,
+  Typography,
+  Card,
+  Tag,
+  message,
+} from "antd";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import api from "@/services/api";
-import SpinnerFullscreen from "../components/RenstraTableKegiatanSpinnerFullscreen";
 import {
   formatNumber,
   formatNumberShort,
   StandardRenstraExpandedRow,
-  renstraTabelListTableProps,
-  renstraTabelListPageShellStyle,
 } from "@/features/renstra/shared/components/RenstraTabelListCommon";
 
 const { Text } = Typography;
 
-const RenstraTabelKegiatanListPage = () => {
+const ENDPOINT = "/renstra-tabel-kegiatan";
+const QUERY_KEY = "renstra-tabel-kegiatan";
+
+const statusColor = {
+  draft: "orange",
+  verifikasi: "blue",
+  approved: "green",
+  ditolak: "red",
+};
+
+const wrapTextStyle = {
+  whiteSpace: "normal",
+  wordBreak: "break-word",
+  lineHeight: 1.5,
+};
+
+export default function RenstraTabelKegiatanListPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  const { data: renstraAktif } = useQuery({
+    queryKey: ["renstra-opd-aktif"],
+    queryFn: async () => (await api.get("/renstra-opd/aktif")).data.data,
+  });
+
   const { data = [], isLoading } = useQuery({
-    queryKey: ["renstra-tabel-kegiatan"],
+    queryKey: [QUERY_KEY, renstraAktif?.id],
     queryFn: async () => {
-      const res = await api.get("/renstra-tabel-kegiatan");
-      if (Array.isArray(res.data)) return res.data;
-      if (Array.isArray(res.data?.data)) return res.data.data;
-      return [];
+      const res = await api.get(ENDPOINT, {
+        params: { renstra_id: renstraAktif?.id },
+      });
+
+      return Array.isArray(res.data) ? res.data : res.data?.data ?? [];
     },
+    enabled: !!renstraAktif?.id,
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id) => {
-      await api.delete(`/renstra-tabel-kegiatan/${id}`);
-    },
+    mutationFn: async (id) => api.delete(`${ENDPOINT}/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries(["renstra-tabel-kegiatan"]);
+      message.success("Data kegiatan berhasil dihapus");
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
+    },
+    onError: (error) => {
+      message.error(
+        error?.response?.data?.message || "Gagal menghapus data kegiatan"
+      );
     },
   });
 
-  const handleDelete = (id) => {
-    deleteMutation.mutate(id);
-  };
-
-  if (isLoading) return <SpinnerFullscreen tip="Memuat daftar..." />;
-
-  if (!data || data.length === 0)
-    return (
-      <div style={{ padding: 24 }}>
-        <Empty description="Belum ada data" />
-        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-          <Button onClick={() => navigate("/dashboard-renstra")}>
-            Kembali
-          </Button>
-          <Button
-            type="primary"
-            onClick={() => navigate("/renstra/tabel/kegiatan/add")}
-          >
-            Tambah
-          </Button>
-        </div>
-      </div>
-    );
-
   const columns = [
     {
-      title: "Program",
-      dataIndex: ["program", "nama_program"],
-      key: "program",
-      width: 180,
-      ellipsis: true,
+      title: "Kode",
+      key: "kode_kegiatan",
+      width: 150,
       fixed: "left",
+      ellipsis: true,
+      render: (_, record) =>
+        record.kode_kegiatan || record.kegiatan?.kode_kegiatan || "-",
     },
     {
       title: "Kegiatan",
-      dataIndex: "nama_kegiatan",
       key: "kegiatan",
-      width: 200,
-      ellipsis: true,
+      width: 360,
+      render: (_, record) => (
+        <div style={wrapTextStyle}>
+          {record.nama_kegiatan || record.kegiatan?.nama_kegiatan || "-"}
+        </div>
+      ),
+    },
+    {
+      title: "Program",
+      key: "program",
+      width: 280,
+      render: (_, record) => (
+        <div style={wrapTextStyle}>
+          {record.program?.nama_program || record.nama_program || "-"}
+        </div>
+      ),
     },
     {
       title: "Indikator",
-      dataIndex: ["indikator", "nama_indikator"],
       key: "indikator",
-      width: 180,
-      ellipsis: true,
+      width: 280,
+      render: (_, record) => (
+        <div style={wrapTextStyle}>
+          {record.indikator_detail?.nama_indikator ||
+            record.indikator ||
+            "-"}
+        </div>
+      ),
     },
     {
       title: "Lokasi",
-      dataIndex: "lokasi",
       key: "lokasi",
-      width: 120,
-      ellipsis: true,
+      width: 220,
+      render: (_, record) => (
+        <div style={wrapTextStyle}>
+          {record.lokasi || record.kegiatan?.bidang_opd || "-"}
+        </div>
+      ),
     },
     {
-      title: "Bidang PJ",
-      dataIndex: "bidang_penanggung_jawab",
-      key: "bidang",
-      width: 140,
-      ellipsis: true,
-    },
-    {
-      title: "Target akhir",
+      title: "Target Akhir",
       dataIndex: "target_akhir_renstra",
       key: "target_akhir_renstra",
-      width: 108,
+      width: 130,
       align: "right",
-      render: (v) => (
+      render: (value) => (
         <span style={{ fontVariantNumeric: "tabular-nums" }}>
-          {formatNumber(v)}
+          {formatNumber(value)}
         </span>
       ),
     },
     {
-      title: "Pagu akhir",
-      dataIndex: "pagu_akhir_renstra",
-      key: "pagu_akhir_renstra",
-      width: 120,
+      title: "Pagu RPJMD",
+      dataIndex: "pagu_rpjmd_acuan",
+      key: "pagu_rpjmd_acuan",
+      width: 140,
       align: "right",
-      render: (v) => (
+      render: (value) => (
         <span style={{ fontVariantNumeric: "tabular-nums" }}>
-          {formatNumberShort(v)}
+          {formatNumberShort(value)}
         </span>
       ),
+    },
+    {
+      title: "Pagu Akhir",
+      dataIndex: "pagu_akhir_renstra",
+      key: "pagu_akhir_renstra",
+      width: 140,
+      align: "right",
+      render: (value) => (
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>
+          {formatNumberShort(value)}
+        </span>
+      ),
+    },
+    {
+      title: "Status",
+      dataIndex: "status_revisi",
+      key: "status_revisi",
+      width: 120,
+      render: (value) => (
+        <Tag color={statusColor[value] || "orange"}>
+          {String(value || "draft").toUpperCase()}
+        </Tag>
+      ),
+    },
+    {
+      title: "Versi",
+      dataIndex: "versi",
+      key: "versi",
+      width: 90,
+      align: "center",
+      render: (value) => value || 1,
     },
     {
       title: "Aksi",
       key: "aksi",
-      width: 168,
+      width: 240,
       fixed: "right",
-      render: (_, record) => (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <Button
-            size="small"
-            type="primary"
-            onClick={() =>
-              navigate(`/renstra/tabel/kegiatan/edit/${record.id}`)
-            }
-          >
-            Edit
-          </Button>
-          <Popconfirm
-            title="Hapus data ini?"
-            onConfirm={() => handleDelete(record.id)}
-            okText="Ya"
-            cancelText="Batal"
-          >
-            <Button size="small" danger>
-              Hapus
+      render: (_, record) => {
+        const isApproved = record.status_revisi === "approved";
+
+        return (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {!isApproved && (
+              <Button
+                size="small"
+                type="primary"
+                onClick={() =>
+                  navigate(`/renstra/tabel/kegiatan/edit/${record.id}`)
+                }
+              >
+                Edit Draft
+              </Button>
+            )}
+
+            {isApproved && (
+              <Button
+                size="small"
+                type="dashed"
+                style={{ borderColor: "#fa8c16", color: "#fa8c16" }}
+                onClick={() =>
+                  navigate(`/renstra/tabel/kegiatan/edit/${record.id}?mode=revisi`)
+                }
+              >
+                Buat Revisi
+              </Button>
+            )}
+
+            <Button
+              size="small"
+              onClick={() =>
+                navigate(`/renstra/tabel/kegiatan/history/${record.id}`)
+              }
+            >
+              History
             </Button>
-          </Popconfirm>
-        </div>
-      ),
+
+            {!isApproved && (
+              <Popconfirm
+                title="Hapus data kegiatan ini?"
+                onConfirm={() => deleteMutation.mutate(record.id)}
+                okText="Ya"
+                cancelText="Batal"
+              >
+                <Button size="small" danger>
+                  Hapus
+                </Button>
+              </Popconfirm>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
   return (
-    <div style={renstraTabelListPageShellStyle}>
+    <Card title="Renstra Tabel Kegiatan">
       <div
         style={{
           display: "flex",
@@ -165,44 +250,57 @@ const RenstraTabelKegiatanListPage = () => {
           alignItems: "center",
         }}
       >
-        <Button onClick={() => navigate("/dashboard-renstra")}>
-          Kembali
-        </Button>
+        <Button onClick={() => navigate("/dashboard-renstra")}>Kembali</Button>
+
         <Button
           type="primary"
           onClick={() => navigate("/renstra/tabel/kegiatan/add")}
         >
           Tambah
         </Button>
+
+        <Button onClick={() => navigate("/renstra/tabel/program")}>
+          Lihat Program
+        </Button>
+
         <Text type="secondary" style={{ marginLeft: 8 }}>
-          Klik baris untuk melihat target &amp; pagu periode (th. ke-1 s/d ke-6).
+          Klik baris untuk melihat target dan pagu periode tahun ke-1 sampai ke-5.
         </Text>
       </div>
 
-      <Table
-        dataSource={data}
-        columns={columns}
-        rowKey="id"
-        {...renstraTabelListTableProps}
-        scroll={{ x: 1280 }}
-        expandable={{
-          expandRowByClick: true,
-          expandedRowRender: (record) => (
-            <StandardRenstraExpandedRow
-              record={record}
-              extraMeta={[
-                {
-                  label: "Bidang penanggung jawab",
-                  value: record.bidang_penanggung_jawab,
-                },
-              ]}
-            />
-          ),
-          rowExpandable: () => true,
-        }}
-      />
-    </div>
+      {isLoading ? (
+        <div>Memuat daftar...</div>
+      ) : !data || data.length === 0 ? (
+        <Empty description="Belum ada data" />
+      ) : (
+        <Table
+          size="small"
+          bordered
+          dataSource={data}
+          columns={columns}
+          rowKey="id"
+          scroll={{ x: 1300 }}
+          pagination={{ pageSize: 10 }}
+          expandable={{
+            expandRowByClick: true,
+            expandedRowRender: (record) => (
+              <StandardRenstraExpandedRow
+                record={record}
+                extraMeta={[
+                  { label: "Lokasi", value: record.lokasi },
+                  {
+                    label: "Bidang penanggung jawab",
+                    value:
+                      record.bidang_penanggung_jawab ||
+                      record.kegiatan?.bidang_opd,
+                  },
+                ]}
+              />
+            ),
+            rowExpandable: () => true,
+          }}
+        />
+      )}
+    </Card>
   );
-};
-
-export default RenstraTabelKegiatanListPage;
+}

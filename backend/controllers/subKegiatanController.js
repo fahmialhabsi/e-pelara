@@ -9,6 +9,7 @@ const {
   PeriodeRpjmd,
   MasterSubKegiatan,
   MasterKegiatan,
+  IndikatorSubKegiatan,
 } = require("../models");
 
 const { Op } = require("sequelize");
@@ -32,6 +33,10 @@ const {
   recalcKegiatanTotal,
   recalcProgramTotal,
 } = require("../utils/paguHelper");
+const {
+  queuePaguSubKegiatanId,
+  queuePaguPrefixes,
+} = require("../services/paguCachedIncrementalQueueService");
 
 const MAX_LIMIT = 100;
 
@@ -275,6 +280,8 @@ const subKegiatanController = {
 
       await recalcKegiatanTotal(kegiatan.id);
       await recalcProgramTotal(kegiatan.program.id);
+
+      queuePaguSubKegiatanId(created.id);
 
       const meta =
         prep.transitionWarning != null
@@ -536,9 +543,10 @@ const subKegiatanController = {
   },
 
   async getById(req, res) {
-    try {
-      const sub = await SubKegiatan.findByPk(req.params.id, {
-        include: {
+  try {
+    const sub = await SubKegiatan.findByPk(req.params.id, {
+      include: [
+        {
           model: Kegiatan,
           as: "kegiatan",
           include: {
@@ -550,20 +558,45 @@ const subKegiatanController = {
             },
           },
         },
-      });
+        {
+          model: MasterSubKegiatan,
+          as: "masterSubKegiatan",
+          include: {
+            model: MasterKegiatan,
+            as: "masterKegiatan",
+          },
+        },
+      ],
+    });
 
-      if (!sub) return errorResponse(res, 404, "Sub-kegiatan tidak ditemukan");
-
-      return successResponse(res, 200, "Detail sub-kegiatan ditemukan", sub);
-    } catch (err) {
-      return errorResponse(
-        res,
-        500,
-        "Gagal mengambil detail sub-kegiatan",
-        err
-      );
+    if (!sub) {
+      return errorResponse(res, 404, "Sub-kegiatan tidak ditemukan");
     }
+
+    const plain = sub.get({ plain: true });
+
+    plain.master_kegiatan_id =
+      plain.masterSubKegiatan?.master_kegiatan_id || null;
+
+    plain.master_program_id =
+      plain.masterSubKegiatan?.masterKegiatan?.master_program_id || null;
+
+    return successResponse(
+      res,
+      200,
+      "Detail sub-kegiatan ditemukan",
+      plain
+    );
+  } catch (err) {
+    return errorResponse(
+      res,
+      500,
+      "Gagal mengambil detail sub-kegiatan",
+      err
+    );
+  }
   },
+  
 
   async update(req, res) {
     try {
@@ -659,6 +692,7 @@ const subKegiatanController = {
             }
           : { input_mode: "LEGACY" };
 
+      const oldPagu = sub.pagu_anggaran;
       await sub.update({
         kegiatan_id,
         periode_id,
@@ -675,11 +709,15 @@ const subKegiatanController = {
         tahun,
         ...masterFields,
       });
-
+      const newPagu = sub.pagu_anggaran;
       await ensureClonedOnce(jenis_dokumen, tahun);
 
       await recalcKegiatanTotal(kegiatan.id);
       await recalcProgramTotal(kegiatan.program.id);
+
+      if (Number(oldPagu) !== Number(newPagu)) {
+        queuePaguSubKegiatanId(sub.id);
+      }
 
       const fresh = await SubKegiatan.findByPk(sub.id);
       const meta =
@@ -709,10 +747,21 @@ const subKegiatanController = {
       });
       if (!sub) return errorResponse(res, 404, "Sub-kegiatan tidak ditemukan");
 
+      const indikatorRows = await IndikatorSubKegiatan.findAll({
+        where: { sub_kegiatan_id: sub.id },
+        attributes: ["kode_indikator"],
+      });
+
+      const prefixes = [
+        ...new Set(indikatorRows.map((r) => r.kode_indikator).filter(Boolean)),
+      ];
+
       await sub.destroy();
 
       await recalcKegiatanTotal(sub.kegiatan.id);
       await recalcProgramTotal(sub.kegiatan.program.id);
+
+      queuePaguPrefixes(prefixes);
 
       return successResponse(res, 200, "Sub-kegiatan berhasil dihapus");
     } catch (err) {

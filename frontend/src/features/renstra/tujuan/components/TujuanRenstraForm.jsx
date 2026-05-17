@@ -2,14 +2,16 @@
 import React, { useEffect } from "react";
 import { Form, Button, Card, Space } from "antd";
 import { useNavigate } from "react-router-dom";
-import { useTujuanRenstraForm } from "@/hooks/templatesUseRenstra/useTujuanRenstraForm";
 import { BsArrowLeftCircle, BsListCheck } from "react-icons/bs";
+
+import { useTujuanRenstraForm } from "@/hooks/templatesUseRenstra/useTujuanRenstraForm";
 import SelectWithLabelValue from "@/shared/components/form/SelectWithLabelValue";
 import InputField from "@/shared/components/form/InputField";
 import TextAreaField from "@/shared/components/form/TextAreaField";
 
 const TujuanRenstraForm = ({ initialData = null, renstraAktif }) => {
   const navigate = useNavigate();
+
   const {
     form,
     onSubmit,
@@ -27,18 +29,32 @@ const TujuanRenstraForm = ({ initialData = null, renstraAktif }) => {
 
   const tujuanOptions = dropdowns?.["tujuan-rpjmd"] || [];
 
-  // Edit: setelah daftar RPJMD terisi, paksa nilai field = number agar cocok Option (bukan string dari API)
   useEffect(() => {
     if (
       !initialData ||
       initialData.rpjmd_tujuan_id == null ||
       !tujuanOptions.length
-    )
+    ) {
       return;
+    }
+
     setValue("rpjmd_tujuan_id", Number(initialData.rpjmd_tujuan_id), {
       shouldValidate: false,
     });
-  }, [initialData?.id, initialData?.rpjmd_tujuan_id, tujuanOptions.length, setValue]);
+  }, [
+    initialData,
+    initialData?.rpjmd_tujuan_id,
+    tujuanOptions.length,
+    setValue,
+  ]);
+
+  if (!renstraAktif) {
+    return (
+      <Card>
+        <p>Renstra belum dipilih. Silakan pilih Renstra terlebih dahulu.</p>
+      </Card>
+    );
+  }
 
   return (
     <Card
@@ -53,6 +69,7 @@ const TujuanRenstraForm = ({ initialData = null, renstraAktif }) => {
           >
             Kembali ke Dashboard
           </Button>
+
           <Button
             icon={<BsListCheck />}
             onClick={() => navigate("/renstra/tujuan")}
@@ -67,7 +84,6 @@ const TujuanRenstraForm = ({ initialData = null, renstraAktif }) => {
         onFinish={form.handleSubmit(onSubmit)}
         style={{ maxWidth: 700 }}
       >
-        {/* Dropdown Tujuan RPJMD */}
         <SelectWithLabelValue
           name="rpjmd_tujuan_id"
           label="Tujuan RPJMD"
@@ -75,6 +91,7 @@ const TujuanRenstraForm = ({ initialData = null, renstraAktif }) => {
           errors={errors}
           required
           loading={isLoading}
+          disabled={isLoading}
           options={tujuanOptions.map((item) => ({
             value: Number(item.id),
             label: `${item.no_tujuan ?? ""} - ${item.isi_tujuan ?? ""}`.trim(),
@@ -82,7 +99,6 @@ const TujuanRenstraForm = ({ initialData = null, renstraAktif }) => {
           onChange={handleTujuanChange}
         />
 
-        {/* Nomor Tujuan */}
         <InputField
           name="no_tujuan"
           label="Nomor Tujuan"
@@ -91,7 +107,6 @@ const TujuanRenstraForm = ({ initialData = null, renstraAktif }) => {
           disabled
         />
 
-        {/* Isi Tujuan */}
         <TextAreaField
           name="isi_tujuan"
           label="Isi Tujuan Renstra"
@@ -101,7 +116,12 @@ const TujuanRenstraForm = ({ initialData = null, renstraAktif }) => {
         />
 
         <Form.Item>
-          <Button type="primary" htmlType="submit" loading={isSubmitting}>
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={isSubmitting}
+            disabled={isLoading}
+          >
             {initialData ? "Update Tujuan" : "Simpan Tujuan"}
           </Button>
         </Form.Item>

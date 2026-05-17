@@ -1,3 +1,4 @@
+// File: frontend/src/features/renstra/indikator/strategi/components/IndikatorStrategiRenstraForm.jsx
 import React, { useEffect, useState } from "react";
 import { Form, Button, Card, Typography, App } from "antd";
 import { useNavigate } from "react-router-dom";
@@ -20,20 +21,24 @@ const IndikatorStrategiRenstraForm = ({ initialData = null, renstraAktif }) => {
   useEffect(() => {
     const fetchExisting = async () => {
       try {
-        const res = await api.get("/indikator-strategi-renstra");
-        setExistingList(res.data);
+        const res = await api.get("/indikator-renstra", {
+          params: { jenis: "strategi" },
+        });
+
+        setExistingList(Array.isArray(res.data) ? res.data : []);
       } catch (err) {
         message.error("Gagal mengambil data indikator strategi.");
       }
     };
+
     fetchExisting();
   }, [message]);
 
   const { form, onSubmit, isSubmitting, dropdowns } = useRenstraFormTemplate({
     initialData,
     renstraAktif,
-    endpoint: "/indikator-strategi-renstra",
-    queryKeys: ["indikator-strategi-renstra"],
+    endpoint: "/indikator-renstra",
+    queryKeys: ["indikator-renstra", "strategi"],
     redirectPath: "/renstra/indikator-strategi",
     defaultValues: {
       strategi_renstra_id: "",
@@ -56,33 +61,45 @@ const IndikatorStrategiRenstraForm = ({ initialData = null, renstraAktif }) => {
     fetchOptions: {
       "strategi-renstra": async () => {
         const res = await api.get("/strategi-renstra");
-        return res.data;
+        return Array.isArray(res.data) ? res.data : [];
       },
     },
     generatePayload: (formData) => ({
+      jenis: "strategi",
       strategi_renstra_id: formData.strategi_renstra_id,
       kode_indikator: formData.kode_indikator,
       nama_indikator: formData.nama_indikator,
       satuan: formData.satuan,
       target_tahun_1: formData.target_tahun_1,
     }),
+    
     kodeGenerator: (watch, setValue) => {
-      const strategiId = watch("strategi_renstra_id");
-      const options = dropdowns["strategi-renstra"];
-      if (!strategiId || !options) return;
+  const strategiId = watch("strategi_renstra_id");
+  const options = dropdowns["strategi-renstra"];
+  if (!strategiId || !options) return;
 
-      const selected = options.find((x) => x.id === strategiId);
-      if (selected) {
-        setPreview(selected.nama_strategi);
-        const prefix = `IS${selected.kode_strategi}`;
-        const kode = generateKode({
-          prefix,
-          dataList: existingList,
-          field: "kode_indikator",
-          padding: 2,
-        });
-        setValue("kode_indikator", kode);
-      }
+  const selected = options.find((x) => x.id === strategiId);
+
+  if (selected) {
+    setPreview(selected.nama_strategi);
+
+    const prefix = `IS${selected.kode_strategi}`;
+
+    const filteredExistingList = existingList.filter(
+      (item) =>
+        item.jenis === "strategi" &&
+        Number(item.strategi_renstra_id) === Number(strategiId)
+    );
+
+    const kode = generateKode({
+      prefix,
+      dataList: filteredExistingList,
+      field: "kode_indikator",
+      padding: 2,
+    });
+
+    setValue("kode_indikator", kode);
+  }
     },
   });
 

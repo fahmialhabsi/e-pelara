@@ -21,8 +21,9 @@ const {
   IndikatorRenstra,
   OpdPenanggungJawab,
   RenstraBab,
-  RenstraTabelStrategiKebijakan,
   RenstraTabelPrioritas,
+  RenstraTabelStrategi,
+  RenstraTabelArahKebijakan,
 } = require("../models");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -108,9 +109,17 @@ async function gatherData(renstraId) {
     babs[rec.bab] = rec;
   });
 
-  // Tabel Strategi & Kebijakan
-  const tabelStrategiKebijakans = RenstraTabelStrategiKebijakan
-    ? await RenstraTabelStrategiKebijakan.findAll({
+  // Tabel Strategi
+  const tabelStrategis = RenstraTabelStrategi
+    ? await RenstraTabelStrategi.findAll({
+        where: { renstra_id: renstraId },
+        order: [["id", "ASC"]],
+      }).catch(() => [])
+    : [];
+
+  // Tabel Arah Kebijakan
+  const tabelArahKebijakans = RenstraTabelArahKebijakan
+    ? await RenstraTabelArahKebijakan.findAll({
         where: { renstra_id: renstraId },
         order: [["id", "ASC"]],
       }).catch(() => [])
@@ -134,7 +143,8 @@ async function gatherData(renstraId) {
     strategis: strategis.map((st) => st.toJSON()),
     kebijakans: kebijakans.map((kb) => kb.toJSON()),
     indikators: indikators.map((i) => i.toJSON()),
-    tabelStrategiKebijakans: tabelStrategiKebijakans.map((r) => r.toJSON()),
+    tabelStrategis: tabelStrategis.map((r) => r.toJSON()),
+    tabelArahKebijakans: tabelArahKebijakans.map((r) => r.toJSON()),
     tabelPrioritas: tabelPrioritas.map((r) => r.toJSON()),
     babs,
   };
@@ -489,41 +499,85 @@ function buildBab7(data) {
 // Helper: Tabel Strategi & Kebijakan (untuk BAB V tambahan)
 // ─────────────────────────────────────────────────────────────────────────────
 function buildTabelStrategiKebijakan(data) {
-  const rows = data.tabelStrategiKebijakans;
-  if (!rows || rows.length === 0) return "";
+  const strategiRows = data.tabelStrategis || [];
+  const kebijakanRows = data.tabelArahKebijakans || [];
+
+  if (strategiRows.length === 0 && kebijakanRows.length === 0) return "";
 
   const tahunMulai = Number(data.renstra.tahun_mulai) || 0;
-  const years = [1,2,3,4,5,6].map((i) => tahunMulai ? tahunMulai + i - 1 : `T${i}`);
+  const years = [1, 2, 3, 4, 5, 6].map((i) =>
+    tahunMulai ? tahunMulai + i - 1 : `T${i}`
+  );
 
-  const tableRows = rows.map((r, idx) => `<tr>
-    <td style="text-align:center">${idx+1}</td>
-    <td>${s(r.kode_strategi)}<br/><small>${s(r.deskripsi_strategi)}</small></td>
-    <td>${s(r.kode_kebijakan)}<br/><small>${s(r.deskripsi_kebijakan)}</small></td>
-    <td>${s(r.indikator)}</td>
-    <td style="text-align:center">${s(r.baseline, "0")}</td>
-    ${[1,2,3,4,5,6].map((i) => `<td style="text-align:center">${s(r[`target_tahun_${i}`], "0")}</td>`).join("")}
-    <td style="text-align:right">${fmt(r.pagu_akhir_renstra)}</td>
-  </tr>`).join("");
-
-  return `
-<h3>Tabel Rencana Program Strategi dan Arah Kebijakan</h3>
+  const strategiHtml = strategiRows.length
+    ? `
+<h3>Tabel Strategi</h3>
 <table border="1" cellspacing="0" cellpadding="5" style="width:100%;border-collapse:collapse;font-size:9px">
   <thead style="background:#1a5276;color:white">
     <tr>
       <th rowspan="2">No</th>
       <th rowspan="2">Strategi</th>
+      <th rowspan="2">Indikator</th>
+      <th rowspan="2">Baseline</th>
+      <th colspan="6">Target Tahun Ke-</th>
+      <th rowspan="2">Pagu Akhir (Rp)</th>
+    </tr>
+    <tr>${years.map((yr) => `<th>${yr}</th>`).join("")}</tr>
+  </thead>
+  <tbody>
+    ${strategiRows
+      .map(
+        (r, idx) => `<tr>
+          <td style="text-align:center">${idx + 1}</td>
+          <td>${s(r.kode_strategi)}<br/><small>${s(r.deskripsi_strategi)}</small></td>
+          <td>${s(r.indikator)}</td>
+          <td style="text-align:center">${s(r.baseline, "0")}</td>
+          ${[1, 2, 3, 4, 5, 6]
+            .map((i) => `<td style="text-align:center">${s(r[`target_tahun_${i}`], "0")}</td>`)
+            .join("")}
+          <td style="text-align:right">${fmt(r.pagu_akhir_renstra)}</td>
+        </tr>`
+      )
+      .join("")}
+  </tbody>
+</table>`
+    : "";
+
+  const kebijakanHtml = kebijakanRows.length
+    ? `
+<h3>Tabel Arah Kebijakan</h3>
+<table border="1" cellspacing="0" cellpadding="5" style="width:100%;border-collapse:collapse;font-size:9px">
+  <thead style="background:#1a5276;color:white">
+    <tr>
+      <th rowspan="2">No</th>
       <th rowspan="2">Arah Kebijakan</th>
       <th rowspan="2">Indikator</th>
       <th rowspan="2">Baseline</th>
       <th colspan="6">Target Tahun Ke-</th>
       <th rowspan="2">Pagu Akhir (Rp)</th>
     </tr>
-    <tr>
-      ${years.map((yr) => `<th>${yr}</th>`).join("")}
-    </tr>
+    <tr>${years.map((yr) => `<th>${yr}</th>`).join("")}</tr>
   </thead>
-  <tbody>${tableRows}</tbody>
-</table>`;
+  <tbody>
+    ${kebijakanRows
+      .map(
+        (r, idx) => `<tr>
+          <td style="text-align:center">${idx + 1}</td>
+          <td>${s(r.kode_kebijakan)}<br/><small>${s(r.deskripsi_kebijakan)}</small></td>
+          <td>${s(r.indikator)}</td>
+          <td style="text-align:center">${s(r.baseline, "0")}</td>
+          ${[1, 2, 3, 4, 5, 6]
+            .map((i) => `<td style="text-align:center">${s(r[`target_tahun_${i}`], "0")}</td>`)
+            .join("")}
+          <td style="text-align:right">${fmt(r.pagu_akhir_renstra)}</td>
+        </tr>`
+      )
+      .join("")}
+  </tbody>
+</table>`
+    : "";
+
+  return `${strategiHtml}${kebijakanHtml}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

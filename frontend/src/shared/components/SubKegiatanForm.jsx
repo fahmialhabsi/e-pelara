@@ -27,7 +27,10 @@ import { useDokumen } from "@/hooks/useDokumen";
 import { usePeriodeAktif } from "@/features/rpjmd/hooks/usePeriodeAktif";
 import { konteksBannerRows } from "@/utils/planningDokumenUtils";
 
-export default function SubKegiatanForm() {
+export default function SubKegiatanForm({
+  existingData: existingDataProp = null,
+  onSubmit,
+}) {
   const { id } = useParams();
   const navigate = useNavigate();
   const { dokumen, tahun } = useDokumen();
@@ -36,7 +39,7 @@ export default function SubKegiatanForm() {
     (p) => String(p.id) === String(periode_id),
   );
 
-  const [existingData, setExistingData] = useState(null);
+  const [existingData, setExistingData] = useState(existingDataProp);
   const [initialLoading, setInitialLoading] = useState(!!id);
 
   // ✅ Tambahkan fungsi redirect setelah submit berhasil
@@ -50,19 +53,32 @@ export default function SubKegiatanForm() {
   };
 
   useEffect(() => {
-    if (id) {
-      api
-        .get(`/sub-kegiatan/${id}`)
-        .then((res) => {
-          console.log("📦 SubKegiatan detail response:", res.data);
-          setExistingData(res.data.data?.data || res.data.data);
-        })
-        .catch((err) => {
-          console.error("❌ Gagal mengambil data sub kegiatan:", err);
-        })
-        .finally(() => setInitialLoading(false));
-    }
-  }, [id]);
+  if (existingDataProp) return;
+
+  if (id) {
+    api
+      .get(`/sub-kegiatan/${id}`)
+      .then((res) => {
+        console.log("📦 SubKegiatan detail response:", res.data);
+        setExistingData(res.data.data?.data || res.data.data);
+      })
+      .catch((err) => {
+        console.error("❌ Gagal mengambil data sub kegiatan:", err);
+      })
+      .finally(() => setInitialLoading(false));
+  } else {
+    setInitialLoading(false);
+  }
+  }, [id, existingDataProp]);
+  
+
+  useEffect(() => {
+  if (existingDataProp) {
+    setExistingData(existingDataProp);
+    setInitialLoading(false);
+  }
+  }, [existingDataProp]);
+  
 
   // ⬇️ Gunakan handleSuccessSubmit sebagai onSubmit
   const {
@@ -99,7 +115,7 @@ export default function SubKegiatanForm() {
     lockManualKodeNama,
   } = useSubKegiatanFormLogic(existingData, handleSuccessSubmit);
 
-  if (initialLoading || loading) {
+  if (initialLoading) {
     return (
       <Container className="my-5 text-center">
         <Spinner animation="border" variant="primary" />

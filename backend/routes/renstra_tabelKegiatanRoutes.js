@@ -5,48 +5,73 @@ const allowRoles = require("../middlewares/allowRoles");
 
 const router = express.Router();
 
-// 🔹 CRUD RenstraTabelKegiatan
+const READ = ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"];
+const HISTORY_READ = ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS"];
+const WRITE = ["SUPER_ADMIN", "ADMINISTRATOR"];
+const DELETE = ["SUPER_ADMIN"];
+
+// ========================= READ =========================
+router.get("/", verifyToken, allowRoles(READ), controller.findAll);
+
+router.get(
+  "/:id/history",
+  verifyToken,
+  allowRoles(HISTORY_READ),
+  controller.history
+);
+
+router.get("/:id", verifyToken, allowRoles(READ), controller.findOne);
+
+// ========================= CREATE / UPDATE =========================
+router.post("/", verifyToken, allowRoles(WRITE), controller.create);
+
 router.post(
-  "/",
+  "/:id/revisi",
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  controller.create
+  allowRoles(WRITE),
+  controller.createRevisi
 );
 
-router.put(
-  "/:id",
+router.post(
+  "/:id/rebuild-active-from-history",
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  controller.update
+  allowRoles(DELETE),
+  controller.rebuildActiveFromHistory
 );
 
-router.delete(
-  "/:id",
+// Optional legacy alias
+router.post(
+  "/:id/rebuild",
   verifyToken,
-  allowRoles(["SUPER_ADMIN"]),
-  controller.delete
+  allowRoles(DELETE),
+  controller.rebuildActiveFromHistory
 );
 
-// 🔹 Get all / one
-router.get(
-  "/",
+router.put("/:id", verifyToken, allowRoles(WRITE), controller.update);
+
+// ========================= WORKFLOW HISTORY BASED =========================
+router.patch(
+  "/history/:history_id/verifikasi",
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  controller.findAll
+  allowRoles(WRITE),
+  controller.verifikasiHistory
 );
 
-router.get(
-  "/:id",
+router.patch(
+  "/history/:history_id/approve",
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  controller.findOne
+  allowRoles(DELETE),
+  controller.approveHistory
 );
 
-router.get(
-  "/available-pagu",
+router.patch(
+  "/history/:history_id/tolak",
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  controller.availablePagu
+  allowRoles(DELETE),
+  controller.tolakHistory
 );
+
+// ========================= DELETE =========================
+router.delete("/:id", verifyToken, allowRoles(DELETE), controller.delete);
 
 module.exports = router;

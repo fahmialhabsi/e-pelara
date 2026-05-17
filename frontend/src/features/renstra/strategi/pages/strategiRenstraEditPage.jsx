@@ -1,26 +1,24 @@
-// src/features/renstra/strategi/pages/strategiRenstraEditPage.jsx (REFACTORED)
 import React, { useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import api from "../../../../services/api";
+import { Spin, Alert, Empty } from "antd";
+import api from "@/services/api";
 import StrategiRenstraForm from "../components/StrategiRenstraForm";
-import { Spin, Empty } from "antd";
 import { mergeRenstraAktifForEdit } from "@/features/renstra/utils/mergeRenstraAktifForEdit";
 
 const StrategiRenstraEditPage = () => {
   const { id } = useParams();
 
-  const { data: initialData, isLoading: isLoadingInitial } = useQuery({
-    queryKey: ["strategi-renstra", id],
+  const { data: initialData, isLoading, isError, error } = useQuery({
+    queryKey: ["renstra-strategi", id],
     queryFn: async () => {
       const res = await api.get(`/renstra-strategi/${id}`);
-      const row = res.data?.data ?? res.data;
-      return row;
+      return res.data?.data ?? res.data;
     },
     enabled: !!id,
   });
 
-  const { data: renstraAktifFallback, isLoading: isLoadingAktif } = useQuery({
+  const { data: renstraAktifFallback } = useQuery({
     queryKey: ["renstra-opd-aktif"],
     queryFn: async () => {
       const res = await api.get("/renstra-opd/aktif");
@@ -28,38 +26,22 @@ const StrategiRenstraEditPage = () => {
     },
   });
 
-  const isLoading = isLoadingInitial || isLoadingAktif;
-
   const renstraAktif = useMemo(
     () => mergeRenstraAktifForEdit(initialData?.renstra, renstraAktifFallback),
     [initialData?.renstra, renstraAktifFallback]
   );
 
-  const initialDataForForm = useMemo(() => {
-    if (!initialData) return null;
-    return {
-      ...initialData,
-      strategi_rpjmd_id:
-        initialData.rpjmd_strategi_id ?? initialData.strategi_rpjmd_id ?? null,
-    };
-  }, [initialData]);
+  if (isLoading) return <Spin fullscreen />;
 
-  if (isLoading) {
-    return <Spin tip="Memuat data..." size="large" fullscreen />;
-  }
+  if (isError)
+    return <Alert message="Error" description={error?.message} type="error" />;
 
-  if (!initialData) {
-    return (
-      <Empty
-        description={`Data Strategi dengan ID ${id} tidak ditemukan.`}
-        style={{ marginTop: 48 }}
-      />
-    );
-  }
+  if (!initialData)
+    return <Empty description={`Data strategi ID ${id} tidak ditemukan`} />;
 
   return (
     <StrategiRenstraForm
-      initialData={initialDataForForm}
+      initialData={initialData}
       renstraAktif={renstraAktif}
     />
   );

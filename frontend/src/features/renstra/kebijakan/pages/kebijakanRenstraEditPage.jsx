@@ -1,32 +1,23 @@
-// src/features/renstra/kebijakan/pages/kebijakanRenstraEditPage.jsx (FINAL)
-import React from "react";
+import React, { useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Spin, Alert, Empty } from "antd";
-import api from "@/services/api"; // Pastikan path ini benar
+import api from "@/services/api";
 import KebijakanRenstraForm from "../components/KebijakanRenstraForm";
+import { mergeRenstraAktifForEdit } from "@/features/renstra/utils/mergeRenstraAktifForEdit";
 
 const KebijakanRenstraEditPage = () => {
-  const { id } = useParams(); // Mengambil ID dari URL
+  const { id } = useParams();
 
-  // Query untuk mengambil data kebijakan yang akan diedit
-  const {
-    data: initialData,
-    isLoading: loadingDetail,
-    isError,
-    error,
-  } = useQuery({
+  const { data: initialData, isLoading, isError, error } = useQuery({
     queryKey: ["renstra-kebijakan", id],
     queryFn: async () => {
       const res = await api.get(`/renstra-kebijakan/${id}`);
-      const row = res.data?.data ?? res.data;
-      return row;
+      return res.data?.data ?? res.data;
     },
-    enabled: !!id,
-    retry: 1,
   });
 
-  const { data: renstraAktifFallback, isLoading: loadingRenstra } = useQuery({
+  const { data: renstraAktifFallback } = useQuery({
     queryKey: ["renstra-opd-aktif"],
     queryFn: async () => {
       const res = await api.get("/renstra-opd/aktif");
@@ -34,43 +25,19 @@ const KebijakanRenstraEditPage = () => {
     },
   });
 
-  const isLoading = loadingDetail || loadingRenstra;
+  const renstraAktif = useMemo(
+    () => mergeRenstraAktifForEdit(initialData?.renstra, renstraAktifFallback),
+    [initialData?.renstra, renstraAktifFallback]
+  );
 
-  // Tampilan loading
-  if (isLoading) {
-    return <Spin tip="Memuat data kebijakan..." size="large" fullscreen />;
-  }
-
-  // Tampilan error
-  if (isError) {
-    return (
-      <Alert
-        message="Gagal Memuat Data"
-        description={
-          error?.response?.data?.message ||
-          "Terjadi kesalahan saat mengambil data."
-        }
-        type="error"
-        showIcon
-        style={{ margin: 24 }}
-      />
-    );
-  }
-
-  // Tampilan jika data tidak ditemukan
-  if (!initialData) {
-    return (
-      <Empty
-        description={`Data kebijakan dengan ID ${id} tidak ditemukan.`}
-        style={{ marginTop: 48 }}
-      />
-    );
-  }
+  if (isLoading) return <Spin fullscreen />;
+  if (isError) return <Alert type="error" message={error?.message} />;
+  if (!initialData) return <Empty description="Data tidak ditemukan" />;
 
   return (
     <KebijakanRenstraForm
       initialData={initialData}
-      renstraAktif={initialData?.renstra ?? renstraAktifFallback}
+      renstraAktif={renstraAktif}
     />
   );
 };

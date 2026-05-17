@@ -4,42 +4,29 @@ const { Model } = require("sequelize");
 module.exports = (sequelize, DataTypes) => {
   class RenstraTabelSubkegiatan extends Model {
     static associate(models) {
-      // Relasi ke RenstraProgram
       this.belongsTo(models.RenstraProgram, {
         foreignKey: "program_id",
         as: "program",
-        onDelete: "CASCADE",
-        onUpdate: "CASCADE",
       });
 
-      // Relasi ke RenstraKegiatan
       this.belongsTo(models.RenstraKegiatan, {
         foreignKey: "kegiatan_id",
         as: "kegiatan",
-        onDelete: "CASCADE",
-        onUpdate: "CASCADE",
       });
 
-      // Relasi ke RenstraSubkegiatan
-      this.belongsTo(models.RenstraSubkegiatan, {
-        foreignKey: "subkegiatan_id",
-        as: "renstraSubkegiatan", // alias unik
-        onDelete: "CASCADE",
-        onUpdate: "CASCADE",
-      });
-
-      // Relasi ke SubKegiatan
-      this.belongsTo(models.SubKegiatan, {
-        foreignKey: "subkegiatan_id",
-        as: "subkegiatan", // alias tetap
-      });
-
-      // Relasi ke RenstraOPD
       this.belongsTo(models.RenstraOPD, {
-        foreignKey: "renstra_opd_id",
-        as: "renstra_opd",
-        onDelete: "SET NULL",
-        onUpdate: "CASCADE",
+        foreignKey: "renstra_id",
+        as: "renstra",
+      });
+
+      this.belongsTo(models.RenstraSubkegiatan, {
+        foreignKey: "sub_kegiatan_id",
+        as: "sub_kegiatan",
+      });
+
+      this.belongsTo(models.IndikatorRenstra, {
+        foreignKey: "indikator_id",
+        as: "indikator_detail",
       });
     }
   }
@@ -52,6 +39,10 @@ module.exports = (sequelize, DataTypes) => {
         autoIncrement: true,
         allowNull: false,
       },
+      renstra_id: { type: DataTypes.INTEGER, allowNull: true },
+      sub_kegiatan_id: { type: DataTypes.INTEGER, allowNull: true },
+      indikator_id: { type: DataTypes.INTEGER, allowNull: true },
+
       program_id: { type: DataTypes.INTEGER, allowNull: false },
       kegiatan_id: { type: DataTypes.INTEGER, allowNull: false },
       subkegiatan_id: { type: DataTypes.INTEGER, allowNull: false },
@@ -81,8 +72,31 @@ module.exports = (sequelize, DataTypes) => {
       pagu_tahun_5: { type: DataTypes.DECIMAL(20, 2), allowNull: true },
       pagu_tahun_6: { type: DataTypes.DECIMAL(20, 2), allowNull: true },
       lokasi: { type: DataTypes.STRING(255), allowNull: true },
-      target_akhir_renstra: { type: DataTypes.DECIMAL(10, 0), allowNull: true },
+      target_akhir_renstra: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
       pagu_akhir_renstra: { type: DataTypes.DECIMAL(20, 2), allowNull: true },
+      pagu_rpjmd_acuan: {
+        type: DataTypes.DECIMAL(20, 2),
+        allowNull: true,
+        defaultValue: 0,
+      },
+      versi: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 1,
+      },
+      status_revisi: {
+        type: DataTypes.ENUM("draft", "verifikasi", "approved", "ditolak"),
+        allowNull: false,
+        defaultValue: "draft",
+      },
+      last_revised_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      last_revised_by: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
       renstra_opd_id: {
         type: DataTypes.INTEGER,
         allowNull: true,

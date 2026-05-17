@@ -247,11 +247,9 @@ function TdWrap({ children, title, minWidth = 260, maxWidth = 520 }) {
  */
 export default function IndikatorList({ defaultType = "tujuan" }) {
   const navigate = useNavigate();
-  const [subKegiatanPaguMap, setSubKegiatanPaguMap] = useState({});
-  const [kegiatanPaguMap, setKegiatanPaguMap] = useState({});
-  const [programPaguMap, setProgramPaguMap] = useState({});
   const location = useLocation();
   const query = new URLSearchParams(location.search);
+
   const { dokumen, tahun } = useDokumen();
 
   const [selectedType, setSelectedType] = useState(
@@ -366,61 +364,7 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
     fetchItems();
   }, [fetchItems]);
 
-  useEffect(() => {
-  const fetchPaguMap = async () => {
-    if (
-      !["program", "kegiatan", "sub_kegiatan_indikator"].includes(selectedType) ||
-      !tahun
-    ) {
-      return;
-    }
-
-    try {
-      const res = await api.get("/sub-kegiatan", {
-        params: {
-          periode_id: 2,
-          tahun,
-          jenis_dokumen: "rpjmd",
-          page: 1,
-          limit: 1000,
-        },
-      });
-
-      const rows = Array.isArray(res.data) ? res.data : res.data?.data ?? [];
-
-      const subMap = {};
-      const kegiatanMap = {};
-      const programMap = {};
-
-      rows.forEach((row) => {
-        subMap[String(row.id)] = Number(row.pagu_anggaran) || 0;
-
-        if (row.kegiatan?.id) {
-          kegiatanMap[String(row.kegiatan.id)] =
-            Number(row.kegiatan.total_pagu_anggaran) || 0;
-        }
-
-        if (row.kegiatan?.program?.id) {
-          programMap[String(row.kegiatan.program.id)] =
-            Number(row.kegiatan.program.total_pagu_anggaran) || 0;
-        }
-      });
-
-      setSubKegiatanPaguMap(subMap);
-      setKegiatanPaguMap(kegiatanMap);
-      setProgramPaguMap(programMap);
-    } catch (err) {
-      console.error("Gagal memuat pagu:", err);
-      setSubKegiatanPaguMap({});
-      setKegiatanPaguMap({});
-      setProgramPaguMap({});
-    }
-  };
-
-  fetchPaguMap();
-}, [selectedType, tahun]);
-
-  const handleAdd = () => {
+    const handleAdd = () => {
     setFormKey((k) => k + 1);
     setShowAddForm(true);
   };
@@ -500,17 +444,14 @@ export default function IndikatorList({ defaultType = "tujuan" }) {
 
   if (selectedType === "sub_kegiatan_indikator") {
     return (
+      row.subKegiatan?.pagu_anggaran ??
+      row.SubKegiatan?.pagu_anggaran ??
+      row.sub_kegiatan?.pagu_anggaran ??
+      row.pagu_anggaran ??
+      row.pagu_cached ??
       row.pagu ??
       row.total_pagu_anggaran ??
-      row.subKegiatan?.pagu ??
-      row.subKegiatan?.total_pagu_anggaran ??
-      row.subKegiatan?.pagu_anggaran ??
-      row.SubKegiatan?.pagu ??
-      row.SubKegiatan?.total_pagu_anggaran ??
-      row.SubKegiatan?.pagu_anggaran ??
-      row.sub_kegiatan?.pagu ??
-      row.sub_kegiatan?.total_pagu_anggaran ??
-      row.sub_kegiatan?.pagu_anggaran ??
+      row.total_pagu ??
       0
     );
   }

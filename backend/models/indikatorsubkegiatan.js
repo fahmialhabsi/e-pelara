@@ -89,7 +89,16 @@ module.exports = (sequelize, DataTypes) => {
       keterangan:       { type: DataTypes.TEXT,    allowNull: true },
       rekomendasi_ai:   { type: DataTypes.TEXT,    allowNull: true },
       jenis_dokumen: { type: DataTypes.STRING(50), allowNull: false },
-      tahun:         { type: DataTypes.STRING(10), allowNull: false },
+      tahun: { type: DataTypes.STRING(10), allowNull: false },
+      pagu_cached: {
+        type: DataTypes.BIGINT,
+        allowNull: false,
+        defaultValue: 0,
+      },
+      pagu_cached_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
     },
     {
       sequelize,

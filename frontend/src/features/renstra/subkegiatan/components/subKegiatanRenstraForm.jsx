@@ -48,6 +48,14 @@ export default function SubkegiatanRenstraForm({
 
   if (isLoading) return <Spin tip="Memuat data..." fullscreen />;
 
+  if (!renstraAktif) {
+  return (
+    <Card>
+      <p>Renstra belum dipilih.</p>
+    </Card>
+  );
+}
+
   return (
     <Card
       key={initialData?.id ?? "new"}
@@ -283,6 +291,11 @@ export default function SubkegiatanRenstraForm({
           >
             {isSubmitting ? "Menyimpan..." : initialData?.id ? "Update" : "Simpan"}
           </Button>
+          <Alert
+            type="info"
+            message="Pagu dihitung otomatis dari subkegiatan"
+            style={{ marginTop: 16 }}
+          />
         </div>
       </form>
     </Card>

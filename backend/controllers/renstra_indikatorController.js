@@ -1,17 +1,25 @@
+// backend/controllers/renstra_indikatorController.js
 const {
   IndikatorRenstra,
   IndikatorTujuan,
   IndikatorSasaran,
-  IndikatorProgram,
-  IndikatorKegiatan,
   IndikatorStrategi,
   IndikatorArahKebijakan,
+  IndikatorProgram,
+  IndikatorKegiatan,
   IndikatorSubKegiatan,
   RenstraOPD,
+  RenstraStrategi,
+  RenstraKegiatan,
+  RenstraProgram,
+  RenstraSubkegiatan,
   SubKegiatan,
 } = require("../models");
 const { Op } = require("sequelize");
 const { programWhereForRenstraOpdQuery } = require("../helpers/renstraOpdProgramFilter");
+const {
+  validateRenstraIndicatorHierarchy,
+} = require("../services/renstraIndicatorHierarchyValidationService");
 
 // ✅ Helper untuk validasi renstra_id
 const validateRenstraId = (req, res) => {
@@ -22,6 +30,189 @@ const validateRenstraId = (req, res) => {
   }
   return renstraId;
 };
+
+// ✅ Mapping stage Renstra ke model indikator RPJMD
+function getRpjmdModelByStage(stage) {
+  switch (String(stage || "").toLowerCase()) {
+    case "tujuan":
+      return IndikatorTujuan;
+    case "sasaran":
+      return IndikatorSasaran;
+    case "strategi":
+      return IndikatorStrategi;
+    case "kebijakan":
+      return IndikatorArahKebijakan;
+    case "program":
+      return IndikatorProgram;
+    case "kegiatan":
+      return IndikatorKegiatan;
+    case "sub_kegiatan":
+      return IndikatorSubKegiatan;
+    default:
+      return null;
+  }
+}
+
+// ✅ Inject pagu RPJMD dari indikator sumber RPJMD
+async function attachTotalPaguRpjmd(rows) {
+  const jsonRows = rows.map((row) =>
+    typeof row.toJSON === "function" ? row.toJSON() : row
+  );
+
+  const tujuanSourceIds = jsonRows
+    .filter((row) => row.stage === "tujuan" && row.source_indikator_id)
+    .map((row) => row.source_indikator_id);
+
+  const sasaranSourceIds = jsonRows
+    .filter((row) => row.stage === "sasaran" && row.source_indikator_id)
+    .map((row) => row.source_indikator_id);
+  
+  const strategiSourceIds = jsonRows
+  .filter((row) => row.stage === "strategi" && row.source_indikator_id)
+    .map((row) => row.source_indikator_id);
+  
+  const kebijakanSourceIds = jsonRows
+  .filter((row) => row.stage === "kebijakan" && row.source_indikator_id)
+    .map((row) => row.source_indikator_id);
+  
+  const programSourceIds = jsonRows
+    .filter((row) => row.stage === "program" && row.source_indikator_id)
+    .map((row) => row.source_indikator_id);
+
+  const kegiatanSourceIds = jsonRows
+    .filter((row) => row.stage === "kegiatan" && row.source_indikator_id)
+    .map((row) => row.source_indikator_id);
+  
+  const subKegiatanSourceIds = jsonRows
+    .filter((row) => row.stage === "sub_kegiatan" && row.source_indikator_id)
+    .map((row) => row.source_indikator_id);
+
+  const tujuanPaguRows = tujuanSourceIds.length
+    ? await IndikatorTujuan.findAll({
+        where: { id: { [Op.in]: tujuanSourceIds } },
+        attributes: ["id", "pagu_cached", "pagu_cached_at"],
+        raw: true,
+      })
+    : [];
+
+  const sasaranPaguRows = sasaranSourceIds.length
+    ? await IndikatorSasaran.findAll({
+        where: { id: { [Op.in]: sasaranSourceIds } },
+        attributes: ["id", "pagu_cached", "pagu_cached_at"],
+        raw: true,
+      })
+    : [];
+  
+  const strategiPaguRows = strategiSourceIds.length
+    ? await IndikatorStrategi.findAll({
+        where: { id: { [Op.in]: strategiSourceIds } },
+        attributes: ["id", "pagu_cached", "pagu_cached_at"],
+        raw: true,
+      })
+      : [];
+  
+  const kebijakanPaguRows = kebijakanSourceIds.length
+    ? await IndikatorArahKebijakan.findAll({
+        where: { id: { [Op.in]: kebijakanSourceIds } },
+        attributes: ["id", "pagu_cached", "pagu_cached_at"],
+        raw: true,
+      })
+      : [];
+  
+    const programPaguRows = programSourceIds.length
+      ? await IndikatorProgram.findAll({
+          where: { id: { [Op.in]: programSourceIds } },
+          attributes: ["id", "pagu_cached", "pagu_cached_at"],
+          raw: true,
+        })
+      : [];
+  
+    const kegiatanPaguRows = kegiatanSourceIds.length
+      ? await IndikatorKegiatan.findAll({
+          where: { id: { [Op.in]: kegiatanSourceIds } },
+          attributes: ["id", "pagu_cached", "pagu_cached_at"],
+          raw: true,
+        })
+      : [];
+  
+    const subKegiatanPaguRows = subKegiatanSourceIds.length
+      ? await IndikatorSubKegiatan.findAll({
+          where: { id: { [Op.in]: subKegiatanSourceIds } },
+          attributes: ["id", "pagu_cached", "pagu_cached_at"],
+          raw: true,
+        })
+      : [];
+  
+
+  const tujuanPaguMap = new Map(
+    tujuanPaguRows.map((item) => [Number(item.id), item])
+  );
+
+  const sasaranPaguMap = new Map(
+    sasaranPaguRows.map((item) => [Number(item.id), item])
+  );
+
+  const strategiPaguMap = new Map(
+    strategiPaguRows.map((item) => [Number(item.id), item])
+  );
+
+  const kebijakanPaguMap = new Map(
+    kebijakanPaguRows.map((item) => [Number(item.id), item])
+  );
+
+  const programPaguMap = new Map(
+    programPaguRows.map((item) => [Number(item.id), item])
+  );
+
+  const kegiatanPaguMap = new Map(
+    kegiatanPaguRows.map((item) => [Number(item.id), item])
+  );
+
+  const subKegiatanPaguMap = new Map(
+    subKegiatanPaguRows.map((item) => [Number(item.id), item])
+  );
+
+  return jsonRows.map((row) => {
+    let sourcePagu = null;
+
+    if (row.stage === "tujuan") {
+      sourcePagu = tujuanPaguMap.get(Number(row.source_indikator_id));
+    }
+
+    if (row.stage === "sasaran") {
+      sourcePagu = sasaranPaguMap.get(Number(row.source_indikator_id));
+    }
+
+    if (row.stage === "strategi") {
+      sourcePagu = strategiPaguMap.get(Number(row.source_indikator_id));
+    }
+
+    if (row.stage === "kebijakan") {
+      sourcePagu = kebijakanPaguMap.get(Number(row.source_indikator_id));
+    }
+
+    if (row.stage === "program") {
+      sourcePagu = programPaguMap.get(Number(row.source_indikator_id));
+    }
+
+    if (row.stage === "kegiatan") {
+      sourcePagu = kegiatanPaguMap.get(Number(row.source_indikator_id));
+    }
+
+    if (row.stage === "sub_kegiatan") {
+      sourcePagu = subKegiatanPaguMap.get(Number(row.source_indikator_id));
+    }
+
+    const paguCached = Number(sourcePagu?.pagu_cached || 0);
+
+    return {
+      ...row,
+      pagu_cached: paguCached,
+      pagu_cached_at: sourcePagu?.pagu_cached_at || null,
+      total_pagu_rpjmd: paguCached,
+    };
+  });
+}
 
 // CREATE
 exports.create = async (req, res) => {
@@ -45,10 +236,34 @@ exports.findAll = async (req, res) => {
     const { renstra_id, tahun_mulai, stage, ref_id, sasaran_id } = req.query;
 
     const whereClause = {};
+
     if (renstra_id) {
-      Object.assign(whereClause, await programWhereForRenstraOpdQuery(renstra_id));
+      Object.assign(
+        whereClause,
+        await programWhereForRenstraOpdQuery(renstra_id)
+      );
     }
+
     if (stage) whereClause.stage = stage;
+
+    if (String(stage || "").toLowerCase() === "tujuan" && req.query.tujuan_id) {
+      const renstraTujuanId = Number(req.query.tujuan_id);
+
+      const renstraTujuan = await require("../models").RenstraTujuan.findByPk(
+        renstraTujuanId,
+        {
+          attributes: ["id", "rpjmd_tujuan_id"],
+          raw: true,
+        }
+      );
+
+      if (!renstraTujuan?.rpjmd_tujuan_id) {
+        return res.json([]);
+      }
+
+      whereClause.ref_id = Number(renstraTujuan.rpjmd_tujuan_id);
+    }
+
     if (ref_id) {
       whereClause.ref_id = Number(ref_id);
     } else if (
@@ -57,19 +272,43 @@ exports.findAll = async (req, res) => {
     ) {
       /**
        * Import RPJMD: `ref_id` = PK `indikatorsasarans` untuk sasaran tersebut
-       * (bukan `sasaran.id` dari dropdown).
+       * bukan `sasaran.id` dari dropdown.
        */
       const sid = Number(sasaran_id);
+
       if (Number.isFinite(sid)) {
+        const { RenstraSasaran } = require("../models");
+
+        // 🔥 FIX: cari berdasarkan rpjmd_sasaran_id BUKAN id
+        const renstraSasaran = await RenstraSasaran.findOne({
+          where: {
+            [Op.or]: [
+              { id: sid },
+              { rpjmd_sasaran_id: sid },
+            ],
+          },
+          attributes: ["id", "rpjmd_sasaran_id"],
+          raw: true,
+        });
+
+        if (!renstraSasaran) {
+          return res.json([]);
+        }
+
+        const rpjmdSasaranId = renstraSasaran.rpjmd_sasaran_id;
+
         const rpjmdRows = await IndikatorSasaran.findAll({
-          where: { sasaran_id: sid },
+          where: { sasaran_id: rpjmdSasaranId },
           attributes: ["id"],
           raw: true,
         });
-        const refIds = rpjmdRows.map((r) => r.id).filter((id) => id != null);
+
+        const refIds = rpjmdRows.map((r) => r.id).filter(Boolean);
+
         if (!refIds.length) {
           return res.json([]);
         }
+
         whereClause.ref_id = { [Op.in]: refIds };
       }
     }
@@ -88,8 +327,11 @@ exports.findAll = async (req, res) => {
       ],
     });
 
-    res.json(data);
+    const result = await attachTotalPaguRpjmd(data);
+
+    res.json(result);
   } catch (err) {
+    console.error("❌ [IndikatorRenstra.findAll] error:", err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -109,7 +351,9 @@ exports.findOne = async (req, res) => {
 
     if (!data) return res.status(404).json({ message: "Data not found" });
 
-    res.json(data);
+    const [result] = await attachTotalPaguRpjmd([data]);
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -157,6 +401,108 @@ function mapTipeIndikatorToRenstra(tipe) {
   return "Output";
 }
 
+function getParentRefIdByStage(stage, item) {
+  switch (stage) {
+    case "tujuan":
+      return item.tujuan_id;
+    case "sasaran":
+      return item.sasaran_id;
+    case "strategi":
+      return item.strategi_id;
+    case "kebijakan":
+      return item.arah_kebijakan_id;
+    case "program":
+      return item.program_id;
+    case "kegiatan":
+      return item.kegiatan_id;
+    case "sub_kegiatan":
+      return item.sub_kegiatan_id;
+    default:
+      return null;
+  }
+}
+
+async function resolveRenstraRefIdByStage(stage, item, renstraId) {
+  if (stage === "strategi") {
+    const rpjmdStrategiId = item.strategi_id;
+
+    if (!rpjmdStrategiId) return null;
+
+    const renstraStrategi = await RenstraStrategi.findOne({
+      where: {
+        renstra_id: renstraId,
+        rpjmd_strategi_id: rpjmdStrategiId,
+      },
+      attributes: ["id"],
+      raw: true,
+    });
+
+    return renstraStrategi?.id ?? null;
+  }
+
+    if (stage === "program") {
+    const rpjmdProgramId = item.program_id;
+
+    if (!rpjmdProgramId) return null;
+
+    const renstraProgram = await RenstraProgram.findOne({
+      where: {
+        renstra_id: renstraId,
+        rpjmd_program_id: rpjmdProgramId,
+      },
+      attributes: ["id"],
+      raw: true,
+    });
+
+    return renstraProgram?.id ?? null;
+  }
+
+  if (stage === "kegiatan") {
+      const rpjmdKegiatanId = item.kegiatan_id;
+
+      if (!rpjmdKegiatanId) return null;
+
+      const renstraKegiatan = await RenstraKegiatan.findOne({
+        where: {
+          renstra_id: renstraId,
+          rpjmd_kegiatan_id: rpjmdKegiatanId,
+        },
+        attributes: ["id"],
+        raw: true,
+      });
+
+      return renstraKegiatan?.id ?? null;
+    }
+
+    if (stage === "sub_kegiatan") {
+    const rpjmdSubKegiatanId = item.sub_kegiatan_id;
+
+    if (!rpjmdSubKegiatanId) return null;
+
+    const renstraSubKegiatan = await RenstraSubkegiatan.findOne({
+      where: {
+        sub_kegiatan_id: rpjmdSubKegiatanId,
+      },
+      include: [
+        {
+          model: RenstraProgram,
+          as: "program",
+          attributes: [],
+          where: {
+            renstra_id: renstraId,
+          },
+        },
+      ],
+      attributes: ["id"],
+      raw: true,
+    });
+
+    return renstraSubKegiatan?.id ?? null;
+  }
+
+  return getParentRefIdByStage(stage, item);
+}
+
 // IMPORT from RPJMD
 exports.importFromRPJMD = async (req, res) => {
   try {
@@ -192,10 +538,12 @@ exports.importFromRPJMD = async (req, res) => {
         return res.status(400).json({ error: "Stage tidak valid" });
     }
 
-    const doc = String(source_doc || "rpjmd").trim();
-    const docVariants = [...new Set([doc, doc.toLowerCase(), doc.toUpperCase()])];
     const indikatorList = await sourceModel.findAll({
-      where: { jenis_dokumen: { [Op.in]: docVariants } },
+      where: {
+        jenis_dokumen: {
+          [Op.like]: "%RPJMD%",
+        },
+      },
     });
 
     if (!indikatorList.length) {
@@ -204,54 +552,116 @@ exports.importFromRPJMD = async (req, res) => {
         .json({ message: `Tidak ada data ${stage} di ${source_doc}` });
     }
 
-    const newData = indikatorList.map((item) => ({
-      ref_id: item.id,
-      stage,
-      kode_indikator: item.kode_indikator,
-      nama_indikator: item.nama_indikator,
-      satuan: item.satuan,
-      definisi_operasional: item.definisi_operasional,
-      metode_penghitungan: item.metode_penghitungan,
-      baseline: item.baseline,
-      lokasi: (() => {
-        const raw = item.lokasi ?? item.sumber_data ?? item.keterangan ?? null;
-        if (raw == null || String(raw).trim() === "") return null;
-        return String(raw).trim().slice(0, 255);
-      })(),
-      target_tahun_1: item.target_tahun_1,
-      target_tahun_2: item.target_tahun_2,
-      target_tahun_3: item.target_tahun_3,
-      target_tahun_4: item.target_tahun_4,
-      target_tahun_5: item.target_tahun_5,
-      target_tahun_6: item.target_tahun_6 ?? null,
-      pagu_tahun_1:
-        stage === "sub_kegiatan"
-          ? item.pagu_tahun_1 ?? item.anggaran ?? null
-          : item.pagu_tahun_1 ?? null,
-      pagu_tahun_2: item.pagu_tahun_2 ?? null,
-      pagu_tahun_3: item.pagu_tahun_3 ?? null,
-      pagu_tahun_4: item.pagu_tahun_4 ?? null,
-      pagu_tahun_5: item.pagu_tahun_5 ?? null,
-      pagu_tahun_6: item.pagu_tahun_6 ?? null,
-      jenis_indikator: item.jenis_indikator,
-      tipe_indikator: mapTipeIndikatorToRenstra(item.tipe_indikator),
-      kriteria_kuantitatif: item.kriteria_kuantitatif,
-      kriteria_kualitatif: item.kriteria_kualitatif,
-      sumber_data: item.sumber_data,
-      penanggung_jawab:
-        item.penanggung_jawab != null ? String(item.penanggung_jawab) : null,
-      keterangan: item.keterangan,
-      tahun: item.tahun,
-      jenis_dokumen: "renstra", // hasil import ditandai "renstra"
-      renstra_id: renstraId,
-    }));
+    const newData = (
+  await Promise.all(
+    indikatorList.map(async (item) => {
+      const parentRefId = await resolveRenstraRefIdByStage(
+        stage,
+        item,
+        renstraId
+      );
 
-    const inserted = await IndikatorRenstra.bulkCreate(newData);
+      if (!parentRefId) return null;
+
+      return {
+        ref_id: parentRefId, // ✅ FIX DI SINI
+        source_indikator_id: item.id,
+        stage,
+        kode_indikator: item.kode_indikator,
+        nama_indikator: item.nama_indikator,
+        satuan: item.satuan,
+        definisi_operasional: item.definisi_operasional,
+        metode_penghitungan: item.metode_penghitungan,
+        baseline:
+          item.baseline ??
+          item.target_awal ??
+          item.capaian_tahun_1 ??
+          null,
+        lokasi: (() => {
+          const raw = item.lokasi ?? item.sumber_data ?? item.keterangan ?? null;
+          if (raw == null || String(raw).trim() === "") return null;
+          return String(raw).trim().slice(0, 255);
+        })(),
+        target_tahun_1: item.target_tahun_1,
+        target_tahun_2: item.target_tahun_2,
+        target_tahun_3: item.target_tahun_3,
+        target_tahun_4: item.target_tahun_4,
+        target_tahun_5: item.target_tahun_5,
+        target_tahun_6: item.target_tahun_6 ?? null,
+        pagu_tahun_1: item.pagu_tahun_1 ?? null,
+        pagu_tahun_2: item.pagu_tahun_2 ?? null,
+        pagu_tahun_3: item.pagu_tahun_3 ?? null,
+        pagu_tahun_4: item.pagu_tahun_4 ?? null,
+        pagu_tahun_5: item.pagu_tahun_5 ?? null,
+        pagu_tahun_6: item.pagu_tahun_6 ?? null,
+        jenis_indikator: item.jenis_indikator,
+        tipe_indikator: mapTipeIndikatorToRenstra(item.tipe_indikator),
+        kriteria_kuantitatif: item.kriteria_kuantitatif,
+        kriteria_kualitatif: item.kriteria_kualitatif,
+        sumber_data: item.sumber_data,
+        penanggung_jawab:
+          item.penanggung_jawab != null ? String(item.penanggung_jawab) : null,
+        keterangan: item.keterangan,
+        tahun: item.tahun,
+        jenis_dokumen: "renstra",
+        renstra_id: renstraId,
+      };
+    })
+  )
+).filter(Boolean);
+
+    const existingRows = await IndikatorRenstra.findAll({
+      where: {
+        renstra_id: renstraId,
+        stage,
+        ref_id: {
+          [Op.in]: newData.map((item) => item.ref_id),
+        },
+      },
+      attributes: ["ref_id", "source_indikator_id"],
+      raw: true,
+    });
+
+    const existingKeys = new Set(
+      existingRows.map(
+        (item) => `${Number(item.ref_id)}:${Number(item.source_indikator_id)}`
+      )
+    );
+
+    const filteredNewData = newData.filter(
+      (item) =>
+        !existingKeys.has(
+          `${Number(item.ref_id)}:${Number(item.source_indikator_id)}`
+        )
+    );
+
+    const inserted = filteredNewData.length
+      ? await IndikatorRenstra.bulkCreate(filteredNewData)
+      : [];
+
     res.json({
-      message: `Import ${stage} dari ${source_doc} berhasil`,
+      message: `Import ${stage} dari ${source_doc} berhasil. Baru: ${inserted.length}, dilewati: ${existingRows.length}`,
       data: inserted,
     });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// VALIDASI HIRARKI INDIKATOR RENSTRA
+exports.validateHierarchy = async (req, res) => {
+  try {
+    const renstraId = req.query.renstra_id || req.body?.renstra_id;
+
+    if (!renstraId) {
+      return res.status(400).json({ error: "renstra_id wajib diisi" });
+    }
+
+    const result = await validateRenstraIndicatorHierarchy(renstraId);
+
+    res.json(result);
+  } catch (err) {
+    console.error("❌ [IndikatorRenstra.validateHierarchy] error:", err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -265,10 +675,11 @@ exports.getRenstraAktif = async (req, res) => {
       where: { tahun_mulai: tahun, is_aktif: 1 },
     });
 
-    if (!renstra)
+    if (!renstra) {
       return res
         .status(404)
         .json({ message: `Renstra aktif tahun ${tahun} tidak ditemukan` });
+    }
 
     res.json(renstra);
   } catch (err) {
@@ -286,7 +697,7 @@ exports.getIndikatorProgram = async (req, res) => {
   res.json(data);
 };
 
-// GET indikator kegiatan (fix: pakai kode_indikator)
+// GET indikator kegiatan
 exports.getIndikatorKegiatan = async (req, res) => {
   try {
     const { kegiatan_id } = req.query;
@@ -300,7 +711,7 @@ exports.getIndikatorKegiatan = async (req, res) => {
   }
 };
 
-// GET indikator sub kegiatan (sudah sesuai)
+// GET indikator sub kegiatan
 exports.getIndikatorSubKegiatan = async (req, res) => {
   try {
     const { subkegiatan_id } = req.query;

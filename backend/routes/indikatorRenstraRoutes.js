@@ -40,6 +40,13 @@ router.get(
 );
 
 router.get(
+  "/validate/hierarchy",
+  verifyToken,
+  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
+  controller.validateHierarchy
+);
+
+router.get(
   "/:id",
   verifyToken,
   allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
