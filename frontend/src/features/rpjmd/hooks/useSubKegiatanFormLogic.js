@@ -520,61 +520,103 @@ export default function useSubKegiatanFormLogic(existingData, onSubmit) {
     return formatted.replace(/\./g, "");
   };
 
-  const masterEditHydrateRef = useRef(null);
+  const masterEditHydrateRef = useRef({
+    programId: null,
+    kegiatanId: null,
+  });
 
+  // 1. Hydrate PROGRAM master dulu
   useEffect(() => {
     if (!existingData?.id) {
-      masterEditHydrateRef.current = null;
-      return;
-    }
-    if (
-      existingData.input_mode !== "MASTER" &&
-      existingData.master_sub_kegiatan_id == null
-    ) {
-      return;
-    }
-    if (masterEditHydrateRef.current === existingData.id) {
-      return;
-    }
-    if (!masterProgramList.length || !programList.length || !kegiatanList.length) {
-      return;
-    }
-    if (!masterKegiatanList.length) {
-      return;
-    }
-    if (existingData.master_sub_kegiatan_id && masterSubLoading) {
+      masterEditHydrateRef.current.programId = null;
       return;
     }
 
-    const p = programList.find(
-      (x) => String(x.id) === String(existingData.program_id),
+    if (masterEditHydrateRef.current.programId === existingData.id) return;
+    if (!masterProgramList.length || !programList.length) return;
+
+    const effectiveProgramId =
+      existingData.program_id ??
+      existingData.kegiatan?.program_id ??
+      formData.program_id ??
+      "";
+
+    const directMasterProgramId =
+      existingData.master_program_id ??
+      existingData.kegiatan?.program?.master_program_id ??
+      null;
+
+    if (directMasterProgramId) {
+      setSelectedMasterProgramId(String(directMasterProgramId));
+      masterEditHydrateRef.current.programId = existingData.id;
+      return;
+    }
+
+    const programTransaksi = programList.find(
+      (p) => String(p.id) === String(effectiveProgramId)
     );
-    const mp = findMasterProgramRow(masterProgramList, p);
-    if (mp?.id) setSelectedMasterProgramId(String(mp.id));
 
-    const k = kegiatanList.find(
-      (x) => String(x.id) === String(existingData.kegiatan_id),
-    );
-    const mk = findMasterKegiatanRow(masterKegiatanList, k);
-    if (mk?.id) setSelectedMasterKegiatanId(String(mk.id));
+    const matched = findMasterProgramRow(masterProgramList, programTransaksi);
 
-    if (existingData.master_sub_kegiatan_id && masterSubKegiatanList.length) {
-      const sid = String(existingData.master_sub_kegiatan_id);
-      if (masterSubKegiatanList.some((s) => String(s.id) === sid)) {
-        setSelectedMasterSubKegiatanId(sid);
-      }
+    if (matched?.id) {
+      setSelectedMasterProgramId(String(matched.id));
     }
 
-    masterEditHydrateRef.current = existingData.id;
+    masterEditHydrateRef.current.programId = existingData.id;
   }, [
     existingData,
     masterProgramList,
     programList,
-    kegiatanList,
-    masterKegiatanList,
-    masterSubKegiatanList,
+    formData.program_id,
   ]);
 
+  // 2. Setelah PROGRAM master terisi, hydrate KEGIATAN master
+  useEffect(() => {
+    if (!existingData?.id) {
+      masterEditHydrateRef.current.kegiatanId = null;
+      return;
+    }
+
+    if (masterEditHydrateRef.current.kegiatanId === existingData.id) return;
+    if (!selectedMasterProgramId) return;
+    if (!masterKegiatanList.length || !kegiatanList.length) return;
+
+    const effectiveKegiatanId =
+      existingData.kegiatan_id ??
+      formData.kegiatan_id ??
+      "";
+
+    const directMasterKegiatanId =
+      existingData.master_kegiatan_id ??
+      existingData.kegiatan?.master_kegiatan_id ??
+      null;
+
+    if (directMasterKegiatanId) {
+      setSelectedMasterKegiatanId(String(directMasterKegiatanId));
+      masterEditHydrateRef.current.kegiatanId = existingData.id;
+      return;
+    }
+
+    const kegiatanTransaksi = kegiatanList.find(
+      (k) => String(k.id) === String(effectiveKegiatanId)
+    );
+
+    const matched = findMasterKegiatanRow(masterKegiatanList, kegiatanTransaksi);
+
+    if (matched?.id) {
+      setSelectedMasterKegiatanId(String(matched.id));
+    }
+
+    masterEditHydrateRef.current.kegiatanId = existingData.id;
+  }, [
+    existingData,
+    selectedMasterProgramId,
+    masterKegiatanList,
+    kegiatanList,
+    formData.kegiatan_id,
+  ]);
+
+  
   const handleChange = (e) => {
     const { name, value } = e.target;
 
@@ -627,7 +669,10 @@ export default function useSubKegiatanFormLogic(existingData, onSubmit) {
       return;
     }
 
-    if (masterPathActive) {
+    const submitAsMaster =
+      masterPathActive && normStr(formData.master_sub_kegiatan_id);
+
+    if (submitAsMaster) {
       if (!normStr(formData.program_id) || !normStr(formData.kegiatan_id)) {
         setMessage("Mapping ke RPJMD gagal. Data tidak bisa disimpan.");
         setChecking(false);
@@ -668,14 +713,16 @@ export default function useSubKegiatanFormLogic(existingData, onSubmit) {
         nama_bidang_opd: formData.nama_bidang_opd,
       };
 
-      if (masterPathActive) {
+      if (submitAsMaster) {
         payload.master_program_id = selectedMasterProgramId;
         payload.master_kegiatan_id = selectedMasterKegiatanId;
         payload.input_mode = "MASTER";
       } else {
         delete payload.master_program_id;
         delete payload.master_kegiatan_id;
-        if (payload.input_mode === "MASTER") delete payload.input_mode;
+        delete payload.master_sub_kegiatan_id;
+        delete payload.regulasi_versi_id;
+        payload.input_mode = "LEGACY";
       }
 
       let res;

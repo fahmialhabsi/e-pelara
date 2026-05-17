@@ -369,20 +369,22 @@ export default function DashboardUtamaRpjmd() {
     return allowedMenus.includes(saved) ? saved : null;
   });
 
-  // ⬇️ Tambahkan useEffect ini di sini
-  useEffect(() => {
-    const queryParams = new URLSearchParams(window.location.search);
-    const menuFromURL = queryParams.get("menu");
-
-    if (menuFromURL && allowedMenus.includes(menuFromURL)) {
-      setSelectedMenu(menuFromURL);
-      localStorage.setItem("selectedMenuRPJMD", menuFromURL);
-    }
-  }, []);
-
   const { dokumen, tahun } = useDokumen();
   const { user, loading: userLoading } = useAuth();
   const { periode_id, periodeList } = usePeriodeAktif();
+
+  // ⬇️ Tambahkan useEffect ini di sini
+  useEffect(() => {
+  const queryParams = new URLSearchParams(window.location.search);
+  const menuFromURL = queryParams.get("menu");
+
+  if (menuFromURL && allowedMenus.includes(menuFromURL)) {
+    setSelectedMenu(menuFromURL);
+    localStorage.setItem("selectedMenuRPJMD", menuFromURL);
+  }
+}, []);
+
+  
 
   const periodeRentangLabel = useMemo(() => {
     const p = (periodeList || []).find(
@@ -394,6 +396,14 @@ export default function DashboardUtamaRpjmd() {
     return null;
   }, [periodeList, periode_id]);
   const navigate = useNavigate();
+
+  const formatRupiah = (value) => {
+    return new Intl.NumberFormat("id-ID", {
+      style: "currency",
+      currency: "IDR",
+      maximumFractionDigits: 0,
+    }).format(Number(value || 0));
+  };
 
   const [openedGroup, setOpenedGroup] = useState(() => {
     const saved = localStorage.getItem("openedGroupRPJMD");
@@ -410,6 +420,8 @@ export default function DashboardUtamaRpjmd() {
     sub_kegiatan_output: 0,
   });
   const [loadingIndikatorSummary, setLoadingIndikatorSummary] = useState(true);
+  const [summaryPagu, setSummaryPagu] = useState(null);
+  const [loadingSummaryPagu, setLoadingSummaryPagu] = useState(true);
 
   const [dataCascading, setDataCascading] = useState([]);
   const [loadingCascading, setLoadingCascading] = useState(true);
@@ -492,6 +504,34 @@ export default function DashboardUtamaRpjmd() {
     fetchIndikatorSummary();
     return () => (mounted = false);
   }, [dokumen, tahun]);
+
+  useEffect(() => {
+  if (!dokumen || !tahun || !periode_id) return;
+
+  const fetchSummaryPagu = async () => {
+    try {
+      setLoadingSummaryPagu(true);
+
+      const res = await api.get("/dashboard/pagu", {
+        params: {
+          jenis_dokumen: dokumen,
+          tahun,
+          periode_id,
+        },
+      });
+
+      setSummaryPagu(res.data?.summary || null);
+    } catch (err) {
+      console.error("Gagal memuat dashboard agregasi pagu:", err);
+      setSummaryPagu(null);
+    } finally {
+      setLoadingSummaryPagu(false);
+    }
+  };
+
+  fetchSummaryPagu();
+}, [dokumen, tahun, periode_id, selectedMenu]);
+  
 
   useEffect(() => {
     if (openedGroup !== null) {
@@ -807,6 +847,99 @@ export default function DashboardUtamaRpjmd() {
               </tr>
             </tbody>
           </table>
+
+          <Card className="mb-4 shadow-sm border-0">
+            <Card.Body>
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <h5 className="mb-0 text-primary fw-bold">
+                  💰 Dashboard Agregasi Pagu
+                </h5>
+                {loadingSummaryPagu ? (
+                  <Spinner animation="border" size="sm" />
+                ) : null}
+              </div>
+
+              <Row className="g-3">
+                <Col xs={12} sm={6} lg={3}>
+                  <Card className="h-100 border-0 text-white bg-primary">
+                    <Card.Body>
+                      <div className="small">Total Pagu Tujuan</div>
+                      <div className="fw-bold fs-5">
+                        {formatRupiah(summaryPagu?.total_tujuan)}
+                      </div>
+                    </Card.Body>
+                  </Card>
+                </Col>
+
+                <Col xs={12} sm={6} lg={3}>
+                  <Card className="h-100 border-0 text-white bg-success">
+                    <Card.Body>
+                      <div className="small">Total Pagu Sasaran</div>
+                      <div className="fw-bold fs-5">
+                        {formatRupiah(summaryPagu?.total_sasaran)}
+                      </div>
+                    </Card.Body>
+                  </Card>
+                </Col>
+
+                <Col xs={12} sm={6} lg={3}>
+                  <Card className="h-100 border-0 text-white bg-info">
+                    <Card.Body>
+                      <div className="small">Total Pagu Strategi</div>
+                      <div className="fw-bold fs-5">
+                        {formatRupiah(summaryPagu?.total_strategi)}
+                      </div>
+                    </Card.Body>
+                  </Card>
+                </Col>
+
+                <Col xs={12} sm={6} lg={3}>
+                  <Card className="h-100 border-0 text-white bg-warning">
+                    <Card.Body>
+                      <div className="small">Total Pagu Arah Kebijakan</div>
+                      <div className="fw-bold fs-5">
+                        {formatRupiah(summaryPagu?.total_arah_kebijakan)}
+                      </div>
+                    </Card.Body>
+                  </Card>
+                </Col>
+
+                <Col xs={12} sm={6} lg={3}>
+                  <Card className="h-100 border-0 text-white bg-secondary">
+                    <Card.Body>
+                      <div className="small">Total Pagu Program</div>
+                      <div className="fw-bold fs-5">
+                        {formatRupiah(summaryPagu?.total_program)}
+                      </div>
+                    </Card.Body>
+                  </Card>
+                </Col>
+
+                <Col xs={12} sm={6} lg={3}>
+                  <Card className="h-100 border-0 text-white bg-dark">
+                    <Card.Body>
+                      <div className="small">Total Pagu Kegiatan</div>
+                      <div className="fw-bold fs-5">
+                        {formatRupiah(summaryPagu?.total_kegiatan)}
+                      </div>
+                    </Card.Body>
+                  </Card>
+                </Col>
+
+                <Col xs={12} sm={6} lg={3}>
+                  <Card className="h-100 border-0 text-white bg-danger">
+                    <Card.Body>
+                      <div className="small">Total Pagu Sub Kegiatan</div>
+                      <div className="fw-bold fs-5">
+                        {formatRupiah(summaryPagu?.total_sub_kegiatan)}
+                      </div>
+                    </Card.Body>
+                  </Card>
+                </Col>
+              </Row>
+            </Card.Body>
+          </Card>
+          
 
           {!selectedMenu ? (
             <></>
