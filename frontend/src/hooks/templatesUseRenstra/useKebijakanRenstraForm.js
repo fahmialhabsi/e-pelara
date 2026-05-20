@@ -67,52 +67,50 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
     fetchOptions: {
       "renstra-strategi": () =>
         api.get("/renstra-strategi").then((res) => res.data?.data || []),
-      
     },
     onMutationSuccess: (data) => setMutationResultData(data),
   });
 
-  const { control, setValue, watch, reset } = form;
+  const { setValue, watch, reset } = form;
 
   const selectedStrategiId = watch("strategi_id");
+  const selectedArahId = watch("rpjmd_arah_id");
+  const normalizeId = (value) =>
+    value === undefined || value === null || value === "" ? "" : String(value);
 
   useEffect(() => {
-  const loadArahKebijakan = async () => {
-    if (!selectedStrategiId) {
-      setArahKebijakanFiltered([]);
-      setValue("rpjmd_arah_id", "");
-      return;
-    }
+    const loadArahKebijakan = async () => {
+      if (!selectedStrategiId) {
+        setArahKebijakanFiltered([]);
+        setValue("rpjmd_arah_id", "");
+        return;
+      }
 
-    try {
-      const res = await api.get("/arah-kebijakan", {
-        params: {
-          jenis_dokumen: "rpjmd",
-          tahun: initialData?.tahun || renstraAktif?.tahun_mulai,
-          page: 1,
-          limit: 1000,
-          renstra_strategi_id: selectedStrategiId,
-        },
-      });
+      try {
+        const res = await api.get("/arah-kebijakan", {
+          params: {
+            jenis_dokumen: "rpjmd",
+            tahun: initialData?.tahun || renstraAktif?.tahun_mulai,
+            page: 1,
+            limit: 1000,
+            renstra_strategi_id: selectedStrategiId,
+          },
+        });
 
-      setArahKebijakanFiltered(res.data?.data || []);
-      setValue("rpjmd_arah_id", "");
-      setValue("no_arah_rpjmd", "");
-      setValue("isi_arah_rpjmd", "");
-      setValue("kode_kebjkn", "");
-    } catch (err) {
-      console.error("Gagal load arah kebijakan filtered:", err);
-      setArahKebijakanFiltered([]);
-    }
-  };
+        setArahKebijakanFiltered(res.data?.data || []);
+        setValue("rpjmd_arah_id", "");
+        setValue("no_arah_rpjmd", "");
+        setValue("isi_arah_rpjmd", "");
+        setValue("kode_kebjkn", "");
+        setValue("deskripsi", "");
+      } catch (err) {
+        console.error("Gagal load arah kebijakan filtered:", err);
+        setArahKebijakanFiltered([]);
+      }
+    };
 
-  loadArahKebijakan();
-}, [
-  selectedStrategiId,
-  initialData?.tahun,
-  renstraAktif?.tahun_mulai,
-  setValue,
-]);
+    loadArahKebijakan();
+  }, [selectedStrategiId, initialData?.tahun, renstraAktif?.tahun_mulai, setValue]);
 
   useEffect(() => {
     if (!initialData) {
@@ -130,57 +128,68 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
   }, [initialData, renstraAktif?.id, reset, setValue]);
 
   useEffect(() => {
-    const selectedId = watch("rpjmd_arah_id");
-    const arahOptions = dropdowns?.["arah-kebijakan"];
+    const selectedId = selectedArahId;
     const renstraId = initialData?.renstra_id || renstraAktif?.id;
+    const arahOptions = dropdowns?.["arah-kebijakan"] || [];
 
-    if (!initialData && selectedId && arahOptions?.length > 0 && renstraId) {
-      const triggerAutoKode = async () => {
-        try {
-          const { data } = await api.get(
-            "/renstra-kebijakan/generate-kode-kebijakan",
-            { params: { arah_kebijakan_id: selectedId, renstra_id: renstraId } }
-          );
-          setValue("kode_kebjkn", data?.kode_otomatis || "");
-        } catch (err) {
-          console.error("Error kode otomatis:", err);
-          message.error("Gagal menghasilkan kode kebijakan otomatis.");
-          setValue("kode_kebjkn", "");
-        }
-      };
-      triggerAutoKode();
-    } else if (!selectedId) {
+    if (!selectedId) {
       setValue("kode_kebjkn", "");
+      return;
     }
-  }, [
-    watch("rpjmd_arah_id"),
-    dropdowns?.["arah-kebijakan"],
-    initialData,
-    renstraAktif?.id,
-    setValue,
-  ]);
+
+    const selected = arahOptions.find(
+      (item) => normalizeId(item.id) === normalizeId(selectedId),
+    );
+
+    if (selected) {
+      setValue("no_arah_rpjmd", selected.kode_arah || "");
+      setValue("isi_arah_rpjmd", selected.deskripsi || "");
+      setValue("deskripsi", selected.deskripsi || "");
+      setValue("jenisDokumen", selected.jenis_dokumen || "");
+      setValue("tahun", selected.tahun || "");
+    }
+
+    if (initialData || !renstraId) return;
+
+    const triggerAutoKode = async () => {
+      try {
+        const { data } = await api.get("/renstra-kebijakan/generate-kode-kebijakan", {
+          params: { arah_kebijakan_id: selectedId, renstra_id: renstraId },
+        });
+        setValue("kode_kebjkn", data?.kode_otomatis || "");
+      } catch (err) {
+        console.error("Error kode otomatis:", err);
+        message.error("Gagal menghasilkan kode kebijakan otomatis.");
+        setValue("kode_kebjkn", "");
+      }
+    };
+
+    triggerAutoKode();
+  }, [selectedArahId, dropdowns?.["arah-kebijakan"], initialData, message, renstraAktif?.id, setValue]);
 
   const handleArahKebijakanChange = useCallback(
     (value) => {
       const selected = dropdowns?.["arah-kebijakan"]?.find(
-        (item) => item.id === value
+        (item) => normalizeId(item.id) === normalizeId(value),
       );
+
       if (selected) {
-        setValue("no_arah_rpjmd", selected.kode_arah);
-        setValue("isi_arah_rpjmd", selected.deskripsi);
-        // 🔹 Auto-fill Isi Kebijakan dari deskripsi Arah Kebijakan RPJMD
+        setValue("no_arah_rpjmd", selected.kode_arah || "");
+        setValue("isi_arah_rpjmd", selected.deskripsi || "");
+        setValue("kode_kebjkn", selected.kode_arah || "");
         setValue("deskripsi", selected.deskripsi || "");
-        setValue("jenisDokumen", selected.jenis_dokumen);
-        setValue("tahun", selected.tahun);
+        setValue("jenisDokumen", selected.jenis_dokumen || "");
+        setValue("tahun", selected.tahun || "");
       } else {
         setValue("no_arah_rpjmd", "");
         setValue("isi_arah_rpjmd", "");
         setValue("jenisDokumen", "");
         setValue("tahun", "");
         setValue("kode_kebjkn", "");
+        setValue("deskripsi", "");
       }
     },
-    [dropdowns, setValue]
+    [dropdowns, setValue],
   );
 
   const handleStrategiChange = (value) => {
@@ -190,9 +199,9 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
   const totalLoading = isSubmitting || isDropdownsLoading;
 
   const dropdownsFinal = {
-  ...dropdowns,
-  "arah-kebijakan": arahKebijakanFiltered,
-};
+    ...dropdowns,
+    "arah-kebijakan": arahKebijakanFiltered,
+  };
 
   return {
     form,

@@ -1,21 +1,35 @@
 // src/features/renstra/program/components/RenstraTabelProgramForm.jsx
-import React, { useEffect, useMemo, useRef } from "react";
-import { Card, Button, Alert, Input } from "antd";
-import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import * as Yup from "yup";
+import React, { useEffect, useMemo, useRef } from 'react';
+import { Card, Button, Alert, Input } from 'antd';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import * as Yup from 'yup';
 
-import api from "@/services/api";
-import { useRenstraFormTemplate } from "@/hooks/templatesUseRenstra/useRenstraFormTemplate";
-import SelectWithLabelValue from "@/shared/components/form/SelectWithLabelValue";
-import InputField from "@/shared/components/form/InputField";
-import CurrencyInputField from "@/shared/components/form/CurrencyInputField";
-import SpinnerFullscreen from "./RenstraTableSpinnerFullscreen";
+import api from '@/services/api';
+import {
+  buildGovernanceUiMessage,
+  getGovernanceBlockingCode,
+  getPreparedRpjmdSource,
+  getRenstraPrograms,
+  resolveRpjmdSourceMap,
+} from '@/features/renstra/services/renstraApi';
+import { useRenstraFormTemplate } from '@/hooks/templatesUseRenstra/useRenstraFormTemplate';
+import SelectWithLabelValue from '@/shared/components/form/SelectWithLabelValue';
+import InputField from '@/shared/components/form/InputField';
+import CurrencyInputField from '@/shared/components/form/CurrencyInputField';
+import SpinnerFullscreen from './RenstraTableSpinnerFullscreen';
 
 const YEARS = [1, 2, 3, 4, 5];
 const ALL_YEARS = [1, 2, 3, 4, 5, 6];
-const ENDPOINT = "/renstra-tabel-program";
-const REDIRECT = "/renstra/tabel/program";
+const ENDPOINT = '/renstra-tabel-program';
+const REDIRECT = '/renstra/tabel/program';
+const GOVERNANCE_SOURCE_STAGE = 'program';
+const GOVERNANCE_BLOCKING_CODES = new Set([
+  'missing_target',
+  'chain_mismatch',
+  'resolver_conflict',
+  'blocked',
+]);
 
 const getProgramRenstraId = (item) => item?.id ?? null;
 
@@ -34,56 +48,124 @@ const uniqueOptionsByValue = (options) => {
 
 const makeLabel = (...parts) =>
   parts
-    .map((item) =>
-      item !== null && item !== undefined ? String(item).trim() : ""
-    )
+    .map((item) => (item !== null && item !== undefined ? String(item).trim() : ''))
     .filter(Boolean)
-    .join(" - ");
+    .join(' - ');
+
+const normalizeDecimalValue = (value) => {
+  if (value === null || value === undefined || value === '') return '';
+
+  const normalized = String(value).trim().replace(',', '.');
+  const num = Number(normalized);
+
+  return Number.isFinite(num) ? num : '';
+};
+
+const toPositiveNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+
+  const normalized = String(value).trim().replace(',', '.');
+  const num = Number(normalized);
+
+  return Number.isFinite(num) && num > 0 ? num : null;
+};
+
+const pickPositiveNumber = (...values) => {
+  for (const value of values) {
+    const num = toPositiveNumber(value);
+    if (num !== null) return num;
+  }
+
+  return 0;
+};
+
+const splitPaguToFiveYears = (value) => {
+  const total = toPositiveNumber(value) || 0;
+  const dasar = Math.floor(total / 5);
+  const sisa = total - dasar * 5;
+
+  return [dasar, dasar, dasar, dasar, dasar + sisa];
+};
+
+const extractPreparedSourceRows = (payload) => {
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  if (Array.isArray(payload?.data?.rows)) return payload.data.rows;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload)) return payload;
+  return [];
+};
+
+const yupNumberRequired = (messageRequired, messageType = 'Harus angka') =>
+  Yup.number()
+    .transform((value, originalValue) => {
+      if (originalValue === null || originalValue === undefined || originalValue === '') {
+        return undefined;
+      }
+
+      const normalized = String(originalValue).trim().replace(',', '.');
+      const num = Number(normalized);
+
+      return Number.isFinite(num) ? num : value;
+    })
+    .typeError(messageType)
+    .required(messageRequired);
+
+const PROGRAM_REQUIRED_FIELDS = [
+  'indikator_id',
+  'baseline',
+  'satuan_target',
+  'lokasi',
+  'target_tahun_1',
+  'target_tahun_2',
+  'target_tahun_3',
+  'target_tahun_4',
+  'target_tahun_5',
+];
 
 const RenstraTabelProgramForm = ({ initialData = null, renstraAktif }) => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const renstraId = renstraAktif?.id;
+  const activeArahKebijakanId = useMemo(() => {
+    const raw =
+      searchParams.get('arah_kebijakan_id') ||
+      searchParams.get('kebijakan_id') ||
+      searchParams.get('renstra_kebijakan_id');
 
-  const [paguInfoMessage, setPaguInfoMessage] = React.useState("");
-  const [existingDataInfo, setExistingDataInfo] = React.useState(null);
-  const [alasanRevisi, setAlasanRevisi] = React.useState("");
+    return toPositiveNumber(raw);
+  }, [searchParams]);
+  const hasActiveArahKebijakan = Boolean(activeArahKebijakanId);
+
+  const [alasanRevisi, setAlasanRevisi] = React.useState('');
   const [submitRevisiLoading, setSubmitRevisiLoading] = React.useState(false);
-  const [serverMessage, setServerMessage] = React.useState("");
+  const [serverMessage, setServerMessage] = React.useState('');
 
   const { data: programOptions = [], isLoading: loadingProgram } = useQuery({
-  queryKey: ["renstra-program", renstraId],
-  queryFn: async () => {
-      const res = await api.get("/renstra-program", {
-        params: { renstra_id: renstraId },
-      });
-
-      return Array.isArray(res.data?.data)
-        ? res.data.data
-        : Array.isArray(res.data)
-        ? res.data
-        : [];
-    },
-    enabled: !!renstraId,
+    queryKey: ['renstra-program', renstraId, activeArahKebijakanId],
+    queryFn: async () =>
+      getRenstraPrograms({
+        renstra_id: renstraId,
+        arah_kebijakan_id: activeArahKebijakanId,
+      }),
+    enabled: !!renstraId && hasActiveArahKebijakan,
   });
 
   const schema = () =>
     Yup.object({
-      program_id: Yup.string().required("Program wajib dipilih"),
-      indikator_id: Yup.string().required("Indikator wajib dipilih"),
-      baseline: Yup.number()
-        .typeError("Baseline harus angka")
-        .required("Baseline wajib diisi"),
-      satuan_target: Yup.string().required("Satuan target wajib diisi"),
-      lokasi: Yup.string().required("Lokasi wajib diisi"),
-      opd_penanggung_jawab: Yup.string().required("OPD wajib diisi"),
+      program_id: Yup.string().required('Program wajib dipilih'),
+      indikator_id: Yup.string().required('Indikator wajib dipilih'),
+      baseline: yupNumberRequired('Baseline wajib diisi', 'Baseline harus angka'),
+      satuan_target: Yup.string().required('Satuan target wajib diisi'),
+      lokasi: Yup.string().required('Lokasi wajib diisi'),
+      opd_penanggung_jawab: Yup.string().required('OPD wajib diisi'),
       alasan_revisi: initialData
-        ? Yup.string().required("Alasan revisi wajib diisi")
+        ? Yup.string().required('Alasan revisi wajib diisi')
         : Yup.string().nullable(),
-      target_tahun_1: Yup.number().typeError("Harus angka").required(),
-      target_tahun_2: Yup.number().typeError("Harus angka").required(),
-      target_tahun_3: Yup.number().typeError("Harus angka").required(),
-      target_tahun_4: Yup.number().typeError("Harus angka").required(),
-      target_tahun_5: Yup.number().typeError("Harus angka").required(),
+      target_tahun_1: yupNumberRequired('Target tahun ke-1 wajib diisi'),
+      target_tahun_2: yupNumberRequired('Target tahun ke-2 wajib diisi'),
+      target_tahun_3: yupNumberRequired('Target tahun ke-3 wajib diisi'),
+      target_tahun_4: yupNumberRequired('Target tahun ke-4 wajib diisi'),
+      target_tahun_5: yupNumberRequired('Target tahun ke-5 wajib diisi'),
       target_tahun_6: Yup.number().nullable(),
       pagu_tahun_1: Yup.number().nullable(),
       pagu_tahun_2: Yup.number().nullable(),
@@ -94,72 +176,60 @@ const RenstraTabelProgramForm = ({ initialData = null, renstraAktif }) => {
     });
 
   const defaultValues = {
-    program_id: initialData?.program_id
-      ? String(initialData.program_id)
-      : "",
-    indikator_id: initialData?.indikator_id
-      ? String(initialData.indikator_id)
-      : "",
-    baseline: initialData?.baseline ?? "",
-    satuan_target: initialData?.satuan_target ?? "",
-    lokasi: initialData?.lokasi ?? "",
+    program_id: initialData?.program_id ? String(initialData.program_id) : '',
+    indikator_id: initialData?.indikator_id ? String(initialData.indikator_id) : '',
+    baseline: initialData?.baseline ?? '',
+    satuan_target: initialData?.satuan_target ?? '',
+    lokasi: initialData?.lokasi ?? '',
     opd_penanggung_jawab:
-    initialData?.opd_penanggung_jawab ??
-    initialData?.program?.opd_penanggung_jawab ??
-    renstraAktif?.nama_opd ??
-    "",
-        ...ALL_YEARS.reduce(
+      initialData?.opd_penanggung_jawab ??
+      initialData?.program?.opd_penanggung_jawab ??
+      renstraAktif?.nama_opd ??
+      '',
+    ...ALL_YEARS.reduce(
       (acc, i) => ({
         ...acc,
-        [`target_tahun_${i}`]:
-          i === 6 ? 0 : initialData?.[`target_tahun_${i}`] ?? "",
-        [`pagu_tahun_${i}`]:
-          i === 6 ? 0 : Number(initialData?.[`pagu_tahun_${i}`] || 0),
+        [`target_tahun_${i}`]: i === 6 ? 0 : (initialData?.[`target_tahun_${i}`] ?? ''),
+        [`pagu_tahun_${i}`]: i === 6 ? 0 : Number(initialData?.[`pagu_tahun_${i}`] || 0),
       }),
-      {}
+      {},
     ),
 
-    target_akhir_renstra: initialData?.target_akhir_renstra ?? "",
+    target_akhir_renstra: initialData?.target_akhir_renstra ?? '',
     pagu_rpjmd_acuan: Number(initialData?.pagu_rpjmd_acuan || 0),
     pagu_akhir_renstra: Number(initialData?.pagu_akhir_renstra || 0),
-    alasan_revisi: "",
+    alasan_revisi: '',
   };
 
   const generatePayload = (data) => {
     const selectedProgram = programOptions.find(
-    (p) => String(getProgramRenstraId(p)) === String(data.program_id)
-  );
-
-  const targetValues = YEARS.map(
-      (i) => Number(data[`target_tahun_${i}`]) || 0
+      (p) => String(getProgramRenstraId(p)) === String(data.program_id),
     );
 
-
-  const selectedIndikator = indikatorOptions.find(
-      (x) => String(x.id) === String(data.indikator_id)
+    const selectedIndikator = indikatorOptions.find(
+      (x) => String(x.id) === String(data.indikator_id),
     );
-
 
     return {
       renstra_id: Number(renstraId),
       program_id: selectedProgram ? Number(selectedProgram.id) : Number(data.program_id),
       indikator_id: Number(data.indikator_id),
-      indikator: selectedIndikator?.nama_indikator || data.indikator || "",
-      baseline: data.baseline,
+      indikator: selectedIndikator?.nama_indikator || data.indikator || '',
+      baseline: normalizeDecimalValue(data.baseline),
       satuan_target: data.satuan_target,
       lokasi: data.lokasi,
       opd_penanggung_jawab: data.opd_penanggung_jawab,
-      nama_program: selectedProgram?.nama_program || "",
+      nama_program: selectedProgram?.nama_program || '',
       ...YEARS.reduce(
-          (acc, i) => ({
-            ...acc,
-            [`target_tahun_${i}`]: Number(data[`target_tahun_${i}`]) || 0,
-            [`pagu_tahun_${i}`]: Number(data[`pagu_tahun_${i}`]) || 0,
-          }),
-          {}
-        ),
+        (acc, i) => ({
+          ...acc,
+          [`target_tahun_${i}`]: normalizeDecimalValue(data[`target_tahun_${i}`]) || 0,
+          [`pagu_tahun_${i}`]: Number(data[`pagu_tahun_${i}`]) || 0,
+        }),
+        {},
+      ),
 
-        ...(initialData ? { alasan_revisi: data.alasan_revisi } : {}),
+      ...(initialData ? { alasan_revisi: data.alasan_revisi } : {}),
     };
   };
 
@@ -170,7 +240,7 @@ const RenstraTabelProgramForm = ({ initialData = null, renstraAktif }) => {
     schema,
     defaultValues,
     generatePayload,
-    queryKeys: ["renstra-tabel-program"],
+    queryKeys: ['renstra-tabel-program'],
     redirectPath: REDIRECT,
   });
 
@@ -178,26 +248,66 @@ const RenstraTabelProgramForm = ({ initialData = null, renstraAktif }) => {
     control,
     handleSubmit,
     setValue,
+    setError,
     watch,
+    clearErrors,
     formState: { errors },
   } = form;
 
-  const selectedProgramId = watch("program_id");
-  const selectedIndikatorId = watch("indikator_id");
+  const selectedProgramId = watch('program_id');
+  const selectedIndikatorId = watch('indikator_id');
 
   const selectedProgram = programOptions.find(
-    (p) => String(getProgramRenstraId(p)) === String(selectedProgramId)
+    (p) => String(getProgramRenstraId(p)) === String(selectedProgramId),
   );
 
-  const selectedProgramRefId = selectedProgramId || null;
+  const selectedProgramRefId = selectedProgram?.id ? Number(selectedProgram.id) : null;
+  const selectedProgramRpjmdId = selectedProgram?.rpjmd_program_id || null;
+  const selectedProgramAllowed = !selectedProgramId || Boolean(selectedProgram);
 
-    const { data: paguCache = null, isLoading: loadingPaguCache } = useQuery({
-    queryKey: ["renstra-pagu-cache", renstraId, "program", initialData?.id],
+  useEffect(() => {
+    if (!hasActiveArahKebijakan) {
+      setError('program_id', {
+        type: 'validate',
+        message: 'Pilih Arah Kebijakan terlebih dahulu agar Program dapat difilter sesuai chain.',
+      });
+      return;
+    }
+
+    if (!selectedProgramId) {
+      clearErrors('program_id');
+      return;
+    }
+
+    if (!selectedProgramAllowed) {
+      setValue('program_id', '', {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+      setError('program_id', {
+        type: 'validate',
+        message: 'Program tidak sesuai dengan Arah Kebijakan aktif.',
+      });
+      return;
+    }
+
+    clearErrors('program_id');
+  }, [
+    clearErrors,
+    hasActiveArahKebijakan,
+    selectedProgramAllowed,
+    selectedProgramId,
+    setError,
+    setValue,
+  ]);
+
+  const { data: paguCache = null, isLoading: loadingPaguCache } = useQuery({
+    queryKey: ['renstra-pagu-cache', renstraId, 'program', initialData?.id],
     queryFn: async () => {
-      const res = await api.get("/renstra-pagu-cache", {
+      const res = await api.get('/renstra-pagu-cache', {
         params: {
           renstra_id: renstraId,
-          stage: "program",
+          stage: 'program',
           ref_id: initialData.id,
         },
       });
@@ -205,107 +315,346 @@ const RenstraTabelProgramForm = ({ initialData = null, renstraAktif }) => {
       const rows = Array.isArray(res.data)
         ? res.data
         : Array.isArray(res.data?.data)
-        ? res.data.data
-        : [];
+          ? res.data.data
+          : [];
 
       return rows[0] || null;
     },
     enabled: !!renstraId && !!initialData?.id,
   });
 
-    const { data: indikatorOptions = [], isLoading: loadingIndikator } = useQuery({
+  const {
+    data: governanceSourceMap = null,
+    isLoading: loadingGovernanceSourceMap,
+    error: errorGovernanceSourceMap,
+  } = useQuery({
     queryKey: [
-    "indikator-renstra-program-form",
-    renstraId,
-    selectedProgramRefId,
-    initialData?.id || "create",
-  ],
-  queryFn: async () => {
-    const res = await api.get("/indikator-renstra", {
-      params: {
+      'renstra-governance-source-map',
+      renstraId,
+      selectedProgramRpjmdId,
+      selectedProgramRefId,
+    ],
+    queryFn: async () =>
+      resolveRpjmdSourceMap({
+        target_module: 'RENSTRA',
         renstra_id: renstraId,
-        stage: "program",
-        ref_id: selectedProgramRefId,
-      },
+        source_stage: GOVERNANCE_SOURCE_STAGE,
+        source_ref_id: selectedProgramRpjmdId,
+        include_parent: true,
+        include_chain: true,
+      }),
+    enabled: !!renstraId && !!selectedProgramRpjmdId,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    retry: 1,
+  });
+
+  const {
+    data: preparedGovernanceSource = null,
+    isLoading: loadingPreparedGovernanceSource,
+    error: errorPreparedGovernanceSource,
+  } = useQuery({
+    queryKey: [
+      'renstra-governance-prepared-source',
+      renstraId,
+      selectedProgramRpjmdId,
+      selectedProgramRefId,
+    ],
+    queryFn: async () =>
+      getPreparedRpjmdSource({
+        target_module: 'RENSTRA',
+        renstra_id: renstraId,
+        scope: 'program',
+        source_stage: GOVERNANCE_SOURCE_STAGE,
+        include_indicators: true,
+        include_pagu: false,
+        include_unmapped: true,
+        include_blocked: true,
+      }),
+    enabled: !!renstraId && !!selectedProgramRpjmdId,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    retry: 1,
+  });
+
+  const governanceSourceMapPayload = governanceSourceMap?.data ?? null;
+  const preparedGovernanceSourcePayload = preparedGovernanceSource?.data ?? null;
+
+  const preparedGovernanceRows = useMemo(
+    () => extractPreparedSourceRows(preparedGovernanceSourcePayload),
+    [preparedGovernanceSourcePayload],
+  );
+
+  const preparedProgramGovernanceRow = useMemo(() => {
+    if (!preparedGovernanceRows.length) return null;
+
+    return (
+      preparedGovernanceRows.find(
+        (row) =>
+          String(row?.source_stage ?? '').trim() === GOVERNANCE_SOURCE_STAGE &&
+          String(row?.source_ref_id ?? '') === String(selectedProgramRpjmdId),
+      ) ??
+      preparedGovernanceRows.find(
+        (row) => String(row?.target_ref_id ?? '') === String(selectedProgramRefId),
+      ) ??
+      null
+    );
+  }, [preparedGovernanceRows, selectedProgramRpjmdId, selectedProgramRefId]);
+
+  const governanceGuard = useMemo(() => {
+    const mappingStatus = String(
+      governanceSourceMapPayload?.mapping_status ||
+        preparedProgramGovernanceRow?.mapping_status ||
+        '',
+    )
+      .trim()
+      .toLowerCase();
+    const chainStatus = String(
+      governanceSourceMapPayload?.chain_status || preparedProgramGovernanceRow?.chain_status || '',
+    )
+      .trim()
+      .toLowerCase();
+    const sourceMapCode = getGovernanceBlockingCode(governanceSourceMapPayload);
+    const sourceMapTargetRefId = toPositiveNumber(governanceSourceMapPayload?.target_ref_id);
+    const governanceBlockingCode =
+      sourceMapCode ||
+      getGovernanceBlockingCode(errorGovernanceSourceMap) ||
+      getGovernanceBlockingCode(errorPreparedGovernanceSource);
+    const hasBlockingStatus =
+      Boolean(errorGovernanceSourceMap) ||
+      Boolean(errorPreparedGovernanceSource) ||
+      Boolean(governanceSourceMap?.success === false) ||
+      Boolean(sourceMapCode) ||
+      !sourceMapTargetRefId ||
+      mappingStatus !== 'mapped' ||
+      chainStatus !== 'valid';
+    const message =
+      hasBlockingStatus &&
+      (buildGovernanceUiMessage(
+        governanceSourceMapPayload,
+        'Mapping target Renstra untuk program ini belum tersedia atau belum valid.',
+      ) ||
+        buildGovernanceUiMessage(
+          preparedProgramGovernanceRow,
+          'Mapping target Renstra untuk program ini belum tersedia atau belum valid.',
+        ) ||
+        buildGovernanceUiMessage(errorGovernanceSourceMap, '') ||
+        buildGovernanceUiMessage(errorPreparedGovernanceSource, ''));
+
+    return {
+      blocked: hasBlockingStatus,
+      chainStatus,
+      mappingStatus,
+      message,
+      preparedBlockReason: '',
+      resolverCode: governanceBlockingCode,
+      targetRefId: sourceMapTargetRefId,
+    };
+  }, [
+    errorGovernanceSourceMap,
+    errorPreparedGovernanceSource,
+    governanceSourceMap,
+    governanceSourceMapPayload,
+    preparedProgramGovernanceRow,
+  ]);
+
+  const selectedProgramTargetRefId = governanceGuard.blocked
+    ? null
+    : governanceGuard.targetRefId;
+  const indicatorTargetRefId = selectedProgramTargetRefId || selectedProgramRefId;
+
+  useEffect(() => {
+    if (!governanceGuard.blocked || initialData) return;
+
+    clearErrors(PROGRAM_REQUIRED_FIELDS);
+    setValue('indikator_id', '', {
+      shouldValidate: true,
+      shouldDirty: true,
     });
+    setValue('indikator', '', {
+      shouldValidate: false,
+      shouldDirty: true,
+    });
+    setValue('baseline', '', {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+    setValue('satuan_target', '', {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+    setValue('lokasi', '', {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
+    YEARS.forEach((i) => {
+      setValue(`target_tahun_${i}`, '', {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+      setValue(`pagu_tahun_${i}`, 0, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
+    });
+    setValue('pagu_rpjmd_acuan', 0, {
+      shouldValidate: false,
+      shouldDirty: false,
+    });
+    setValue('pagu_akhir_renstra', 0, {
+      shouldValidate: false,
+      shouldDirty: false,
+    });
+  }, [clearErrors, governanceGuard.blocked, initialData, setValue]);
+
+  const { data: indikatorOptions = [], isLoading: loadingIndikator } = useQuery({
+    queryKey: [
+      'indikator-renstra-program-form',
+      renstraId,
+      indicatorTargetRefId,
+      initialData?.id || 'create',
+    ],
+    queryFn: async () => {
+      const res = await api.get('/indikator-renstra', {
+        params: {
+          renstra_id: renstraId,
+          stage: 'program',
+          ref_id: indicatorTargetRefId,
+        },
+      });
 
       const raw = res.data;
-      return Array.isArray(raw) ? raw : raw?.data ?? [];
+      return Array.isArray(raw) ? raw : (raw?.data ?? []);
     },
-    enabled: !!renstraId && !!selectedProgramRefId,
+    enabled: !!renstraId && !!indicatorTargetRefId,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
+
+  const indicatorSourceOptions = indikatorOptions;
 
   const prevProgramIdRef = useRef(undefined);
 
-useEffect(() => {
-  const cur = selectedProgramId || undefined;
-  const prev = prevProgramIdRef.current;
+  useEffect(() => {
+    const cur = selectedProgramId || undefined;
+    const prev = prevProgramIdRef.current;
 
-  if (prev !== undefined && prev !== cur && !initialData) {
-    setValue("indikator_id", "");
-    setValue("baseline", "");
-    setValue("satuan_target", "");
-    setValue("lokasi", "");
-    setExistingDataInfo(null);
-    setPaguInfoMessage("");
+    if (prev !== undefined && prev !== cur && !initialData) {
+      clearErrors(PROGRAM_REQUIRED_FIELDS);
+      setValue('indikator_id', '', {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
 
-    YEARS.forEach((i) => {
-      setValue(`target_tahun_${i}`, "");
-      setValue(`pagu_tahun_${i}`, 0);
-    });
+      setValue('indikator', '', {
+        shouldValidate: false,
+        shouldDirty: true,
+      });
+
+      setValue('baseline', '', {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+
+      setValue('satuan_target', '', {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+
+      setValue('lokasi', '', {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+
+      YEARS.forEach((i) => {
+        setValue(`target_tahun_${i}`, '', {
+          shouldValidate: true,
+          shouldDirty: true,
+        });
+
+        setValue(`pagu_tahun_${i}`, 0, {
+          shouldValidate: false,
+          shouldDirty: false,
+        });
+      });
+
+      setValue('pagu_rpjmd_acuan', 0, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
+
+      setValue('pagu_akhir_renstra', 0, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
     }
 
     prevProgramIdRef.current = cur;
-  }, [selectedProgramId, setValue]);
-  
+  }, [selectedProgramId, initialData, setValue, clearErrors]);
 
   useEffect(() => {
     if (selectedProgram?.opd_penanggung_jawab) {
-      setValue("opd_penanggung_jawab", selectedProgram.opd_penanggung_jawab);
+      setValue('opd_penanggung_jawab', selectedProgram.opd_penanggung_jawab);
       return;
     }
 
     if (initialData?.program?.opd_penanggung_jawab) {
-      setValue("opd_penanggung_jawab", initialData.program.opd_penanggung_jawab);
+      setValue('opd_penanggung_jawab', initialData.program.opd_penanggung_jawab);
     }
   }, [selectedProgram, initialData, setValue]);
 
   // 🔹 Auto set baseline, target, lokasi, pagu hanya untuk form baru
   useEffect(() => {
-    if (!selectedIndikatorId) return;
-
-    if (
-        initialData &&
-        String(selectedIndikatorId) === String(initialData.indikator_id)
-      ) {
-        return;
-      }
-
-    const selected = indikatorOptions.find(
-      (i) => String(i.id) === String(selectedIndikatorId)
-    );
+    const selected =
+      indicatorSourceOptions.find((i) => String(i.id) === String(selectedIndikatorId)) ||
+      (!selectedIndikatorId ? indicatorSourceOptions[0] : null);
 
     if (!selected) return;
 
-    setValue("indikator", selected.nama_indikator ?? "");
+    if (selectedIndikatorId) {
+      setValue('indikator_id', String(selected.id), {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
+
+    setValue('indikator', selected.nama_indikator ?? '', {
+      shouldValidate: false,
+      shouldDirty: true,
+    });
 
     setValue(
-      "baseline",
-      selected.baseline ??
-        selected.nilai_baseline ??
-        selected.target_awal ??
-        selected.kondisi_awal ??
-        ""
+      'baseline',
+      normalizeDecimalValue(
+        selected.baseline ??
+          selected.nilai_baseline ??
+          selected.target_awal ??
+          selected.kondisi_awal ??
+          '',
+      ),
+      {
+        shouldValidate: true,
+        shouldDirty: true,
+      },
     );
 
-    setValue("satuan_target", selected.satuan ?? selected.satuan_target ?? "");
+    setValue('satuan_target', selected.satuan ?? selected.satuan_target ?? '', {
+      shouldValidate: true,
+      shouldDirty: true,
+    });
 
     setValue(
-      "lokasi",
+      'lokasi',
       [selected.lokasi, selected.lokasi_pelaksanaan, selected.sumber_data, selected.keterangan]
-        .map((x) => (x != null ? String(x).trim() : ""))
-        .find(Boolean) ?? ""
+        .map((x) => (x !== null && x !== undefined ? String(x).trim() : ''))
+        .find(Boolean) ?? '',
+      {
+        shouldValidate: true,
+        shouldDirty: true,
+      },
     );
+
+    clearErrors(['indikator_id', 'baseline', 'satuan_target', 'lokasi']);
 
     YEARS.forEach((i) => {
       let val =
@@ -322,43 +671,63 @@ useEffect(() => {
           selected.kondisi_akhir;
       }
 
-      setValue(`target_tahun_${i}`, val ?? "");
-        });
-        if (!initialData) {
-      const paguAcuan = Number(
-        selected.pagu_cached ||
-          selected.total_pagu_rpjmd ||
-          selected.pagu_rpjmd_acuan ||
-          selected.pagu_akhir_renstra ||
-          0
+      setValue(`target_tahun_${i}`, normalizeDecimalValue(val), {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    });
+    clearErrors([
+      'target_tahun_1',
+      'target_tahun_2',
+      'target_tahun_3',
+      'target_tahun_4',
+      'target_tahun_5',
+    ]);
+    if (!initialData) {
+      const paguAcuan = pickPositiveNumber(
+        selected.pagu_cached,
+        selected.total_pagu_rpjmd,
+        selected.pagu_rpjmd_acuan,
+        selected.pagu_akhir_renstra,
       );
 
-      const paguDasar = Math.floor(paguAcuan / 5);
-      const sisaPagu = paguAcuan - paguDasar * 5;
+      const paguPerTahun = splitPaguToFiveYears(paguAcuan);
 
-      setValue("pagu_rpjmd_acuan", paguAcuan);
+      setValue('pagu_rpjmd_acuan', paguAcuan, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
 
-      for (let i = 1; i <= 4; i++) {
-        setValue(`pagu_tahun_${i}`, paguDasar);
-      }
+      YEARS.forEach((i) => {
+        setValue(`pagu_tahun_${i}`, paguPerTahun[i - 1], {
+          shouldValidate: false,
+          shouldDirty: false,
+        });
+      });
 
-      setValue("pagu_tahun_5", paguDasar + sisaPagu);
-      setValue("pagu_tahun_6", 0);
-      setValue("pagu_akhir_renstra", paguAcuan);
+      setValue('pagu_tahun_6', 0, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
+
+      setValue('pagu_akhir_renstra', paguAcuan, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
     }
-  }, [selectedIndikatorId, indikatorOptions, initialData, setValue]);
+  }, [selectedIndikatorId, indicatorSourceOptions, initialData, setValue, clearErrors]);
 
-    // 🔴 PAGU EDIT: pakai initialData, tapi jangan timpa fallback indikator kalau data lama masih 0
-    useEffect(() => {
-      if (!initialData) return;
+  // 🔴 PAGU EDIT: pakai initialData, tapi jangan timpa fallback indikator kalau data lama masih 0
+  useEffect(() => {
+    if (!initialData) return;
 
-      const hasExistingPagu =
-        YEARS.some((i) => Number(initialData?.[`pagu_tahun_${i}`] || 0) > 0) ||
-        Number(initialData?.pagu_rpjmd_acuan || 0) > 0;
+    const hasExistingPagu =
+      YEARS.some((i) => Number(initialData?.[`pagu_tahun_${i}`] || 0) > 0) ||
+      Number(initialData?.pagu_rpjmd_acuan || 0) > 0;
 
-      if (!hasExistingPagu) return;
+    if (!hasExistingPagu) return;
 
-      const source = initialData;
+    const source = initialData;
 
     YEARS.forEach((i) => {
       setValue(`pagu_tahun_${i}`, Number(source[`pagu_tahun_${i}`] || 0), {
@@ -367,20 +736,11 @@ useEffect(() => {
       });
     });
 
-    setValue(
-      "pagu_akhir_renstra",
-      Number(source.pagu_akhir_renstra || 0),
-      {
-        shouldValidate: false,
-        shouldDirty: false,
-      }
-    );
+    setValue('pagu_akhir_renstra', Number(source.pagu_akhir_renstra || 0), {
+      shouldValidate: false,
+      shouldDirty: false,
+    });
 
-    setPaguInfoMessage(
-      "Pagu RPJMD readonly. Pagu Renstra tahun 1–5 dapat direvisi."
-    );
-
-    setExistingDataInfo(null);
   }, [initialData, paguCache, setValue]);
 
   const targetValues = watch(YEARS.map((i) => `target_tahun_${i}`));
@@ -394,318 +754,320 @@ useEffect(() => {
   const paguValues = watch(YEARS.map((i) => `pagu_tahun_${i}`));
 
   const paguAkhirRenstra = useMemo(() => {
-    return paguValues.reduce(
-      (total, value) => total + (Number(value) || 0),
-      0
-    );
+    return paguValues.reduce((total, value) => total + (Number(value) || 0), 0);
   }, [paguValues]);
 
+  const paguInfoMessage = useMemo(() => {
+    if (!initialData) return '';
+
+    const hasExistingPagu =
+      YEARS.some((i) => Number(initialData?.[`pagu_tahun_${i}`] || 0) > 0) ||
+      Number(initialData?.pagu_rpjmd_acuan || 0) > 0;
+
+    return hasExistingPagu
+      ? 'Pagu RPJMD readonly. Pagu Renstra tahun 1–5 dapat direvisi.'
+      : '';
+  }, [initialData]);
+
   useEffect(() => {
-    setValue("pagu_akhir_renstra", paguAkhirRenstra, {
+    setValue('pagu_akhir_renstra', paguAkhirRenstra, {
       shouldValidate: false,
       shouldDirty: false,
     });
 
-    setValue("pagu_tahun_6", 0, {
+    setValue('pagu_tahun_6', 0, {
       shouldValidate: false,
       shouldDirty: false,
     });
   }, [paguAkhirRenstra, setValue]);
 
-    useEffect(() => {
-    setValue("target_akhir_renstra", targetAkhirRenstra);
-    }, [targetAkhirRenstra, setValue]);
-  
-    const programSelectOptions = useMemo(() => {
+  useEffect(() => {
+    setValue('target_akhir_renstra', targetAkhirRenstra);
+  }, [targetAkhirRenstra, setValue]);
+
+  const programSelectOptions = useMemo(() => {
     const options = programOptions.map((item) => ({
       value: String(item.id),
-      label:
-        makeLabel(item.kode_program, item.nama_program) ||
-        `Program ${item.id}`,
+      label: makeLabel(item.kode_program, item.nama_program) || `Program ${item.id}`,
     }));
 
-    if (initialData?.program_id) {
+    return uniqueOptionsByValue(options);
+  }, [programOptions]);
+
+  const indikatorSelectOptions = useMemo(() => {
+    const options = indikatorOptions.map((item) => ({
+      value: String(item.id),
+      label: item.nama_indikator || item.kode_indikator || `Indikator ${item.id}`,
+    }));
+
+    if (initialData?.indikator_id) {
       const exists = options.some(
-        (item) => String(item.value) === String(initialData.program_id)
+        (item) => String(item.value) === String(initialData.indikator_id),
       );
 
       if (!exists) {
         options.unshift({
-          value: String(initialData.program_id),
+          value: String(initialData.indikator_id),
           label:
-            makeLabel(
-              initialData?.kode_program || initialData?.program?.kode_program,
-              initialData?.nama_program || initialData?.program?.nama_program
-            ) || `Program ${initialData.program_id}`,
+            initialData?.indikator ||
+            initialData?.indikator_detail?.nama_indikator ||
+            `Indikator ${initialData.indikator_id}`,
         });
       }
     }
 
     return uniqueOptionsByValue(options);
-  }, [programOptions, initialData]);
-  
-    const indikatorSelectOptions = useMemo(() => {
-      const options = indikatorOptions.map((item) => ({
-        value: String(item.id),
-        label: item.nama_indikator || item.kode_indikator || `Indikator ${item.id}`,
-      }));
+  }, [indikatorOptions, initialData]);
 
-      if (initialData?.indikator_id) {
-        const exists = options.some(
-          (item) => String(item.value) === String(initialData.indikator_id)
-        );
+  useEffect(() => {
+    if (!initialData || !indikatorOptions.length) return;
 
-        if (!exists) {
-          options.unshift({
-            value: String(initialData.indikator_id),
-            label:
-              initialData?.indikator ||
-              initialData?.indikator_detail?.nama_indikator ||
-              `Indikator ${initialData.indikator_id}`,
-          });
-        }
-      }
+    const selected = indikatorOptions.find(
+      (item) =>
+        String(item.id) === String(initialData.indikator_id) ||
+        String(item.source_indikator_id) === String(initialData.indikator_id),
+    );
 
-      return uniqueOptionsByValue(options);
-    }, [indikatorOptions, initialData]);
-  
-    useEffect(() => {
-      if (!initialData || !indikatorOptions.length) return;
+    setValue(
+      'indikator',
+      selected?.nama_indikator ||
+        initialData?.indikator_detail?.nama_indikator ||
+        initialData?.indikator ||
+        '',
+    );
 
-      const selected = indikatorOptions.find(
-        (item) =>
-          String(item.id) === String(initialData.indikator_id) ||
-          String(item.source_indikator_id) === String(initialData.indikator_id)
+    setValue(
+      'satuan_target',
+      initialData?.satuan_target || selected?.satuan || initialData?.indikator_detail?.satuan || '',
+    );
+
+    if (Number(initialData?.pagu_rpjmd_acuan || 0) <= 0 && selected) {
+      const paguAcuan = Number(
+        selected.pagu_cached || selected.total_pagu_rpjmd || selected.pagu_rpjmd_acuan || 0,
       );
 
-      setValue(
-        "indikator",
-        selected?.nama_indikator ||
-          initialData?.indikator_detail?.nama_indikator ||
-          initialData?.indikator ||
-          ""
-      );
+      const paguDasar = Math.floor(paguAcuan / 5);
+      const sisaPagu = paguAcuan - paguDasar * 5;
 
-      setValue(
-        "satuan_target",
-        initialData?.satuan_target ||
-          selected?.satuan ||
-          initialData?.indikator_detail?.satuan ||
-          ""
-      );
-
-      if (Number(initialData?.pagu_rpjmd_acuan || 0) <= 0 && selected) {
-        const paguAcuan = Number(
-          selected.pagu_cached ||
-            selected.total_pagu_rpjmd ||
-            selected.pagu_rpjmd_acuan ||
-            0
-        );
-
-        const paguDasar = Math.floor(paguAcuan / 5);
-        const sisaPagu = paguAcuan - paguDasar * 5;
-
-        setValue("pagu_rpjmd_acuan", paguAcuan, {
-          shouldValidate: false,
-          shouldDirty: false,
-        });
-
-        for (let i = 1; i <= 4; i++) {
-          setValue(`pagu_tahun_${i}`, paguDasar, {
-            shouldValidate: false,
-            shouldDirty: false,
-          });
-        }
-
-        setValue("pagu_tahun_5", paguDasar + sisaPagu, {
-          shouldValidate: false,
-          shouldDirty: false,
-        });
-
-        setValue("pagu_tahun_6", 0, {
-          shouldValidate: false,
-          shouldDirty: false,
-        });
-
-        setValue("pagu_akhir_renstra", paguAcuan, {
-          shouldValidate: false,
-          shouldDirty: false,
-        });
-      }
-    }, [initialData, indikatorOptions, setValue]);
-  
-    useEffect(() => {
-      if (!initialData) return;
-
-      setValue(
-        "program_id",
-        initialData?.program_id ? String(initialData.program_id) : ""
-      );
-
-      setValue(
-        "indikator_id",
-        initialData?.indikator_id ? String(initialData.indikator_id) : ""
-      );
-
-      setValue(
-        "indikator",
-        initialData?.indikator ??
-          initialData?.indikator_detail?.nama_indikator ??
-          ""
-      );
-      setValue("baseline", initialData?.baseline ?? "");
-      setValue("satuan_target", initialData?.satuan_target ?? "");
-      setValue("lokasi", initialData?.lokasi ?? "");
-      setValue(
-        "opd_penanggung_jawab",
-        initialData?.opd_penanggung_jawab ??
-          initialData?.program?.opd_penanggung_jawab ??
-          renstraAktif?.nama_opd ??
-          ""
-      );
-
-      YEARS.forEach((i) => {
-        setValue(`target_tahun_${i}`, initialData?.[`target_tahun_${i}`] ?? "");
+      setValue('pagu_rpjmd_acuan', paguAcuan, {
+        shouldValidate: false,
+        shouldDirty: false,
       });
 
-      setValue("target_tahun_6", 0);
-      setValue("pagu_tahun_6", 0);
-      setValue("target_akhir_renstra", initialData?.target_akhir_renstra ?? "");
+      for (let i = 1; i <= 4; i++) {
+        setValue(`pagu_tahun_${i}`, paguDasar, {
+          shouldValidate: false,
+          shouldDirty: false,
+        });
+      }
 
-      const paguAcuan = Number(initialData?.pagu_rpjmd_acuan || 0);
+      setValue('pagu_tahun_5', paguDasar + sisaPagu, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
 
-      const hasPaguTahunan = YEARS.some(
-        (i) => Number(initialData?.[`pagu_tahun_${i}`] || 0) > 0
+      setValue('pagu_tahun_6', 0, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
+
+      setValue('pagu_akhir_renstra', paguAcuan, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
+    }
+  }, [initialData, indicatorSourceOptions, indikatorOptions, setValue]);
+
+  useEffect(() => {
+    if (!initialData) return;
+
+    setValue('program_id', initialData?.program_id ? String(initialData.program_id) : '');
+
+    setValue('indikator_id', initialData?.indikator_id ? String(initialData.indikator_id) : '');
+
+    setValue(
+      'indikator',
+      initialData?.indikator ?? initialData?.indikator_detail?.nama_indikator ?? '',
+    );
+    setValue('baseline', initialData?.baseline ?? '');
+    setValue('satuan_target', initialData?.satuan_target ?? '');
+    setValue('lokasi', initialData?.lokasi ?? '');
+    setValue(
+      'opd_penanggung_jawab',
+      initialData?.opd_penanggung_jawab ??
+        initialData?.program?.opd_penanggung_jawab ??
+        renstraAktif?.nama_opd ??
+        '',
+    );
+
+    YEARS.forEach((i) => {
+      setValue(`target_tahun_${i}`, initialData?.[`target_tahun_${i}`] ?? '');
+    });
+
+    setValue('target_tahun_6', 0);
+    setValue('pagu_tahun_6', 0);
+    setValue('target_akhir_renstra', initialData?.target_akhir_renstra ?? '');
+
+    const paguAcuan = Number(initialData?.pagu_rpjmd_acuan || 0);
+
+    const hasPaguTahunan = YEARS.some((i) => Number(initialData?.[`pagu_tahun_${i}`] || 0) > 0);
+
+    if (hasPaguTahunan) {
+      YEARS.forEach((i) => {
+        setValue(`pagu_tahun_${i}`, Number(initialData?.[`pagu_tahun_${i}`] || 0), {
+          shouldValidate: false,
+          shouldDirty: false,
+        });
+      });
+
+      setValue('pagu_rpjmd_acuan', paguAcuan, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
+
+      setValue('pagu_akhir_renstra', Number(initialData?.pagu_akhir_renstra || 0), {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
+    } else if (paguAcuan > 0) {
+      const paguDasar = Math.floor(paguAcuan / 5);
+      const sisaPagu = paguAcuan - paguDasar * 5;
+
+      for (let i = 1; i <= 4; i++) {
+        setValue(`pagu_tahun_${i}`, paguDasar, {
+          shouldValidate: false,
+          shouldDirty: false,
+        });
+      }
+
+      setValue('pagu_tahun_5', paguDasar + sisaPagu, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
+
+      setValue('pagu_tahun_6', 0, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
+
+      setValue('pagu_rpjmd_acuan', paguAcuan, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
+
+      setValue('pagu_akhir_renstra', paguAcuan, {
+        shouldValidate: false,
+        shouldDirty: false,
+      });
+    }
+  }, [initialData, renstraAktif, setValue]);
+
+  const handleSubmitRevisi = async (data) => {
+    if (!initialData?.id) {
+      return onSubmit(data);
+    }
+
+    if (!alasanRevisi.trim()) {
+      setServerMessage('Alasan revisi wajib diisi.');
+      return null;
+    }
+
+    try {
+      setSubmitRevisiLoading(true);
+      setServerMessage('');
+
+      const payload = {
+        ...generatePayload(data),
+        alasan_revisi: alasanRevisi,
+      };
+
+      const isApproved = initialData?.status_revisi === 'approved';
+
+      if (isApproved) {
+        await api.post(`${ENDPOINT}/${initialData.id}/revisi`, payload);
+      } else {
+        await api.put(`${ENDPOINT}/${initialData.id}`, payload);
+      }
+
+      setServerMessage('✅ Revisi berhasil disimpan sebagai draft.');
+    } catch (err) {
+      setServerMessage(
+        err?.response?.data?.message || err?.response?.data?.error || 'Gagal menyimpan revisi.',
       );
+    } finally {
+      setSubmitRevisiLoading(false);
+    }
 
-      if (hasPaguTahunan) {
-        YEARS.forEach((i) => {
-          setValue(`pagu_tahun_${i}`, Number(initialData?.[`pagu_tahun_${i}`] || 0), {
-            shouldValidate: false,
-            shouldDirty: false,
-          });
-        });
+    return null;
+  };
 
-        setValue("pagu_rpjmd_acuan", paguAcuan, {
-          shouldValidate: false,
-          shouldDirty: false,
-        });
-
-        setValue("pagu_akhir_renstra", Number(initialData?.pagu_akhir_renstra || 0), {
-          shouldValidate: false,
-          shouldDirty: false,
-        });
-      } else if (paguAcuan > 0) {
-        const paguDasar = Math.floor(paguAcuan / 5);
-        const sisaPagu = paguAcuan - paguDasar * 5;
-
-        for (let i = 1; i <= 4; i++) {
-          setValue(`pagu_tahun_${i}`, paguDasar, {
-            shouldValidate: false,
-            shouldDirty: false,
-          });
-        }
-
-        setValue("pagu_tahun_5", paguDasar + sisaPagu, {
-          shouldValidate: false,
-          shouldDirty: false,
-        });
-
-        setValue("pagu_tahun_6", 0, {
-          shouldValidate: false,
-          shouldDirty: false,
-        });
-
-        setValue("pagu_rpjmd_acuan", paguAcuan, {
-          shouldValidate: false,
-          shouldDirty: false,
-        });
-
-        setValue("pagu_akhir_renstra", paguAcuan, {
-          shouldValidate: false,
-          shouldDirty: false,
-        });
-      }
-    }, [initialData, renstraAktif, setValue]);
-  
-    const handleSubmitRevisi = async (data) => {
-      if (!initialData?.id) {
-        return onSubmit(data);
-      }
-
-      if (!alasanRevisi.trim()) {
-        setServerMessage("Alasan revisi wajib diisi.");
-        return;
-      }
-
-      try {
-        setSubmitRevisiLoading(true);
-        setServerMessage("");
-
-        const payload = {
-          ...generatePayload(data),
-          alasan_revisi: alasanRevisi,
-        };
-
-        const isApproved = initialData?.status_revisi === "approved";
-
-        if (isApproved) {
-          await api.post(`${ENDPOINT}/${initialData.id}/revisi`, payload);
-        } else {
-          await api.put(`${ENDPOINT}/${initialData.id}`, payload);
-        }
-
-        setServerMessage("✅ Revisi berhasil disimpan sebagai draft.");
-      } catch (err) {
-        setServerMessage(
-          err?.response?.data?.message ||
-            err?.response?.data?.error ||
-            "Gagal menyimpan revisi."
-        );
-      } finally {
-        setSubmitRevisiLoading(false);
-      }
-    };
-
-    const shouldShowSpinner = !renstraAktif || loadingProgram || loadingPaguCache;
+  const shouldShowSpinner =
+    !renstraAktif ||
+    loadingProgram ||
+    loadingPaguCache ||
+    loadingIndikator ||
+    loadingGovernanceSourceMap ||
+    loadingPreparedGovernanceSource;
+  const programScopeMessage = !hasActiveArahKebijakan
+    ? 'Pilih Arah Kebijakan terlebih dahulu agar Program dapat difilter sesuai chain.'
+    : !loadingProgram && programOptions.length === 0
+      ? 'Tidak ada Program yang terhubung dengan Arah Kebijakan aktif.'
+      : '';
+  const canSubmitNewProgram =
+    Boolean(hasActiveArahKebijakan) && (initialData || indikatorSelectOptions.length > 0);
 
   return (
     <Card
       title={
         initialData
-          ? initialData?.status_revisi === "approved"
-            ? "Revisi Renstra Tabel Program"
-            : "Edit Renstra Tabel Program"
-          : "Tambah Renstra Tabel Program"
+          ? initialData?.status_revisi === 'approved'
+            ? 'Revisi Renstra Tabel Program'
+            : 'Edit Renstra Tabel Program'
+          : 'Tambah Renstra Tabel Program'
       }
     >
       {shouldShowSpinner ? (
         <SpinnerFullscreen tip="Memuat data Renstra..." />
       ) : (
         <>
-          <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
-            <Button onClick={() => navigate("/dashboard-renstra")}>
-              🔙 Kembali
-            </Button>
+          <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+            <Button onClick={() => navigate('/dashboard-renstra')}>🔙 Kembali</Button>
           </div>
 
-          {programOptions.length === 0 && (
+          {selectedProgramRpjmdId && governanceGuard.blocked && governanceGuard.message && (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="Validasi Governance Hub"
+              description={governanceGuard.message}
+            />
+          )}
+
+          {!hasActiveArahKebijakan ? (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="Arah Kebijakan wajib dipilih"
+              description={programScopeMessage}
+            />
+          ) : programOptions.length === 0 ? (
             <div
               style={{
-                background: "#fffbe6",
-                border: "1px solid #ffe58f",
+                background: '#fffbe6',
+                border: '1px solid #ffe58f',
                 borderRadius: 6,
-                padding: "10px 16px",
+                padding: '10px 16px',
                 marginBottom: 16,
                 fontSize: 13,
-                color: "#614700",
+                color: '#614700',
               }}
             >
-              ⚠️ <strong>Belum ada Program Renstra.</strong> Tambahkan terlebih
-              dahulu melalui <strong>Aksi Input Data Renstra → Program</strong>,
-              lalu kembali ke halaman ini.
+              ⚠️ <strong>Belum ada Program Renstra untuk Arah Kebijakan aktif.</strong> Pastikan
+              chain parent sudah lengkap sebelum menambah Program.
             </div>
-          )}
+          ) : null}
 
           <form onSubmit={handleSubmit(initialData ? handleSubmitRevisi : onSubmit)}>
             <SelectWithLabelValue
@@ -715,6 +1077,7 @@ useEffect(() => {
               errors={errors}
               required
               options={programSelectOptions}
+              disabled={!hasActiveArahKebijakan || loadingProgram}
             />
 
             <InputField
@@ -725,30 +1088,40 @@ useEffect(() => {
               disabled
             />
 
+            {selectedProgramRefId && !loadingIndikator && indikatorSelectOptions.length === 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="Belum ada indikator RPJMD sumber untuk Program ini"
+                description={`Belum ada indikator_renstra stage program dengan ref_id = ${indicatorTargetRefId}. Jika indikator sumber RPJMD memang belum ada, lengkapi data sumber terlebih dahulu sebelum melanjutkan.`}
+              />
+            )}
+
             <SelectWithLabelValue
               name="indikator_id"
               label="Indikator"
               control={control}
               errors={errors}
               required
-              disabled={!selectedProgramRefId || loadingIndikator}
+              disabled={
+                !hasActiveArahKebijakan ||
+                !selectedProgramRefId ||
+                loadingIndikator ||
+                indikatorSelectOptions.length === 0
+              }
               options={indikatorSelectOptions}
-              />
-              
-              <InputField
-                name="indikator"
-                label="Nama Indikator"
-                control={control}
-                errors={errors}
-                disabled
-              />
+            />
 
             <InputField
-              name="baseline"
-              label="Baseline"
+              name="indikator"
+              label="Nama Indikator"
               control={control}
               errors={errors}
+              disabled
             />
+
+            <InputField name="baseline" label="Baseline" control={control} errors={errors} />
 
             <InputField
               name="satuan_target"
@@ -757,16 +1130,9 @@ useEffect(() => {
               errors={errors}
             />
 
-            <InputField
-              name="lokasi"
-              label="Lokasi"
-              control={control}
-              errors={errors}
-            />
+            <InputField name="lokasi" label="Lokasi" control={control} errors={errors} />
 
-            <h4 style={{ marginTop: 24 }}>
-              Target periode (th. ke-1 s/d ke-5)
-            </h4>
+            <h4 style={{ marginTop: 24 }}>Target periode (th. ke-1 s/d ke-5)</h4>
             {YEARS.map((i) => (
               <InputField
                 key={`target_tahun_${i}`}
@@ -777,21 +1143,21 @@ useEffect(() => {
               />
             ))}
 
-              <h4 style={{ marginTop: 24 }}>Pagu RPJMD Acuan</h4>
+            <h4 style={{ marginTop: 24 }}>Pagu RPJMD Acuan</h4>
 
-              <CurrencyInputField
-                name="pagu_rpjmd_acuan"
-                label="Pagu RPJMD Acuan"
-                control={control}
-                errors={errors}
-                disabled
-              />
+            <CurrencyInputField
+              name="pagu_rpjmd_acuan"
+              label="Pagu RPJMD Acuan"
+              control={control}
+              errors={errors}
+              disabled
+            />
 
-              <h4 style={{ marginTop: 24 }}>Pagu Renstra periode (th. ke-1 s/d ke-5)</h4>
-              
+            <h4 style={{ marginTop: 24 }}>Pagu Renstra periode (th. ke-1 s/d ke-5)</h4>
+
             {paguInfoMessage && (
               <Alert
-                type={paguCache ? "success" : "warning"}
+                type={paguCache ? 'success' : 'warning'}
                 showIcon
                 style={{ marginBottom: 16 }}
                 message="Informasi Pagu"
@@ -810,9 +1176,7 @@ useEffect(() => {
               />
             ))}
 
-            <h4 style={{ marginTop: 24 }}>
-              Kondisi Akhir Kinerja Periode Renstra
-            </h4>
+            <h4 style={{ marginTop: 24 }}>Kondisi Akhir Kinerja Periode Renstra</h4>
 
             <InputField
               name="target_akhir_renstra"
@@ -828,53 +1192,45 @@ useEffect(() => {
               control={control}
               errors={errors}
               disabled
-              />
-              
-              {initialData && (
-                <div style={{ marginTop: 24 }}>
-                  <h4>Alasan Revisi</h4>
-                  <Input.TextArea
-                    rows={4}
-                    value={alasanRevisi}
-                    onChange={(e) => {
-                      setAlasanRevisi(e.target.value);
-                      setValue("alasan_revisi", e.target.value);
-                    }}
-                    placeholder="Tuliskan alasan revisi target/pagu Renstra..."
-                  />
-                </div>
-              )}
+            />
 
-              {serverMessage && (
-                <Alert
-                  style={{ marginTop: 16 }}
-                  type={serverMessage.startsWith("✅") ? "success" : "warning"}
-                  showIcon
-                  message={serverMessage}
+            {initialData && (
+              <div style={{ marginTop: 24 }}>
+                <h4>Alasan Revisi</h4>
+                <Input.TextArea
+                  rows={4}
+                  value={alasanRevisi}
+                  onChange={(e) => {
+                    setAlasanRevisi(e.target.value);
+                    setValue('alasan_revisi', e.target.value);
+                  }}
+                  placeholder="Tuliskan alasan revisi target/pagu Renstra..."
                 />
-              )}
+              </div>
+            )}
+
+            {serverMessage && (
+              <Alert
+                style={{ marginTop: 16 }}
+                type={serverMessage.startsWith('✅') ? 'success' : 'warning'}
+                showIcon
+                message={serverMessage}
+              />
+            )}
 
             <div style={{ marginTop: 24 }}>
-              {!existingDataInfo || initialData ? (
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  loading={initialData ? submitRevisiLoading : isSubmitting}
-                >
-                  {initialData
-                    ? initialData?.status_revisi === "approved"
-                      ? "Buat Revisi"
-                      : "Simpan Draft"
-                    : "Simpan"}
-                </Button>
-              ) : (
-                <Alert
-                  type="warning"
-                  showIcon
-                  message="Data sudah ada"
-                  description="Gunakan Edit jika ingin mengubah."
-                />
-              )}
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={initialData ? submitRevisiLoading : isSubmitting}
+                disabled={!canSubmitNewProgram}
+              >
+                {initialData
+                  ? initialData?.status_revisi === 'approved'
+                    ? 'Buat Revisi'
+                    : 'Simpan Draft'
+                  : 'Simpan'}
+              </Button>
             </div>
           </form>
         </>

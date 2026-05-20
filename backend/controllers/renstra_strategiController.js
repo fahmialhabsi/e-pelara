@@ -92,10 +92,11 @@ exports.create = async (req, res) => {
 
 exports.findAll = async (req, res) => {
   try {
-    const { renstra_id } = req.query;
+    const { renstra_id, sasaran_id } = req.query;
 
     const whereClause = {};
     if (renstra_id) whereClause.renstra_id = Number(renstra_id);
+    if (sasaran_id) whereClause.sasaran_id = Number(sasaran_id);
 
     const data = await RenstraStrategi.findAll({
       where: whereClause,

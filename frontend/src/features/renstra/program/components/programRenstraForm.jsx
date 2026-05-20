@@ -82,8 +82,13 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
   } = form;
 
   const arahKebijakanId = useWatch({ control, name: "rpjmd_arah_id" });
+  const renstraKebijakanId = useWatch({
+    control,
+    name: "renstra_kebijakan_id",
+  });
   const programId = useWatch({ control, name: "program_rpjmd_id" });
   const opdTerpilih = useWatch({ control, name: "opd_penanggung_jawab" });
+  const isProgramScoped = Boolean(arahKebijakanId && renstraKebijakanId);
 
   const { data: arahKebijakanOptions = [], isLoading: isLoadingArah } =
     useQuery({
@@ -126,7 +131,12 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
     });
 
   const { data: programOptions = [], isLoading: isLoadingProgram } = useQuery({
-    queryKey: ["program-rpjmd", renstraAktif?.tahun_mulai, arahKebijakanId],
+    queryKey: [
+      "program-rpjmd",
+      renstraAktif?.tahun_mulai,
+      arahKebijakanId,
+      renstraKebijakanId,
+    ],
     queryFn: async () =>
       normalizeListItems(
         (
@@ -140,7 +150,7 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
           })
         ).data
       ),
-    enabled: !!renstraAktif?.tahun_mulai && !!arahKebijakanId,
+    enabled: !!renstraAktif?.tahun_mulai && isProgramScoped,
   });
 
   const { data: opdOptions = [] } = useQuery({
@@ -246,13 +256,30 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
           errors={errors}
           required
           loading={isLoadingProgram}
-          disabled={!arahKebijakanId}
+          disabled={!isProgramScoped}
           options={programOptions.map((item) => ({
             label: `${item.kode_program} - ${item.nama_program}`,
             value: String(item.id),
           }))}
           onChange={(val) => setValue("program_rpjmd_id", val)}
         />
+
+        {!isProgramScoped && (
+          <div
+            style={{
+              marginTop: 12,
+              marginBottom: 12,
+              padding: "10px 12px",
+              borderRadius: 6,
+              background: "#fffbe6",
+              border: "1px solid #ffe58f",
+              color: "#614700",
+              fontSize: 13,
+            }}
+          >
+            Pilih Arah Kebijakan terlebih dahulu agar Program dapat difilter sesuai chain.
+          </div>
+        )}
 
         <InputField
           name="kode_program"

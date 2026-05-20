@@ -13,12 +13,21 @@ const RenstraTabelTujuanEditPage = () => {
 
   const { data: renstraAktif, isLoading: loadingRenstra } = useQuery({
     queryKey: ["renstra-opd-aktif"],
-    queryFn: async () => (await api.get("/renstra-opd/aktif")).data.data,
+    queryFn: async () => {
+      const res = await api.get("/renstra-opd?is_aktif=true");
+      if (Array.isArray(res.data?.data)) {
+        return res.data.data[0] || null;
+      }
+      return res.data?.data ?? res.data ?? null;
+    },
   });
 
   const { data: initialData, isLoading: loadingDetail } = useQuery({
     queryKey: ["renstra-tabel-tujuan", id],
-    queryFn: async () => (await api.get(`/renstra-tabel-tujuan/${id}`)).data,
+    queryFn: async () => {
+      const res = await api.get(`/renstra-tabel-tujuan/${id}`);
+      return res.data?.data ?? res.data ?? null;
+    },
     enabled: !!id,
   });
 

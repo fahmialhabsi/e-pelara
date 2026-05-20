@@ -1,11 +1,65 @@
 import React from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Spin, Alert } from "antd";
+import api from "@/services/api";
 import KegiatanRenstraForm from "../components/KegiatanRenstraForm";
-import { useNavigate } from "react-router-dom";
 
 const KegiatanRenstraAddPage = () => {
-  const navigate = useNavigate();
+  const {
+    data: renstraAktif,
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: ["renstra-opd-aktif"],
+    queryFn: async () => {
+      const res = await api.get("/renstra-opd?is_aktif=true");
+      if (Array.isArray(res.data?.data)) {
+        return res.data.data[0] || null;
+      }
+      return res.data?.data || res.data || null;
+    },
+    retry: 1,
+  });
+
+  if (isLoading) {
+    return <Spin tip="Memuat data RENSTRA aktif..." size="large" fullscreen />;
+  }
+
+  if (isError) {
+    return (
+      <Alert
+        type="error"
+        message="Gagal Memuat RENSTRA OPD"
+        description={
+          error?.response?.data?.message ||
+          "Terjadi kesalahan saat mengambil data."
+        }
+        showIcon
+        style={{ margin: 24 }}
+      />
+    );
+  }
+
+  if (!renstraAktif) {
+    return (
+      <Alert
+        type="warning"
+        message="Tidak Ada RENSTRA yang Aktif"
+        description="Mohon aktifkan satu RENSTRA OPD terlebih dahulu di menu pengaturan sebelum melanjutkan."
+        showIcon
+        style={{ margin: 24 }}
+      />
+    );
+  }
+
   return (
-    <KegiatanRenstraForm onSuccess={() => navigate("/renstra/kegiatan")} />
+    <KegiatanRenstraForm
+      renstraAktif={renstraAktif}
+      onSuccess={() => {
+        window.location.href = "/renstra/kegiatan";
+      }}
+    />
   );
 };
 

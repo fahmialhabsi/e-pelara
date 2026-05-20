@@ -1,13 +1,13 @@
-const { RenstraSasaran, Sasaran, RenstraTujuan, IndikatorSasaran } = require("../models");
-const { Op } = require("sequelize");
+const { RenstraSasaran, Sasaran, RenstraTujuan, IndikatorSasaran } = require('../models');
+const { Op } = require('sequelize');
 
 function toInt(v) {
-  const n = Number.parseInt(String(v ?? "").trim(), 10);
+  const n = Number.parseInt(String(v ?? '').trim(), 10);
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
 function parseNumericString(v) {
-  const s = String(v ?? "").trim();
+  const s = String(v ?? '').trim();
   if (!s) return null;
   if (!/^\d+$/.test(s)) return null;
   const n = Number.parseInt(s, 10);
@@ -22,36 +22,36 @@ exports.create = async (req, res) => {
     const renstraId = toInt(rest.renstra_id);
     if (!renstraTujuanId || !renstraId) {
       return res.status(400).json({
-        message: "failed",
-        error: "renstra_id dan tujuan_id (RenstraTujuan) wajib diisi.",
+        message: 'failed',
+        error: 'renstra_id dan tujuan_id (RenstraTujuan) wajib diisi.',
       });
     }
 
     const renstraTujuan = await RenstraTujuan.findByPk(renstraTujuanId, {
-      attributes: ["id", "renstra_id", "rpjmd_tujuan_id"],
+      attributes: ['id', 'renstra_id', 'rpjmd_tujuan_id'],
     });
     if (!renstraTujuan) {
       return res.status(404).json({
-        message: "failed",
-        error: "Tujuan Renstra tidak ditemukan.",
+        message: 'failed',
+        error: 'Tujuan Renstra tidak ditemukan.',
       });
     }
     if (Number(renstraTujuan.renstra_id) !== Number(renstraId)) {
       return res.status(400).json({
-        message: "failed",
-        error: "tujuan_id tidak sesuai dengan renstra_id (Renstra OPD) pada payload.",
+        message: 'failed',
+        error: 'tujuan_id tidak sesuai dengan renstra_id (Renstra OPD) pada payload.',
       });
     }
 
     // Cari Sasaran RPJMD
     const sasaranRpjmd = await Sasaran.findByPk(rpjmd_sasaran_id, {
-      attributes: ["id", "nomor", "isi_sasaran", "tujuan_id"],
+      attributes: ['id', 'nomor', 'isi_sasaran', 'tujuan_id'],
     });
 
     if (!sasaranRpjmd) {
       return res.status(404).json({
-        message: "failed",
-        error: "Sasaran RPJMD tidak ditemukan",
+        message: 'failed',
+        error: 'Sasaran RPJMD tidak ditemukan',
       });
     }
 
@@ -59,16 +59,19 @@ exports.create = async (req, res) => {
     const tujuanRpjmdId = parseNumericString(renstraTujuan.rpjmd_tujuan_id);
     if (!tujuanRpjmdId) {
       return res.status(400).json({
-        message: "failed",
+        message: 'failed',
         error:
-          "Tujuan Renstra belum terhubung ke Tujuan RPJMD numerik yang valid (rpjmd_tujuan_id).",
+          'Tujuan Renstra belum terhubung ke Tujuan RPJMD numerik yang valid (rpjmd_tujuan_id).',
       });
     }
-    if (sasaranRpjmd.tujuan_id != null && Number(sasaranRpjmd.tujuan_id) !== Number(tujuanRpjmdId)) {
+    if (
+      sasaranRpjmd.tujuan_id != null &&
+      Number(sasaranRpjmd.tujuan_id) !== Number(tujuanRpjmdId)
+    ) {
       return res.status(400).json({
-        message: "failed",
+        message: 'failed',
         error:
-          "Sasaran RPJMD tidak konsisten: sasaran bukan turunan dari tujuan RPJMD yang dipilih pada RenstraTujuan.",
+          'Sasaran RPJMD tidak konsisten: sasaran bukan turunan dari tujuan RPJMD yang dipilih pada RenstraTujuan.',
       });
     }
 
@@ -81,13 +84,13 @@ exports.create = async (req, res) => {
     });
 
     res.status(201).json({
-      message: "success",
+      message: 'success',
       data,
     });
   } catch (err) {
-    console.error("❌ Sequelize Error:", err);
+    console.error('❌ Sequelize Error:', err);
     res.status(400).json({
-      message: "failed",
+      message: 'failed',
       error: err.message,
     });
   }
@@ -95,24 +98,30 @@ exports.create = async (req, res) => {
 
 exports.findAll = async (req, res) => {
   try {
+    const { tujuan_id, renstra_id } = req.query;
+    const where = {};
+    if (tujuan_id) where.tujuan_id = toInt(tujuan_id);
+    if (renstra_id) where.renstra_id = toInt(renstra_id);
+
     const data = await RenstraSasaran.findAll({
+      where,
       include: [
         {
           model: Sasaran,
-          as: "sasaran_rpjmd",
-          attributes: ["id", "nomor", "isi_sasaran"],
+          as: 'sasaran_rpjmd',
+          attributes: ['id', 'nomor', 'isi_sasaran'],
         },
       ],
     });
     res.json({
-      message: "success",
+      message: 'success',
       data,
     });
   } catch (err) {
-    console.error("🔴 ERROR findAll renstra-sasaran:", err);
+    console.error('🔴 ERROR findAll renstra-sasaran:', err);
     res.status(500).json({
-      message: "failed",
-      error: "Gagal memuat Sasaran Renstra.",
+      message: 'failed',
+      error: 'Gagal memuat Sasaran Renstra.',
     });
   }
 };
@@ -123,30 +132,30 @@ exports.findOne = async (req, res) => {
       include: [
         {
           model: RenstraTujuan,
-          as: "tujuan",
-          attributes: ["id", "no_tujuan", "isi_tujuan"],
+          as: 'tujuan',
+          attributes: ['id', 'no_tujuan', 'isi_tujuan'],
         },
         {
           model: Sasaran,
-          as: "sasaran_rpjmd",
-          attributes: ["id", "nomor", "isi_sasaran"],
+          as: 'sasaran_rpjmd',
+          attributes: ['id', 'nomor', 'isi_sasaran'],
         },
       ],
     });
     if (!data) {
       return res.status(404).json({
-        message: "failed",
-        error: "Data tidak ditemukan.",
+        message: 'failed',
+        error: 'Data tidak ditemukan.',
       });
     }
     res.json({
-      message: "success",
+      message: 'success',
       data,
     });
   } catch (err) {
-    console.error("ERROR:", err);
+    console.error('ERROR:', err);
     res.status(500).json({
-      message: "failed",
+      message: 'failed',
       error: err.message,
     });
   }
@@ -161,19 +170,19 @@ exports.getSasaranRpjmd = async (req, res) => {
 
     if (!tujuan_id) {
       return res.status(400).json({
-        message: "failed",
-        error: "Parameter tujuan_id wajib diisi.",
+        message: 'failed',
+        error: 'Parameter tujuan_id wajib diisi.',
       });
     }
 
     // Langkah 1: cari RenstraTujuan untuk mendapatkan rpjmd_tujuan_id
     const renstraTujuan = await RenstraTujuan.findByPk(tujuan_id, {
-      attributes: ["id", "rpjmd_tujuan_id"],
+      attributes: ['id', 'rpjmd_tujuan_id'],
     });
 
     if (!renstraTujuan) {
       return res.status(404).json({
-        message: "failed",
+        message: 'failed',
         error: `Tujuan Renstra dengan id ${tujuan_id} tidak ditemukan.`,
       });
     }
@@ -182,56 +191,53 @@ exports.getSasaranRpjmd = async (req, res) => {
 
     if (!rpjmdTujuanId) {
       return res.status(404).json({
-        message: "failed",
-        error: "Tujuan Renstra ini belum terhubung ke Tujuan RPJMD.",
+        message: 'failed',
+        error: 'Tujuan Renstra ini belum terhubung ke Tujuan RPJMD.',
       });
     }
 
     // Langkah 2: ambil Sasaran dari tabel RPJMD menggunakan rpjmd_tujuan_id
     const sasaran = await Sasaran.findAll({
-        where: {
-          tujuan_id: rpjmdTujuanId,
-          jenis_dokumen: "rpjmd",
+      where: {
+        tujuan_id: rpjmdTujuanId,
+        jenis_dokumen: 'rpjmd',
+      },
+      attributes: ['id', 'nomor', 'isi_sasaran'],
+      order: [['nomor', 'ASC']],
+      raw: true,
+    });
+
+    const sasaranIds = sasaran.map((item) => item.id);
+
+    const indikatorSasaranRows = await IndikatorSasaran.findAll({
+      where: {
+        sasaran_id: sasaranIds,
+        jenis_dokumen: {
+          [Op.in]: ['rpjmd', 'RPJMD', 'RPJMD 2025-2029'],
         },
-        attributes: ["id", "nomor", "isi_sasaran"],
-        order: [["nomor", "ASC"]],
-        raw: true,
-      });
+      },
+      attributes: ['id', 'sasaran_id'],
+      raw: true,
+    });
 
-      const sasaranIds = sasaran.map((item) => item.id);
+    const indikatorMap = new Map(
+      indikatorSasaranRows.map((item) => [Number(item.sasaran_id), Number(item.id)]),
+    );
 
-      const indikatorSasaranRows = await IndikatorSasaran.findAll({
-        where: {
-          sasaran_id: sasaranIds,
-          jenis_dokumen: {
-            [Op.in]: ["rpjmd", "RPJMD", "RPJMD 2025-2029"],
-          },
-        },
-        attributes: ["id", "sasaran_id"],
-        raw: true,
-      });
+    const data = sasaran.map((item) => ({
+      ...item,
+      ref_id: indikatorMap.get(Number(item.id)) ?? null,
+    }));
 
-      const indikatorMap = new Map(
-        indikatorSasaranRows.map((item) => [
-          Number(item.sasaran_id),
-          Number(item.id),
-        ])
-      );
-
-      const data = sasaran.map((item) => ({
-        ...item,
-        ref_id: indikatorMap.get(Number(item.id)) ?? null,
-      }));
-
-      res.status(200).json({
-        message: "success",
-        data,
-      });
+    res.status(200).json({
+      message: 'success',
+      data,
+    });
   } catch (err) {
-    console.error("❌ ERROR getSasaranRpjmd:", err);
+    console.error('❌ ERROR getSasaranRpjmd:', err);
     res.status(500).json({
-      message: "failed",
-      error: "Gagal mengambil Sasaran RPJMD.",
+      message: 'failed',
+      error: 'Gagal mengambil Sasaran RPJMD.',
     });
   }
 };
@@ -242,16 +248,16 @@ exports.generateNomorSasaran = async (req, res) => {
 
     if (!rpjmd_sasaran_id || !renstra_id) {
       return res.status(400).json({
-        message: "failed",
-        error: "Parameter rpjmd_sasaran_id dan renstra_id diperlukan.",
+        message: 'failed',
+        error: 'Parameter rpjmd_sasaran_id dan renstra_id diperlukan.',
       });
     }
 
     const sasaran = await Sasaran.findByPk(rpjmd_sasaran_id);
     if (!sasaran || !sasaran.nomor) {
       return res.status(404).json({
-        message: "failed",
-        error: "Sasaran RPJMD tidak ditemukan atau nomor tidak tersedia.",
+        message: 'failed',
+        error: 'Sasaran RPJMD tidak ditemukan atau nomor tidak tersedia.',
       });
     }
 
@@ -260,8 +266,8 @@ exports.generateNomorSasaran = async (req, res) => {
 
     if (!baseNomor) {
       return res.status(400).json({
-        message: "failed",
-        error: "Format nomor Sasaran RPJMD tidak valid (harus STx-XX-XX).",
+        message: 'failed',
+        error: 'Format nomor Sasaran RPJMD tidak valid (harus STx-XX-XX).',
       });
     }
 
@@ -269,18 +275,18 @@ exports.generateNomorSasaran = async (req, res) => {
       where: { rpjmd_sasaran_id, renstra_id },
     });
 
-    const urutan = String(count + 1).padStart(2, "0");
+    const urutan = String(count + 1).padStart(2, '0');
     const nomorOtomatis = `SR-${baseNomor}.${urutan}`;
 
     res.status(200).json({
-      message: "success",
+      message: 'success',
       data: { nomor_otomatis: nomorOtomatis },
     });
   } catch (error) {
-    console.error("❌ Error generateNomorSasaran:", error);
+    console.error('❌ Error generateNomorSasaran:', error);
     res.status(500).json({
-      message: "failed",
-      error: "Gagal menghasilkan nomor sasaran.",
+      message: 'failed',
+      error: 'Gagal menghasilkan nomor sasaran.',
     });
   }
 };
@@ -292,8 +298,8 @@ exports.update = async (req, res) => {
 
     if (!updated) {
       return res.status(404).json({
-        message: "failed",
-        error: "Data tidak ditemukan",
+        message: 'failed',
+        error: 'Data tidak ditemukan',
       });
     }
 
@@ -301,20 +307,20 @@ exports.update = async (req, res) => {
       include: [
         {
           model: Sasaran,
-          as: "sasaran_rpjmd",
-          attributes: ["id", "nomor", "isi_sasaran"],
+          as: 'sasaran_rpjmd',
+          attributes: ['id', 'nomor', 'isi_sasaran'],
         },
       ],
     });
 
     res.json({
-      message: "success",
+      message: 'success',
       data: updatedData,
     });
   } catch (err) {
-    console.error("❌ ERROR update:", err);
+    console.error('❌ ERROR update:', err);
     res.status(400).json({
-      message: "failed",
+      message: 'failed',
       error: err.message,
     });
   }
@@ -328,29 +334,29 @@ exports.delete = async (req, res) => {
       include: [
         {
           model: Sasaran,
-          as: "sasaran_rpjmd",
-          attributes: ["id", "nomor", "isi_sasaran"],
+          as: 'sasaran_rpjmd',
+          attributes: ['id', 'nomor', 'isi_sasaran'],
         },
       ],
     });
 
     if (!data) {
       return res.status(404).json({
-        message: "failed",
-        error: "Data tidak ditemukan",
+        message: 'failed',
+        error: 'Data tidak ditemukan',
       });
     }
 
     await RenstraSasaran.destroy({ where: { id } });
 
     res.json({
-      message: "success",
+      message: 'success',
       data: data, // kirim data yang dihapus
     });
   } catch (err) {
-    console.error("❌ ERROR delete:", err);
+    console.error('❌ ERROR delete:', err);
     res.status(500).json({
-      message: "failed",
+      message: 'failed',
       error: err.message,
     });
   }

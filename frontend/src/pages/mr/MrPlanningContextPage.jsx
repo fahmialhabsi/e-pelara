@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Badge,
   Button,
+  Modal,
   Card,
   Col,
   Container,
@@ -10,11 +11,13 @@ import {
   Row,
   Spinner,
   Table,
-} from "react-bootstrap";
+} from 'react-bootstrap';
 import {
   getMrPlanningContextDetail,
   getMrPlanningContexts,
-} from "../../services/mrPlanningContextService";
+  createMrPlanningContext,
+} from '../../services/mrPlanningContextService';
+import api from '@/services/api';
 
 const getLength = (value) => {
   return Array.isArray(value) ? value.length : 0;
@@ -24,14 +27,14 @@ const ChainSummary = ({ context }) => {
   if (!context) return null;
 
   const items = [
-    { label: "Context Items", value: getLength(context.items), variant: "primary" },
-    { label: "Risiko", value: getLength(context.risks), variant: "danger" },
-    { label: "Analisis Risiko", value: getLength(context.risk_analyses), variant: "warning" },
-    { label: "Akar Penyebab", value: getLength(context.root_causes), variant: "secondary" },
-    { label: "Mitigasi", value: getLength(context.mitigations), variant: "success" },
-    { label: "Monitoring", value: getLength(context.monitorings), variant: "info" },
-    { label: "Deviasi", value: getLength(context.deviations), variant: "dark" },
-    { label: "Warning", value: getLength(context.warnings), variant: "danger" },
+    { label: 'Context Items', value: getLength(context.items), variant: 'primary' },
+    { label: 'Risiko', value: getLength(context.risks), variant: 'danger' },
+    { label: 'Analisis Risiko', value: getLength(context.risk_analyses), variant: 'warning' },
+    { label: 'Akar Penyebab', value: getLength(context.root_causes), variant: 'secondary' },
+    { label: 'Mitigasi', value: getLength(context.mitigations), variant: 'success' },
+    { label: 'Monitoring', value: getLength(context.monitorings), variant: 'info' },
+    { label: 'Deviasi', value: getLength(context.deviations), variant: 'dark' },
+    { label: 'Warning', value: getLength(context.warnings), variant: 'danger' },
   ];
 
   return (
@@ -45,8 +48,8 @@ const ChainSummary = ({ context }) => {
             </small>
           </div>
 
-          <Badge bg={context.status_revisi === "approved" ? "success" : "warning"}>
-            {context.status_revisi || "draft"}
+          <Badge bg={context.status_revisi === 'approved' ? 'success' : 'warning'}>
+            {context.status_revisi || 'draft'}
           </Badge>
         </div>
       </Card.Header>
@@ -83,7 +86,7 @@ const RiskTable = ({ risks = [] }) => {
     <Table responsive bordered hover variant="dark" className="mb-0">
       <thead>
         <tr>
-          <th style={{ width: "80px" }}>ID</th>
+          <th style={{ width: '80px' }}>ID</th>
           <th>Kode Risiko</th>
           <th>Nama Risiko</th>
           <th>Level</th>
@@ -94,14 +97,14 @@ const RiskTable = ({ risks = [] }) => {
         {risks.map((risk) => (
           <tr key={risk.id}>
             <td>{risk.id}</td>
-            <td>{risk.kode_risiko || "-"}</td>
-            <td>{risk.nama_risiko || "-"}</td>
+            <td>{risk.kode_risiko || '-'}</td>
+            <td>{risk.nama_risiko || '-'}</td>
             <td>
-              <Badge bg="danger">{risk.level_risiko || "-"}</Badge>
+              <Badge bg="danger">{risk.level_risiko || '-'}</Badge>
             </td>
             <td>
-              <Badge bg={risk.status_revisi === "approved" ? "success" : "warning"}>
-                {risk.status_revisi || "draft"}
+              <Badge bg={risk.status_revisi === 'approved' ? 'success' : 'warning'}>
+                {risk.status_revisi || 'draft'}
               </Badge>
             </td>
           </tr>
@@ -124,7 +127,7 @@ const WarningTable = ({ warnings = [] }) => {
     <Table responsive bordered hover variant="dark" className="mb-0">
       <thead>
         <tr>
-          <th style={{ width: "80px" }}>ID</th>
+          <th style={{ width: '80px' }}>ID</th>
           <th>Kode</th>
           <th>Jenis</th>
           <th>Level</th>
@@ -137,16 +140,16 @@ const WarningTable = ({ warnings = [] }) => {
         {warnings.map((warning) => (
           <tr key={warning.id}>
             <td>{warning.id}</td>
-            <td>{warning.warning_code || "-"}</td>
-            <td>{warning.warning_type || "-"}</td>
+            <td>{warning.warning_code || '-'}</td>
+            <td>{warning.warning_type || '-'}</td>
             <td>
-              <Badge bg={warning.warning_level === "critical" ? "danger" : "warning"}>
-                {warning.warning_level || "-"}
+              <Badge bg={warning.warning_level === 'critical' ? 'danger' : 'warning'}>
+                {warning.warning_level || '-'}
               </Badge>
             </td>
-            <td>{warning.warning_status || "-"}</td>
-            <td>{warning.is_read ? "Ya" : "Belum"}</td>
-            <td>{warning.is_resolved ? "Ya" : "Belum"}</td>
+            <td>{warning.warning_status || '-'}</td>
+            <td>{warning.is_read ? 'Ya' : 'Belum'}</td>
+            <td>{warning.is_resolved ? 'Ya' : 'Belum'}</td>
           </tr>
         ))}
       </tbody>
@@ -156,22 +159,42 @@ const WarningTable = ({ warnings = [] }) => {
 
 const MrPlanningContextPage = () => {
   const [contexts, setContexts] = useState([]);
-  const [selectedContextId, setSelectedContextId] = useState("");
+  const [selectedContextId, setSelectedContextId] = useState('');
   const [selectedContext, setSelectedContext] = useState(null);
 
   const [loadingList, setLoadingList] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formData, setFormData] = useState({
+    tahun: new Date().getFullYear(),
+    opd_id: '',
+    periode_type: 'tahunan',
+    nama_opd: '',
+  });
+  const [formError, setFormError] = useState('');
+  const [opdList, setOpdList] = useState([]);
+
+  useEffect(() => {
+    api
+      .get('/renstra-opd')
+      .then((res) => {
+        const data = res.data?.data || res.data || [];
+        setOpdList(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {});
+  }, []);
 
   const loadContexts = async () => {
     try {
       setLoadingList(true);
-      setError("");
+      setError('');
 
       const result = await getMrPlanningContexts();
 
       if (!result?.success) {
-        throw new Error(result?.message || "Gagal memuat daftar context MR.");
+        throw new Error(result?.message || 'Gagal memuat daftar context MR.');
       }
 
       const rows = Array.isArray(result.data) ? result.data : [];
@@ -181,13 +204,29 @@ const MrPlanningContextPage = () => {
         setSelectedContextId(String(rows[0].id));
       }
     } catch (err) {
-      setError(
-        err?.response?.data?.message ||
-          err.message ||
-          "Gagal memuat daftar context MR."
-      );
+      setError(err?.response?.data?.message || err.message || 'Gagal memuat daftar context MR.');
     } finally {
       setLoadingList(false);
+    }
+  };
+
+  const handleCreate = async () => {
+    try {
+      setSubmitting(true);
+      setFormError('');
+      const sourceLabel = formData.jenis_sumber ? `${formData.jenis_sumber} - ` : '';
+      const payload = {
+        ...formData,
+        periode_label: `${sourceLabel}${formData.periode_type === 'tahunan' ? 'Tahun' : formData.periode_type === 'semesteran' ? 'Semester' : formData.periode_type === 'triwulan' ? 'Triwulan' : 'Bulan'} ${formData.tahun} - ${formData.nama_opd}`,
+      };
+      const result = await createMrPlanningContext(payload);
+      if (!result?.success) throw new Error(result?.message || 'Gagal membuat Context MR.');
+      setShowModal(false);
+      await loadContexts();
+    } catch (err) {
+      setFormError(err?.response?.data?.message || err.message || 'Gagal membuat Context MR.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -199,22 +238,18 @@ const MrPlanningContextPage = () => {
 
     try {
       setLoadingDetail(true);
-      setError("");
+      setError('');
 
       const result = await getMrPlanningContextDetail(id);
 
       if (!result?.success) {
-        throw new Error(result?.message || "Gagal memuat detail context MR.");
+        throw new Error(result?.message || 'Gagal memuat detail context MR.');
       }
 
       setSelectedContext(result.data || null);
     } catch (err) {
       setSelectedContext(null);
-      setError(
-        err?.response?.data?.message ||
-          err.message ||
-          "Gagal memuat detail context MR."
-      );
+      setError(err?.response?.data?.message || err.message || 'Gagal memuat detail context MR.');
     } finally {
       setLoadingDetail(false);
     }
@@ -252,6 +287,13 @@ const MrPlanningContextPage = () => {
           <Row className="g-3 align-items-end">
             <Col md={8}>
               <Form.Group>
+                <div className="d-flex justify-content-between align-items-center mb-2">
+                  <Form.Label className="mb-0">Pilih Context MR</Form.Label>
+                  <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
+                    + Buat Context MR Baru
+                  </Button>
+                </div>
+
                 <Form.Label>Pilih Context MR</Form.Label>
                 <Form.Select
                   value={selectedContextId}
@@ -261,9 +303,9 @@ const MrPlanningContextPage = () => {
                   <option value="">Pilih context</option>
                   {contexts.map((context) => (
                     <option key={context.id} value={context.id}>
-                      {context.periode_label || `Context ${context.id}`} —{" "}
-                      {context.jenis_dokumen || "-"} —{" "}
-                      {context.nama_opd || `OPD ${context.opd_id || "-"}`}
+                      {context.periode_label || `Context ${context.id}`} —{' '}
+                      {context.jenis_dokumen || '-'} —{' '}
+                      {context.nama_opd || `OPD ${context.opd_id || '-'}`}
                     </option>
                   ))}
                 </Form.Select>
@@ -283,7 +325,7 @@ const MrPlanningContextPage = () => {
                     Memuat...
                   </>
                 ) : (
-                  "Muat Detail Context"
+                  'Muat Detail Context'
                 )}
               </Button>
             </Col>
@@ -310,10 +352,8 @@ const MrPlanningContextPage = () => {
                   </small>
                 </div>
 
-                <Badge
-                  bg={selectedContext.status_revisi === "approved" ? "success" : "warning"}
-                >
-                  {selectedContext.status_revisi || "draft"}
+                <Badge bg={selectedContext.status_revisi === 'approved' ? 'success' : 'warning'}>
+                  {selectedContext.status_revisi || 'draft'}
                 </Badge>
               </div>
             </Card.Header>
@@ -327,17 +367,17 @@ const MrPlanningContextPage = () => {
 
                 <Col md={3}>
                   <div className="text-secondary small">Renstra ID</div>
-                  <strong>{selectedContext.renstra_id || "-"}</strong>
+                  <strong>{selectedContext.renstra_id || '-'}</strong>
                 </Col>
 
                 <Col md={3}>
                   <div className="text-secondary small">OPD</div>
-                  <strong>{selectedContext.nama_opd || selectedContext.opd_id || "-"}</strong>
+                  <strong>{selectedContext.nama_opd || selectedContext.opd_id || '-'}</strong>
                 </Col>
 
                 <Col md={3}>
                   <div className="text-secondary small">Owner</div>
-                  <strong>{selectedContext.owner_user_id || "-"}</strong>
+                  <strong>{selectedContext.owner_user_id || '-'}</strong>
                 </Col>
               </Row>
             </Card.Body>
@@ -364,6 +404,77 @@ const MrPlanningContextPage = () => {
           </Card>
         </>
       )}
+      <Modal show={showModal} onHide={() => setShowModal(false)} centered>
+        <Modal.Header closeButton className="bg-dark text-light border-secondary">
+          <Modal.Title>Buat Context MR Baru</Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="bg-dark text-light">
+          {formError && <Alert variant="danger">{formError}</Alert>}
+          <Form.Group className="mb-3">
+            <Form.Label>Jenis Sumber</Form.Label>
+            <Form.Select
+              value={formData.jenis_sumber || ''}
+              onChange={(e) => setFormData({ ...formData, jenis_sumber: e.target.value })}
+            >
+              <option value="">-- Pilih Jenis Sumber --</option>
+              <option value="Renstra">Renstra</option>
+              <option value="Lakip">Lakip</option>
+              <option value="Laporan Keuangan">Laporan Keuangan</option>
+              <option value="Tindak Lanjut BPK">Tindak Lanjut BPK</option>
+              <option value="Tindak Lanjut Inspektorat">Tindak Lanjut Inspektorat</option>
+            </Form.Select>
+          </Form.Group>
+          <Form.Group className="mb-3">
+            <Form.Label>Tahun</Form.Label>
+            <Form.Control
+              type="number"
+              value={formData.tahun}
+              onChange={(e) => setFormData({ ...formData, tahun: Number(e.target.value) })}
+            />
+          </Form.Group>
+          <Form.Group className="mb-3">
+            <Form.Label>OPD</Form.Label>
+            <Form.Select
+              value={formData.opd_id}
+              onChange={(e) => {
+                const selected = opdList.find((o) => String(o.id) === e.target.value);
+                setFormData({
+                  ...formData,
+                  opd_id: Number(e.target.value),
+                  nama_opd: selected?.nama_opd || '',
+                });
+              }}
+            >
+              <option value="">-- Pilih OPD --</option>
+              {opdList.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.nama_opd}
+                </option>
+              ))}
+            </Form.Select>
+          </Form.Group>
+          <Form.Group className="mb-3">
+            <Form.Label>Tipe Periode</Form.Label>
+            <Form.Select
+              value={formData.periode_type}
+              onChange={(e) => setFormData({ ...formData, periode_type: e.target.value })}
+            >
+              <option value="tahunan">Tahunan</option>
+              <option value="semesteran">Semesteran</option>
+              <option value="triwulan">Triwulan</option>
+              <option value="bulanan">Bulanan</option>
+            </Form.Select>
+          </Form.Group>
+        </Modal.Body>
+        <Modal.Footer className="bg-dark border-secondary">
+          <Button variant="secondary" onClick={() => setShowModal(false)}>
+            Batal
+          </Button>
+          <Button variant="primary" onClick={handleCreate} disabled={submitting}>
+            {submitting ? 'Menyimpan...' : 'Simpan'}
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </Container>
   );
 };

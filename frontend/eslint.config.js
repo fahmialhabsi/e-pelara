@@ -2,7 +2,12 @@ import js from '@eslint/js'
 import prettier from 'eslint-config-prettier'
 import globals from 'globals'
 import reactHooks from 'eslint-plugin-react-hooks'
-import reactRefresh from 'eslint-plugin-react-refresh'
+
+const browserAndNodeGlobals = Object.fromEntries(
+  Object.entries({ ...globals.browser, ...globals.node }).filter(
+    ([name]) => name.trim() === name,
+  ),
+)
 
 export default [
   { ignores: ['dist', 'node_modules'] },
@@ -10,10 +15,7 @@ export default [
     files: ['**/*.{js,jsx}'],
     languageOptions: {
       ecmaVersion: 2020,
-      globals: {
-        ...globals.browser,
-        ...globals.node,
-      },
+      globals: browserAndNodeGlobals,
       parserOptions: {
         ecmaVersion: 'latest',
         ecmaFeatures: { jsx: true },
@@ -22,7 +24,6 @@ export default [
     },
     plugins: {
       'react-hooks': reactHooks,
-      'react-refresh': reactRefresh,
     },
     rules: {
       ...js.configs.recommended.rules,
@@ -38,10 +39,6 @@ export default [
       'consistent-return': 'warn',
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
       'linebreak-style': 'off',
-      'react-refresh/only-export-components': [
-        'warn',
-        { allowConstantExport: true },
-      ],
     },
   },
   prettier,

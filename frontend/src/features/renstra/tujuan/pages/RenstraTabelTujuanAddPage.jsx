@@ -11,7 +11,13 @@ const RenstraTabelTujuanAddPage = () => {
   const navigate = useNavigate();
   const { data: renstraAktif, isLoading } = useQuery({
     queryKey: ["renstra-opd-aktif"],
-    queryFn: async () => (await api.get("/renstra-opd/aktif")).data.data,
+    queryFn: async () => {
+      const res = await api.get("/renstra-opd?is_aktif=true");
+      if (Array.isArray(res.data?.data)) {
+        return res.data.data[0] || null;
+      }
+      return res.data?.data ?? res.data ?? null;
+    },
   });
 
   if (isLoading) return <SpinnerFullscreen tip="Memuat Renstra aktif..." />;

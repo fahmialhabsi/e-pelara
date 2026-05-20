@@ -169,15 +169,27 @@ exports.generateKodeKebijakan = async (req, res) => {
     const kodeArah = arahKebijakan.kode_arah; // contoh: ASST1-01-01.2.1
     const bagianAkhir = kodeArah.split("-").slice(1).join("-"); // hasil: 01-01.2.1
 
-    // Hitung jumlah kebijakan eksisting dengan arah_kebijakan dan renstra yang sama
-    const existingCount = await RenstraKebijakan.count({
+    // Ambil kode yang sudah ada lalu pakai suffix terbesar + 1.
+    // Ini lebih aman daripada count() karena count bisa ikut record lama/duplikat
+    // yang tidak merepresentasikan urutan kode terakhir.
+    const existingRows = await RenstraKebijakan.findAll({
       where: {
         rpjmd_arah_id: arah_kebijakan_id,
         renstra_id: renstra_id,
       },
+      attributes: ["kode_kebjkn"],
+      raw: true,
     });
 
-    const nextNo = existingCount + 1;
+    const suffixes = existingRows
+      .map((row) => {
+        const kode = String(row.kode_kebjkn || "");
+        const match = kode.match(/\.([0-9]{2})$/);
+        return match ? Number.parseInt(match[1], 10) : null;
+      })
+      .filter((n) => Number.isInteger(n) && n > 0);
+
+    const nextNo = suffixes.length > 0 ? Math.max(...suffixes) + 1 : 1;
     const noFormatted = String(nextNo).padStart(2, "0"); // jadi "01", "02", dst.
 
     const generatedKode = `AKR-${bagianAkhir}.${noFormatted}`;

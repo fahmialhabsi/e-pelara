@@ -10,7 +10,7 @@ import {
   message,
 } from "antd";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import api from "@/services/api";
 import {
   formatNumber,
@@ -38,7 +38,9 @@ const wrapTextStyle = {
 
 export default function RenstraTabelProgramListPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
+  const withSearch = (path) => `${path}${location.search || ""}`;
 
   const { data: renstraAktif } = useQuery({
     queryKey: ["renstra-opd-aktif"],
@@ -182,7 +184,7 @@ export default function RenstraTabelProgramListPage() {
               size="small"
               type="primary"
               onClick={() =>
-                navigate(`/renstra/tabel/program/edit/${record.id}`)
+                navigate(withSearch(`/renstra/tabel/program/edit/${record.id}`))
               }
             >
               Edit Draft
@@ -195,7 +197,7 @@ export default function RenstraTabelProgramListPage() {
               type="dashed"
               style={{ borderColor: "#fa8c16", color: "#fa8c16" }}
               onClick={() =>
-                navigate(`/renstra/tabel/program/edit/${record.id}`)
+                navigate(withSearch(`/renstra/tabel/program/edit/${record.id}`))
               }
             >
               Buat Revisi
@@ -205,7 +207,7 @@ export default function RenstraTabelProgramListPage() {
           <Button
             size="small"
             onClick={() =>
-              navigate(`/renstra/tabel/program/history/${record.id}`)
+              navigate(withSearch(`/renstra/tabel/program/history/${record.id}`))
             }
           >
             History
@@ -244,7 +246,7 @@ export default function RenstraTabelProgramListPage() {
 
         <Button
           type="primary"
-          onClick={() => navigate("/renstra/tabel/program/add")}
+          onClick={() => navigate(withSearch("/renstra/tabel/program/add"))}
         >
           Tambah
         </Button>

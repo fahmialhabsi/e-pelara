@@ -58,6 +58,35 @@ const sanitizeSubKegiatanPayload = (payload = {}) => {
     return cleaned;
   };
 
+const firstDefined = (...values) =>
+  values.find((value) => value !== undefined && value !== null && value !== "") ?? null;
+
+const toPositiveInt = (value) => {
+  if (value === undefined || value === null || value === "") return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
+const matchesCanonicalSubKegiatanRow = (row, selection = {}) => {
+  const renstraId = toPositiveInt(selection.renstraId);
+  const programId = toPositiveInt(selection.programId);
+  const kegiatanId = toPositiveInt(selection.kegiatanId);
+  const subKegiatanId = toPositiveInt(selection.subKegiatanId);
+  const indikatorId = toPositiveInt(selection.indikatorId);
+
+  if (!renstraId || !programId || !kegiatanId || !subKegiatanId || !indikatorId) {
+    return false;
+  }
+
+  return (
+    toPositiveInt(row?.renstra_id) === renstraId &&
+    toPositiveInt(row?.program_id) === programId &&
+    toPositiveInt(row?.kegiatan_id) === kegiatanId &&
+    toPositiveInt(firstDefined(row?.sub_kegiatan_id, row?.subkegiatan_id)) === subKegiatanId &&
+    toPositiveInt(row?.indikator_id) === indikatorId
+  );
+};
+
 const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -67,9 +96,7 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
   const isRevisiMode = isApproved && searchParams.get("mode") === "revisi";
   const isAuditMode = isApproved && !isRevisiMode;
 
-  const [paguInfoMessage, setPaguInfoMessage] = useState("");
   const [existingDataInfo, setExistingDataInfo] = useState(null);
-  const [existingDataId, setExistingDataId] = useState(null);
   const [serverMessage, setServerMessage] = useState("");
   const [submitRevisiLoading, setSubmitRevisiLoading] = useState(false);
 
@@ -254,11 +281,6 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
     name: "sub_kegiatan_id",
   });
 
-  const selectedRpjmdSubkegiatanId = useWatch({
-    control,
-    name: "subkegiatan_id",
-  });
-
   const selectedIndikatorId = useWatch({
     control,
     name: "indikator_id",
@@ -307,18 +329,6 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
     enabled: !!renstraAktif?.id && !!selectedProgramId,
   });
 
-  const selectedKegRow = useMemo(
-    () => kegiatanList.find((k) => String(k.id) === String(selectedKegiatanId)),
-    [kegiatanList, selectedKegiatanId]
-  );
-
-  const rpjmdKegiatanId = useMemo(() => {
-    const raw =
-      selectedKegRow?.rpjmd_kegiatan_id ?? selectedKegRow?.kegiatan_rpjmd?.id;
-    const n = Number(raw);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  }, [selectedKegRow]);
-
   const { data: subkegiatanList = [], isLoading: loadingSub } = useQuery({
     queryKey: ["renstra-subkegiatan", renstraId, selectedKegiatanId],
     queryFn: async () => {
@@ -359,83 +369,114 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
 
   const prevSubkegiatanIdRef = useRef(undefined);
 
+  // Legacy state sync: keep this effect until the form reducer refactor is scheduled.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     const cur = selectedSubKegiatanId || undefined;
     const prev = prevSubkegiatanIdRef.current;
 
     if (prev !== undefined && prev !== cur) {
-      setValueIfChanged("indikator_id", "");
+      setValueIfChanged("indikator_id", "", { shouldValidate: true });
+      setValueIfChanged("indikator_manual", "");
+      setValueIfChanged("baseline", 0);
+      setValueIfChanged("satuan_target", "");
+      setValueIfChanged("lokasi", "");
+      YEARS.forEach((i) => {
+        setValueIfChanged(`target_tahun_${i}`, 0);
+        setValueIfChanged(`pagu_tahun_${i}`, 0);
+      });
+      setValueIfChanged("pagu_akhir_renstra", 0);
       setExistingDataInfo(null);
-      setExistingDataId(null);
-      setPaguInfoMessage("");
     }
 
     prevSubkegiatanIdRef.current = cur;
   }, [selectedSubKegiatanId]);
 
   useEffect(() => {
-  if (!selectedIndikatorId) return;
+    if (!selectedIndikatorId) return;
 
-  const selected = indikatorOptions.find(
-    (i) => String(i.id) === String(selectedIndikatorId)
-  );
+    const selected = indikatorOptions.find(
+      (i) => String(i.id) === String(selectedIndikatorId)
+    );
 
-  if (!selected) return;
+    if (!selected) return;
 
-  if (
-    initialData &&
-    String(selectedIndikatorId) === String(initialData.indikator_id)
-  ) {
-    return;
-  }
+    if (
+      initialData &&
+      String(selectedIndikatorId) === String(initialData.indikator_id)
+    ) {
+      return;
+    }
 
-  const parseNum = (v) => {
-    if (v === null || v === undefined || v === "") return 0;
-    const n = parseFloat(String(v).replace(",", "."));
-    return Number.isFinite(n) ? n : 0;
-  };
+    const parseNum = (v) => {
+      if (v === null || v === undefined || v === "") return 0;
+      const n = parseFloat(String(v).replace(",", "."));
+      return Number.isFinite(n) ? n : 0;
+    };
 
-  setValueIfChanged("indikator_manual", selected.nama_indikator ?? "");
-  setValueIfChanged("baseline", parseNum(selected.baseline ?? selected.target_awal));
-  setValueIfChanged("satuan_target", selected.satuan ?? selected.satuan_target ?? "");
-  setValueIfChanged(
-    "lokasi",
-    [selected.lokasi, selected.sumber_data, selected.keterangan]
-      .map((x) => (x != null ? String(x).trim() : ""))
-      .find(Boolean) ?? ""
-  );
+    setValueIfChanged("indikator_manual", selected.nama_indikator ?? "");
+    setValueIfChanged("baseline", parseNum(selected.baseline ?? selected.target_awal));
+    setValueIfChanged("satuan_target", selected.satuan ?? selected.satuan_target ?? "");
+    setValueIfChanged(
+      "lokasi",
+      [selected.lokasi, selected.sumber_data, selected.keterangan]
+        .map((x) => (x !== null && x !== undefined ? String(x).trim() : ""))
+        .find(Boolean) ?? ""
+    );
 
-  YEARS.forEach((i) => {
-    const val =
-      selected[`target_tahun_${i}`] ??
-      selected[`target_${i}`] ??
-      selected[`target_tahun${i}`];
+    YEARS.forEach((i) => {
+      const val =
+        selected[`target_tahun_${i}`] ??
+        selected[`target_${i}`] ??
+        selected[`target_tahun${i}`];
 
-    setValueIfChanged(`target_tahun_${i}`, parseNum(val));
-  });
+      setValueIfChanged(`target_tahun_${i}`, parseNum(val));
+    });
 
-  const paguAcuan = Number(
-    selected.pagu_cached ||
-      selected.total_pagu_rpjmd ||
-      selected.pagu_rpjmd_acuan ||
-      selected.pagu_akhir_renstra ||
-      0
-  );
+    const paguAcuan = Number(
+      selected.pagu_cached ||
+        selected.total_pagu_rpjmd ||
+        selected.pagu_rpjmd_acuan ||
+        selected.pagu_akhir_renstra ||
+        0
+    );
 
-  const paguDasar = Math.floor(paguAcuan / 5);
-  const sisaPagu = paguAcuan - paguDasar * 5;
+    const paguDasar = Math.floor(paguAcuan / 5);
+    const sisaPagu = paguAcuan - paguDasar * 5;
 
-  setValueIfChanged("pagu_rpjmd_acuan", paguAcuan);
+    setValueIfChanged("pagu_rpjmd_acuan", paguAcuan);
 
-  for (let i = 1; i <= 4; i += 1) {
-    setValueIfChanged(`pagu_tahun_${i}`, paguDasar);
-  }
+    for (let i = 1; i <= 4; i += 1) {
+      setValueIfChanged(`pagu_tahun_${i}`, paguDasar);
+    }
 
-  setValueIfChanged("pagu_tahun_5", paguDasar + sisaPagu);
-  setValueIfChanged("target_tahun_6", 0);
-  setValueIfChanged("pagu_tahun_6", 0);
-  setValueIfChanged("pagu_akhir_renstra", paguAcuan);
-}, [selectedIndikatorId, indikatorOptions?.length, initialData?.id]);
+    setValueIfChanged("pagu_tahun_5", paguDasar + sisaPagu);
+    setValueIfChanged("target_tahun_6", 0);
+    setValueIfChanged("pagu_tahun_6", 0);
+    setValueIfChanged("pagu_akhir_renstra", paguAcuan);
+  }, [selectedIndikatorId, indikatorOptions?.length, initialData?.id]);
+
+  useEffect(() => {
+    if (!selectedSubkegiatanRefId || !renstraId || loadingIndikator || selectedIndikatorId) {
+      return;
+    }
+
+    if (indikatorOptions.length !== 1) {
+      return;
+    }
+
+    const onlyIndicator = indikatorOptions[0];
+    if (!onlyIndicator?.id) return;
+
+    setValueIfChanged("indikator_id", Number(onlyIndicator.id), { shouldValidate: true });
+  }, [
+    indikatorOptions,
+    loadingIndikator,
+    renstraId,
+    selectedIndikatorId,
+    selectedSubkegiatanRefId,
+    setValueIfChanged,
+  ]);
 
   useEffect(() => {
     setValueIfChanged("target_tahun_6", 0);
@@ -443,13 +484,7 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
   }, []);
 
   useEffect(() => {
-    if (
-      initialData ||
-      !selectedSubkegiatanRefId ||
-      !renstraId
-    ) {
-      setExistingDataInfo(null);
-      setExistingDataId(null);
+    if (initialData || !selectedSubkegiatanRefId || !renstraId) {
       return;
     }
 
@@ -469,43 +504,24 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
 
         if (cancelled) return;
 
-        if (rows.length) {
-          const latest = rows[0];
-
-          setExistingDataInfo(latest);
-          setExistingDataId(latest.id);
-
-          setValueIfChanged("indikator_manual", latest.indikator_manual ?? "");
-          setValueIfChanged("baseline", latest.baseline ?? 0);
-          setValueIfChanged("satuan_target", latest.satuan_target ?? "");
-          setValueIfChanged("lokasi", latest.lokasi ?? "");
+        if (rows.length === 1 && !selectedIndikatorId) {
+          setValueIfChanged("indikator_id", Number(rows[0].id), { shouldValidate: true });
+        } else if (!selectedIndikatorId) {
+          setValueIfChanged("indikator_id", "", { shouldValidate: true });
+          setValueIfChanged("indikator_manual", "");
+          setValueIfChanged("baseline", 0);
+          setValueIfChanged("satuan_target", "");
+          setValueIfChanged("lokasi", "");
 
           YEARS.forEach((i) => {
-            setValueIfChanged(`target_tahun_${i}`, latest[`target_tahun_${i}`] ?? 0);
-            setValueIfChanged(`pagu_tahun_${i}`, Number(latest[`pagu_tahun_${i}`] || 0));
+            setValueIfChanged(`target_tahun_${i}`, 0);
+            setValueIfChanged(`pagu_tahun_${i}`, 0);
           });
-
-          setPaguInfoMessage("Data sudah ada. Gunakan Edit jika ingin mengubah.");
-          return;
         }
 
         setExistingDataInfo(null);
-        setExistingDataId(null);
-
-        const currentHasPagu = YEARS.some((i) => {
-          const currentValue = Number(getValues(`pagu_tahun_${i}`) || 0);
-          return currentValue > 0;
-        });
-
-        setPaguInfoMessage(
-          currentHasPagu
-            ? "Pagu sudah terisi."
-            : "Silakan isi pagu subkegiatan sebagai sumber utama agregasi."
-        );
-      } catch {
+      } catch (error) {
         setExistingDataInfo(null);
-        setExistingDataId(null);
-        setPaguInfoMessage("Gagal mengambil data existing.");
       }
     })();
 
@@ -515,6 +531,85 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
   }, [
     initialData?.id,
     selectedSubkegiatanRefId,
+    selectedProgramId,
+    selectedKegiatanId,
+    selectedIndikatorId,
+    renstraId,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timerId = null;
+
+    const scheduleExistingDataInfo = (nextValue) => {
+      timerId = window.setTimeout(() => {
+        if (!cancelled) {
+          setExistingDataInfo(nextValue);
+        }
+      }, 0);
+    };
+
+    if (
+      initialData ||
+      !selectedSubkegiatanRefId ||
+      !selectedProgramId ||
+      !selectedKegiatanId ||
+      !selectedIndikatorId ||
+      !renstraId
+    ) {
+      scheduleExistingDataInfo(null);
+      return () => {
+        cancelled = true;
+        if (timerId !== null) {
+          window.clearTimeout(timerId);
+        }
+      };
+    }
+
+    (async () => {
+      try {
+        const res = await api.get(ENDPOINT, {
+          params: {
+            renstra_id: renstraId,
+            program_id: selectedProgramId,
+            kegiatan_id: selectedKegiatanId,
+            sub_kegiatan_id: selectedSubkegiatanRefId,
+            indikator_id: selectedIndikatorId,
+          },
+        });
+
+        const rows = Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+
+        if (cancelled) return;
+
+        const canonicalRows = rows.filter((row) =>
+          matchesCanonicalSubKegiatanRow(row, {
+            renstraId,
+            programId: selectedProgramId,
+            kegiatanId: selectedKegiatanId,
+            subKegiatanId: selectedSubkegiatanRefId,
+            indikatorId: selectedIndikatorId,
+          })
+        );
+
+        scheduleExistingDataInfo(canonicalRows[0] ?? null);
+      } catch (error) {
+        void error;
+        scheduleExistingDataInfo(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (timerId !== null) {
+        window.clearTimeout(timerId);
+      }
+    };
+  }, [
+    initialData?.id,
+    selectedSubkegiatanRefId,
+    selectedProgramId,
+    selectedKegiatanId,
     selectedIndikatorId,
     renstraId,
   ]);
@@ -540,7 +635,7 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
     setValueIfChanged("kode_subkegiatan", "");
     setValueIfChanged("nama_subkegiatan", "");
     setValueIfChanged("sub_bidang_penanggung_jawab", "");
-    setValueIfChanged("indikator_id", "");
+    setValueIfChanged("indikator_id", "", { shouldValidate: true });
     setValueIfChanged("indikator_manual", "");
     setValueIfChanged("baseline", 0);
     setValueIfChanged("satuan_target", "");
@@ -552,11 +647,10 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
     });
 
     setValueIfChanged("pagu_akhir_renstra", 0);
-    setExistingDataInfo(null);
-    setExistingDataId(null);
-    setPaguInfoMessage("");
   }, [setValueIfChanged]);
 
+  // Legacy form sync: keep this effect until the sub-kegiatan refactor is scheduled.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (!initialData) {
       setValueIfChanged("kegiatan_id", "");
@@ -564,20 +658,18 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
     }
   }, [selectedProgramId, initialData?.id]);
 
+  // Legacy form sync: keep this effect until the sub-kegiatan refactor is scheduled.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (!initialData) {
       clearDerivedSubFields();
     }
   }, [selectedKegiatanId, initialData?.id]);
 
+  // Legacy data sync: keep this effect until the sub-kegiatan refactor is scheduled.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (initialData || !selectedSubKegiatanId || !tahunRpjmd) return;
-
-    const parseNum = (v) => {
-      if (v === null || v === undefined || v === "") return 0;
-      const n = parseFloat(String(v).replace(",", "."));
-      return Number.isFinite(n) ? n : 0;
-    };
 
     let cancelled = false;
 
@@ -585,12 +677,11 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
       try {
         const [subRes, indRes] = await Promise.all([
           api.get(`/sub-kegiatan/${selectedSubKegiatanId}`),
-          api.get("/indikator-sub-kegiatan/by-sub-kegiatan", {
+          api.get("/indikator-renstra", {
             params: {
-              sub_kegiatan_id: selectedSubKegiatanId,
-              jenis_dokumen: "rpjmd",
-              tahun: String(tahunRpjmd),
-              perPage: 50,
+              renstra_id: renstraId,
+              stage: "sub_kegiatan",
+              ref_id: selectedSubKegiatanId,
             },
           }),
         ]);
@@ -598,13 +689,8 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
         if (cancelled) return;
 
         const sub = subRes.data?.data ?? subRes.data;
-        const indPayload = indRes.data?.data;
-        const indRows = Array.isArray(indPayload)
-          ? indPayload
-          : Array.isArray(indRes.data)
-          ? indRes.data
-          : [];
-        const first = indRows[0] || null;
+        const indPayload = indRes.data?.data ?? indRes.data;
+        const indRows = Array.isArray(indPayload) ? indPayload : [];
 
         if (sub) {
           setValueIfChanged("kode_subkegiatan", sub.kode_sub_kegiatan || "");
@@ -612,25 +698,10 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
           setValueIfChanged("sub_bidang_penanggung_jawab", sub.sub_bidang_opd || "");
         }
 
-        if (first) {
-          setValueIfChanged(
-            "indikator_manual",
-            first.nama_indikator || first.kode_indikator || ""
-          );
-          setValueIfChanged("baseline", parseNum(first.baseline ?? first.target_awal));
-          setValueIfChanged("satuan_target", first.satuan || "");
-          setValueIfChanged(
-            "lokasi",
-            first.sumber_data || first.keterangan || sub?.nama_opd || ""
-          );
-
-          for (let i = 1; i <= 5; i += 1) {
-            setValueIfChanged(`target_tahun_${i}`, parseNum(first[`target_tahun_${i}`]));
-          }
-
-          setValueIfChanged("target_tahun_6", 0);
-        } else {
-          setValueIfChanged("indikator_id", "");
+        if (indRows.length === 1 && !selectedIndikatorId) {
+          setValueIfChanged("indikator_id", Number(indRows[0].id), { shouldValidate: true });
+        } else if (!selectedIndikatorId) {
+          setValueIfChanged("indikator_id", "", { shouldValidate: true });
           setValueIfChanged("indikator_manual", "");
           setValueIfChanged("baseline", 0);
           setValueIfChanged("satuan_target", "");
@@ -653,18 +724,9 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
             setValueIfChanged(`pagu_tahun_${i}`, base + (i <= rem ? 1 : 0));
           });
 
-          setPaguInfoMessage(
-            "Pagu awal diisi dari master subkegiatan. Silakan sesuaikan jika diperlukan."
-          );
-        } else {
-          setPaguInfoMessage(
-            "Silakan isi pagu subkegiatan sebagai sumber utama agregasi."
-          );
         }
-      } catch {
-        setPaguInfoMessage(
-          "Silakan isi pagu subkegiatan sebagai sumber utama agregasi."
-        );
+      } catch (error) {
+        void error;
       }
     })();
 
@@ -744,12 +806,28 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
     const nums = targetValues.map((v) => Number(v) || 0);
     const total = nums.reduce((a, b) => a + b, 0);
     return nums.length > 0 ? (total / nums.length).toFixed(2) : 0;
-  }, [targetValues.join("|")]);
+  }, [targetValues]);
 
   const paguAkhirRenstra = useMemo(() => {
     const nums = paguValues.map((v) => normalizeCurrencyNumber(v));
     return nums.reduce((a, b) => a + b, 0);
-  }, [paguValues.join("|")]);
+  }, [paguValues]);
+
+  const paguInfoMessage = useMemo(() => {
+    if (existingDataInfo) {
+      return "Data sudah ada. Gunakan Edit jika ingin mengubah.";
+    }
+
+    if (!selectedSubkegiatanRefId || loadingIndikator) {
+      return "";
+    }
+
+    const hasPagu = (paguValues || []).some((value) => Number(value || 0) > 0);
+
+    return hasPagu
+      ? "Pagu sudah terisi."
+      : "Silakan isi pagu subkegiatan sebagai sumber utama agregasi.";
+  }, [existingDataInfo, selectedSubkegiatanRefId, loadingIndikator, paguValues]);
 
     useEffect(() => {
       setValueIfChanged("target_akhir_renstra", targetAkhirRenstra);
@@ -804,7 +882,7 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
       }
     };
 
-    const programOptions = useMemo(() => {
+    const programOptions = (() => {
     const rows = Array.isArray(programList) ? [...programList] : [];
 
     if (
@@ -827,9 +905,9 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
       }`,
       value: Number(item.id),
     }));
-    }, [programList, initialData]);
+    })();
   
-    const kegiatanOptions = useMemo(() => {
+    const kegiatanOptions = (() => {
     const rows = Array.isArray(kegiatanList) ? [...kegiatanList] : [];
 
     if (
@@ -855,9 +933,9 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
       }`,
       value: Number(item.id),
     }));
-    }, [kegiatanList, initialData]);
+    })();
   
-    const indikatorSelectOptions = useMemo(() => {
+    const indikatorSelectOptions = (() => {
     const rows = Array.isArray(indikatorOptions) ? [...indikatorOptions] : [];
 
     if (
@@ -879,7 +957,7 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
       label: item.nama_indikator || item.kode_indikator || "-",
       value: Number(item.id),
     }));
-  }, [indikatorOptions, initialData]);
+  })();
 
   const isLoading = !renstraAktif || loadingProgram;
 
@@ -944,7 +1022,7 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
               control={control}
               errors={formState.errors}
               required
-              disabled={isAuditMode || !selectedKegiatanId || !rpjmdKegiatanId || loadingSub}
+              disabled={isAuditMode || !selectedKegiatanId || loadingSub}
               options={subkegiatanList.map((item) => ({
                 label: `${item.kode_sub_kegiatan || ""} - ${
                   item.nama_sub_kegiatan
@@ -966,7 +1044,7 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
                 />
               )}
 
-            <SelectWithLabelValue
+              <SelectWithLabelValue
               name="indikator_id"
               valueAsNumber
               label="Indikator"
@@ -976,6 +1054,19 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
               disabled={isAuditMode || !selectedSubkegiatanRefId || loadingIndikator}
               options={indikatorSelectOptions}
             />
+
+            {selectedSubkegiatanRefId &&
+              !loadingIndikator &&
+              indikatorOptions.length > 1 &&
+              !selectedIndikatorId && (
+                <Alert
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message="Pilih indikator terlebih dahulu."
+                  description="Field detail indikator baru dianggap lengkap setelah salah satu indikator dipilih."
+                />
+              )}
 
             <InputField
               name="indikator_manual"
@@ -1165,7 +1256,8 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
                     isLoading ||
                     !formState.isValid ||
                     isSubmitting ||
-                    submitRevisiLoading
+                    submitRevisiLoading ||
+                    Boolean(existingDataInfo)
                   }
                 >
                   {isRevisiMode ? "Buat Revisi" : "Simpan Draft"}
@@ -1175,7 +1267,12 @@ const RenstraTabelSubKegiatanForm = ({ initialData = null, renstraAktif }) => {
                   type="primary"
                   htmlType="submit"
                   loading={isSubmitting}
-                  disabled={isLoading || !formState.isValid || isSubmitting}
+                  disabled={
+                    isLoading ||
+                    !formState.isValid ||
+                    isSubmitting ||
+                    Boolean(existingDataInfo)
+                  }
                 >
                   Simpan
                 </Button>

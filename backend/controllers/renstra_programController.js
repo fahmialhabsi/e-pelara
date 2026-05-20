@@ -1,5 +1,54 @@
-const { RenstraProgram, RenstraOPD } = require("../models");
+const { Op } = require("sequelize");
+
+const {
+  RenstraProgram,
+  RenstraOPD,
+  ProgramArahKebijakan,
+} = require("../models");
 const { programWhereForRenstraOpdQuery } = require("../helpers/renstraOpdProgramFilter");
+
+const normalizePositiveInt = (value) => {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
+};
+
+const resolveArahKebijakanId = (query = {}) =>
+  normalizePositiveInt(
+    query.arah_kebijakan_id ?? query.kebijakan_id ?? query.renstra_kebijakan_id
+  );
+
+const resolveProgramIdsByArahKebijakan = async (arahKebijakanId) => {
+  const rows = await ProgramArahKebijakan.findAll({
+    where: { arah_kebijakan_id: arahKebijakanId },
+    attributes: ["program_id"],
+    raw: true,
+  });
+
+  return rows
+    .map((row) => String(row?.program_id ?? "").trim())
+    .filter(Boolean);
+};
+
+const buildProgramWhereClause = async ({ renstraId, arahKebijakanId }) => {
+  let whereClause = {};
+
+  if (renstraId) {
+    whereClause = await programWhereForRenstraOpdQuery(renstraId);
+  }
+
+  if (arahKebijakanId) {
+    const programIds = await resolveProgramIdsByArahKebijakan(arahKebijakanId);
+    whereClause.rpjmd_program_id = {
+      [Op.in]: programIds.length > 0 ? programIds : ["__no_program_scope_match__"],
+    };
+  }
+
+  return whereClause;
+};
 
 // 🔧 CREATE
 exports.create = async (req, res) => {
@@ -85,11 +134,21 @@ exports.create = async (req, res) => {
 exports.findAll = async (req, res) => {
   try {
     const { renstra_id, tahun_mulai } = req.query;
+    const arahKebijakanId = resolveArahKebijakanId(req.query);
+    const hasArahFilter = [
+      req.query.arah_kebijakan_id,
+      req.query.kebijakan_id,
+      req.query.renstra_kebijakan_id,
+    ].some((value) => value !== undefined && value !== null && String(value).trim() !== "");
 
-    let whereClause = {};
-    if (renstra_id) {
-      whereClause = await programWhereForRenstraOpdQuery(renstra_id);
+    if (hasArahFilter && !arahKebijakanId) {
+      return res.json([]);
     }
+
+    const whereClause = await buildProgramWhereClause({
+      renstraId: renstra_id,
+      arahKebijakanId,
+    });
 
     // Ambil semua program Renstra, termasuk OPD dan Bidang
     const data = await RenstraProgram.findAll({

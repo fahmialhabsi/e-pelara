@@ -5,6 +5,7 @@ const {
   sequelize,
   RenstraTabelSasaran,
   IndikatorRenstra,
+  Sasaran,
 } = require("../models");
 
 const {
@@ -72,6 +73,25 @@ const attachSasaranCacheToRows = async ({ rows, transaction }) => {
     transaction,
   });
 };
+
+const SASARAN_TABEL_INCLUDE = [
+  {
+    model: IndikatorRenstra,
+    as: "indikator",
+    attributes: [
+      "id",
+      "kode_indikator",
+      "nama_indikator",
+      "baseline",
+      "source_indikator_id",
+    ],
+  },
+  {
+    model: Sasaran,
+    as: "sasaran_rpjmd",
+    attributes: ["id", "nomor", "isi_sasaran"],
+  },
+];
 
 // ========================= CREATE =========================
 
@@ -236,13 +256,7 @@ exports.update = async (req, res) => {
     });
 
     const updatedData = await RenstraTabelSasaran.findByPk(id, {
-      include: [
-        {
-          model: IndikatorRenstra,
-          as: "indikator",
-          attributes: ["id", "kode_indikator", "nama_indikator"],
-        },
-      ],
+      include: SASARAN_TABEL_INCLUDE,
       transaction: t,
     });
 
@@ -305,13 +319,7 @@ exports.findAll = async (req, res) => {
 
     const rows = await RenstraTabelSasaran.findAll({
       where,
-      include: [
-        {
-          model: IndikatorRenstra,
-          as: "indikator",
-          attributes: ["id", "kode_indikator", "nama_indikator"],
-        },
-      ],
+      include: SASARAN_TABEL_INCLUDE,
       order: [["id", "ASC"]],
     });
 
@@ -330,13 +338,7 @@ exports.findOne = async (req, res) => {
     const { id } = req.params;
 
     const row = await RenstraTabelSasaran.findByPk(id, {
-      include: [
-        {
-          model: IndikatorRenstra,
-          as: "indikator",
-          attributes: ["id", "kode_indikator", "nama_indikator"],
-        },
-      ],
+      include: SASARAN_TABEL_INCLUDE,
     });
 
     if (!row) {
@@ -370,13 +372,7 @@ exports.findByTujuan = async (req, res) => {
 
     const rows = await RenstraTabelSasaran.findAll({
       where,
-      include: [
-        {
-          model: IndikatorRenstra,
-          as: "indikator",
-          attributes: ["id", "kode_indikator", "nama_indikator"],
-        },
-      ],
+      include: SASARAN_TABEL_INCLUDE,
       order: [["id", "ASC"]],
     });
 

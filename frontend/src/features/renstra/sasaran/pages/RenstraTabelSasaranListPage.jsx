@@ -1,6 +1,6 @@
 // src/features/renstra/sasaran/pages/RenstraTabelSasaranListPage.jsx
 import React from "react";
-import { Table, Button, Empty, Popconfirm, Typography, Card } from "antd";
+import { Table, Button, Empty, Popconfirm, Typography, Card, Spin } from "antd";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import api from "@/services/api";
@@ -12,6 +12,55 @@ import {
 } from "@/features/renstra/shared/components/RenstraTabelListCommon";
 
 const { Text } = Typography;
+
+const ExpandedRowDetail = ({ id }) => {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["renstra-tabel-sasaran-detail", id],
+    queryFn: async () => {
+      const res = await api.get(`/renstra-tabel-sasaran/${id}`);
+      return res.data?.data ?? res.data ?? null;
+    },
+    enabled: !!id,
+  });
+
+  const indikatorId = data?.indikator_id ?? data?.indikator?.id;
+  const sourceIndikatorId =
+    data?.indikator?.source_indikator_id ?? data?.source_indikator_id;
+  const { data: indikatorDetail } = useQuery({
+    queryKey: ["indikator-renstra-detail", indikatorId],
+    queryFn: async () => {
+      const res = await api.get(`/indikator-renstra/${indikatorId}`);
+      return res.data?.data ?? res.data ?? null;
+    },
+    enabled: !!indikatorId && !data?.baseline,
+  });
+
+  const { data: sourceIndikatorDetail } = useQuery({
+    queryKey: ["indikator-sasaran-source-detail", sourceIndikatorId],
+    queryFn: async () => {
+      const res = await api.get(`/indikator-sasaran/${sourceIndikatorId}`);
+      return res.data?.data ?? res.data ?? null;
+    },
+    enabled: !!sourceIndikatorId && !data?.baseline && !indikatorDetail?.baseline,
+  });
+
+  if (isLoading) return <Spin tip="Memuat detail..." />;
+  if (isError || !data) return <div style={{ padding: 12 }}>Detail tidak tersedia.</div>;
+
+  return (
+    <StandardRenstraExpandedRow
+      record={{
+        ...data,
+        baseline:
+          data.baseline ??
+          indikatorDetail?.baseline ??
+          data.indikator?.baseline ??
+          sourceIndikatorDetail?.baseline ??
+          sourceIndikatorDetail?.capaian_tahun_5,
+      }}
+    />
+  );
+};
 
 const RenstraTabelSasaranListPage = () => {
   const navigate = useNavigate();
@@ -206,9 +255,7 @@ const RenstraTabelSasaranListPage = () => {
           pagination={{ pageSize: 10 }}
           expandable={{
             expandRowByClick: true,
-            expandedRowRender: (record) => (
-              <StandardRenstraExpandedRow record={record} />
-            ),
+            expandedRowRender: (record) => <ExpandedRowDetail id={record.id} />,
             rowExpandable: () => true,
           }}
         />
