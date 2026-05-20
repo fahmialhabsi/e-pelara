@@ -14,6 +14,66 @@ function isSuperAdminRole(role) {
     .replace(/\s+/g, "_") === "SUPER_ADMIN";
 }
 
+function normalizeAuthRoleValue(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "object") {
+    return normalizeAuthRoleValue(
+      value.name ??
+        value.nama_role ??
+        value.role_name ??
+        value.roleName ??
+        value.role_code ??
+        value.roleCode ??
+        value.label ??
+        null,
+    );
+  }
+
+  const text = String(value).trim();
+  if (!text) {
+    return null;
+  }
+
+  const normalized = text
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  if (normalized === "SUPERADMIN") {
+    return "SUPER_ADMIN";
+  }
+
+  return normalized || null;
+}
+
+function resolveAuthRole(decoded = {}) {
+  const roleSources = [
+    decoded.role,
+    decoded.role_name,
+    decoded.roleName,
+    decoded.role_code,
+    decoded.roleCode,
+    decoded?.Role?.nama_role,
+    decoded?.Role?.namaRole,
+    decoded?.Role?.name,
+    decoded?.role?.name,
+    decoded?.role?.nama_role,
+  ];
+
+  for (const candidate of roleSources) {
+    const normalized = normalizeAuthRoleValue(candidate);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
+}
+
 function isExemptFromInactiveTenantCheck(urlPath) {
   const u = String(urlPath || "").split("?")[0];
   return u.startsWith("/api/auth") || u.startsWith("/api/tenants");
@@ -160,11 +220,17 @@ const verifyToken = async (req, res, next) => {
 
     req.jwtTenantId = jwtBaseTenantId;
     req.tenantId = effectiveTenantId;
+    const canonicalRole = resolveAuthRole(decoded);
     req.user = {
       id: decoded.id,
       username: decoded.username,
       email: decoded.email,
-      role: decoded.role,
+      role: canonicalRole || decoded.role || null,
+      role_name: decoded.role_name || decoded.roleName || decoded?.Role?.nama_role || null,
+      roleName: decoded.roleName || decoded.role_name || decoded?.Role?.namaRole || null,
+      role_code: decoded.role_code || decoded.roleCode || null,
+      roleCode: decoded.roleCode || decoded.role_code || null,
+      role_label: decoded.role_label || decoded.roleLabel || decoded?.Role?.label || null,
       role_id: decoded.role_id,
       divisions_id: decoded.divisions_id,
       opd: decoded.opd_penanggung_jawab,
@@ -176,8 +242,8 @@ const verifyToken = async (req, res, next) => {
 
     // Compatibility guard untuk controller/service existing.
     req.userId = decoded.id;
-    req.userRole = decoded.role;
-    req.role = decoded.role;
+    req.userRole = canonicalRole || decoded.role || null;
+    req.role = canonicalRole || decoded.role || null;
 
     if (
       switchHeader != null &&

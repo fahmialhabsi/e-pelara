@@ -1,6 +1,6 @@
 // src/features/renstra/tujuan/pages/RenstraTabelTujuanListPage.jsx
 import React from "react";
-import { Table, Button, Empty, Popconfirm, Typography, Tag, Card } from "antd";
+import { Table, Button, Empty, Popconfirm, Typography, Tag, Card, Spin } from "antd";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import api from "@/services/api";
@@ -27,6 +27,22 @@ const tableWrapperStyle = {
   overflowX: "auto",
 };
 
+const ExpandedRowDetail = ({ id }) => {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["renstra-tabel-tujuan-detail", id],
+    queryFn: async () => {
+      const res = await api.get(`/renstra-tabel-tujuan/${id}`);
+      return res.data?.data ?? res.data ?? null;
+    },
+    enabled: !!id,
+  });
+
+  if (isLoading) return <Spin tip="Memuat detail..." />;
+  if (isError || !data) return <div style={{ padding: 12 }}>Detail tidak tersedia.</div>;
+
+  return <StandardRenstraExpandedRow record={data} />;
+};
+
 const RenstraTabelTujuanListPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -35,9 +51,24 @@ const RenstraTabelTujuanListPage = () => {
     queryKey: ["renstra-tabel-tujuan"],
     queryFn: async () => {
       const res = await api.get("/renstra-tabel-tujuan");
-      if (Array.isArray(res.data)) return res.data;
-      if (Array.isArray(res.data?.data)) return res.data.data;
-      return [];
+      const rows = Array.isArray(res.data)
+        ? res.data
+        : Array.isArray(res.data?.data)
+        ? res.data.data
+        : [];
+
+      const detailRows = await Promise.all(
+        rows.map(async (row) => {
+          try {
+            const detailRes = await api.get(`/renstra-tabel-tujuan/${row.id}`);
+            return detailRes.data?.data ?? detailRes.data ?? row;
+          } catch {
+            return row;
+          }
+        }),
+      );
+
+      return detailRows;
     },
   });
 
@@ -88,18 +119,19 @@ const RenstraTabelTujuanListPage = () => {
   const columns = [
     {
       title: "Kode",
-      dataIndex: "kode_tujuan",
       key: "kode_tujuan",
       width: 90,
       ellipsis: true,
       fixed: "left",
+      render: (_, record) =>
+        record.no_tujuan || record.kode_tujuan || record.nomor_tujuan || "-",
     },
     {
       title: "Tujuan",
-      dataIndex: "nama_tujuan",
       key: "nama_tujuan",
       width: 260,
       ellipsis: true,
+      render: (_, record) => record.isi_tujuan || record.nama_tujuan || "-",
     },
     {
       title: "Indikator",
@@ -121,41 +153,42 @@ const RenstraTabelTujuanListPage = () => {
         record.lokasi ||
         record.opd?.bidang_opd ||
         record.opd?.sub_bidang_opd ||
+        record.opd?.nama_opd ||
+        record.nama_opd ||
+        record.opd_penanggung_jawab ||
+        record.bidang_opd_penanggung_jawab ||
         "-",
     },
     {
       title: "Target akhir",
-      dataIndex: "target_akhir_renstra",
       key: "target_akhir_renstra",
       width: 108,
       align: "right",
-      render: (v) => (
+      render: (_, record) => (
         <span style={{ fontVariantNumeric: "tabular-nums" }}>
-          {formatNumber(v)}
+          {formatNumber(record.target_akhir_renstra)}
         </span>
       ),
     },
     {
       title: "Pagu akhir",
-      dataIndex: "pagu_akhir_renstra",
       key: "pagu_akhir_renstra",
       width: 120,
       align: "right",
-      render: (v) => (
+      render: (_, record) => (
         <span style={{ fontVariantNumeric: "tabular-nums" }}>
-          {formatNumberShort(v)}
+          {formatNumberShort(record.pagu_akhir_renstra)}
         </span>
       ),
     },
     {
       title: "Pagu RPJMD",
-      dataIndex: "pagu_rpjmd_acuan",
       key: "pagu_rpjmd_acuan",
       width: 120,
       align: "right",
-      render: (v) => (
+      render: (_, record) => (
         <span style={{ fontVariantNumeric: "tabular-nums" }}>
-          {formatNumberShort(v)}
+          {formatNumberShort(record.pagu_rpjmd_acuan)}
         </span>
       ),
     },
@@ -251,9 +284,7 @@ const RenstraTabelTujuanListPage = () => {
           scroll={{ x: "max-content" }}
           expandable={{
             expandRowByClick: true,
-            expandedRowRender: (record) => (
-              <StandardRenstraExpandedRow record={record} />
-            ),
+            expandedRowRender: (record) => <ExpandedRowDetail id={record.id} />,
             rowExpandable: () => true,
           }}
         />

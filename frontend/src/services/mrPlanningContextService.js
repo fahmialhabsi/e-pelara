@@ -1,7 +1,7 @@
-import api from "@/services/api";
+import api from '@/services/api';
 
 export const getMrPlanningContexts = async (params = {}) => {
-  const response = await api.get("/mr-planning-context", {
+  const response = await api.get('/mr-planning-context', {
     params,
   });
 
@@ -14,9 +14,14 @@ export const getMrPlanningContextDetail = async (id) => {
   return response.data;
 };
 
+export const createMrPlanningContext = async (payload) => {
+  const res = await api.post('/mr-planning-context/report-period', payload);
+  return res.data;
+};
+
 export const getMrPlanningContextItems = async (id) => {
   if (!id) {
-    throw new Error("ID MR Planning Context wajib diisi.");
+    throw new Error('ID MR Planning Context wajib diisi.');
   }
 
   const response = await api.get(`/mr-planning-context/${id}/items`);

@@ -101,6 +101,28 @@ uniqueModels.forEach((model) => {
   if (model.associate) model.associate(db);
 });
 
+if (db.RpjmdSyncJob && db.RpjmdSyncJobItem && db.RpjmdSyncAuditLog) {
+  db.RpjmdSyncJob.hasMany(db.RpjmdSyncJobItem, {
+    as: "items",
+    foreignKey: "job_id",
+  });
+
+  db.RpjmdSyncJobItem.belongsTo(db.RpjmdSyncJob, {
+    as: "job",
+    foreignKey: "job_id",
+  });
+
+  db.RpjmdSyncJob.hasMany(db.RpjmdSyncAuditLog, {
+    as: "audit_logs",
+    foreignKey: "job_id",
+  });
+
+  db.RpjmdSyncAuditLog.belongsTo(db.RpjmdSyncJob, {
+    as: "job",
+    foreignKey: "job_id",
+  });
+}
+
 // Run Enterprise MR associations
 try {
   const applyMrAssociations = require("./mrAssociations");

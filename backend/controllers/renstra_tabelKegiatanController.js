@@ -84,6 +84,17 @@ const applyTargetFinalIfMissing = (item) => {
   return json;
 };
 
+const parseOptionalPositiveInteger = (value) => {
+  if (Array.isArray(value)) return NaN;
+  if (value === undefined || value === null || value === "") return null;
+
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+
+  const parsed = Number(normalized);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : NaN;
+};
+
 const computeTargetOnly = (data = {}) => {
   const targetValues = [1, 2, 3, 4, 5].map(
     (i) => Number(data?.[`target_tahun_${i}`]) || 0
@@ -1048,10 +1059,38 @@ const tabelKegiatanListIncludes = [
 
 exports.findAll = async (req, res) => {
   try {
-    const data = await RenstraTabelKegiatan.findAll({
+    const queryFilters = ["renstra_id", "program_id", "kegiatan_id", "indikator_id"].reduce(
+      (acc, key) => {
+        const parsed = parseOptionalPositiveInteger(req.query?.[key]);
+        if (Number.isNaN(parsed)) {
+          acc.invalid.push(key);
+        } else if (parsed !== null) {
+          acc.where[key] = parsed;
+        }
+        return acc;
+      },
+      { where: {}, invalid: [] }
+    );
+
+    if (queryFilters.invalid.length > 0) {
+      return res.status(400).json({
+        message: `Parameter query harus berupa bilangan bulat positif: ${queryFilters.invalid.join(
+          ", "
+        )}`,
+        blocked: true,
+      });
+    }
+
+    const findAllOptions = {
       include: tabelKegiatanListIncludes,
       order: [["id", "ASC"]],
-    });
+    };
+
+    if (Object.keys(queryFilters.where).length > 0) {
+      findAllOptions.where = queryFilters.where;
+    }
+
+    const data = await RenstraTabelKegiatan.findAll(findAllOptions);
 
     const result = data.map(applyTargetFinalIfMissing);
 

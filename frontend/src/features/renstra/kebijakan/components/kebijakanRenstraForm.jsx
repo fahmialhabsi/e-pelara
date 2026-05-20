@@ -135,11 +135,17 @@ const KebijakanRenstraForm = ({ initialData = null, renstraAktif }) => {
           required
         />
 
-        <InputField
+        <SelectWithLabelValue
           name="prioritas"
           label="Prioritas"
           control={control}
           errors={errors}
+          required
+          options={[
+            { value: "Tinggi", label: "Tinggi" },
+            { value: "Sedang", label: "Sedang" },
+            { value: "Rendah", label: "Rendah" },
+          ]}
         />
 
         <Space>

@@ -30,6 +30,8 @@ import mrPlanningRiskService, {
   MR_PLANNING_RISK_QUERY_KEYS,
 } from '@/services/mrPlanningRiskService';
 
+import RenstraSelector from '@/features/mr/components/RenstraSelector';
+
 import api from '@/services/api';
 
 import AuthContext from '@/contexts/authContext';
@@ -849,6 +851,15 @@ const buildProposalIntakePayload = (values = {}) => {
     nama_kategori_baru: values.nama_kategori_baru,
     deskripsi_kategori_baru: values.deskripsi_kategori_baru,
     is_renstra_related: values.is_renstra_related,
+    mr_renstra_id: values.mr_renstra_id || null,
+    mr_tujuan_id: values.mr_tujuan_id || null,
+    mr_sasaran_id: values.mr_sasaran_id || null,
+    mr_strategi_id: values.mr_strategi_id || null,
+    mr_kebijakan_id: values.mr_kebijakan_id || null,
+    mr_program_id: values.mr_program_id || null,
+    mr_kegiatan_id: values.mr_kegiatan_id || null,
+    mr_subkegiatan_id: values.mr_subkegiatan_id || null,
+    mr_target_id: values.mr_target_id || null,
     alasan_pengajuan_kategori: values.alasan_pengajuan_kategori,
     contoh_sumber_risiko: values.contoh_sumber_risiko,
 
@@ -1019,8 +1030,7 @@ const useMrPlanningRiskFormEffects = ({
   ]);
 
   useEffect(() => {
-    if (!isCreateMode || !selectedContextId) return;
-
+    if (!isCreateMode || !selectedContextId || !detail) return;
     form.setFieldsValue({
       context_id: detail.context_id,
       context_item_id: detail.context_item_id || detail.context_item?.id || null,
@@ -1756,12 +1766,7 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
 
   const activeUserOrg = useMemo(() => getActiveUserOrganization(user), [user]);
   const currentUserRole = String(
-    user?.role ||
-      user?.role_name ||
-      user?.nama_role ||
-      user?.kode_role ||
-      user?.user_role ||
-      '',
+    user?.role || user?.role_name || user?.nama_role || user?.kode_role || user?.user_role || '',
   )
     .trim()
     .toUpperCase();
@@ -2298,12 +2303,10 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
           detail?.nama_risiko ||
           null,
         judul_temuan: detail?.judul_temuan || detail?.objek_risiko || detail?.nama_risiko || null,
-        nomor_temuan: detail?.nomor_temuan || detail?.proposal_source_ref_id || detail?.ref_id || null,
+        nomor_temuan:
+          detail?.nomor_temuan || detail?.proposal_source_ref_id || detail?.ref_id || null,
         ringkasan_temuan:
-          detail?.ringkasan_temuan ||
-          detail?.uraian_risiko ||
-          detail?.penyebab_risiko ||
-          null,
+          detail?.ringkasan_temuan || detail?.uraian_risiko || detail?.penyebab_risiko || null,
         rekomendasi: detail?.rekomendasi || null,
         rencana_tindak_lanjut_awal: detail?.rencana_tindak_lanjut_awal || null,
       },
@@ -2339,12 +2342,10 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
           detail?.nama_risiko ||
           null,
         judul_temuan: detail?.judul_temuan || detail?.objek_risiko || detail?.nama_risiko || null,
-        nomor_temuan: detail?.nomor_temuan || detail?.proposal_source_ref_id || detail?.ref_id || null,
+        nomor_temuan:
+          detail?.nomor_temuan || detail?.proposal_source_ref_id || detail?.ref_id || null,
         ringkasan_temuan:
-          detail?.ringkasan_temuan ||
-          detail?.uraian_risiko ||
-          detail?.penyebab_risiko ||
-          null,
+          detail?.ringkasan_temuan || detail?.uraian_risiko || detail?.penyebab_risiko || null,
         rekomendasi: detail?.rekomendasi || null,
         rencana_tindak_lanjut_awal: detail?.rencana_tindak_lanjut_awal || null,
       },
@@ -2383,7 +2384,11 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
                   {key}
                 </Text>
                 <div style={{ flex: 0.55, textAlign: 'right' }}>
-                  {isPlaceholderText(value) ? <Tag color="red">{String(value)}</Tag> : String(value || '-')}
+                  {isPlaceholderText(value) ? (
+                    <Tag color="red">{String(value)}</Tag>
+                  ) : (
+                    String(value || '-')
+                  )}
                 </div>
               </div>
             ))}
@@ -2766,6 +2771,15 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
                   description="Form berikutnya akan berubah sesuai sumber yang dipilih."
                 />
               )}
+            </>
+          )}
+
+          {isCreateMode && isRenstraCreateSource && (
+            <>
+              <Title level={5} style={{ marginTop: 16 }}>
+                Mapping Renstra
+              </Title>
+              <RenstraSelector form={form} disabled={isReadonly || submitting} />
             </>
           )}
 

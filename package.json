@@ -3,6 +3,8 @@
   "private": true,
   "scripts": {
     "lint": "npm --prefix frontend run lint && npm --prefix frontend/rkpd-admin run lint && npm --prefix backend run lint",
-    "format": "npm --prefix frontend run format && npm --prefix frontend/rkpd-admin run format && npm --prefix backend run format"
+    "format": "npm --prefix frontend run format && npm --prefix frontend/rkpd-admin run format && npm --prefix backend run format",
+    "guard:final-lock": "node scripts/check-final-locked-files.js",
+    "guard:hash-lock-key": "node scripts/hash-final-lock-key.js"
   }
 }

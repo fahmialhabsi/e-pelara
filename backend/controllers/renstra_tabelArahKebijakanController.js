@@ -1,21 +1,18 @@
 // controllers/renstra_tabelArahKebijakanController.js
-const { Op, QueryTypes } = require("sequelize");
+const { Op, QueryTypes } = require('sequelize');
 
 const {
   sequelize,
   RenstraTabelArahKebijakan,
   RenstraKebijakan,
   RenstraStrategi,
+  IndikatorRenstra,
+  IndikatorArahKebijakan,
   RenstraAuditLogGlobal,
-} = require("../models");
+} = require('../models');
 
-const {
-  attachCacheToRows,
-  applyPaguFromCache,
-} = require("../services/renstraPaguCacheHelper");
-const {
-  buildBaseRenstraPayload,
-} = require("../services/renstraPayloadBuilderHelper");
+const { attachCacheToRows, applyPaguFromCache } = require('../services/renstraPaguCacheHelper');
+const { buildBaseRenstraPayload } = require('../services/renstraPayloadBuilderHelper');
 
 // ========================= UTIL =========================
 
@@ -24,16 +21,42 @@ const roundUp2 = (value) => {
   return Math.ceil(num * 100) / 100;
 };
 
+const toPositiveNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+};
+
+const pickPositiveNumber = (...values) => {
+  for (const value of values) {
+    const number = toPositiveNumber(value);
+    if (number > 0) return number;
+  }
+
+  return 0;
+};
+
+const splitPaguToFiveYears = (total) => {
+  const paguAcuan = toPositiveNumber(total);
+  const paguDasar = Math.floor(paguAcuan / 5);
+  const sisaPagu = paguAcuan - paguDasar * 5;
+
+  return {
+    pagu_tahun_1: paguDasar,
+    pagu_tahun_2: paguDasar,
+    pagu_tahun_3: paguDasar,
+    pagu_tahun_4: paguDasar,
+    pagu_tahun_5: paguDasar + sisaPagu,
+    pagu_tahun_6: 0,
+    pagu_akhir_renstra: paguAcuan,
+  };
+};
+
 // 🔴 HANYA HITUNG TARGET.
 // 🔴 PAGU KEBIJAKAN TIDAK DIHITUNG DI CONTROLLER, TAPI DIBACA DARI CACHE.
 const computeFinal = (data = {}) => {
-  const targets = [1, 2, 3, 4, 5].map(
-    (i) => Number(data?.[`target_tahun_${i}`]) || 0
-  );
+  const targets = [1, 2, 3, 4, 5].map((i) => Number(data?.[`target_tahun_${i}`]) || 0);
 
-  const avg = targets.length
-    ? targets.reduce((a, b) => a + b, 0) / targets.length
-    : 0;
+  const avg = targets.length ? targets.reduce((a, b) => a + b, 0) / targets.length : 0;
 
   return {
     target_tahun_6: 0,
@@ -47,7 +70,7 @@ const applyTargetFinalIfMissing = (item) => {
   if (
     json.target_akhir_renstra === null ||
     json.target_akhir_renstra === undefined ||
-    json.target_akhir_renstra === ""
+    json.target_akhir_renstra === ''
   ) {
     json.target_akhir_renstra = computeFinal(json).target_akhir_renstra;
   }
@@ -60,19 +83,19 @@ const getUserId = (req) => {
 };
 
 const allowApprovedArahKebijakanUpdate = async (transaction) => {
-  await sequelize.query("SET @allow_approved_arah_kebijakan_update = 1", {
+  await sequelize.query('SET @allow_approved_arah_kebijakan_update = 1', {
     transaction,
   });
 };
 
 const lockApprovedArahKebijakanUpdate = async (transaction) => {
-  await sequelize.query("SET @allow_approved_arah_kebijakan_update = 0", {
+  await sequelize.query('SET @allow_approved_arah_kebijakan_update = 0', {
     transaction,
   });
 };
 
 const writeGlobalAudit = async ({
-  module = "arah_kebijakan",
+  module = 'arah_kebijakan',
   entity_id,
   action,
   before_json = null,
@@ -89,19 +112,15 @@ const writeGlobalAudit = async ({
       after_json,
       user_id,
     },
-    { transaction }
+    { transaction },
   );
 };
 
 const computePaguFinal = (data = {}) => {
-  const paguTahun = [1, 2, 3, 4, 5].map(
-    (i) => Number(data?.[`pagu_tahun_${i}`]) || 0
-  );
+  const paguTahun = [1, 2, 3, 4, 5].map((i) => Number(data?.[`pagu_tahun_${i}`]) || 0);
 
   return {
-    pagu_akhir_renstra: roundUp2(
-      paguTahun.reduce((total, value) => total + value, 0)
-    ),
+    pagu_akhir_renstra: roundUp2(paguTahun.reduce((total, value) => total + value, 0)),
     pagu_tahun_6: 0,
   };
 };
@@ -127,80 +146,64 @@ const buildLockedPaguPayload = () => ({
 });
 
 const ARAH_KEBIJAKAN_ALLOWED_BODY_FIELDS = [
-  "renstra_id",
-  "kebijakan_id",
-  "indikator_id",
+  'renstra_id',
+  'kebijakan_id',
+  'indikator_id',
 
-  "kode_kebijakan",
-  "deskripsi_kebijakan",
-  "indikator",
-  "baseline",
-  "satuan_target",
-  "lokasi",
-  "opd_penanggung_jawab",
+  'kode_kebijakan',
+  'deskripsi_kebijakan',
+  'indikator',
+  'baseline',
+  'satuan_target',
+  'lokasi',
+  'opd_penanggung_jawab',
 
-  "target_tahun_1",
-  "target_tahun_2",
-  "target_tahun_3",
-  "target_tahun_4",
-  "target_tahun_5",
+  'target_tahun_1',
+  'target_tahun_2',
+  'target_tahun_3',
+  'target_tahun_4',
+  'target_tahun_5',
 
-  "pagu_tahun_1",
-  "pagu_tahun_2",
-  "pagu_tahun_3",
-  "pagu_tahun_4",
-  "pagu_tahun_5",
+  'pagu_tahun_1',
+  'pagu_tahun_2',
+  'pagu_tahun_3',
+  'pagu_tahun_4',
+  'pagu_tahun_5',
 
-  "alasan_revisi",
+  'alasan_revisi',
 ];
 
 const assertAllowedBodyFields = (body, allowedFields) => {
-  const unknownFields = Object.keys(body || {}).filter(
-    (key) => !allowedFields.includes(key)
-  );
+  const unknownFields = Object.keys(body || {}).filter((key) => !allowedFields.includes(key));
 
   if (unknownFields.length) {
-    const error = new Error(
-      `Field tidak diperbolehkan: ${unknownFields.join(", ")}`
-    );
+    const error = new Error(`Field tidak diperbolehkan: ${unknownFields.join(', ')}`);
     error.statusCode = 400;
     error.blocked = true;
     throw error;
   }
 };
 
-const buildArahKebijakanPayload = ({
-  body,
-  current,
-  kebijakan,
-  indikator,
-  userId,
-}) => {
+const buildArahKebijakanPayload = ({ body, current, kebijakan, indikator, userId }) => {
   return buildBaseRenstraPayload({
     body,
     allowedFields: ARAH_KEBIJAKAN_ALLOWED_BODY_FIELDS,
-    excludedFields: ["alasan_revisi"],
+    excludedFields: ['alasan_revisi'],
     current,
     master: kebijakan,
     indikator,
     userId,
-    levelIdField: "kebijakan_id",
-    kodeField: "kode_kebijakan",
-    deskripsiField: "deskripsi_kebijakan",
-    masterKodeField: "kode_kebjkn",
-    masterDeskripsiField: "deskripsi",
+    levelIdField: 'kebijakan_id',
+    kodeField: 'kode_kebijakan',
+    deskripsiField: 'deskripsi_kebijakan',
+    masterKodeField: 'kode_kebjkn',
+    masterDeskripsiField: 'deskripsi',
     computeFinal,
     buildPaguPayload: buildEditablePaguPayload,
   });
 };
 
-const insertHistory = async ({
-  current,
-  afterData,
-  alasanRevisi,
-  userId,
-  transaction,
-}) => {
+const insertHistory = async ({ current, afterData, alasanRevisi, userId, transaction }) => {
   const beforeJson = current.toJSON ? current.toJSON() : current;
   const versiSebelum = Number(beforeJson.versi || 1);
   const versiSesudah = versiSebelum + 1;
@@ -252,35 +255,142 @@ const insertHistory = async ({
         versi_sesudah: versiSesudah,
         before_json: JSON.stringify(beforeJson),
         after_json: JSON.stringify(afterData),
-        alasan_revisi: alasanRevisi || "Revisi data arah kebijakan",
+        alasan_revisi: alasanRevisi || 'Revisi data arah kebijakan',
         dibuat_oleh: userId,
       },
       transaction,
-    }
+    },
   );
 
   return versiSesudah;
 };
 
+const applyKebijakanPaguAcuanFallback = ({
+  row,
+  indikatorMap = new Map(),
+  sourcePaguMap = new Map(),
+}) => {
+  const json = row?.toJSON ? row.toJSON() : { ...row };
+
+  const currentAcuan = toPositiveNumber(json.pagu_rpjmd_acuan);
+  const currentAkhir = toPositiveNumber(json.pagu_akhir_renstra);
+
+  const indikatorRenstra = indikatorMap.get(Number(json.indikator_id));
+  const sourceIndikatorId = Number(indikatorRenstra?.source_indikator_id || 0);
+  const sourcePagu = sourcePaguMap.get(sourceIndikatorId);
+
+  const paguAcuan = pickPositiveNumber(
+    currentAcuan,
+    sourcePagu?.pagu_cached,
+    sourcePagu?.total_pagu_rpjmd,
+    currentAkhir,
+  );
+
+  if (!paguAcuan) {
+    return {
+      ...json,
+      pagu_rpjmd_acuan: 0,
+      pagu_readonly: true,
+      pagu_source: json.pagu_source || 'none',
+    };
+  }
+
+  const hasSlotPagu = [1, 2, 3, 4, 5].some((i) => toPositiveNumber(json[`pagu_tahun_${i}`]) > 0);
+
+  const split = hasSlotPagu
+    ? {
+        pagu_tahun_1: toPositiveNumber(json.pagu_tahun_1),
+        pagu_tahun_2: toPositiveNumber(json.pagu_tahun_2),
+        pagu_tahun_3: toPositiveNumber(json.pagu_tahun_3),
+        pagu_tahun_4: toPositiveNumber(json.pagu_tahun_4),
+        pagu_tahun_5: toPositiveNumber(json.pagu_tahun_5),
+        pagu_tahun_6: 0,
+        pagu_akhir_renstra: currentAkhir || paguAcuan,
+      }
+    : splitPaguToFiveYears(paguAcuan);
+
+  return {
+    ...json,
+    ...split,
+    pagu_rpjmd_acuan: paguAcuan,
+    pagu_readonly: true,
+    pagu_source:
+      json.pagu_source ||
+      (sourcePagu?.pagu_cached
+        ? 'indikator_arah_kebijakan_source_fallback'
+        : 'existing_pagu_fallback'),
+  };
+};
+
 const attachKebijakanCacheToRows = async ({ rows, transaction }) => {
   const rowsWithTarget = rows.map(applyTargetFinalIfMissing);
 
-  return attachCacheToRows({
+  const rowsWithCache = await attachCacheToRows({
     rows: rowsWithTarget,
-    stage: "kebijakan",
+    stage: 'kebijakan',
 
     // Standar final:
     // cache.ref_id = id baris RenstraTabelArahKebijakan
-    renstraIdField: "renstra_id",
-    refIdField: "id",
+    renstraIdField: 'renstra_id',
+    refIdField: 'id',
 
     transaction,
   });
+
+  const indikatorIds = rowsWithCache
+    .map((row) => Number(row.indikator_id || 0))
+    .filter((id) => Number.isFinite(id) && id > 0);
+
+  const uniqueIndikatorIds = [...new Set(indikatorIds)];
+
+  const indikatorRows = uniqueIndikatorIds.length
+    ? await IndikatorRenstra.findAll({
+        where: {
+          id: {
+            [Op.in]: uniqueIndikatorIds,
+          },
+        },
+        attributes: ['id', 'source_indikator_id'],
+        raw: true,
+        transaction,
+      })
+    : [];
+
+  const indikatorMap = new Map(indikatorRows.map((item) => [Number(item.id), item]));
+
+  const sourceIndikatorIds = indikatorRows
+    .map((item) => Number(item.source_indikator_id || 0))
+    .filter((id) => Number.isFinite(id) && id > 0);
+
+  const uniqueSourceIndikatorIds = [...new Set(sourceIndikatorIds)];
+
+  const sourcePaguRows = uniqueSourceIndikatorIds.length
+    ? await IndikatorArahKebijakan.findAll({
+        where: {
+          id: {
+            [Op.in]: uniqueSourceIndikatorIds,
+          },
+        },
+        attributes: ['id', 'pagu_cached', 'pagu_cached_at'],
+        raw: true,
+        transaction,
+      })
+    : [];
+
+  const sourcePaguMap = new Map(sourcePaguRows.map((item) => [Number(item.id), item]));
+
+  return rowsWithCache.map((row) =>
+    applyKebijakanPaguAcuanFallback({
+      row,
+      indikatorMap,
+      sourcePaguMap,
+    }),
+  );
 };
 
 const parseJsonField = (value) => {
   if (!value) return {};
-  if (typeof value === "object") return value;
+  if (typeof value === 'object') return value;
 
   try {
     return JSON.parse(value);
@@ -318,14 +428,10 @@ exports.create = async (req, res) => {
       ...req.body,
     };
 
-    if (
-      !payloadBase.renstra_id ||
-      !payloadBase.kebijakan_id ||
-      !payloadBase.indikator_id
-    ) {
+    if (!payloadBase.renstra_id || !payloadBase.kebijakan_id || !payloadBase.indikator_id) {
       await t.rollback();
       return res.status(400).json({
-        message: "renstra_id, kebijakan_id, dan indikator_id wajib diisi",
+        message: 'renstra_id, kebijakan_id, dan indikator_id wajib diisi',
       });
     }
 
@@ -333,10 +439,10 @@ exports.create = async (req, res) => {
       transaction: t,
     });
 
-    const indikator = await require("../models").IndikatorRenstra.findOne({
+    const indikator = await require('../models').IndikatorRenstra.findOne({
       where: {
         id: payloadBase.indikator_id,
-        stage: "kebijakan",
+        stage: 'kebijakan',
         ref_id: payloadBase.kebijakan_id,
         renstra_id: payloadBase.renstra_id,
       },
@@ -347,14 +453,14 @@ exports.create = async (req, res) => {
       await t.rollback();
       return res.status(400).json({
         message:
-          "indikator_id tidak valid. Harus indikator_renstra stage kebijakan sesuai kebijakan_id.",
+          'indikator_id tidak valid. Harus indikator_renstra stage kebijakan sesuai kebijakan_id.',
       });
     }
 
     if (!master) {
       await t.rollback();
       return res.status(404).json({
-        message: "Kebijakan tidak ditemukan",
+        message: 'Kebijakan tidak ditemukan',
       });
     }
 
@@ -370,25 +476,25 @@ exports.create = async (req, res) => {
     if (exists) {
       await t.rollback();
       return res.status(409).json({
-        message: "Data kebijakan dengan indikator ini sudah ada. Gunakan Edit.",
+        message: 'Data kebijakan dengan indikator ini sudah ada. Gunakan Edit.',
         existing_id: exists.id,
         blocked: true,
       });
     }
 
     const payload = {
-    ...buildArahKebijakanPayload({
-      body: payloadBase,
-      current: null,
-      kebijakan: master,
-      indikator,
-      userId: getUserId(req),
-    }),
-    status_revisi: "draft",
-    versi: 1,
-    last_revised_at: null,
-    last_revised_by: null,
-  };
+      ...buildArahKebijakanPayload({
+        body: payloadBase,
+        current: null,
+        kebijakan: master,
+        indikator,
+        userId: getUserId(req),
+      }),
+      status_revisi: 'draft',
+      versi: 1,
+      last_revised_at: null,
+      last_revised_by: null,
+    };
 
     const created = await RenstraTabelArahKebijakan.create(payload, {
       transaction: t,
@@ -396,7 +502,7 @@ exports.create = async (req, res) => {
 
     await writeGlobalAudit({
       entity_id: created.id,
-      action: "create",
+      action: 'create',
       before_json: null,
       after_json: created.toJSON(),
       user_id: getUserId(req),
@@ -406,7 +512,7 @@ exports.create = async (req, res) => {
     await t.commit();
 
     res.status(201).json({
-      message: "Data kebijakan berhasil ditambahkan",
+      message: 'Data kebijakan berhasil ditambahkan',
       data: applyPaguFromCache(applyTargetFinalIfMissing(created), null),
       blocked: false,
     });
@@ -435,25 +541,25 @@ exports.findAll = async (req, res) => {
       include: [
         {
           model: RenstraKebijakan,
-          as: "kebijakan",
+          as: 'kebijakan',
           attributes: [
-            "id",
-            "strategi_id",
-            "deskripsi",
-            "kode_kebjkn",
-            "rpjmd_arah_id",
-            "renstra_id",
+            'id',
+            'strategi_id',
+            'deskripsi',
+            'kode_kebjkn',
+            'rpjmd_arah_id',
+            'renstra_id',
           ],
           include: [
             {
               model: RenstraStrategi,
-              as: "strategi",
-              attributes: ["id", "kode_strategi", "deskripsi", "renstra_id"],
+              as: 'strategi',
+              attributes: ['id', 'kode_strategi', 'deskripsi', 'renstra_id'],
             },
           ],
         },
       ],
-      order: [["id", "ASC"]],
+      order: [['id', 'ASC']],
     });
 
     const result = await attachKebijakanCacheToRows({ rows });
@@ -472,12 +578,12 @@ exports.findOne = async (req, res) => {
       include: [
         {
           model: RenstraKebijakan,
-          as: "kebijakan",
+          as: 'kebijakan',
           include: [
             {
               model: RenstraStrategi,
-              as: "strategi",
-              attributes: ["id", "kode_strategi", "deskripsi", "renstra_id"],
+              as: 'strategi',
+              attributes: ['id', 'kode_strategi', 'deskripsi', 'renstra_id'],
             },
           ],
         },
@@ -485,7 +591,7 @@ exports.findOne = async (req, res) => {
     });
 
     if (!row) {
-      return res.status(404).json({ message: "Data tidak ditemukan" });
+      return res.status(404).json({ message: 'Data tidak ditemukan' });
     }
 
     const [result] = await attachKebijakanCacheToRows({
@@ -512,7 +618,7 @@ exports.createRevisi = async (req, res) => {
     if (!req.body.alasan_revisi || !String(req.body.alasan_revisi).trim()) {
       await t.rollback();
       return res.status(400).json({
-        message: "alasan_revisi wajib diisi saat membuat revisi",
+        message: 'alasan_revisi wajib diisi saat membuat revisi',
       });
     }
 
@@ -523,13 +629,13 @@ exports.createRevisi = async (req, res) => {
 
     if (!current) {
       await t.rollback();
-      return res.status(404).json({ message: "Data tidak ditemukan" });
+      return res.status(404).json({ message: 'Data tidak ditemukan' });
     }
 
-    if (current.status_revisi !== "approved") {
+    if (current.status_revisi !== 'approved') {
       await t.rollback();
       return res.status(409).json({
-        message: "Endpoint revisi hanya untuk data yang sudah approved",
+        message: 'Endpoint revisi hanya untuk data yang sudah approved',
         blocked: true,
       });
     }
@@ -540,14 +646,10 @@ exports.createRevisi = async (req, res) => {
       pagu_rpjmd_acuan: current.pagu_rpjmd_acuan,
     };
 
-    if (
-      !payloadBase.renstra_id ||
-      !payloadBase.kebijakan_id ||
-      !payloadBase.indikator_id
-    ) {
+    if (!payloadBase.renstra_id || !payloadBase.kebijakan_id || !payloadBase.indikator_id) {
       await t.rollback();
       return res.status(400).json({
-        message: "renstra_id, kebijakan_id, dan indikator_id wajib diisi",
+        message: 'renstra_id, kebijakan_id, dan indikator_id wajib diisi',
       });
     }
 
@@ -555,10 +657,10 @@ exports.createRevisi = async (req, res) => {
       transaction: t,
     });
 
-    const indikator = await require("../models").IndikatorRenstra.findOne({
+    const indikator = await require('../models').IndikatorRenstra.findOne({
       where: {
         id: payloadBase.indikator_id,
-        stage: "kebijakan",
+        stage: 'kebijakan',
         ref_id: payloadBase.kebijakan_id,
         renstra_id: payloadBase.renstra_id,
       },
@@ -569,14 +671,14 @@ exports.createRevisi = async (req, res) => {
       await t.rollback();
       return res.status(400).json({
         message:
-          "indikator_id tidak valid. Harus indikator_renstra stage kebijakan sesuai kebijakan_id.",
+          'indikator_id tidak valid. Harus indikator_renstra stage kebijakan sesuai kebijakan_id.',
       });
     }
 
     if (!master) {
       await t.rollback();
       return res.status(404).json({
-        message: "Kebijakan tidak ditemukan",
+        message: 'Kebijakan tidak ditemukan',
       });
     }
 
@@ -588,7 +690,7 @@ exports.createRevisi = async (req, res) => {
         indikator,
         userId,
       }),
-      status_revisi: "draft",
+      status_revisi: 'draft',
       versi: Number(current.versi || 1) + 1,
       last_revised_at: new Date(),
       last_revised_by: userId,
@@ -613,14 +715,14 @@ exports.createRevisi = async (req, res) => {
       {
         where: { id },
         transaction: t,
-      }
+      },
     );
 
     await lockApprovedArahKebijakanUpdate(t);
 
     await writeGlobalAudit({
       entity_id: Number(id),
-      action: "revisi",
+      action: 'revisi',
       before_json: current.toJSON(),
       after_json: {
         ...payload,
@@ -634,12 +736,12 @@ exports.createRevisi = async (req, res) => {
       include: [
         {
           model: RenstraKebijakan,
-          as: "kebijakan",
+          as: 'kebijakan',
           include: [
             {
               model: RenstraStrategi,
-              as: "strategi",
-              attributes: ["id", "kode_strategi", "deskripsi", "renstra_id"],
+              as: 'strategi',
+              attributes: ['id', 'kode_strategi', 'deskripsi', 'renstra_id'],
             },
           ],
         },
@@ -655,11 +757,11 @@ exports.createRevisi = async (req, res) => {
     await t.commit();
 
     return res.json({
-      message: "Revisi arah kebijakan berhasil dibuat sebagai draft",
+      message: 'Revisi arah kebijakan berhasil dibuat sebagai draft',
       data: result,
       blocked: false,
       audit_mode: true,
-      workflow_state: "draft",
+      workflow_state: 'draft',
     });
   } catch (err) {
     await lockApprovedArahKebijakanUpdate(t).catch(() => {});
@@ -688,13 +790,13 @@ exports.update = async (req, res) => {
 
     if (!current) {
       await t.rollback();
-      return res.status(404).json({ message: "Data tidak ditemukan" });
+      return res.status(404).json({ message: 'Data tidak ditemukan' });
     }
 
-    if (current.status_revisi === "approved") {
+    if (current.status_revisi === 'approved') {
       await t.rollback();
       return res.status(409).json({
-        message: "Data sudah approved. Gunakan endpoint revisi.",
+        message: 'Data sudah approved. Gunakan endpoint revisi.',
         blocked: true,
         audit_mode: true,
       });
@@ -703,7 +805,7 @@ exports.update = async (req, res) => {
     if (!req.body.alasan_revisi || !String(req.body.alasan_revisi).trim()) {
       await t.rollback();
       return res.status(400).json({
-        message: "alasan_revisi wajib diisi saat revisi",
+        message: 'alasan_revisi wajib diisi saat revisi',
         blocked: true,
       });
     }
@@ -714,14 +816,10 @@ exports.update = async (req, res) => {
       pagu_rpjmd_acuan: current.pagu_rpjmd_acuan,
     };
 
-    if (
-      !payloadBase.renstra_id ||
-      !payloadBase.kebijakan_id ||
-      !payloadBase.indikator_id
-    ) {
+    if (!payloadBase.renstra_id || !payloadBase.kebijakan_id || !payloadBase.indikator_id) {
       await t.rollback();
       return res.status(400).json({
-        message: "renstra_id, kebijakan_id, dan indikator_id wajib diisi",
+        message: 'renstra_id, kebijakan_id, dan indikator_id wajib diisi',
       });
     }
 
@@ -729,10 +827,10 @@ exports.update = async (req, res) => {
       transaction: t,
     });
 
-    const indikator = await require("../models").IndikatorRenstra.findOne({
+    const indikator = await require('../models').IndikatorRenstra.findOne({
       where: {
         id: payloadBase.indikator_id,
-        stage: "kebijakan",
+        stage: 'kebijakan',
         ref_id: payloadBase.kebijakan_id,
         renstra_id: payloadBase.renstra_id,
       },
@@ -743,14 +841,14 @@ exports.update = async (req, res) => {
       await t.rollback();
       return res.status(400).json({
         message:
-          "indikator_id tidak valid. Harus indikator_renstra stage kebijakan sesuai kebijakan_id.",
+          'indikator_id tidak valid. Harus indikator_renstra stage kebijakan sesuai kebijakan_id.',
       });
     }
 
     if (!master) {
       await t.rollback();
       return res.status(404).json({
-        message: "Kebijakan tidak ditemukan",
+        message: 'Kebijakan tidak ditemukan',
       });
     }
 
@@ -767,7 +865,7 @@ exports.update = async (req, res) => {
     if (duplicate) {
       await t.rollback();
       return res.status(409).json({
-        message: "Data kebijakan dengan indikator ini sudah ada. Gunakan Edit.",
+        message: 'Data kebijakan dengan indikator ini sudah ada. Gunakan Edit.',
         existing_id: duplicate.id,
         blocked: true,
       });
@@ -783,7 +881,7 @@ exports.update = async (req, res) => {
         indikator,
         userId,
       }),
-      status_revisi: "draft",
+      status_revisi: 'draft',
       last_revised_at: new Date(),
       last_revised_by: userId,
       pagu_rpjmd_acuan: current.pagu_rpjmd_acuan,
@@ -805,19 +903,19 @@ exports.update = async (req, res) => {
       {
         where: { id },
         transaction: t,
-      }
+      },
     );
 
     const updatedData = await RenstraTabelArahKebijakan.findByPk(id, {
       include: [
         {
           model: RenstraKebijakan,
-          as: "kebijakan",
+          as: 'kebijakan',
           include: [
             {
               model: RenstraStrategi,
-              as: "strategi",
-              attributes: ["id", "kode_strategi", "deskripsi", "renstra_id"],
+              as: 'strategi',
+              attributes: ['id', 'kode_strategi', 'deskripsi', 'renstra_id'],
             },
           ],
         },
@@ -832,7 +930,7 @@ exports.update = async (req, res) => {
 
     await writeGlobalAudit({
       entity_id: Number(id),
-      action: "update",
+      action: 'update',
       before_json: current.toJSON(),
       after_json: updatedData.toJSON(),
       user_id: userId,
@@ -842,11 +940,11 @@ exports.update = async (req, res) => {
     await t.commit();
 
     res.json({
-      message: "Data kebijakan berhasil diperbarui",
+      message: 'Data kebijakan berhasil diperbarui',
       data: result,
       blocked: false,
       audit_mode: true,
-      workflow_state: "draft",
+      workflow_state: 'draft',
     });
   } catch (err) {
     await t.rollback();
@@ -874,14 +972,14 @@ exports.rebuild = async (req, res) => {
     if (!current) {
       await t.rollback();
       return res.status(404).json({
-        message: "Data tidak ditemukan",
+        message: 'Data tidak ditemukan',
       });
     }
 
-    if (current.status_revisi === "approved") {
+    if (current.status_revisi === 'approved') {
       await t.rollback();
       return res.status(409).json({
-        message: "Data approved tidak boleh direbuild langsung. Gunakan endpoint revisi.",
+        message: 'Data approved tidak boleh direbuild langsung. Gunakan endpoint revisi.',
         blocked: true,
         audit_mode: true,
       });
@@ -908,12 +1006,12 @@ exports.rebuild = async (req, res) => {
       include: [
         {
           model: RenstraKebijakan,
-          as: "kebijakan",
+          as: 'kebijakan',
           include: [
             {
               model: RenstraStrategi,
-              as: "strategi",
-              attributes: ["id", "kode_strategi", "deskripsi", "renstra_id"],
+              as: 'strategi',
+              attributes: ['id', 'kode_strategi', 'deskripsi', 'renstra_id'],
             },
           ],
         },
@@ -923,7 +1021,7 @@ exports.rebuild = async (req, res) => {
 
     await writeGlobalAudit({
       entity_id: Number(id),
-      action: "rebuild",
+      action: 'rebuild',
       before_json: beforeJson,
       after_json: updatedData.toJSON(),
       user_id: userId,
@@ -938,11 +1036,11 @@ exports.rebuild = async (req, res) => {
     await t.commit();
 
     return res.json({
-      message: "Rebuild arah kebijakan berhasil",
+      message: 'Rebuild arah kebijakan berhasil',
       data: result,
       blocked: false,
       audit_mode: true,
-      workflow_state: current.status_revisi || "draft",
+      workflow_state: current.status_revisi || 'draft',
     });
   } catch (err) {
     await t.rollback();
@@ -969,7 +1067,7 @@ exports.history = async (req, res) => {
       {
         replacements: { id },
         type: QueryTypes.SELECT,
-      }
+      },
     );
 
     res.json(rows);
@@ -992,22 +1090,22 @@ exports.submitVerifikasi = async (req, res) => {
 
     if (!row) {
       await t.rollback();
-      return res.status(404).json({ message: "Data tidak ditemukan" });
+      return res.status(404).json({ message: 'Data tidak ditemukan' });
     }
 
     await row.update(
       {
-        status_revisi: "verifikasi",
+        status_revisi: 'verifikasi',
         last_revised_at: new Date(),
         last_revised_by: getUserId(req),
       },
-      { transaction: t }
+      { transaction: t },
     );
 
     await t.commit();
 
     res.json({
-      message: "Data berhasil diajukan ke verifikasi",
+      message: 'Data berhasil diajukan ke verifikasi',
       data: row,
     });
   } catch (err) {
@@ -1031,16 +1129,16 @@ exports.approve = async (req, res) => {
 
     if (!row) {
       await t.rollback();
-      return res.status(404).json({ message: "Data tidak ditemukan" });
+      return res.status(404).json({ message: 'Data tidak ditemukan' });
     }
 
     await row.update(
       {
-        status_revisi: "approved",
+        status_revisi: 'approved',
         last_revised_at: new Date(),
         last_revised_by: getUserId(req),
       },
-      { transaction: t }
+      { transaction: t },
     );
 
     await sequelize.query(
@@ -1061,13 +1159,13 @@ exports.approve = async (req, res) => {
           userId: getUserId(req),
         },
         transaction: t,
-      }
+      },
     );
 
     await t.commit();
 
     res.json({
-      message: "Data berhasil disetujui",
+      message: 'Data berhasil disetujui',
       data: row,
     });
   } catch (err) {
@@ -1091,16 +1189,16 @@ exports.reject = async (req, res) => {
 
     if (!row) {
       await t.rollback();
-      return res.status(404).json({ message: "Data tidak ditemukan" });
+      return res.status(404).json({ message: 'Data tidak ditemukan' });
     }
 
     await row.update(
       {
-        status_revisi: "ditolak",
+        status_revisi: 'ditolak',
         last_revised_at: new Date(),
         last_revised_by: getUserId(req),
       },
-      { transaction: t }
+      { transaction: t },
     );
 
     await sequelize.query(
@@ -1121,13 +1219,13 @@ exports.reject = async (req, res) => {
           userId: getUserId(req),
         },
         transaction: t,
-      }
+      },
     );
 
     await t.commit();
 
     res.json({
-      message: "Data berhasil ditolak",
+      message: 'Data berhasil ditolak',
       data: row,
     });
   } catch (err) {
@@ -1159,18 +1257,18 @@ exports.verifikasiHistory = async (req, res) => {
         replacements: { history_id },
         type: QueryTypes.SELECT,
         transaction: t,
-      }
+      },
     );
 
     if (!history) {
       await t.rollback();
-      return res.status(404).json({ message: "History tidak ditemukan" });
+      return res.status(404).json({ message: 'History tidak ditemukan' });
     }
 
-    if (history.status_revisi !== "draft") {
+    if (history.status_revisi !== 'draft') {
       await t.rollback();
       return res.status(409).json({
-        message: "Hanya revisi berstatus draft yang bisa diverifikasi",
+        message: 'Hanya revisi berstatus draft yang bisa diverifikasi',
         blocked: true,
         audit_mode: true,
       });
@@ -1189,34 +1287,34 @@ exports.verifikasiHistory = async (req, res) => {
       {
         replacements: { history_id, userId },
         transaction: t,
-      }
+      },
     );
 
     const beforeRow = await RenstraTabelArahKebijakan.findByPk(
       history.renstra_tabel_arah_kebijakan_id,
-      { transaction: t }
+      { transaction: t },
     );
 
     await RenstraTabelArahKebijakan.update(
       {
-        status_revisi: "verifikasi",
+        status_revisi: 'verifikasi',
         last_revised_at: new Date(),
         last_revised_by: userId,
       },
       {
         where: { id: history.renstra_tabel_arah_kebijakan_id },
         transaction: t,
-      }
+      },
     );
 
     const afterRow = await RenstraTabelArahKebijakan.findByPk(
       history.renstra_tabel_arah_kebijakan_id,
-      { transaction: t }
+      { transaction: t },
     );
 
     await writeGlobalAudit({
       entity_id: history.renstra_tabel_arah_kebijakan_id,
-      action: "verifikasi",
+      action: 'verifikasi',
       before_json: beforeRow?.toJSON() || null,
       after_json: afterRow?.toJSON() || null,
       user_id: userId,
@@ -1226,10 +1324,10 @@ exports.verifikasiHistory = async (req, res) => {
     await t.commit();
 
     res.json({
-      message: "Revisi berhasil diverifikasi",
+      message: 'Revisi berhasil diverifikasi',
       blocked: false,
       audit_mode: true,
-      workflow_state: "verifikasi",
+      workflow_state: 'verifikasi',
     });
   } catch (err) {
     await t.rollback();
@@ -1258,27 +1356,27 @@ exports.approveHistory = async (req, res) => {
         replacements: { history_id },
         type: QueryTypes.SELECT,
         transaction: t,
-      }
+      },
     );
 
     if (!history) {
       await t.rollback();
-      return res.status(404).json({ message: "History tidak ditemukan" });
+      return res.status(404).json({ message: 'History tidak ditemukan' });
     }
 
-    if (history.status_revisi === "approved") {
+    if (history.status_revisi === 'approved') {
       await t.rollback();
       return res.status(409).json({
-        message: "Revisi ini sudah disetujui sebelumnya.",
+        message: 'Revisi ini sudah disetujui sebelumnya.',
         blocked: true,
         audit_mode: true,
       });
     }
 
-    if (history.status_revisi !== "verifikasi") {
+    if (history.status_revisi !== 'verifikasi') {
       await t.rollback();
       return res.status(409).json({
-        message: "Revisi harus diverifikasi sebelum disetujui",
+        message: 'Revisi harus diverifikasi sebelum disetujui',
         blocked: true,
         audit_mode: true,
       });
@@ -1297,12 +1395,12 @@ exports.approveHistory = async (req, res) => {
       {
         replacements: { history_id, userId },
         transaction: t,
-      }
+      },
     );
 
     const beforeRow = await RenstraTabelArahKebijakan.findByPk(
       history.renstra_tabel_arah_kebijakan_id,
-      { transaction: t }
+      { transaction: t },
     );
 
     const afterJson = sanitizeHistoryPayload(parseJsonField(history.after_json));
@@ -1310,7 +1408,7 @@ exports.approveHistory = async (req, res) => {
     await RenstraTabelArahKebijakan.update(
       {
         ...afterJson,
-        status_revisi: "approved",
+        status_revisi: 'approved',
         versi: history.versi_sesudah,
         target_tahun_6: 0,
         pagu_tahun_6: 0,
@@ -1320,17 +1418,17 @@ exports.approveHistory = async (req, res) => {
       {
         where: { id: history.renstra_tabel_arah_kebijakan_id },
         transaction: t,
-      }
+      },
     );
 
     const afterRow = await RenstraTabelArahKebijakan.findByPk(
       history.renstra_tabel_arah_kebijakan_id,
-      { transaction: t }
+      { transaction: t },
     );
 
     await writeGlobalAudit({
       entity_id: history.renstra_tabel_arah_kebijakan_id,
-      action: "approve",
+      action: 'approve',
       before_json: beforeRow?.toJSON() || null,
       after_json: afterRow?.toJSON() || null,
       user_id: userId,
@@ -1340,10 +1438,10 @@ exports.approveHistory = async (req, res) => {
     await t.commit();
 
     res.json({
-      message: "Revisi berhasil disetujui",
+      message: 'Revisi berhasil disetujui',
       blocked: false,
       audit_mode: true,
-      workflow_state: "approved",
+      workflow_state: 'approved',
     });
   } catch (err) {
     await t.rollback();
@@ -1372,27 +1470,27 @@ exports.tolakHistory = async (req, res) => {
         replacements: { history_id },
         type: QueryTypes.SELECT,
         transaction: t,
-      }
+      },
     );
 
     if (!history) {
       await t.rollback();
-      return res.status(404).json({ message: "History tidak ditemukan" });
+      return res.status(404).json({ message: 'History tidak ditemukan' });
     }
 
-    if (history.status_revisi === "approved") {
+    if (history.status_revisi === 'approved') {
       await t.rollback();
       return res.status(409).json({
-        message: "Revisi yang sudah approved tidak bisa ditolak",
+        message: 'Revisi yang sudah approved tidak bisa ditolak',
         blocked: true,
         audit_mode: true,
       });
     }
 
-    if (!["draft", "verifikasi"].includes(history.status_revisi)) {
+    if (!['draft', 'verifikasi'].includes(history.status_revisi)) {
       await t.rollback();
       return res.status(409).json({
-        message: "Hanya revisi draft atau verifikasi yang bisa ditolak.",
+        message: 'Hanya revisi draft atau verifikasi yang bisa ditolak.',
         blocked: true,
         audit_mode: true,
       });
@@ -1411,12 +1509,12 @@ exports.tolakHistory = async (req, res) => {
       {
         replacements: { history_id, userId },
         transaction: t,
-      }
+      },
     );
 
     const beforeRow = await RenstraTabelArahKebijakan.findByPk(
       history.renstra_tabel_arah_kebijakan_id,
-      { transaction: t }
+      { transaction: t },
     );
 
     const beforeJson = sanitizeHistoryPayload(parseJsonField(history.before_json));
@@ -1424,7 +1522,7 @@ exports.tolakHistory = async (req, res) => {
     await RenstraTabelArahKebijakan.update(
       {
         ...beforeJson,
-        status_revisi: "ditolak",
+        status_revisi: 'ditolak',
         versi: history.versi_sesudah,
         target_tahun_6: 0,
         pagu_tahun_6: 0,
@@ -1434,17 +1532,17 @@ exports.tolakHistory = async (req, res) => {
       {
         where: { id: history.renstra_tabel_arah_kebijakan_id },
         transaction: t,
-      }
+      },
     );
 
     const afterRow = await RenstraTabelArahKebijakan.findByPk(
       history.renstra_tabel_arah_kebijakan_id,
-      { transaction: t }
+      { transaction: t },
     );
 
     await writeGlobalAudit({
       entity_id: history.renstra_tabel_arah_kebijakan_id,
-      action: "tolak",
+      action: 'tolak',
       before_json: beforeRow?.toJSON() || null,
       after_json: afterRow?.toJSON() || null,
       user_id: userId,
@@ -1454,10 +1552,10 @@ exports.tolakHistory = async (req, res) => {
     await t.commit();
 
     res.json({
-      message: "Revisi berhasil ditolak",
+      message: 'Revisi berhasil ditolak',
       blocked: false,
       audit_mode: true,
-      workflow_state: "ditolak",
+      workflow_state: 'ditolak',
     });
   } catch (err) {
     await t.rollback();
@@ -1480,13 +1578,13 @@ exports.delete = async (req, res) => {
 
     if (!row) {
       await t.rollback();
-      return res.status(404).json({ message: "Data tidak ditemukan" });
+      return res.status(404).json({ message: 'Data tidak ditemukan' });
     }
 
-    if (row.status_revisi === "approved") {
+    if (row.status_revisi === 'approved') {
       await t.rollback();
       return res.status(409).json({
-        message: "Data approved tidak boleh dihapus",
+        message: 'Data approved tidak boleh dihapus',
         blocked: true,
         audit_mode: true,
       });
@@ -1499,7 +1597,7 @@ exports.delete = async (req, res) => {
 
     await writeGlobalAudit({
       entity_id: Number(req.params.id),
-      action: "delete",
+      action: 'delete',
       before_json: row.toJSON(),
       after_json: null,
       user_id: getUserId(req),
@@ -1510,13 +1608,13 @@ exports.delete = async (req, res) => {
 
     if (!deleted) {
       await t.rollback();
-      return res.status(404).json({ message: "Data tidak ditemukan" });
+      return res.status(404).json({ message: 'Data tidak ditemukan' });
     }
 
     await t.commit();
 
     res.json({
-      message: "Data kebijakan berhasil dihapus",
+      message: 'Data kebijakan berhasil dihapus',
       blocked: false,
       data: row.toJSON(),
     });

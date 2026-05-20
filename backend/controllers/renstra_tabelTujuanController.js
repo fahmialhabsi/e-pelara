@@ -266,9 +266,18 @@ exports.create = async (req, res) => {
       return res.status(404).json({ error: "Tujuan tidak ditemukan" });
     }
 
+    if (
+      payloadBase.renstra_id != null &&
+      Number(masterTujuan.renstra_id) !== Number(payloadBase.renstra_id)
+    ) {
+      await t.rollback();
+      return res.status(400).json({
+        message: "tujuan_id tidak sesuai dengan renstra_id yang dipilih",
+      });
+    }
+
     const exists = await RenstraTabelTujuan.findOne({
       where: {
-        renstra_id: payloadBase.renstra_id,
         tujuan_id: payloadBase.tujuan_id,
         indikator_id: payloadBase.indikator_id,
       },
@@ -328,29 +337,104 @@ exports.findAll = async (req, res) => {
     const { renstra_id, tujuan_id, indikator_id, opd_id } = req.query;
 
     const where = {};
+    let tujuanIds = null;
     if (renstra_id != null && renstra_id !== "") {
-      where.renstra_id = Number(renstra_id);
+      const renstraNum = Number(renstra_id);
+      if (!Number.isFinite(renstraNum)) {
+        return res.status(400).json({ error: "renstra_id harus berupa angka" });
+      }
+      const tujuanRowsForRenstra = await RenstraTujuan.findAll({
+        attributes: ["id"],
+        where: { renstra_id: renstraNum },
+      });
+      tujuanIds = tujuanRowsForRenstra
+        .map((row) => Number(row.id))
+        .filter((id) => Number.isFinite(id));
+      if (!tujuanIds.length) {
+        return res.json([]);
+      }
     }
     if (tujuan_id != null && tujuan_id !== "") {
-      where.tujuan_id = Number(tujuan_id);
+      const tujuanNum = Number(tujuan_id);
+      if (!Number.isFinite(tujuanNum)) {
+        return res.status(400).json({ error: "tujuan_id harus berupa angka" });
+      }
+      where.tujuan_id = tujuanNum;
     }
     if (indikator_id != null && indikator_id !== "") {
-      where.indikator_id = Number(indikator_id);
+      const indikatorNum = Number(indikator_id);
+      if (!Number.isFinite(indikatorNum)) {
+        return res.status(400).json({ error: "indikator_id harus berupa angka" });
+      }
+      where.indikator_id = indikatorNum;
     }
     if (opd_id != null && opd_id !== "") {
-      where.opd_id = Number(opd_id);
+      const opdNum = Number(opd_id);
+      if (!Number.isFinite(opdNum)) {
+        return res.status(400).json({ error: "opd_id harus berupa angka" });
+      }
+      where.opd_id = opdNum;
     }
 
-    const rows = await RenstraTabelTujuan.findAll({
-      where,
-      order: [["id", "DESC"]],
-      include: tujuanInclude,
+    const [rows, tujuanRows] = await Promise.all([
+      RenstraTabelTujuan.findAll({
+        where: {
+          ...where,
+          ...(tujuanIds ? { tujuan_id: tujuanIds } : {}),
+        },
+        order: [["id", "DESC"]],
+        attributes: [
+          "id",
+          "tujuan_id",
+          "opd_id",
+          "indikator_id",
+          "kode_tujuan",
+          "nama_tujuan",
+          "pagu_akhir_renstra",
+        ],
+      }),
+      RenstraTujuan.findAll({
+        attributes: ["id", "renstra_id", "no_tujuan", "isi_tujuan"],
+      }),
+    ]);
+
+    const tujuanMap = new Map(
+      tujuanRows.map((t) => [Number(t.id), t.toJSON ? t.toJSON() : t])
+    );
+
+    const rowsWithTarget = rows.map((row) => {
+      const json = applyTargetFinalIfMissing(row);
+      const tujuan = tujuanMap.get(Number(json.tujuan_id)) || null;
+      return {
+        id: json.id,
+        tujuan_id: json.tujuan_id,
+        renstra_id: tujuan?.renstra_id ?? null,
+        opd_id: json.opd_id,
+        indikator_id: json.indikator_id,
+        no_tujuan: json.kode_tujuan ?? tujuan?.no_tujuan ?? null,
+        nomor_tujuan: json.kode_tujuan ?? tujuan?.no_tujuan ?? null,
+        isi_tujuan: json.nama_tujuan ?? tujuan?.isi_tujuan ?? null,
+        pagu_tujuan: Number(json.pagu_akhir_renstra || 0),
+        total_pagu: Number(json.pagu_akhir_renstra || 0),
+        pagu_akhir_renstra: Number(json.pagu_akhir_renstra || 0),
+      };
     });
 
-    const result = await attachTujuanCacheToRows({ rows });
+    const result = await attachTujuanCacheToRows({ rows: rowsWithTarget }).then((items) =>
+      items.map((item) => ({
+        id: item.id,
+        tujuan_id: item.tujuan_id,
+        no_tujuan: item.no_tujuan ?? item.nomor_tujuan ?? null,
+        nomor_tujuan: item.nomor_tujuan ?? item.no_tujuan ?? null,
+        isi_tujuan: item.isi_tujuan ?? null,
+        pagu_tujuan: item.pagu_tujuan ?? item.total_pagu ?? 0,
+        total_pagu: item.total_pagu ?? item.pagu_tujuan ?? 0,
+      }))
+    );
 
     res.json(result);
   } catch (err) {
+    console.error("[renstra_tabelTujuanController.findAll]", err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -367,16 +451,62 @@ exports.findByTujuan = async (req, res) => {
     };
 
     if (renstra_id != null && renstra_id !== "") {
-      where.renstra_id = Number(renstra_id);
+      const renstraNum = Number(renstra_id);
+      if (!Number.isFinite(renstraNum)) {
+        return res.status(400).json({ error: "renstra_id harus berupa angka" });
+      }
+
+      const tujuanRowsForRenstra = await RenstraTujuan.findAll({
+        attributes: ["id"],
+        where: { renstra_id: renstraNum },
+      });
+      const tujuanIds = tujuanRowsForRenstra
+        .map((row) => Number(row.id))
+        .filter((id) => Number.isFinite(id));
+
+      if (!tujuanIds.includes(Number(tujuan_id))) {
+        return res.json([]);
+      }
     }
 
     const rows = await RenstraTabelTujuan.findAll({
       where,
-      include: tujuanInclude,
       order: [["id", "ASC"]],
+      attributes: [
+        "id",
+        "tujuan_id",
+        "opd_id",
+        "indikator_id",
+        "kode_tujuan",
+        "nama_tujuan",
+        "pagu_akhir_renstra",
+      ],
     });
 
-    const result = await attachTujuanCacheToRows({ rows });
+    const tujuan = await RenstraTujuan.findByPk(Number(tujuan_id), {
+      attributes: ["id", "renstra_id", "no_tujuan", "isi_tujuan"],
+    });
+
+    const result = await attachTujuanCacheToRows({
+      rows: rows.map((row) => ({
+        ...(row.toJSON ? row.toJSON() : row),
+        renstra_id: tujuan?.renstra_id ?? null,
+        no_tujuan: row.kode_tujuan ?? tujuan?.no_tujuan ?? null,
+        nomor_tujuan: row.kode_tujuan ?? tujuan?.no_tujuan ?? null,
+        isi_tujuan: row.nama_tujuan ?? tujuan?.isi_tujuan ?? null,
+      })),
+    }).then((items) =>
+      items.map((item) => ({
+        id: item.id,
+        tujuan_id: item.tujuan_id,
+        renstra_id: tujuan?.renstra_id ?? null,
+        no_tujuan: item.no_tujuan ?? item.nomor_tujuan ?? null,
+        nomor_tujuan: item.nomor_tujuan ?? item.no_tujuan ?? null,
+        isi_tujuan: item.isi_tujuan ?? null,
+        pagu_tujuan: item.pagu_tujuan ?? item.total_pagu ?? 0,
+        total_pagu: item.total_pagu ?? item.pagu_tujuan ?? 0,
+      }))
+    );
 
     res.json(result);
   } catch (err) {
@@ -392,15 +522,62 @@ exports.findOne = async (req, res) => {
 
     const row = await RenstraTabelTujuan.findByPk(id, {
       include: tujuanInclude,
+      attributes: [
+        "id",
+        "tujuan_id",
+        "opd_id",
+        "indikator_id",
+        "kode_tujuan",
+        "nama_tujuan",
+        "target_tahun_1",
+        "target_tahun_2",
+        "target_tahun_3",
+        "target_tahun_4",
+        "target_tahun_5",
+        "target_tahun_6",
+        "pagu_rpjmd_acuan",
+        "pagu_tahun_1",
+        "pagu_tahun_2",
+        "pagu_tahun_3",
+        "pagu_tahun_4",
+        "pagu_tahun_5",
+        "pagu_tahun_6",
+        "pagu_akhir_renstra",
+        "target_akhir_renstra",
+        "baseline",
+        "satuan_target",
+        "lokasi",
+        "versi",
+        "status_revisi",
+        "last_revised_at",
+        "last_revised_by",
+      ],
     });
 
     if (!row) {
       return res.status(404).json({ message: "Data tidak ditemukan" });
     }
 
-    const [result] = await attachTujuanCacheToRows({
-      rows: [row],
+    const tujuan = await RenstraTujuan.findByPk(Number(row.tujuan_id), {
+      attributes: ["id", "renstra_id", "no_tujuan", "isi_tujuan"],
     });
+
+    const [result] = await attachTujuanCacheToRows({
+      rows: [
+        {
+          ...(row.toJSON ? row.toJSON() : row),
+          renstra_id: tujuan?.renstra_id ?? null,
+          no_tujuan: row.kode_tujuan ?? tujuan?.no_tujuan ?? null,
+          nomor_tujuan: row.kode_tujuan ?? tujuan?.no_tujuan ?? null,
+          isi_tujuan: row.nama_tujuan ?? tujuan?.isi_tujuan ?? null,
+        },
+      ],
+    }).then((items) =>
+      items.map((item) => ({
+        ...item,
+        renstra_id: tujuan?.renstra_id ?? null,
+      }))
+    );
 
     res.json(result);
   } catch (err) {
@@ -461,10 +638,19 @@ exports.update = async (req, res) => {
       return res.status(404).json({ error: "Tujuan tidak ditemukan" });
     }
 
+    if (
+      payloadBase.renstra_id != null &&
+      Number(masterTujuan.renstra_id) !== Number(payloadBase.renstra_id)
+    ) {
+      await t.rollback();
+      return res.status(400).json({
+        message: "tujuan_id tidak sesuai dengan renstra_id yang dipilih",
+      });
+    }
+
     const duplicate = await RenstraTabelTujuan.findOne({
       where: {
         id: { [Op.ne]: id },
-        renstra_id: payloadBase.renstra_id,
         tujuan_id: payloadBase.tujuan_id,
         indikator_id: payloadBase.indikator_id,
       },

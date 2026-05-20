@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, Button, Alert, Input } from "antd";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -17,12 +17,6 @@ const YEARS = [1, 2, 3, 4, 5];
 const ALL_YEARS = [1, 2, 3, 4, 5, 6];
 const ENDPOINT = "/renstra-tabel-kegiatan";
 const REDIRECT = "/renstra/tabel/kegiatan";
-
-const getKegiatanRefId = (item) =>
-  item?.rpjmd_kegiatan_id ??
-  item?.kegiatan_id ??
-  item?.id ??
-  null;
 
 const sanitizeKegiatanPayload = (payload = {}) => {
   const cleaned = { ...payload };
@@ -65,6 +59,22 @@ const sanitizeKegiatanPayload = (payload = {}) => {
 const buildKegiatanPayload = (data) =>
   sanitizeKegiatanPayload(generatePayloadRenstraTabelKegiatan(data));
 
+const toCanonicalIdNumber = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+const matchesCanonicalKegiatanRow = (row, scope) => {
+  if (!row || !scope) return false;
+
+  return (
+    toCanonicalIdNumber(row.renstra_id) === scope.renstra_id &&
+    toCanonicalIdNumber(row.program_id) === scope.program_id &&
+    toCanonicalIdNumber(row.kegiatan_id) === scope.kegiatan_id &&
+    toCanonicalIdNumber(row.indikator_id) === scope.indikator_id
+  );
+};
+
 const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -73,11 +83,8 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
   const isApproved = initialData?.status_revisi === "approved";
   const isRevisiMode = isApproved && searchParams.get("mode") === "revisi";
   const isAuditMode = isApproved && !isRevisiMode;
-  const [paguInfoMessage, setPaguInfoMessage] = useState("");
   const [serverWarnings, setServerWarnings] = useState({});
   const [blocked, setBlocked] = useState(false);
-  const [existingDataInfo, setExistingDataInfo] = useState(null);
-  const [existingDataId, setExistingDataId] = useState(null);
   const [alasanRevisi, setAlasanRevisi] = useState("");
   const [submitRevisiLoading, setSubmitRevisiLoading] = useState(false);
   const [serverMessage, setServerMessage] = useState("");
@@ -85,9 +92,9 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
   const defaultValues = useMemo(() => {
     const values = {
       id: initialData?.id,
-      /** PK renstra_tabel_program — untuk dropdown & available-pagu */
+      /** PK renstra_tabel_program â€” untuk dropdown & available-pagu */
       tabel_program_id: null,
-      /** FK ke renstra_program.id — untuk filter kegiatan & payload API */
+      /** FK ke renstra_program.id â€” untuk filter kegiatan & payload API */
       program_id: initialData?.program_id ?? null,
       kegiatan_id: initialData?.kegiatan_id ?? null,
       indikator_id: initialData?.indikator_id ?? null,
@@ -225,24 +232,22 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
     );
   }, [initialData?.id, initialData?.indikator_id, setValueIfChanged]);
 
-  useEffect(() => {
-  if (
-    initialData ||
-    !selectedRenstraProgramId ||
-    !selectedKegiatanId ||
-    !selectedIndikatorId ||
-    !renstraId
-  ) {
-    setExistingDataInfo(null);
-    setExistingDataId(null);
-    setPaguInfoMessage("");
-    return;
-  }
+  const existingDataEnabled =
+    !initialData &&
+    !!selectedRenstraProgramId &&
+    !!selectedKegiatanId &&
+    !!selectedIndikatorId &&
+    !!renstraId;
 
-  let cancelled = false;
-
-  (async () => {
-    try {
+  const { data: existingDataRows = [] } = useQuery({
+    queryKey: [
+      "renstra-tabel-kegiatan-existing",
+      renstraId,
+      selectedRenstraProgramId,
+      selectedKegiatanId,
+      selectedIndikatorId,
+    ],
+    queryFn: async () => {
       const res = await api.get("/renstra-tabel-kegiatan", {
         params: {
           program_id: selectedRenstraProgramId,
@@ -252,46 +257,43 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
         },
       });
 
-      const rows = Array.isArray(res.data)
-        ? res.data
-        : res.data?.data ?? [];
+      const rows = Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+      return rows;
+    },
+    enabled: existingDataEnabled,
+    retry: 0,
+  });
 
-      if (cancelled) return;
+  const existingDataList = useMemo(
+    () => (Array.isArray(existingDataRows) ? existingDataRows : []),
+    [existingDataRows]
+  );
 
-      if (rows.length > 0) {
-        const latest = rows[0];
+  const existingDataScope = useMemo(
+    () => ({
+      renstra_id: toCanonicalIdNumber(renstraId),
+      program_id: toCanonicalIdNumber(selectedRenstraProgramId),
+      kegiatan_id: toCanonicalIdNumber(selectedKegiatanId),
+      indikator_id: toCanonicalIdNumber(selectedIndikatorId),
+    }),
+    [renstraId, selectedRenstraProgramId, selectedKegiatanId, selectedIndikatorId]
+  );
 
-        setExistingDataInfo(latest);
-        setExistingDataId(latest.id);
-        setPaguInfoMessage("Data sudah ada. Gunakan Edit jika ingin mengubah.");
-      } else {
-        setExistingDataInfo(null);
-        setExistingDataId(null);
-        setPaguInfoMessage("");
-      }
-    } catch {
-      if (!cancelled) {
-        setExistingDataInfo(null);
-        setExistingDataId(null);
-      }
-    }
-  })();
+  const mainExistingDataRows = useMemo(
+    () =>
+      existingDataList.filter((row) =>
+        matchesCanonicalKegiatanRow(row, existingDataScope)
+      ),
+    [existingDataList, existingDataScope]
+  );
 
-  return () => {
-    cancelled = true;
-  };
-  }, [
-    initialData?.id,
-    selectedRenstraProgramId,
-    selectedKegiatanId,
-    selectedIndikatorId,
-    renstraId,
-  ]);
-  
+  const existingDataInfo = mainExistingDataRows[0] ?? null;
+  const existingMainRecordRejected = existingDataInfo?.status_revisi === "ditolak";
+
   const prevTabelProgramId = useRef(undefined);
   const prevProgramIdDirect = useRef(undefined);
 
-  // Fetch options — filter by renstra_id agar hanya data OPD ini yang muncul
+  // Fetch options â€” filter by renstra_id agar hanya data OPD ini yang muncul
   const { data: programData } = useQuery({
     queryKey: ["program-options", renstraId],
     queryFn: () =>
@@ -329,15 +331,9 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
         .then((res) => (Array.isArray(res.data) ? res.data : (res.data?.data ?? []))),
     enabled: !!renstraId,
   });
-  const selectedKegiatan = useMemo(() => {
-  return (kegiatanData || []).find(
-    (k) => Number(k.id) === Number(selectedKegiatanId)
-  );
-}, [kegiatanData, selectedKegiatanId]);
+  const selectedKegiatanRefId = selectedKegiatanId || null;
 
-const selectedKegiatanRefId = selectedKegiatanId || null;
-
-const { data: indikatorData = [], isLoading: loadingIndikator } = useQuery({
+  const { data: indikatorData = [], isLoading: loadingIndikator } = useQuery({
   queryKey: ["indikator-renstra", renstraId, "kegiatan", selectedKegiatanRefId],
   queryFn: async () => {
     const res = await api.get("/indikator-renstra", {
@@ -352,45 +348,43 @@ const { data: indikatorData = [], isLoading: loadingIndikator } = useQuery({
       ? res.data
       : res.data?.data ?? [];
 
-    const kandidatRef = [
-      selectedKegiatan?.ref_id,
-      selectedKegiatan?.rpjmd_kegiatan_id,
-      selectedKegiatan?.ref_kegiatan_id,
-      selectedKegiatan?.kegiatan_id,
-      selectedKegiatan?.id,
-    ]
-      .filter((x) => x !== null && x !== undefined && x !== "")
-      .map(String);
-
-    return raw.filter((item) => {
-      return kandidatRef.includes(String(item.ref_id));
-    });
+    return raw;
   },
   enabled: !!renstraId && !!selectedKegiatanId,
 });
+
+  const paguInfoMessage = useMemo(() => {
+    if (existingDataInfo) {
+      return existingMainRecordRejected
+        ? "Data ini sudah ditolak. Gunakan Edit/Revisi jika ingin mengubah."
+        : "Data sudah ada. Gunakan Edit jika ingin mengubah.";
+    }
+
+    if (!selectedKegiatanRefId || loadingIndikator) {
+      return "";
+    }
+
+    return "Silakan isi pagu subkegiatan sebagai sumber utama agregasi.";
+  }, [existingDataInfo, existingMainRecordRejected, selectedKegiatanRefId, loadingIndikator]);
   
-const indikatorOptions = useMemo(() => {
-  const rows = Array.isArray(indikatorData) ? [...indikatorData] : [];
+const indikatorOptions = Array.isArray(indikatorData) ? [...indikatorData] : [];
 
-  if (
+if (
   initialData?.indikator_id &&
-  !rows.some((i) => Number(i.id) === Number(initialData.indikator_id))
-  ) {
-    rows.unshift({
-      id: initialData.indikator_id,
-      nama_indikator:
-        initialData?.indikator_detail?.nama_indikator ||
-        initialData?.indikator?.nama_indikator ||
-        `Indikator ${initialData.indikator_id}`,
-    });
-  }
-
-  return rows;
-}, [indikatorData?.length, initialData?.indikator_id]);
+  !indikatorOptions.some((i) => Number(i.id) === Number(initialData.indikator_id))
+) {
+  indikatorOptions.unshift({
+    id: initialData.indikator_id,
+    nama_indikator:
+      initialData?.indikator_detail?.nama_indikator ||
+      initialData?.indikator?.nama_indikator ||
+      `Indikator ${initialData.indikator_id}`,
+  });
+}
 
   // Edit: sinkronkan dropdown Program (baris tabel) dari FK program_id yang tersimpan
   useEffect(() => {
-    if (!initialData?.id || !programData?.length || initialData?.program_id == null) {
+    if (!initialData?.id || !programData?.length || initialData?.program_id === null) {
       return;
     }
     const match = programData.find(
@@ -399,12 +393,12 @@ const indikatorOptions = useMemo(() => {
     if (match) {
       setValueIfChanged("tabel_program_id", Number(match.id));
     }
-  }, [initialData?.id, initialData?.program_id, programData?.length]);
+  }, [initialData?.id, initialData?.program_id, programData?.length, setValueIfChanged]);
 
 
   // Sinkron FK program + isi otomatis dari baris renstra_tabel_program (data RPJMD yang sudah dijadwalkan di tabel)
   useEffect(() => {
-    if (selectedTabelProgramId == null || selectedTabelProgramId === "") {
+    if (selectedTabelProgramId === null || selectedTabelProgramId === "") {
       if (hasTabelProgramList) {
         setValueIfChanged("program_id", null);
       }
@@ -432,17 +426,17 @@ const indikatorOptions = useMemo(() => {
     }
     prevTabelProgramId.current = selectedTabelProgramId;
 
-    if (row.lokasi != null && String(row.lokasi).trim() !== "") {
+    if (row.lokasi !== null && row.lokasi !== undefined && String(row.lokasi).trim() !== "") {
       setValueIfChanged("lokasi", row.lokasi);
     }
-    if (row.baseline != null && row.baseline !== "") {
+    if (row.baseline !== null && row.baseline !== undefined && row.baseline !== "") {
       setValueIfChanged("baseline", row.baseline);
     }
     if (row.satuan_target) setValueIfChanged("satuan_target", row.satuan_target);
 
     for (let i = 1; i <= 6; i++) {
       const t = row[`target_tahun_${i}`];
-      if (t != null && t !== "") setValueIfChanged(`target_tahun_${i}`, t);
+      if (t !== null && t !== undefined && t !== "") setValueIfChanged(`target_tahun_${i}`, t);
     }
     
     }, [
@@ -452,11 +446,11 @@ const indikatorOptions = useMemo(() => {
       hasTabelProgramList,
     ]);
 
-  // Mode tanpa Tabel Program: ganti program → reset kegiatan & indikator (tambah)
+  // Mode tanpa Tabel Program: ganti program â†’ reset kegiatan & indikator (tambah)
   useEffect(() => {
     if (hasTabelProgramList) return;
     if (
-      selectedRenstraProgramId == null ||
+      selectedRenstraProgramId === null ||
       selectedRenstraProgramId === ""
     ) {
       return;
@@ -478,10 +472,6 @@ const indikatorOptions = useMemo(() => {
       selectedRenstraProgramId,
       initialData?.id,
     ]);
-
-  const numberFormatter = (value) =>
-    `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  const numberParser = (value) => value.replace(/\./g, "");
 
   // Auto-set bidang/kode/nama dari renstra_kegiatan (selaras RPJMD lewat relasi kegiatan)
   useEffect(() => {
@@ -534,12 +524,6 @@ const indikatorOptions = useMemo(() => {
       setValueIfChanged("pagu_tahun_5", paguDasar + sisaPagu);
       setValueIfChanged("pagu_tahun_6", 0);
       setValueIfChanged("pagu_akhir_renstra", paguAcuan);
-
-      setPaguInfoMessage(
-        paguAcuan > 0
-          ? "Pagu RPJMD readonly. Pagu Renstra tahun 1–5 dapat direvisi."
-          : "Pagu RPJMD belum tersedia pada indikator terpilih."
-      );
     }
   }, [selectedIndikatorId, indikatorData?.length, initialData?.id]);
 
@@ -631,7 +615,10 @@ const handleSubmitRevisi = async (data) => {
       await api.put(`${ENDPOINT}/${initialData.id}`, payload);
     }
 
-    setServerMessage("✅ Revisi berhasil disimpan sebagai draft.");
+    setServerMessage("âœ… Revisi berhasil disimpan sebagai draft.");
+    setTimeout(() => {
+      navigate("/renstra/tabel/kegiatan");
+    }, 600);
   } catch (err) {
     setServerMessage(
       err?.response?.data?.message ||
@@ -653,7 +640,7 @@ return (
       <>
       <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
         <Button onClick={() => navigate("/dashboard-renstra")}>
-          🔙 Kembali
+          ðŸ”™ Kembali
         </Button>
       </div>
 
@@ -692,7 +679,7 @@ return (
                 type="info"
                 showIcon
                 style={{ marginBottom: 12 }}
-                message="Belum ada baris di menu Input Tabel → Program untuk Renstra OPD ini. Pilih program dari master Program Renstra; pagu periode tidak dibatasi oleh Tabel Program."
+                message="Belum ada baris di menu Input Tabel â†’ Program untuk Renstra OPD ini. Pilih program dari master Program Renstra; pagu periode tidak dibatasi oleh Tabel Program."
               />
               <SelectWithLabelValue
                 name="program_id"
@@ -721,7 +708,7 @@ return (
             options={(kegiatanData || [])
               .filter(
                 (k) =>
-                  selectedRenstraProgramId != null &&
+                  selectedRenstraProgramId !== null &&
                   Number(k.program_id) === Number(selectedRenstraProgramId)
               )
               .map((k) => ({
@@ -862,7 +849,7 @@ return (
           {blocked && (
             <Alert
               style={{ marginTop: 12 }}
-              message="⚠️ Sisa pagu ada yang kurang. Lengkapi dulu sebelum menambah program/kegiatan baru."
+              message="âš ï¸ Sisa pagu ada yang kurang. Lengkapi dulu sebelum menambah program/kegiatan baru."
               type="warning"
             />
           )}
@@ -924,7 +911,7 @@ return (
         {serverMessage && (
           <Alert
             style={{ marginTop: 16 }}
-            type={serverMessage.startsWith("✅") ? "success" : "warning"}
+            type={serverMessage.startsWith("âœ…") ? "success" : "warning"}
             showIcon
             message={serverMessage}
           />
@@ -958,8 +945,14 @@ return (
               <Alert
                 type="warning"
                 showIcon
-                message="Data sudah ada"
-                description="Gunakan Edit jika ingin mengubah."
+                message={
+                  existingMainRecordRejected ? "Data sudah ditolak" : "Data sudah ada"
+                }
+                description={
+                  existingMainRecordRejected
+                    ? "Gunakan Edit/Revisi jika ingin mengubah."
+                    : "Gunakan Edit jika ingin mengubah."
+                }
               />
             )}
           </div>
@@ -972,3 +965,4 @@ return (
 };
 
 export default RenstraTabelKegiatanForm;
+

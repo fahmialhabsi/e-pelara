@@ -146,6 +146,7 @@ const rpjmdProgramAutoMapRoutes = require("./routes/rpjmdProgramAutoMapRoutes");
 const rpjmdKegiatanAutoMapRoutes = require("./routes/rpjmdKegiatanAutoMapRoutes");
 const rpjmdSubAutoMapRoutes = require("./routes/rpjmdSubAutoMapRoutes");
 const rpjmdRkpdSyncRoutes = require("./routes/rpjmdRkpdSyncRoutes");
+const rpjmdGovernanceSyncRoutes = require("./routes/rpjmdGovernanceSyncRoutes");
 const planningAuditDashboardRoutes = require("./routes/planningAuditDashboardRoutes");
 const realisasiRoutes = require("./routes/realisasiIndikatorRoutes");
 const evaluasiRoutes = require("./routes/evaluasiRoutes");
@@ -196,8 +197,6 @@ const renstra_tabelArahKebijakanRoutes = require("./routes/renstra_tabelArahKebi
 const renstra_tabelPrioritasRoutes = require("./routes/renstra_tabelPrioritasRoutes");
 const renstraRpjmdMappingRoutes = require("./routes/renstra_rpjmdMappingRoutes");
 const renstraChainRoutes = require("./routes/renstra_chainRoutes");
-const renstra_pagu_cacheRoutes = require("./routes/renstra_pagu_cacheRoutes");
-
 // Manajemen Risiko (MR)
 const mrPlanningRiskRoutes = require("./routes/mr_planningRiskRoutes");
 const mrSmokeTestRoutes = require("./routes/mrSmokeTestRoutes");
@@ -321,6 +320,7 @@ app.use("/api/rpjmd/program-auto-map", rpjmdProgramAutoMapRoutes);
 app.use("/api/rpjmd/kegiatan-auto-map", rpjmdKegiatanAutoMapRoutes);
 app.use("/api/rpjmd/sub-auto-map", rpjmdSubAutoMapRoutes);
 app.use("/api/rpjmd-rkpd-sync", rpjmdRkpdSyncRoutes);
+app.use("/api/rpjmd-governance-sync", rpjmdGovernanceSyncRoutes);
 app.use("/api/planning-audit", planningAuditDashboardRoutes);
 app.use("/api/realisasi-indikator", realisasiRoutes);
 app.use("/api/evaluasi", evaluasiRoutes);
@@ -450,7 +450,7 @@ app.use("/api/regulasi", regulasiRoutes);
 app.use("/api", lkAccountingRoutes);
 app.use("/api", masterReferensiRoutes);
 
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   console.error("🔥 ERROR CAUGHT:", err.stack);
   const errorStack = `${new Date().toISOString()} - ${err.stack}`;
   const conciseMessage = `${req.method} ${req.originalUrl} → ${err.message}`;

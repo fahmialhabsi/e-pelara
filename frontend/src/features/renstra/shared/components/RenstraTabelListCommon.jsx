@@ -63,6 +63,12 @@ export function TahunGrid({ record, prefix, label }) {
  * @param {Array<{ label: string, value: React.ReactNode }>} extraMeta
  */
 export function StandardRenstraExpandedRow({ record, extraMeta = [] }) {
+  const baselineValue =
+    record.baseline ??
+    record.indikator?.baseline ??
+    record.indikatorRenstra?.baseline ??
+    "—";
+
   return (
     <div
       style={{
@@ -82,7 +88,7 @@ export function StandardRenstraExpandedRow({ record, extraMeta = [] }) {
       >
         <span>
           <Text type="secondary">Baseline: </Text>
-          <Text>{record.baseline ?? "—"}</Text>
+          <Text>{baselineValue}</Text>
         </span>
         <span>
           <Text type="secondary">Satuan: </Text>

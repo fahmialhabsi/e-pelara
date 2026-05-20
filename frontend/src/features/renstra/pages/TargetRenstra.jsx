@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import api from "../../../services/api";
 
 export default function TargetRenstra() {
   const [years, setYears] = useState([]); // Tahun otomatis dari backend
+  const [renstraId, setRenstraId] = useState("");
   const [form, setForm] = useState({
     indikator_id: "",
     lokasi: "",
@@ -46,27 +47,40 @@ export default function TargetRenstra() {
   });
 
   // Reset target arrays sesuai jumlah tahun
-  const resetTargets = (yearList = years) => {
+  const resetTargets = useCallback((yearList = years) => {
     setForm((f) => ({
       ...f,
       target_program: yearList.map(() => ""),
       target_kegiatan: yearList.map(() => ""),
       target_subkegiatan: yearList.map(() => ""),
     }));
-  };
+  }, [years]);
 
-  // Fetch daftar tahun dari backend
-  const fetchYears = async () => {
-    try {
-      const res = await api.get("/renstra-target/tahun");
-      if (Array.isArray(res.data) && res.data.length > 0) {
-        setYears(res.data);
-        resetTargets(res.data);
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadRenstraAktif = async () => {
+      try {
+        const res = await api.get("/renstra-opd/aktif");
+        if (!isMounted) return;
+
+        const data = res.data?.data ?? res.data ?? null;
+        const aktif = Array.isArray(data) ? data.find((item) => item?.is_aktif) ?? data[0] : data;
+        setRenstraId(aktif?.id ? String(aktif.id) : "");
+      } catch (err) {
+        void err;
+        if (isMounted) {
+          setRenstraId("");
+        }
       }
-    } catch (err) {
-      console.error("Gagal memuat rentang periode dari server", err);
-    }
-  };
+    };
+
+    void loadRenstraAktif();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Generic fetch untuk dropdown
   const fetchOptions = async (level, url, paramKey, paramValue) => {
@@ -82,18 +96,14 @@ export default function TargetRenstra() {
         : [];
       setOptions((o) => ({ ...o, [level]: dataArray }));
 
-      if (level === "program") {
-        console.log("Hasil fetch program:", dataArray);
-      }
     } catch (err) {
-      console.error(`Gagal fetch ${level}`, err);
+      void err;
     } finally {
       setLoading((l) => ({ ...l, [level]: false }));
     }
   };
 
   const handleDropdownChange = async (level, value) => {
-    console.log("Dropdown change:", level, value);
     const order = ["tujuan", "sasaran", "program", "kegiatan", "subkegiatan"];
     const idx = order.indexOf(level);
 
@@ -125,35 +135,34 @@ export default function TargetRenstra() {
           break;
         }
         case "program": {
-          console.log("options.program", options.program, "value", value);
-
           const selectedProgram = options.program.find(
             (p) => p.kode_program.toString() === value
           );
 
-          console.log("Detail program terpilih:", {
-            id: selectedProgram?.id,
-            kode_program: selectedProgram?.kode_program,
-            nama_program: selectedProgram?.nama_program,
-          });
-
           if (!selectedProgram) {
-            console.warn("⚠️ Program tidak ditemukan untuk value:", value);
             return;
           }
 
-          // ✅ Ambil indikator program (pakai kode_program + jenis_dokumen + tahun)
-          const indRes = await api.get(
-            `/indikator-program?program_id=${selectedProgram.kode_program}&jenis_dokumen=renstra&tahun=${years[0]}`
-          );
+          if (!renstraId) {
+            setForm((f) => ({ ...f, indikator_id: "" }));
+            return;
+          }
+
+          // ✅ Ambil indikator program dari konteks Renstra target
+          const indRes = await api.get("/indikator-renstra", {
+            params: {
+              renstra_id: renstraId,
+              stage: "program",
+              ref_id: selectedProgram.id,
+            },
+          });
 
           // ✅ Tidak perlu fetch detail lagi, gunakan langsung selectedProgram
           const ind =
-            Array.isArray(indRes.data) && indRes.data[0] ? indRes.data[0] : {};
+            Array.isArray(indRes.data) && indRes.data[0]
+              ? indRes.data[0]
+              : indRes.data?.data?.[0] || indRes.data?.data || {};
           const prog = selectedProgram;
-
-          console.log("📊 Hasil indikator:", ind);
-          console.log("📊 Hasil program detail:", prog);
 
           setForm((f) => ({
             ...f,
@@ -174,35 +183,34 @@ export default function TargetRenstra() {
         }
 
         case "kegiatan": {
-          console.log("options.kegiatan", options.kegiatan, "value", value);
-
           const selectedKegiatan = options.kegiatan.find(
             (k) => k.kode_kegiatan.toString() === value
           );
 
-          console.log("Detail kegiatan terpilih:", {
-            id: selectedKegiatan?.id,
-            kode_kegiatan: selectedKegiatan?.kode_kegiatan,
-            nama_kegiatan: selectedKegiatan?.nama_kegiatan,
-          });
-
           if (!selectedKegiatan) {
-            console.warn("⚠️ Kegiatan tidak ditemukan untuk value:", value);
             return;
           }
 
-          // ✅ Ambil indikator kegiatan (pakai kode_kegiatan + jenis_dokumen + tahun)
-          const indRes = await api.get(
-            `/indikator-kegiatan?kegiatan_id=${selectedKegiatan.kode_kegiatan}&jenis_dokumen=renstra&tahun=${years[0]}`
-          );
+          if (!renstraId) {
+            setForm((f) => ({ ...f, indikator_id: "" }));
+            return;
+          }
+
+          // ✅ Ambil indikator kegiatan dari konteks Renstra target
+          const indRes = await api.get("/indikator-renstra", {
+            params: {
+              renstra_id: renstraId,
+              stage: "kegiatan",
+              ref_id: selectedKegiatan.id,
+            },
+          });
 
           // ✅ Tidak perlu fetch detail lagi, gunakan langsung selectedKegiatan
           const ind =
-            Array.isArray(indRes.data) && indRes.data[0] ? indRes.data[0] : {};
+            Array.isArray(indRes.data) && indRes.data[0]
+              ? indRes.data[0]
+              : indRes.data?.data?.[0] || indRes.data?.data || {};
           const keg = selectedKegiatan;
-
-          console.log("📊 Hasil indikator:", ind);
-          console.log("📊 Hasil kegiatan detail:", keg);
 
           setForm((f) => ({
             ...f,
@@ -226,8 +234,6 @@ export default function TargetRenstra() {
           const subRes = await api.get(`/sub-kegiatan/${value}`); // ✅ cukup ini saja
           const sub = subRes.data?.data || {}; // pakai .data.data karena response backend ada "message" & "data"
 
-          console.log("📊 Hasil subkegiatan detail:", sub);
-
           setForm((f) => ({
             ...f,
             capaian_subkegiatan: "", // ❌ kosongkan, karena memang nggak ada kolom baseline
@@ -239,14 +245,44 @@ export default function TargetRenstra() {
         }
       }
     } catch (err) {
-      console.error("Gagal fetch data", err);
+      void err;
     }
   };
 
   useEffect(() => {
-    fetchYears();
-    fetchOptions("tujuan", "/renstra-tujuan");
-  }, []);
+    let isMounted = true;
+
+    const loadInitialData = async () => {
+      try {
+        const [yearsRes, tujuanRes] = await Promise.all([
+          api.get("/renstra-target/tahun"),
+          api.get("/renstra-tujuan"),
+        ]);
+
+        if (!isMounted) return;
+
+        if (Array.isArray(yearsRes.data) && yearsRes.data.length > 0) {
+          setYears(yearsRes.data);
+          resetTargets(yearsRes.data);
+        }
+
+        const tujuanDataArray = Array.isArray(tujuanRes.data)
+          ? tujuanRes.data
+          : Array.isArray(tujuanRes.data.data)
+          ? tujuanRes.data.data
+          : [];
+        setOptions((o) => ({ ...o, tujuan: tujuanDataArray }));
+      } catch (err) {
+        void err;
+      }
+    };
+
+    void loadInitialData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [resetTargets]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -326,7 +362,7 @@ export default function TargetRenstra() {
         subkegiatan: "",
       });
     } catch (err) {
-      console.error(err);
+    void err;
       alert("Terjadi kesalahan saat menyimpan data");
     } finally {
       setLoading((l) => ({ ...l, submit: false }));
@@ -334,13 +370,13 @@ export default function TargetRenstra() {
   };
 
   const renderDropdown = (level, placeholder, labelFn, idField = "id") => (
-    <div className="mb-4">
+    <div>
       <select
         value={selected[level]}
         onChange={(e) => handleDropdownChange(level, e.target.value)}
         disabled={loading[level]}
-        className={`border p-2 w-full rounded ${
-          loading[level] ? "bg-gray-100 cursor-not-allowed" : ""
+        className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 ${
+          loading[level] ? "cursor-not-allowed bg-slate-50 text-slate-400" : ""
         }`}
       >
         <option value="">{placeholder}</option>
@@ -369,153 +405,220 @@ export default function TargetRenstra() {
         value={v}
         onChange={handleChange}
         placeholder={`Th. ke-${i + 1}`}
-        className="border p-2 w-full rounded mb-1"
+        className="mb-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
       />
     ));
 
-  const getUniqueSubkegiatan = (arr) => {
-    return arr.filter(
-      (item, index, self) =>
-        index ===
-        self.findIndex((t) => t.sub_kegiatan_id === item.sub_kegiatan_id)
-    );
-  };
-
   return (
-    <div className="p-6 max-w-5xl mx-auto bg-white shadow rounded space-y-6">
-      <h2 className="text-xl font-bold mb-4">
-        Input Target Renstra Interaktif
-      </h2>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {renderDropdown(
-          "tujuan",
-          "-- Pilih Tujuan --",
-          (o) => `${o.no_tujuan} - ${o.isi_tujuan}`,
-          "no_tujuan"
-        )}
-        {renderDropdown(
-          "sasaran",
-          "-- Pilih Sasaran --",
-          (o) => `${o.nomor} - ${o.isi_sasaran}`,
-          "id" // <-- gunakan id dari backend
-        )}
-        {renderDropdown(
-          "program",
-          "-- Pilih Program --",
-          (o) =>
-            `${o.kode_program} - ${o.nama_program} (${
-              o.opd_penanggung_jawab || "-"
-            })`,
-          "kode_program" // ubah ke kode_program
-        )}
-        <div>
-          <label>Capaian awal periode (program)</label>
-          <input
-            type="text"
-            value={form.capaian_program}
-            readOnly
-            className="border p-2 w-full rounded bg-gray-100 mb-2"
-          />
-          <label>Target Program</label>
-          {renderYearInputs("target_program")}
-          <label>Satuan Program</label>
-          <input
-            type="text"
-            value={form.satuan_program}
-            readOnly
-            className="border p-2 w-full rounded mb-2"
-          />
-          <label>Pagu Anggaran Program</label>
-          <input
-            type="text"
-            value={form.pagu_program}
-            readOnly
-            className="border p-2 w-full rounded mb-2"
-          />
+    <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-2">
+              <div className="inline-flex rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                Input Target Renstra
+              </div>
+              <h2 className="text-2xl font-bold tracking-tight text-slate-900">
+                Input Target Renstra Interaktif
+              </h2>
+              <p className="max-w-3xl text-sm leading-6 text-slate-600">
+                Lengkapi target per tahun untuk program, kegiatan, dan sub kegiatan dalam satu alur yang lebih
+                terstruktur dan mudah dibaca.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700">
+                Tahun aktif: {years.length || "-"}
+              </span>
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+                Target Renstra
+              </span>
+            </div>
+          </div>
         </div>
-        {renderDropdown(
-          "kegiatan",
-          "-- Pilih Kegiatan --",
-          (o) =>
-            `${o.kode_kegiatan} - ${o.nama_kegiatan} (${o.bidang_opd || "-"})`,
-          "kode_kegiatan"
-        )}
-        <div>
-          <label>Capaian awal periode (kegiatan)</label>
-          <input
-            type="text"
-            value={form.capaian_kegiatan}
-            readOnly
-            className="border p-2 w-full rounded bg-gray-100 mb-2"
-          />
-          <label>Target Kegiatan</label>
-          {renderYearInputs("target_kegiatan")}
-          <label>Satuan Kegiatan</label>
-          <input
-            type="text"
-            value={form.satuan_kegiatan}
-            readOnly
-            className="border p-2 w-full rounded mb-2"
-          />
-          <label>Pagu Anggaran Kegiatan</label>
-          <input
-            type="text"
-            value={form.pagu_kegiatan}
-            readOnly
-            className="border p-2 w-full rounded mb-2"
-          />
-        </div>
-        {renderDropdown(
-          "subkegiatan",
-          "Pilih Sub Kegiatan",
-          (o) => `${o.kode_sub_kegiatan} - ${o.nama_sub_kegiatan}`,
-          "sub_kegiatan_id" // ✅ pakai field ini untuk value
-        )}
-        <div>
-          <label>Capaian awal periode (sub kegiatan)</label>
-          <input
-            type="number"
-            name="capaian_subkegiatan"
-            value={form.capaian_subkegiatan}
-            onChange={handleChange}
-            className="border p-2 w-full rounded mb-2"
-          />
-          <label>Target Sub Kegiatan</label>
-          {renderYearInputs("target_subkegiatan")}
-          <label>Satuan Sub Kegiatan</label>
-          <input
-            type="text"
-            name="satuan_subkegiatan"
-            value={form.satuan_subkegiatan}
-            onChange={handleChange}
-            className="border p-2 w-full rounded mb-2"
-          />
-          <label>Pagu Anggaran Sub Kegiatan</label>
-          <input
-            type="text"
-            value={form.pagu_subkegiatan}
-            readOnly
-            className="border p-2 w-full rounded mb-2"
-          />
-        </div>
-        <div>
-          <label>Lokasi</label>
-          <input
-            type="text"
-            name="lokasi"
-            value={form.lokasi}
-            onChange={handleChange}
-            className="border p-2 w-full rounded"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={loading.submit}
-          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-        >
-          {loading.submit ? "Menyimpan..." : "Simpan"}
-        </button>
-      </form>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold text-slate-900">Basis Hirarki</h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Pilih jalur tujuan sampai sub kegiatan sebelum mengisi target tahunan.
+                </p>
+              </div>
+              <div className="space-y-4">
+                {renderDropdown(
+                  "tujuan",
+                  "-- Pilih Tujuan --",
+                  (o) => `${o.no_tujuan} - ${o.isi_tujuan}`,
+                  "no_tujuan"
+                )}
+                {renderDropdown(
+                  "sasaran",
+                  "-- Pilih Sasaran --",
+                  (o) => `${o.nomor} - ${o.isi_sasaran}`,
+                  "id"
+                )}
+                {renderDropdown(
+                  "program",
+                  "-- Pilih Program --",
+                  (o) =>
+                    `${o.kode_program} - ${o.nama_program} (${o.opd_penanggung_jawab || "-"})`,
+                  "kode_program"
+                )}
+                {renderDropdown(
+                  "kegiatan",
+                  "-- Pilih Kegiatan --",
+                  (o) =>
+                    `${o.kode_kegiatan} - ${o.nama_kegiatan} (${o.bidang_opd || "-"})`,
+                  "kode_kegiatan"
+                )}
+                {renderDropdown(
+                  "subkegiatan",
+                  "Pilih Sub Kegiatan",
+                  (o) => `${o.kode_sub_kegiatan} - ${o.nama_sub_kegiatan}`,
+                  "sub_kegiatan_id"
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold text-slate-900">Rincian Nilai</h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Nilai capaian, satuan, dan pagu ditampilkan sebagai ringkasan siap audit.
+                </p>
+              </div>
+              <div className="space-y-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Capaian awal periode (program)
+                  </label>
+                  <input
+                    type="text"
+                    value={form.capaian_program}
+                    readOnly
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+                  />
+                  <label className="mb-2 mt-4 block text-sm font-medium text-slate-700">
+                    Target Program
+                  </label>
+                  {renderYearInputs("target_program")}
+                  <label className="mb-2 mt-4 block text-sm font-medium text-slate-700">
+                    Satuan Program
+                  </label>
+                  <input
+                    type="text"
+                    value={form.satuan_program}
+                    readOnly
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+                  />
+                  <label className="mb-2 mt-4 block text-sm font-medium text-slate-700">
+                    Pagu Anggaran Program
+                  </label>
+                  <input
+                    type="text"
+                    value={form.pagu_program}
+                    readOnly
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+                  />
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Capaian awal periode (kegiatan)
+                  </label>
+                  <input
+                    type="text"
+                    value={form.capaian_kegiatan}
+                    readOnly
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+                  />
+                  <label className="mb-2 mt-4 block text-sm font-medium text-slate-700">
+                    Target Kegiatan
+                  </label>
+                  {renderYearInputs("target_kegiatan")}
+                  <label className="mb-2 mt-4 block text-sm font-medium text-slate-700">
+                    Satuan Kegiatan
+                  </label>
+                  <input
+                    type="text"
+                    value={form.satuan_kegiatan}
+                    readOnly
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+                  />
+                  <label className="mb-2 mt-4 block text-sm font-medium text-slate-700">
+                    Pagu Anggaran Kegiatan
+                  </label>
+                  <input
+                    type="text"
+                    value={form.pagu_kegiatan}
+                    readOnly
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+                  />
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    Capaian awal periode (sub kegiatan)
+                  </label>
+                  <input
+                    type="number"
+                    name="capaian_subkegiatan"
+                    value={form.capaian_subkegiatan}
+                    onChange={handleChange}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+                  />
+                  <label className="mb-2 mt-4 block text-sm font-medium text-slate-700">
+                    Target Sub Kegiatan
+                  </label>
+                  {renderYearInputs("target_subkegiatan")}
+                  <label className="mb-2 mt-4 block text-sm font-medium text-slate-700">
+                    Satuan Sub Kegiatan
+                  </label>
+                  <input
+                    type="text"
+                    name="satuan_subkegiatan"
+                    value={form.satuan_subkegiatan}
+                    onChange={handleChange}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+                  />
+                  <label className="mb-2 mt-4 block text-sm font-medium text-slate-700">
+                    Pagu Anggaran Sub Kegiatan
+                  </label>
+                  <input
+                    type="text"
+                    value={form.pagu_subkegiatan}
+                    readOnly
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+                  />
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">Lokasi</label>
+                  <input
+                    type="text"
+                    name="lokasi"
+                    value={form.lokasi}
+                    onChange={handleChange}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+                  />
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div className="flex justify-end rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <button
+              type="submit"
+              disabled={loading.submit}
+              className="inline-flex items-center rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {loading.submit ? "Menyimpan..." : "Simpan"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

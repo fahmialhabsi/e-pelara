@@ -14,6 +14,24 @@ const renstraPaguSync = require("../services/renstraPaguCachedIncrementalSyncSer
 
 const isApproved = (row) => row?.status_revisi === "approved";
 
+const parsePositiveIntQuery = (value, fieldName) => {
+  const raw = Array.isArray(value) ? value[0] : value;
+
+  if (raw === undefined || raw === null || raw === "") {
+    return null;
+  }
+
+  const parsed = Number(raw);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    const error = new Error(`${fieldName} tidak valid. Harus bilangan bulat positif.`);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return parsed;
+};
+
 const allowApprovedSubkegiatanUpdate = async (transaction) => {
   await sequelize.query(
     "SET @allow_approved_subkegiatan_update = 1",
@@ -1004,13 +1022,56 @@ exports.delete = async (req, res) => {
 // ========================= FIND ALL =========================
 exports.findAll = async (req, res) => {
   try {
+    const subKegiatanQuery = req.query.sub_kegiatan_id ?? req.query.subkegiatan_id;
+
+    if (
+      req.query.sub_kegiatan_id !== undefined &&
+      req.query.subkegiatan_id !== undefined &&
+      String(req.query.sub_kegiatan_id) !== String(req.query.subkegiatan_id)
+    ) {
+      return res.status(400).json({
+        message: "sub_kegiatan_id dan subkegiatan_id tidak boleh berbeda.",
+      });
+    }
+
+    const where = {};
+
+    const renstraId = parsePositiveIntQuery(req.query.renstra_id, "renstra_id");
+    if (renstraId !== null) {
+      where.renstra_id = renstraId;
+    }
+
+    const programId = parsePositiveIntQuery(req.query.program_id, "program_id");
+    if (programId !== null) {
+      where.program_id = programId;
+    }
+
+    const kegiatanId = parsePositiveIntQuery(req.query.kegiatan_id, "kegiatan_id");
+    if (kegiatanId !== null) {
+      where.kegiatan_id = kegiatanId;
+    }
+
+    const subKegiatanId = parsePositiveIntQuery(subKegiatanQuery, "sub_kegiatan_id");
+    if (subKegiatanId !== null) {
+      where.sub_kegiatan_id = subKegiatanId;
+    }
+
+    const indikatorId = parsePositiveIntQuery(req.query.indikator_id, "indikator_id");
+    if (indikatorId !== null) {
+      where.indikator_id = indikatorId;
+    }
+
     const rows = await RenstraTabelSubkegiatan.findAll({
+      where,
       include: tabelSubKegiatanListIncludes,
       order: [["id", "ASC"]],
     });
 
     return res.status(200).json(rows.map((row) => applyPaguReadonly(row)));
   } catch (err) {
+    if (err?.statusCode === 400) {
+      return res.status(400).json({ message: err.message });
+    }
     return res.status(500).json({ error: err.message });
   }
 };

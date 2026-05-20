@@ -1,0 +1,81 @@
+{
+  "lock_name": "EPELARA_FINAL_CODE_LOCK",
+  "version": 2,
+  "mode": "LOCK_ALL_FRONTEND_BACKEND",
+  "unlock_env_name": "EPELARA_FINAL_LOCK_KEY",
+  "unlock_hash_env_name": "EPELARA_FINAL_LOCK_HASH",
+  "locked_roots": [
+    {
+      "path": "frontend/",
+      "status": "FINAL_GUARDED",
+      "step": "RPJMD-RENSTRA-GOVERNANCE-HUB",
+      "reason": "Semua file frontend dikunci agar logika final/HIJAU tidak berubah tanpa unlock owner"
+    },
+    {
+      "path": "backend/",
+      "status": "FINAL_GUARDED",
+      "step": "RPJMD-RENSTRA-GOVERNANCE-HUB",
+      "reason": "Semua file backend dikunci agar endpoint/service/controller/model final tidak berubah tanpa unlock owner"
+    }
+  ],
+  "locked_files": [
+    {
+      "path": "dokumenEPelara/25.Rencana-Implementasi-Teknis-PHASE-RPJMD-RENSTRA-GOVERNANCE-HUB_UPDATED-AUDIT-AKTUAL-FINAL.md",
+      "status": "SOURCE_OF_TRUTH",
+      "step": "DOKUMEN 25",
+      "reason": "Dokumen source-of-truth wajib dijaga dari perubahan tanpa unlock"
+    }
+  ],
+  "excluded_paths": [
+    {
+      "path": "frontend/node_modules/",
+      "reason": "Dependency lokal tidak dikunci"
+    },
+    {
+      "path": "backend/node_modules/",
+      "reason": "Dependency lokal tidak dikunci"
+    },
+    {
+      "path": "frontend/dist/",
+      "reason": "Build output tidak dikunci"
+    },
+    {
+      "path": "frontend/build/",
+      "reason": "Build output tidak dikunci"
+    },
+    {
+      "path": "backend/uploads/",
+      "reason": "File upload runtime tidak dikunci"
+    },
+    {
+      "path": "backend/logs/",
+      "reason": "Log runtime tidak dikunci"
+    },
+    {
+      "path": "backend/tmp/",
+      "reason": "Temporary runtime tidak dikunci"
+    }
+  ],
+  "always_allowed_paths": [
+    {
+      "path": ".governance/",
+      "reason": "File governance lock boleh diubah untuk menambah daftar lock, tetap harus direview owner"
+    },
+    {
+      "path": "scripts/check-final-locked-files.js",
+      "reason": "Script guard sendiri tidak dikunci oleh dirinya agar bisa dipasang awal"
+    },
+    {
+      "path": "scripts/hash-final-lock-key.js",
+      "reason": "Script hash sendiri tidak dikunci oleh dirinya agar bisa dipasang awal"
+    },
+    {
+      "path": "package.json",
+      "reason": "Perlu update script guard"
+    },
+    {
+      "path": "package-lock.json",
+      "reason": "Dependency lockfile bisa berubah saat npm install"
+    }
+  ]
+}

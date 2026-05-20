@@ -9,6 +9,12 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: "indikator_id",
         as: "indikator",
       });
+
+      RenstraTabelSasaran.belongsTo(models.Sasaran, {
+        foreignKey: "sasaran_id",
+        targetKey: "id",
+        as: "sasaran_rpjmd",
+      });
     }
   }
 

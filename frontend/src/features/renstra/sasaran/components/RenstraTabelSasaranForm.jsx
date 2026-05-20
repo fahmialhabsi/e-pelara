@@ -197,6 +197,31 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
     enabled: !!renstraAktif?.id && !!selectedSasaranId,
   });
 
+  const sourceIndikatorId = useMemo(() => {
+    if (!initialData?.indikator_id) return null;
+
+    const selectedOption = indikatorOptions.find(
+      (item) =>
+        String(item.id) === String(initialData.indikator_id) ||
+        String(item.source_indikator_id) === String(initialData.indikator_id)
+    );
+
+    return (
+      selectedOption?.source_indikator_id ||
+      initialData?.indikator?.source_indikator_id ||
+      null
+    );
+  }, [indikatorOptions, initialData]);
+
+  const { data: sourceIndikatorDetail } = useQuery({
+    queryKey: ["indikator-sasaran-source-detail-form", sourceIndikatorId],
+    queryFn: async () => {
+      const res = await api.get(`/indikator-sasaran/${sourceIndikatorId}`);
+      return res.data?.data ?? res.data ?? null;
+    },
+    enabled: !!sourceIndikatorId,
+  });
+
   const indikatorSelectOptions = useMemo(() => {
   const options = indikatorOptions.map((item) => ({
     label: item.nama_indikator || item.kode_indikator || "-",
@@ -271,6 +296,23 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
       shouldValidate: true,
       shouldDirty: false,
     });
+
+    const fallbackBaseline =
+      selectedOption.baseline ??
+      sourceIndikatorDetail?.baseline ??
+      sourceIndikatorDetail?.capaian_tahun_5 ??
+      initialData?.baseline ??
+      "";
+
+    if (
+      fallbackBaseline !== "" &&
+      (initialData?.baseline == null || String(initialData.baseline).trim() === "")
+    ) {
+      setValue("baseline", fallbackBaseline, {
+        shouldValidate: true,
+        shouldDirty: false,
+      });
+    }
   }, [initialData, indikatorOptions, setValue]);
 
   useEffect(() => {
@@ -320,7 +362,14 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
 
     if (!selected) return;
 
-    setValue("baseline", selected.baseline ?? "", {
+    const baselineValue =
+      selected.baseline ??
+      sourceIndikatorDetail?.baseline ??
+      sourceIndikatorDetail?.capaian_tahun_5 ??
+      initialData?.baseline ??
+      "";
+
+    setValue("baseline", baselineValue, {
       shouldValidate: true,
       shouldDirty: true,
     });
@@ -397,7 +446,13 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
         "id-ID"
       )} dibagi ke tahun 1–5. Jika ada sisa, dimasukkan ke tahun ke-5.`
     );
-  }, [selectedIndikatorId, indikatorOptions, setValue, initialData]);
+  }, [
+    selectedIndikatorId,
+    indikatorOptions,
+    setValue,
+    initialData,
+    sourceIndikatorDetail,
+  ]);
 
   const targetValues = watch([
     "target_tahun_1",
