@@ -1,0 +1,24 @@
+{
+  "context_id": "11",
+  "total_daftar_risiko": 13,
+  "total_efektivitas_pengendalian": 13,
+  "total_monitoring_level_risiko": 13,
+  "duplicate_kode_risiko_count": 0,
+  "duplicate_kode_risiko_samples": [],
+  "placeholder_rows_in_efektivitas_or_monitoring": 26,
+  "status": "KUNING_PERLU_REVIEW",
+  "batch2": {
+    "total_analisis_risiko": 5,
+    "total_rencana_pengendalian": 15,
+    "duplicate_analisis_risiko_count": 0,
+    "duplicate_analisis_risiko_samples": [],
+    "duplicate_rencana_pengendalian_count": 2,
+    "duplicate_rencana_pengendalian_samples": [
+      "MR-2026-TEMUAN_INSPEKTORAT-007",
+      "MR-2026-TEMUAN_BPK-001"
+    ],
+    "placeholder_analisis_risiko_count": 5,
+    "placeholder_rencana_pengendalian_count": 15,
+    "status_batch2": "KUNING"
+  }
+}
