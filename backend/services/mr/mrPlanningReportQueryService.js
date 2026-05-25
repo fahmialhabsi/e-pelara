@@ -2552,9 +2552,10 @@ const getKejadianRisiko = async (contextId, options = {}) => {
     },
   );
 
+  const dedupedRows = dedupeKejadianRisiko(rows);
   return {
-    rows,
-    fallback_message: rows.length ? null : NIL_EVENT_MESSAGE,
+    rows: dedupedRows,
+    fallback_message: dedupedRows.length ? null : NIL_EVENT_MESSAGE,
     field_origin: buildReportFieldOriginMeta({
       userInputFields: [
         'tanggal_kejadian',
