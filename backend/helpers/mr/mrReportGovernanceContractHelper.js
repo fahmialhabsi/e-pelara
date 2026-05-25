@@ -636,13 +636,28 @@ const dedupeDaftarRisiko = (rows = []) =>
 
 
 const dedupeRisikoPrioritas = (rows = []) =>
-  dedupeGenericRows(rows, ['kode_risiko']);
+  buildDedupeRows(rows, (row) => buildFieldKey(row, ['kode_risiko']), { source: 'risiko_prioritas' });
 
 const dedupeRencanaPengendalian = (rows = []) =>
-  dedupeGenericRows(rows, ['kode_risiko', 'kegiatan_pengendalian']);
+  buildDedupeRows(rows, (row) => buildFieldKey(row, ['kode_risiko', 'kegiatan_pengendalian']), { source: 'rencana_pengendalian' });
+
+const dedupeRealisasiPengendalian = (rows = []) =>
+  buildDedupeRows(rows, (row) => buildFieldKey(row, ['kode_risiko', 'kegiatan_pengendalian', 'monitoring_date']), { source: 'realisasi_pengendalian' });
 
 const dedupeKejadianRisiko = (rows = []) =>
-  dedupeGenericRows(rows, ['kode_risiko', 'monitoring_date']);
+  buildDedupeRows(
+    rows,
+    (row) =>
+      [
+        row.kode_risiko,
+        row.tanggal_kejadian || row.monitoring_date,
+        row.tempat_kejadian,
+        row.uraian_kejadian,
+      ]
+        .map(normalizeDedupeText)
+        .join('|'),
+    { source: 'kejadian_risiko' },
+  );
 
 const dedupeGenericRows = (rows = [], keyFields = []) =>
   buildDedupeRows(rows, (row) => buildFieldKey(row, keyFields), { source: 'generic' });
@@ -1168,6 +1183,7 @@ module.exports = {
   dedupeGenericRows,
   dedupeRisikoPrioritas,
   dedupeRencanaPengendalian,
+  dedupeRealisasiPengendalian,
   dedupeKejadianRisiko,
 };
 const { EXCEPTIONS } = require('../../services/mr/mrPolicyEngineService');

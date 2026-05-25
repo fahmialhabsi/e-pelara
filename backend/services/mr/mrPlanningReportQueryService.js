@@ -1,5 +1,5 @@
 const { assertFinalReportNotOverwrite, assertResidualRiskEvaluated, assertSnapshotExists } = require("./mrPolicyEngineService");
-const { dedupeRisikoPrioritas, dedupeRencanaPengendalian, dedupeKejadianRisiko } = require("../../helpers/mr/mrReportGovernanceContractHelper");
+const { dedupeRisikoPrioritas, dedupeRencanaPengendalian, dedupeRealisasiPengendalian, dedupeKejadianRisiko } = require("../../helpers/mr/mrReportGovernanceContractHelper");
 // backend/services/mr/mrPlanningReportQueryService.js
 
 const { sequelize } = require('../../models');
@@ -2555,8 +2555,8 @@ const getKejadianRisiko = async (contextId, options = {}) => {
 
   const dedupedRows = dedupeKejadianRisiko(rows);
   return {
-    rows: dedupedRows,
-    fallback_message: dedupedRows.length ? null : NIL_EVENT_MESSAGE,
+    rows: dedupedRows.display_rows,
+    fallback_message: dedupedRows.display_rows.length ? null : NIL_EVENT_MESSAGE,
     field_origin: buildReportFieldOriginMeta({
       userInputFields: [
         'tanggal_kejadian',
@@ -4070,10 +4070,14 @@ const buildReportQualityGate = ({
 } = {}) => {
   const daftarRisiko = lampiran.daftar_risiko || [];
   const analisisRisiko = lampiran.analisis_risiko || [];
-  const risikoPrioritas = dedupeRisikoPrioritas(lampiran.risiko_prioritas || []);
-  const rencanaPengendalian = dedupeRencanaPengendalian(lampiran.rencana_pengendalian || []);
-  const realisasiPengendalian = lampiran.realisasi_pengendalian || [];
-  const kejadianRisiko = dedupeKejadianRisiko(lampiran.kejadian_risiko || []);
+  const risikoPrioritas = getRows(dedupeRisikoPrioritas(lampiran.risiko_prioritas || []));
+  const rencanaPengendalian = getRows(
+    dedupeRencanaPengendalian(lampiran.rencana_pengendalian || []),
+  );
+  const realisasiPengendalian = getRows(
+    dedupeRealisasiPengendalian(lampiran.realisasi_pengendalian || []),
+  );
+  const kejadianRisiko = getRows(dedupeKejadianRisiko(lampiran.kejadian_risiko || []));
   const rootCauseAnalysis = lampiran.root_cause_analysis || [];
   const monitoringLevelRisiko = lampiran.monitoring_level_risiko || [];
   const efektivitasPengendalian = lampiran.efektivitas_pengendalian || [];
