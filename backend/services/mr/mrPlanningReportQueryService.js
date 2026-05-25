@@ -1596,7 +1596,7 @@ const getContextItems = async (contextId, options = {}) => {
       )
     `;
 
-  return sequelize.query(
+  const rows = await sequelize.query(
     `
     SELECT
       ci.id,
@@ -2346,7 +2346,7 @@ const getRisikoPrioritas = async (contextId, options = {}) => {
     },
   );
 
-  return rows
+  const mappedRows = rows
     .map((item) => ({
       ...item,
       is_priority_candidate: isPriorityRisk(item),
@@ -2384,6 +2384,8 @@ const getRisikoPrioritas = async (contextId, options = {}) => {
 
       return toNumber(a.id) - toNumber(b.id);
     });
+
+  return getRows(dedupeRisikoPrioritas(mappedRows));
 };
 
 const getRencanaPengendalian = async (contextId, options = {}) => {
@@ -2447,7 +2449,7 @@ const getRealisasiPengendalian = async (contextId, options = {}) => {
   const reportScope = options.reportScope || { scope_mode: 'context' };
   const riskScopeWhere = buildRiskScopeWhere(reportScope, 'r');
 
-  return sequelize.query(
+  const rows = await sequelize.query(
     `
     SELECT
       mon.id,
@@ -2512,6 +2514,8 @@ const getRealisasiPengendalian = async (contextId, options = {}) => {
       type: QueryTypes.SELECT,
     },
   );
+
+  return getRows(dedupeRealisasiPengendalian(rows));
 };
 
 const getKejadianRisiko = async (contextId, options = {}) => {
@@ -3975,6 +3979,7 @@ const isInterimReport = (context = {}) =>
 
 const getRows = (value) => {
   if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.display_rows)) return value.display_rows;
   if (Array.isArray(value?.rows)) return value.rows;
   return [];
 };

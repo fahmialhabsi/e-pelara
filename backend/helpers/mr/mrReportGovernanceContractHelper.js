@@ -636,13 +636,55 @@ const dedupeDaftarRisiko = (rows = []) =>
 
 
 const dedupeRisikoPrioritas = (rows = []) =>
-  buildDedupeRows(rows, (row) => buildFieldKey(row, ['kode_risiko']), { source: 'risiko_prioritas' });
+  buildDedupeRows(
+    rows,
+    (row) => {
+      const riskId = normalizeDedupeText(row.risk_id || row.mr_planning_risk_id || row.id);
+      if (riskId) return `risk:${riskId}`;
+
+      const kode = normalizeDedupeText(row.kode_risiko);
+      if (kode) {
+        const contextId = normalizeDedupeText(row.context_id || row.mr_planning_context_id);
+        const stage = normalizeDedupeText(row.stage);
+        return `kode:${kode}|ctx:${contextId}|stage:${stage}`;
+      }
+
+      return buildFieldKey(row, ['nama_risiko', 'uraian_risiko', 'kategori_risiko']);
+    },
+    { source: 'risiko_prioritas' },
+  );
 
 const dedupeRencanaPengendalian = (rows = []) =>
   buildDedupeRows(rows, (row) => buildFieldKey(row, ['kode_risiko', 'kegiatan_pengendalian']), { source: 'rencana_pengendalian' });
 
 const dedupeRealisasiPengendalian = (rows = []) =>
-  buildDedupeRows(rows, (row) => buildFieldKey(row, ['kode_risiko', 'kegiatan_pengendalian', 'monitoring_date']), { source: 'realisasi_pengendalian' });
+  buildDedupeRows(
+    rows,
+    (row) => {
+      const monitoringId = normalizeDedupeText(
+        row.monitoring_id || row.mr_planning_monitoring_id || row.id,
+      );
+      if (monitoringId) return `mon:${monitoringId}`;
+
+      const riskId = normalizeDedupeText(row.risk_id || row.mr_planning_risk_id);
+      const mitigationId = normalizeDedupeText(row.mitigation_id || row.mr_planning_mitigation_id);
+      const period = normalizeDedupeText(row.periode_label || row.periode_id);
+      const monitorDate = normalizeDedupeText(row.monitoring_date || row.tanggal_monitoring);
+
+      if (riskId || mitigationId || period || monitorDate) {
+        return `risk:${riskId}|mit:${mitigationId}|per:${period}|dt:${monitorDate}`;
+      }
+
+      return buildFieldKey(row, [
+        'kode_risiko',
+        'kegiatan_pengendalian',
+        'periode_label',
+        'monitoring_date',
+        'hasil_monitoring',
+      ]);
+    },
+    { source: 'realisasi_pengendalian' },
+  );
 
 const dedupeKejadianRisiko = (rows = []) =>
   buildDedupeRows(
