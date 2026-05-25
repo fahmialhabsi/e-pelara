@@ -15,6 +15,7 @@ const {
   MR_ACTION,
   ensureRecordExists,
 } = require("../../helpers/mr/mrApprovalHelper");
+const { assertFinalReportNotOverwrite } = require("./mrPolicyEngineService");
 
 const {
   getPlainJson,
@@ -81,6 +82,11 @@ const createSnapshot = async ({
   const transaction = await sequelize.transaction();
 
   try {
+    assertFinalReportNotOverwrite({
+      is_final: !!body?.is_final || !!body?.is_locked,
+      is_correction_mode: !!body?.is_correction_mode,
+    });
+
     const payload = buildSnapshotPayload({
       periode_type: body.periode_type,
       periode_label: body.periode_label,
@@ -134,11 +140,16 @@ const approveSnapshot = async ({
 
   try {
     const snapshot = await SnapshotModel.findByPk(id, { transaction });
-
     ensureRecordExists(snapshot, "Snapshot MR tidak ditemukan.");
-    ensureSnapshotNotLocked(snapshot);
 
     const beforeJson = getPlainJson(snapshot);
+
+    assertFinalReportNotOverwrite({
+      is_final: !!beforeJson?.is_locked || !!beforeJson?.is_final,
+      is_correction_mode: !!request?.body?.is_correction_mode,
+    });
+
+    ensureSnapshotNotLocked(snapshot);
 
     await snapshot.update(
       buildSnapshotApprovalPayload({ userId }),
