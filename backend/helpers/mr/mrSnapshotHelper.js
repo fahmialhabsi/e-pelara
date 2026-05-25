@@ -277,3 +277,5 @@ module.exports = {
   buildSnapshotApprovalPayload,
   buildSnapshotUnlockPayload,
 };
+const { EXCEPTIONS } = require("../../services/mr/mrPolicyEngineService");
+module.exports.EXCEPTIONS = EXCEPTIONS;

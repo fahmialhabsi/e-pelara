@@ -224,3 +224,5 @@ module.exports = {
   writeAuditLog,
   buildAndWriteAuditLog,
 };
+const { EXCEPTIONS } = require("../../services/mr/mrPolicyEngineService");
+module.exports.EXCEPTIONS = EXCEPTIONS;
