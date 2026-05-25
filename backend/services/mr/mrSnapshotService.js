@@ -38,6 +38,7 @@ const buildSnapshotWhere = ({ query = {} }) => {
   const where = {};
 
   if (query.id) where.id = query.id;
+  if (query.context_id) where.context_id = query.context_id;
   if (query.periode_type) where.periode_type = query.periode_type;
   if (query.periode_label) where.periode_label = query.periode_label;
   if (query.tahun) where.tahun = query.tahun;
@@ -88,6 +89,7 @@ const createSnapshot = async ({
     });
 
     const payload = buildSnapshotPayload({
+      context_id: body.context_id,
       periode_type: body.periode_type,
       periode_label: body.periode_label,
       periode_awal: body.periode_awal,

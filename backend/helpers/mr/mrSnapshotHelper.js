@@ -105,6 +105,7 @@ const normalizeNumericSummary = ({
 };
 
 const buildSnapshotPayload = ({
+  context_id = null,
   periode_type,
   periode_label,
   periode_awal = null,
@@ -136,6 +137,7 @@ const buildSnapshotPayload = ({
   });
 
   return {
+    context_id,
     periode_type,
     periode_label,
     periode_awal,
