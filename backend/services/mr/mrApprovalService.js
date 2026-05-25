@@ -1,3 +1,4 @@
+const { assertFinalReportNotOverwrite } = require("./mrPolicyEngineService");
 "use strict";
 
 /**
@@ -266,6 +267,10 @@ const approveHistory = async ({
       currentStatus: beforeHistoryJson.status_revisi,
       allowedStatuses: [MR_STATUS.VERIFIKASI],
       action: MR_ACTION.APPROVE,
+    });
+    assertFinalReportNotOverwrite({
+      is_final: activeRecord.is_locked,
+      is_correction_mode: beforeHistoryJson.is_correction_mode || false,
     });
 
     const activePayloadFromHistory = sanitizeAfterJsonForActive({
