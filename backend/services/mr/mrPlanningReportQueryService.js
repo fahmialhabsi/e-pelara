@@ -1,3 +1,4 @@
+const { dedupeRisikoPrioritas, dedupeRencanaPengendalian, dedupeKejadianRisiko } = require("../helpers/mr/mrReportGovernanceContractHelper");
 // backend/services/mr/mrPlanningReportQueryService.js
 
 const { sequelize } = require('../../models');
@@ -4067,10 +4068,10 @@ const buildReportQualityGate = ({
 } = {}) => {
   const daftarRisiko = lampiran.daftar_risiko || [];
   const analisisRisiko = lampiran.analisis_risiko || [];
-  const risikoPrioritas = lampiran.risiko_prioritas || [];
-  const rencanaPengendalian = lampiran.rencana_pengendalian || [];
+  const risikoPrioritas = dedupeRisikoPrioritas(lampiran.risiko_prioritas || []);
+  const rencanaPengendalian = dedupeRencanaPengendalian(lampiran.rencana_pengendalian || []);
   const realisasiPengendalian = lampiran.realisasi_pengendalian || [];
-  const kejadianRisiko = lampiran.kejadian_risiko || [];
+  const kejadianRisiko = dedupeKejadianRisiko(lampiran.kejadian_risiko || []);
   const rootCauseAnalysis = lampiran.root_cause_analysis || [];
   const monitoringLevelRisiko = lampiran.monitoring_level_risiko || [];
   const efektivitasPengendalian = lampiran.efektivitas_pengendalian || [];
