@@ -734,10 +734,10 @@ const buildExceptionRegister = (report = {}) => {
   const evidenceGate = buildEvidenceAdequacyGate(report);
   const readiness = buildReportReadinessGate(report);
 
-  if (evidenceGate.missing_count > 0) list.push('EXCEPTION_EVIDENCE_MISSING');
-  if (readiness.status !== 'ready') list.push('EXCEPTION_REPORT_CORRECTION_REQUIRED');
+  if (evidenceGate.missing_count > 0) list.push(EXCEPTIONS.EXCEPTION_EVIDENCE_MISSING);
+  if (readiness.status !== 'ready') list.push(EXCEPTIONS.EXCEPTION_REPORT_CORRECTION_REQUIRED);
   if (safeArray(report.data_quality_gate?.issues).length > 0)
-    list.push('EXCEPTION_DATA_INCOMPLETE');
+    list.push(EXCEPTIONS.EXCEPTION_DATA_INCOMPLETE);
 
   return [...new Set(list)];
 };
