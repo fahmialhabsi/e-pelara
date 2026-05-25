@@ -1,5 +1,5 @@
 const { assertFinalReportNotOverwrite, assertResidualRiskEvaluated, assertSnapshotExists } = require("./mrPolicyEngineService");
-const { dedupeRisikoPrioritas, dedupeRencanaPengendalian, dedupeRealisasiPengendalian, dedupeKejadianRisiko } = require("../../helpers/mr/mrReportGovernanceContractHelper");
+const { buildReportGovernanceContract, dedupeRisikoPrioritas, dedupeRencanaPengendalian, dedupeRealisasiPengendalian, dedupeKejadianRisiko } = require("../../helpers/mr/mrReportGovernanceContractHelper");
 // backend/services/mr/mrPlanningReportQueryService.js
 
 const { sequelize } = require('../../models');
@@ -5107,6 +5107,22 @@ const getFullReport = async (contextId, options = {}) => {
     daftarRisiko: lampiran.daftar_risiko || [],
   });
 
+  const governanceContract = buildReportGovernanceContract({
+    context,
+    context_items: contextItems,
+    summary: {
+      ...summary,
+      cakupan_laporan: reportScope.cakupan_laporan,
+      tipe_periode_laporan: context.periode_type,
+      periode_pelaporan: context.periode_label,
+      report_scope: reportScope,
+    },
+    lampiran,
+    data_quality_gate: reportDataQualityGate,
+    report_quality_gate: reportQualityGate,
+    generated_sections: lampiran.generated_sections,
+  });
+
   return {
     context,
     context_items: contextItems,
@@ -5137,6 +5153,12 @@ const getFullReport = async (contextId, options = {}) => {
     // R16H-0B + R17C-3C — quality gate per Pedoman Coaching Clinic Inspektorat
     // diperkaya dengan data quality gate agar placeholder menjadi blocker final.
     report_quality_gate: reportQualityGate,
+
+    // Non-breaking additive governance contract output
+    governance_contract: governanceContract,
+    official_report_contract: governanceContract.official_report_contract,
+    audit_report_contract: governanceContract.audit_report_contract,
+    report_governance_gate: governanceContract.report_governance_gate,
 
     // R16B — generated report sections dengan metadata field origin.
     generated_sections: lampiran.generated_sections,
