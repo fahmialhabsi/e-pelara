@@ -625,7 +625,7 @@ const lockProgressLedgerSnapshot = async (
     for (const row of allRows) {
       if (!row.monitoring_date) {
         excluded.push(row);
-        exceptions.push(EXCEPTION_PROGRESS_DATE_MISSING);
+        exceptions.push(EXCEPTIONS.EXCEPTION_PROGRESS_DATE_MISSING);
         continue;
       }
       const rowKey = toDateKey(row.monitoring_date);
@@ -748,7 +748,7 @@ const buildSnapshotLockReadinessForReport = async ({ context_id, cutoff_date, ti
   rows.forEach((row) => {
     if (!row.monitoring_date) {
       excludedRows.push(row);
-      exceptions.push(EXCEPTION_PROGRESS_DATE_MISSING);
+      exceptions.push(EXCEPTIONS.EXCEPTION_PROGRESS_DATE_MISSING);
       return;
     }
     const rowKey = toDateKey(row.monitoring_date);
