@@ -651,19 +651,27 @@ const resolveFinalReportRecords = (report = {}) => {
   const context = safeObject(report.context);
   const status = normalizeDedupeText(context.status_revisi || context.status || 'draft');
   const approved = ['approved', 'disetujui'].includes(status);
+  const activeVersion = safeText(context.versi || context.active_version, '-');
+  const latestApprovedVersion = safeText(context.versi_final || context.latest_approved_version, '-');
 
   if (approved) {
     return {
       official_data_source: 'active_approved',
+      active_version: activeVersion,
+      latest_approved_version: latestApprovedVersion,
       final_status: 'approved',
       use_snapshot: false,
+      note: 'Data diambil dari versi aktif yang sudah disetujui.',
     };
   }
 
   return {
     official_data_source: 'latest_approved_snapshot_if_exists',
+    active_version: activeVersion,
+    latest_approved_version: latestApprovedVersion,
     final_status: status || 'draft',
     use_snapshot: true,
+    note: latestApprovedVersion !== '-' ? 'Data menggunakan versi terakhir yang disetujui.' : 'Belum ada versi disetujui; data dari versi aktif (draft).',
   };
 };
 
