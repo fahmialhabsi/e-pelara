@@ -1,4 +1,4 @@
-const { dedupeRisikoPrioritas, dedupeRencanaPengendalian, dedupeKejadianRisiko } = require("../helpers/mr/mrReportGovernanceContractHelper");
+const { dedupeRisikoPrioritas, dedupeRencanaPengendalian, dedupeKejadianRisiko } = require("../../helpers/mr/mrReportGovernanceContractHelper");
 // backend/services/mr/mrPlanningReportQueryService.js
 
 const { sequelize } = require('../../models');
