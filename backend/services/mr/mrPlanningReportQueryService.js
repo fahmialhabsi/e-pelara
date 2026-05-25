@@ -1,3 +1,4 @@
+const { assertFinalReportNotOverwrite, assertResidualRiskEvaluated, assertSnapshotExists } = require("./mrPolicyEngineService");
 const { dedupeRisikoPrioritas, dedupeRencanaPengendalian, dedupeKejadianRisiko } = require("../../helpers/mr/mrReportGovernanceContractHelper");
 // backend/services/mr/mrPlanningReportQueryService.js
 
@@ -4854,6 +4855,11 @@ const buildReportQualityGate = ({
       : PEDOMAN_STATUS.HIJAU;
 
   const finalReportBlockingIssues = [];
+  // Residual Risk Gate — eksplisit mandiri
+  const residualRiskEvaluated = risikoPrioritas.every(r => r.residual_score !== null && r.residual_score !== undefined);
+  if (finalReport && !residualRiskEvaluated) {
+    finalReportBlockingIssues.push('Residual risk belum dievaluasi pada seluruh risiko prioritas. Finalisasi laporan tidak diizinkan.');
+  }
 
   if (!finalReport) {
     finalReportBlockingIssues.push(
