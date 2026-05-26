@@ -177,7 +177,7 @@ const MrQuickRepairPanel = ({ findings = [], contextId, onRepaired }) => {
     }
 
     const payload = {
-      items: mergedRows.map((row) => {
+      repairs: mergedRows.map((row) => {
         const riskKey = String(row.risk_id || row.kode_risiko || '');
         return {
           risk_id: row.risk_id || null,
