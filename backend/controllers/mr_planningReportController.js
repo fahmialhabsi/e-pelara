@@ -8,6 +8,7 @@ const reportExportAuditService = require("../services/mr/mrPlanningReportExportA
 const reportExportHistoryService = require("../services/mr/mrPlanningReportExportHistoryService");
 const mrIntegrityScanService = require("../services/mr/mrIntegrityScanService");
 const mrPlanningReportRepairDraftService = require("../services/mr/mrPlanningReportRepairDraftService");
+const { recalculateRiskMatrixForPayload } = require("../services/mr/mrPlanningRiskService");
 const { assertReportExportPolicy } = require("../services/mr/mrPolicyEngineService");
 const { logActivity } = require("../services/auditService");
 const db = require("../models");
@@ -513,7 +514,7 @@ const quickRepair = async (req, res) => {
     const { repairs = [] } = req.body || {};
     const results = [];
     for (const item of repairs) {
-      const { risk_id, fields = {} } = item || {};
+      const { risk_id, fields = {} } = item;
       if (!risk_id || !Object.keys(fields).length) continue;
       await db.MrPlanningRiskAnalysis.upsert({
         mr_planning_risk_id: risk_id,
@@ -521,6 +522,12 @@ const quickRepair = async (req, res) => {
         updated_by: req.user?.id || null,
         updated_at: new Date(),
       });
+      try {
+        await recalculateRiskMatrixForPayload({
+          riskId: risk_id,
+          userId: req.user?.id || null,
+        });
+      } catch (e) { /* kalkulasi gagal tidak batalkan repair */ }
       results.push({ risk_id, status: "repaired" });
     }
     return res.json({ success: true, context_id: contextId, repaired: results.length, results });
