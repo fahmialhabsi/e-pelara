@@ -15,4 +15,47 @@ function assertSnapshotExists(snapshotId) {
     throw { code: EXCEPTION.EXCEPTION_SNAPSHOT_ID_MISSING, message: "Snapshot belum dibuat." };
   }
 }
-module.exports = { assertFinalReportNotOverwrite, assertResidualRiskEvaluated, assertSnapshotExists, EXCEPTIONS: EXCEPTION };
+function assertReportExportPolicy({
+  report = {},
+  format = "unknown",
+} = {}) {
+  const gate = report?.report_quality_gate || report?.quality_gate || {};
+  const approvalGate = report?.report_approval_gate || {};
+  const finalStatus = String(gate?.final_report_status || "").toLowerCase();
+  const readyToSign = approvalGate?.ready_to_sign === true;
+
+  if (["pdf", "docx", "word", "excel_final", "xlsx_final"].includes(String(format).toLowerCase())) {
+    if (!readyToSign || (finalStatus && finalStatus !== "ready_for_pdf" && finalStatus !== "ready")) {
+      throw {
+        status: 422,
+        statusCode: 422,
+        code: "MR_POLICY_EXPORT_NOT_READY",
+        message: "Export final belum memenuhi policy readiness. Dokumen hanya boleh dipakai sebagai draft/review.",
+      };
+    }
+  }
+}
+function assertReportReadinessForFinalFlow({
+  report = {},
+  flow = "report",
+} = {}) {
+  const normalizedFlow = String(flow || "").toLowerCase();
+  const guardedFlows = ["final_export", "correction", "addendum", "export_word", "export_pdf"];
+  if (!guardedFlows.includes(normalizedFlow)) return;
+
+  const gate = report?.report_quality_gate || report?.quality_gate || {};
+  const approvalGate = report?.report_approval_gate || {};
+  const finalStatus = String(gate?.final_report_status || "").toLowerCase();
+  const readyToSign = approvalGate?.ready_to_sign === true;
+
+  if (!readyToSign || (finalStatus && finalStatus !== "ready_for_pdf" && finalStatus !== "ready")) {
+    throw {
+      status: 422,
+      statusCode: 422,
+      code: "MR_POLICY_REPORT_NOT_READY",
+      message:
+        "Flow final/correction belum memenuhi policy readiness. Selesaikan approval dan quality gate sebelum finalisasi.",
+    };
+  }
+}
+module.exports = { assertFinalReportNotOverwrite, assertResidualRiskEvaluated, assertSnapshotExists, assertReportExportPolicy, assertReportReadinessForFinalFlow, EXCEPTIONS: EXCEPTION };

@@ -17,6 +17,7 @@
  */
 
 const db = require("../../models");
+const { assertFinalReportNotOverwrite } = require("./mrPolicyEngineService");
 const { QueryTypes } = require("sequelize");
 
 const {
@@ -2616,6 +2617,10 @@ const approveRisk = async ({ riskId, user = null }) => {
     }
 
     const plain = toPlain(risk);
+    assertFinalReportNotOverwrite({
+      is_final: !!plain.is_locked || !!plain.is_final,
+      is_correction_mode: false,
+    });
 
     if (plain.status_revisi !== WORKFLOW_STATUS.VERIFIKASI) {
       throw new ServiceError(
@@ -2724,6 +2729,10 @@ const createRevisionFromApprovedRisk = async ({
     ensureApprovedRevisable(risk);
 
     const beforeJson = clonePlain(risk);
+    assertFinalReportNotOverwrite({
+      is_final: !!beforeJson.is_locked || !!beforeJson.is_final,
+      is_correction_mode: !!body.is_correction_mode,
+    });
     const allowedPayload = pickAllowedFields(body);
     const nextVersion = Number(beforeJson.versi || 1) + 1;
 

@@ -30,6 +30,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import mrPlanningRiskService, {
   MR_PLANNING_RISK_QUERY_KEYS,
 } from "@/services/mrPlanningRiskService";
+import api from "@/services/api";
 import { useAuth } from "@/hooks/useAuth";
 import { normalizeRole } from "@/utils/roleUtils";
 
@@ -199,6 +200,14 @@ const getAvailableActionText = (status) => {
   return "Tidak ada aksi lanjutan";
 };
 
+const getGovernanceStatusLabel = (status, blockingCount) => {
+  const value = String(status || "").toLowerCase();
+  if (value === "merah") return "MERAH";
+  if (value === "kuning") return "KUNING TERKENDALI";
+  if (value.includes("hijau") && Number(blockingCount || 0) === 0) return "HIJAU TERKENDALI";
+  return "KUNING";
+};
+
 export default function MrPlanningRiskHistoryPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -315,6 +324,24 @@ export default function MrPlanningRiskHistoryPage() {
     });
   };
 
+  const resolveContextIdForRecord = async (record) => {
+    const fromRecord = record?.context_id ?? record?.mr_planning_context_id ?? null;
+    if (fromRecord) return Number(fromRecord);
+
+    const riskId = getRiskIdFromHistory(record, id);
+    if (!riskId) return null;
+
+    try {
+      const riskDetailResponse = await mrPlanningRiskService.getById(riskId);
+      const riskDetail = riskDetailResponse?.data || riskDetailResponse || {};
+      return Number(
+        riskDetail?.context_id ?? riskDetail?.mr_planning_context_id ?? null
+      );
+    } catch {
+      return null;
+    }
+  };
+
   const handleVerifikasi = (record) => {
     const historyId = getHistoryId(record);
     if (!historyId) {
@@ -350,11 +377,37 @@ export default function MrPlanningRiskHistoryPage() {
       okText: "Approve",
       cancelText: "Batal",
       okButtonProps: { type: "primary" },
-      onOk: () =>
+      onOk: async () => {
+        const contextId = await resolveContextIdForRecord(record);
+        if (contextId) {
+          const scanRes = await api.get(`/mr-report/context/${contextId}/integrity-scan`);
+          const scan = scanRes?.data?.data || scanRes?.data || {};
+          const blockingCount = Number(scan?.blocking_count || 0);
+          if (blockingCount > 0) {
+            const topBlocking = (Array.isArray(scan?.findings) ? scan.findings : [])
+              .filter((f) => String(f?.severity || "").toLowerCase() === "blocking")
+              .slice(0, 3)
+              .map((f) => `- ${f?.message || f?.code || "Temuan blocking"}`)
+              .join("\n");
+            modal.warning({
+              title: "Integrity Gate Menolak Approve",
+              content: (
+                <div>
+                  <p>Status: {getGovernanceStatusLabel(scan?.overall_status, blockingCount)}</p>
+                  <p>Jumlah blocker: {blockingCount}</p>
+                  <pre style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}>{topBlocking}</pre>
+                </div>
+              ),
+            });
+            return;
+          }
+        }
+
         approveMutation.mutate({
           historyId,
           payload: {},
-        }),
+        });
+      },
     });
   };
 
@@ -423,14 +476,40 @@ export default function MrPlanningRiskHistoryPage() {
       okText: "Rebuild",
       cancelText: "Batal",
       okButtonProps: { danger: true },
-      onOk: () =>
+      onOk: async () => {
+        const contextId = await resolveContextIdForRecord(record);
+        if (contextId) {
+          const scanRes = await api.get(`/mr-report/context/${contextId}/integrity-scan`);
+          const scan = scanRes?.data?.data || scanRes?.data || {};
+          const blockingCount = Number(scan?.blocking_count || 0);
+          if (blockingCount > 0) {
+            const topBlocking = (Array.isArray(scan?.findings) ? scan.findings : [])
+              .filter((f) => String(f?.severity || "").toLowerCase() === "blocking")
+              .slice(0, 3)
+              .map((f) => `- ${f?.message || f?.code || "Temuan blocking"}`)
+              .join("\n");
+            modal.warning({
+              title: "Integrity Gate Menolak Rebuild",
+              content: (
+                <div>
+                  <p>Status: {getGovernanceStatusLabel(scan?.overall_status, blockingCount)}</p>
+                  <p>Jumlah blocker: {blockingCount}</p>
+                  <pre style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}>{topBlocking}</pre>
+                </div>
+              ),
+            });
+            return;
+          }
+        }
+
         rebuildMutation.mutate({
           riskId,
           payload: {
             alasan_rebuild:
               "Rebuild active MR Planning Risk dari halaman history frontend.",
           },
-        }),
+        });
+      },
     });
   };
 

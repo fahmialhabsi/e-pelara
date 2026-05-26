@@ -16,6 +16,7 @@
  */
 
 const db = require("../../models");
+const { assertFinalReportNotOverwrite } = require("./mrPolicyEngineService");
 
 const {
   sequelize,
@@ -1058,6 +1059,10 @@ const approveContext = async (contextId, options = {}) => {
     });
 
     const contextPlain = normalizePlain(context);
+    assertFinalReportNotOverwrite({
+      is_final: !!contextPlain.is_locked || !!contextPlain.is_final,
+      is_correction_mode: !!options.is_correction_mode,
+    });
 
     if (!contextPlain.diverifikasi_oleh || !contextPlain.diverifikasi_pada) {
       throw createWorkflowError(

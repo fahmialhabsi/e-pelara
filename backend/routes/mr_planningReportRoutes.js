@@ -39,6 +39,13 @@ router.get(
   controller.getIntegrityScan
 );
 
+router.post(
+  "/context/:contextId/repair-draft-from-findings",
+  verifyToken,
+  allowRoles(READ),
+  controller.repairDraftFromFindings
+);
+
 router.get(
   "/context/:contextId/export-history",
   verifyToken,

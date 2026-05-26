@@ -7,7 +7,9 @@ const reportExportPdfService = require("../services/mr/mrPlanningReportExportPdf
 const reportExportAuditService = require("../services/mr/mrPlanningReportExportAuditService");
 const reportExportHistoryService = require("../services/mr/mrPlanningReportExportHistoryService");
 const mrIntegrityScanService = require("../services/mr/mrIntegrityScanService");
+const mrPlanningReportRepairDraftService = require("../services/mr/mrPlanningReportRepairDraftService");
 const { assertReportExportPolicy } = require("../services/mr/mrPolicyEngineService");
+const { logActivity } = require("../services/auditService");
 
 const getErrorStatus = (error) => error.status || error.statusCode || 500;
 
@@ -176,18 +178,74 @@ const getFullReport = async (req, res) => {
 const getIntegrityScan = async (req, res) => {
   try {
     const { contextId } = req.params;
-      const data = await mrIntegrityScanService.scanContextIntegrity(contextId, {
-        user_id: getUserId(req),
+    const data = await mrIntegrityScanService.scanContextIntegrity(contextId, {
+      user_id: getUserId(req),
+      source_endpoint: getSourceEndpoint(req),
+      request_id: req.headers["x-request-id"] || null,
+      idempotency_key: req.headers["idempotency-key"] || null,
+      flow: req.query?.flow,
+      snapshot_mode: req.query?.snapshot_mode,
+    });
+
+    await logActivity(
+      req,
+      "READ_INTEGRITY_SCAN",
+      "MR_REPORT_INTEGRITY_SCAN",
+      Number(contextId),
+      null,
+      {
+        context_id: Number(contextId),
+        overall_status: data?.overall_status || null,
+        blocking_count: data?.blocking_count || 0,
+        warning_count: data?.warning_count || 0,
+        final_report_status: data?.final_report_status || null,
         source_endpoint: getSourceEndpoint(req),
-        request_id: req.headers["x-request-id"] || null,
-        idempotency_key: req.headers["idempotency-key"] || null,
-        flow: req.query?.flow,
-        snapshot_mode: req.query?.snapshot_mode,
-      });
+      }
+    );
 
     return res.status(200).json({
       success: true,
       message: "Integrity scan context laporan MR berhasil diambil.",
+      data,
+      meta: {},
+    });
+  } catch (error) {
+    return sendError(res, error);
+  }
+};
+
+const repairDraftFromFindings = async (req, res) => {
+  try {
+    const { contextId } = req.params;
+    const data = await mrPlanningReportRepairDraftService.repairDraftFromFindings(
+      contextId,
+      req.body || {},
+      {
+        user_id: getUserId(req),
+        source_endpoint: getSourceEndpoint(req),
+        request_id: req.headers["x-request-id"] || null,
+        idempotency_key: req.headers["idempotency-key"] || null,
+      }
+    );
+
+    await logActivity(
+      req,
+      "REPAIR_DRAFT_FROM_FINDINGS",
+      "MR_REPORT_INTEGRITY_REPAIR",
+      Number(contextId),
+      null,
+      {
+        context_id: Number(contextId),
+        repaired_count: data?.repaired_count || 0,
+        skipped_count: data?.skipped_count || 0,
+        requested_codes: data?.requested_codes || [],
+        source_endpoint: getSourceEndpoint(req),
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Proses repair draft dari findings selesai diproses.",
       data,
       meta: {},
     });
@@ -453,11 +511,10 @@ module.exports = {
   getLampiran,
   getFullReport,
   getIntegrityScan,
+  repairDraftFromFindings,
   getExportHistory,
   exportExcel,
   exportExcelInspektorat,
   exportWord,
   exportPdf,
 };
-
-

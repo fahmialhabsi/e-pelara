@@ -7,6 +7,8 @@ require("dotenv").config({ path: path.join(__dirname, ".env") });
 const morgan = require("morgan");
 const fs = require("fs");
 const cookieParser = require("cookie-parser");
+const rateLimit = require("express-rate-limit");
+const { randomUUID } = require("crypto");
 const logger = require("./utils/logger");
 const connectRedis = require("./utils/redisClient"); // versi retry otomatis
 const masterReferensiRoutes = require("./routes/masterReferensiRoutes");
@@ -86,6 +88,133 @@ app.use("/api", (req, res, next) => {
   res.setHeader("Expires", "0");
   next();
 });
+
+// Global correlation/request id untuk auditability lintas flow.
+app.use("/api", (req, res, next) => {
+  const requestId =
+    req.headers["x-request-id"] ||
+    req.headers["x-correlation-id"] ||
+    randomUUID();
+  req.request_id = String(requestId);
+  req.correlation_id = String(requestId);
+  res.setHeader("x-request-id", String(requestId));
+  res.setHeader("x-correlation-id", String(requestId));
+  next();
+});
+
+// Structured request logging baseline.
+app.use("/api", (req, res, next) => {
+  const startedAt = Date.now();
+  res.on("finish", () => {
+    logger.info({
+      message: "api_request",
+      request_id: req.request_id || null,
+      correlation_id: req.correlation_id || null,
+      method: req.method,
+      endpoint: req.originalUrl || req.url,
+      status_code: res.statusCode,
+      duration_ms: Date.now() - startedAt,
+      user_id:
+        req?.user?.id ||
+        req?.user?.user_id ||
+        req?.user?.userId ||
+        req?.auth?.id ||
+        null,
+    });
+  });
+  next();
+});
+
+// Telemetry baseline (in-memory) untuk observability ringan.
+const telemetryLite = {
+  started_at: new Date().toISOString(),
+  total_requests: 0,
+  by_status: {},
+  by_route: {},
+};
+
+app.use("/api", (req, res, next) => {
+  telemetryLite.total_requests += 1;
+  const routeKey = `${req.method} ${req.baseUrl || ""}${req.path || req.url || ""}`;
+  telemetryLite.by_route[routeKey] = (telemetryLite.by_route[routeKey] || 0) + 1;
+  res.on("finish", () => {
+    const statusKey = String(res.statusCode || 0);
+    telemetryLite.by_status[statusKey] = (telemetryLite.by_status[statusKey] || 0) + 1;
+  });
+  next();
+});
+
+// Health & readiness operational baseline.
+app.get("/health", (req, res) => {
+  return res.status(200).json({
+    success: true,
+    status: "ok",
+    service: "e-pelara-backend",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/readiness", (req, res) => {
+  const redisClient = app.get("redisClient");
+  const redisReady = !!redisClient;
+  return res.status(redisReady ? 200 : 503).json({
+    success: redisReady,
+    status: redisReady ? "ready" : "degraded",
+    checks: {
+      redis: redisReady ? "up" : "down",
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/metrics-lite", (req, res) => {
+  return res.status(200).json({
+    success: true,
+    telemetry: telemetryLite,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get("/openapi/mr-report-minimal", (req, res) => {
+  return res.status(200).json({
+    openapi: "3.0.3",
+    info: {
+      title: "MR Report Minimal API",
+      version: "1.0.0",
+    },
+    paths: {
+      "/api/mr-report/context/{contextId}/full": {
+        get: { summary: "Get full MR report payload" },
+      },
+      "/api/mr-report/context/{contextId}/export-word": {
+        get: { summary: "Export MR report DOCX" },
+      },
+      "/api/mr-report/context/{contextId}/export-pdf": {
+        get: { summary: "Export MR report PDF" },
+      },
+      "/api/mr-report/context/{contextId}/export-excel": {
+        get: { summary: "Export MR report XLSX" },
+      },
+    },
+  });
+});
+
+// Rate limiting baseline untuk endpoint MR sensitif.
+const mrSensitiveLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Terlalu banyak request. Coba lagi beberapa saat.",
+    code: "RATE_LIMITED",
+  },
+});
+
+app.use("/api/mr-report", mrSensitiveLimiter);
+app.use("/api/mr-planning-risk", mrSensitiveLimiter);
+app.use("/api/mr-planning-monitoring", mrSensitiveLimiter);
 
 // Morgan log ke file
 const accessLogStream = fs.createWriteStream(

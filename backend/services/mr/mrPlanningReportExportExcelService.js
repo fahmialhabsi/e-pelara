@@ -680,6 +680,7 @@ const createCoverStatusSheet = ({ workbook, report }) => {
       ['Sumber Data', getReportSourceSummary(report)],
       ['Status Dokumen', safeText(approvalGate.document_status_label)],
       ['Siap Ditandatangani', approvalGate.ready_to_sign ? 'Ya' : 'Tidak'],
+      ['Mode Export Excel', approvalGate.ready_to_sign ? 'Final-Ready' : 'Draft/Review'],
       ['Total Risiko', safeText(approvalGate.total_risiko)],
       ['Risiko Disetujui', safeText(approvalGate.approved_count)],
       ['Risiko Draft', safeText(approvalGate.draft_count)],
@@ -741,8 +742,20 @@ const createSummarySheet = ({ workbook, report }) => {
       ['Risiko Disetujui', safeText(approvalGate.approved_count)],
       ['Risiko Belum Disetujui', safeText(approvalGate.not_approved_count)],
       ['Catatan Status Dokumen', safeText(approvalGate.cover_note)],
+      ['Catatan Governance Excel', approvalGate.ready_to_sign ? 'Dokumen siap final.' : 'Dokumen ini mode draft/review dan belum boleh diklaim final.'],
     ],
   });
+
+  if (!approvalGate.ready_to_sign) {
+    worksheet.addRow([]);
+    worksheet.addRow(['WARNING']);
+    worksheet.lastRow.font = { bold: true, color: { argb: 'FFFF0000' } };
+    worksheet.addRow([
+      'Dokumen Excel ini dibuat untuk review internal. Readiness belum lolos, sehingga tidak boleh diklaim sebagai dokumen final resmi.',
+    ]);
+    worksheet.mergeCells(worksheet.lastRow.number, 1, worksheet.lastRow.number, 3);
+    worksheet.lastRow.alignment = { wrapText: true, vertical: 'top' };
+  }
 
   addTable({
     worksheet,

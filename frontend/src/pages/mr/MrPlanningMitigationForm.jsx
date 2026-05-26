@@ -29,6 +29,7 @@ import mrPlanningRiskService, {
 import mrPlanningMitigationService, {
   MR_PLANNING_MITIGATION_QUERY_KEYS,
 } from '@/services/mrPlanningMitigationService';
+import useDirtyFormGuard from '@/features/mr/hooks/useDirtyFormGuard';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -209,6 +210,8 @@ export default function MrPlanningMitigationForm({ mode: propMode }) {
 
   const [backendError, setBackendError] = useState(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  useDirtyFormGuard(isDirty);
 
   const {
     data: riskResponse,
@@ -319,6 +322,7 @@ export default function MrPlanningMitigationForm({ mode: propMode }) {
     mutationFn: (values) => mrPlanningMitigationService.createFromRisk(riskId, values),
     onSuccess: () => {
       message.success('Rencana Tindak Pengendalian berhasil disimpan.');
+      setIsDirty(false);
       setBackendError(null);
 
       queryClient.invalidateQueries({
@@ -338,6 +342,7 @@ export default function MrPlanningMitigationForm({ mode: propMode }) {
     mutationFn: (values) => mrPlanningMitigationService.updateDraft(mitigationId, values),
     onSuccess: () => {
       message.success('Rencana Tindak Pengendalian berhasil diperbarui.');
+      setIsDirty(false);
       setBackendError(null);
 
       queryClient.invalidateQueries({
@@ -563,6 +568,7 @@ export default function MrPlanningMitigationForm({ mode: propMode }) {
           form={form}
           layout="vertical"
           onFinish={handleSubmit}
+          onValuesChange={() => setIsDirty(true)}
           disabled={submitting || isBlockedEdit}
           initialValues={{
             status_mitigasi: 'direncanakan',

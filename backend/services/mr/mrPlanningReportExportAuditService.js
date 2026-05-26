@@ -44,6 +44,53 @@ const normalizeExportFormat = (format) => {
 };
 
 const getReportContext = (report = {}) => report.context || {};
+const getFinalRecordSummary = (report = {}) =>
+  report?.official_report_contract?.final_record_summary ||
+  report?.governance_contract?.official_report_contract?.final_record_summary ||
+  {};
+
+const getReportQualityGate = (report = {}) =>
+  report?.report_quality_gate || report?.quality_gate || {};
+
+const buildCanonicalExportMetadata = ({
+  report = {},
+  sourceEndpoint = null,
+  metadata = {},
+} = {}) => {
+  const context = getReportContext(report);
+  const summary = report?.summary || {};
+  const finalRecord = getFinalRecordSummary(report);
+  const qualityGate = getReportQualityGate(report);
+
+  const cutoffDate =
+    safeText(summary?.cutoff_date) ||
+    safeText(context?.periode_akhir) ||
+    (safeText(context?.periode_label) ? `PERIODE_LABEL:${safeText(context.periode_label)}` : null);
+
+  const timezone =
+    safeText(summary?.timezone) ||
+    safeText(context?.timezone) ||
+    safeText(process.env.APP_TIMEZONE) ||
+    safeText(process.env.TZ) ||
+    "Asia/Jayapura";
+
+  const reportVersion =
+    safeText(finalRecord?.active_version) ||
+    safeText(context?.versi) ||
+    safeText(context?.active_version) ||
+    safeText(context?.latest_approved_version);
+
+  return {
+    official_data_source: safeText(finalRecord?.official_data_source),
+    quality_gate_status:
+      safeText(qualityGate?.final_report_status) || safeText(qualityGate?.status),
+    cutoff_date: cutoffDate,
+    timezone,
+    report_version: reportVersion,
+    source_endpoint: sourceEndpoint || null,
+    ...metadata,
+  };
+};
 
 const buildReportTitle = ({ contextId, report } = {}) => {
   const context = getReportContext(report);
@@ -130,13 +177,16 @@ const buildBasePayload = ({
     source_system: SOURCE_SYSTEM,
 
     metadata_json: {
-      source_endpoint: sourceEndpoint || null,
       exported_via: "backend_report_controller",
       report_context_status: report?.context?.status_revisi || null,
       report_quality_gate: report?.report_quality_gate || null,
       error_code: error?.code || null,
       error_status: error?.status || error?.statusCode || null,
-      ...metadata,
+      ...buildCanonicalExportMetadata({
+        report,
+        sourceEndpoint,
+        metadata,
+      }),
     },
 
     filter_json: {

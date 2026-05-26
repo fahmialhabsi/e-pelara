@@ -46,6 +46,7 @@ import mrPlanningRiskService, {
 import mrPlanningMonitoringService, {
   MR_PLANNING_MONITORING_QUERY_KEYS,
 } from '@/services/mrPlanningMonitoringService';
+import useDirtyFormGuard from '@/features/mr/hooks/useDirtyFormGuard';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -230,6 +231,8 @@ export default function MrPlanningMonitoringListPage() {
   const [isSubmittingMonitoring, setIsSubmittingMonitoring] = useState(false);
   const [isLoadingMonitoringDraft, setIsLoadingMonitoringDraft] = useState(false);
   const [monitoringDraftNote, setMonitoringDraftNote] = useState('');
+  const [isDirtyMonitoringForm, setIsDirtyMonitoringForm] = useState(false);
+  useDirtyFormGuard(isDirtyMonitoringForm && isCreateMonitoringModalOpen);
   const [fileList, setFileList] = useState([]);
 
   const {
@@ -467,6 +470,7 @@ export default function MrPlanningMonitoringListPage() {
   const handleCloseCreateMonitoringModal = () => {
     setIsCreateMonitoringModalOpen(false);
     setMonitoringDraftNote('');
+    setIsDirtyMonitoringForm(false);
     setMonitoringFormMode('create');
     setEditingMonitoring(null);
     monitoringForm.resetFields();
@@ -495,6 +499,7 @@ export default function MrPlanningMonitoringListPage() {
         message.success('Pemantauan Pengendalian berhasil dibuat.');
       }
 
+      setIsDirtyMonitoringForm(false);
       handleCloseCreateMonitoringModal();
 
       await refetchMonitoring();
@@ -1007,7 +1012,12 @@ export default function MrPlanningMonitoringListPage() {
           />
         )}
 
-        <Form form={monitoringForm} layout="vertical" disabled={isLoadingMonitoringDraft}>
+            <Form
+              form={monitoringForm}
+              layout="vertical"
+              disabled={isLoadingMonitoringDraft}
+              onValuesChange={() => setIsDirtyMonitoringForm(true)}
+            >
           <Row gutter={16}>
             <Col xs={24} md={12}>
               <Form.Item name="mr_planning_mitigation_id" hidden>

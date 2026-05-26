@@ -710,25 +710,31 @@ const resolveFinalReportRecords = (report = {}) => {
   const approved = ['approved', 'disetujui'].includes(status);
   const activeVersion = safeText(context.versi || context.active_version, '-');
   const latestApprovedVersion = safeText(context.versi_final || context.latest_approved_version, '-');
+  const canonicalStatus = approved ? 'approved' : status || 'draft';
+  const hasLatestApproved = latestApprovedVersion !== '-';
+
+  const base = {
+    active_version: activeVersion,
+    latest_approved_version: latestApprovedVersion,
+    final_status: canonicalStatus,
+  };
 
   if (approved) {
     return {
+      ...base,
       official_data_source: 'active_approved',
-      active_version: activeVersion,
-      latest_approved_version: latestApprovedVersion,
-      final_status: 'approved',
       use_snapshot: false,
-      note: 'Data diambil dari versi aktif yang sudah disetujui.',
+      note: 'Sumber final memakai active approved record.',
     };
   }
 
   return {
+    ...base,
     official_data_source: 'latest_approved_snapshot_if_exists',
-    active_version: activeVersion,
-    latest_approved_version: latestApprovedVersion,
-    final_status: status || 'draft',
     use_snapshot: true,
-    note: latestApprovedVersion !== '-' ? 'Data menggunakan versi terakhir yang disetujui.' : 'Belum ada versi disetujui; data dari versi aktif (draft).',
+    note: hasLatestApproved
+      ? 'Sumber final memakai latest approved snapshot/history.'
+      : 'Belum ada approved version; laporan masih memakai active draft.',
   };
 };
 
@@ -808,11 +814,37 @@ const buildExceptionRegister = (report = {}) => {
   const list = [];
   const evidenceGate = buildEvidenceAdequacyGate(report);
   const readiness = buildReportReadinessGate(report);
+  const finalRecord = resolveFinalReportRecords(report);
+  const historyContract = buildHistoryVisibilityContract(report);
+  const bpkpReadiness = isBpkpReportScope(report) ? buildBpkpEvidenceReadinessGate(report) : null;
 
   if (evidenceGate.missing_count > 0) list.push(EXCEPTIONS.EXCEPTION_EVIDENCE_MISSING);
   if (readiness.status !== 'ready') list.push(EXCEPTIONS.EXCEPTION_REPORT_CORRECTION_REQUIRED);
   if (safeArray(report.data_quality_gate?.issues).length > 0)
     list.push(EXCEPTIONS.EXCEPTION_DATA_INCOMPLETE);
+
+  if (safeText(finalRecord.official_data_source).startsWith('latest_approved')) {
+    list.push(EXCEPTIONS.EXCEPTION_LATEST_APPROVED_USED);
+  }
+
+  if (
+    bpkpReadiness &&
+    safeText(bpkpReadiness.status) === 'blocking' &&
+    safeArray(bpkpReadiness.critical_missing_fields).includes('source_bpkp_not_found')
+  ) {
+    list.push(EXCEPTIONS.EXCEPTION_BPKP_SOURCE_NOT_CONFIGURED);
+  }
+
+  if (Number(historyContract.history_summary?.jumlah_repair_placeholder || 0) > 0) {
+    list.push(EXCEPTIONS.EXCEPTION_PLACEHOLDER_REPAIRED);
+  }
+
+  if (
+    report.audit_trail_access_restricted === true ||
+    report.report_governance_gate?.audit_trail_access_restricted === true
+  ) {
+    list.push(EXCEPTIONS.EXCEPTION_AUDIT_TRAIL_ACCESS_RESTRICTED);
+  }
 
   return [...new Set(list)];
 };
@@ -1079,11 +1111,17 @@ const buildReportDedupeContract = (report = {}) => {
     },
     { source: 'analisis_risiko' },
   );
+  const rencanaDedupe = dedupeRencanaPengendalian(safeArray(lampiran.rencana_pengendalian));
+  const realisasiDedupe = dedupeRealisasiPengendalian(safeArray(lampiran.realisasi_pengendalian));
+  const kejadianDedupe = dedupeKejadianRisiko(safeArray(lampiran.kejadian_risiko));
 
   return {
     context_items: contextDedupe,
     daftar_risiko: risikoDedupe,
     analisis_risiko: analisisDedupe,
+    rencana_pengendalian: rencanaDedupe,
+    realisasi_pengendalian: realisasiDedupe,
+    kejadian_risiko: kejadianDedupe,
   };
 };
 
@@ -1095,6 +1133,10 @@ const buildOfficialReportPayload = (report = {}) => {
     lampiran: {
       ...safeObject(report.lampiran),
       daftar_risiko: dedupe.daftar_risiko.display_rows,
+      analisis_risiko: dedupe.analisis_risiko.display_rows,
+      rencana_pengendalian: dedupe.rencana_pengendalian.display_rows,
+      realisasi_pengendalian: dedupe.realisasi_pengendalian.display_rows,
+      kejadian_risiko: dedupe.kejadian_risiko.display_rows,
     },
     summary: safeObject(report.summary),
   };
@@ -1108,6 +1150,9 @@ const buildAuditTrailPayload = (report = {}) => {
       ...safeArray(dedupe.context_items.detail_41b.duplicate_audit),
       ...safeArray(dedupe.daftar_risiko.duplicate_audit),
       ...safeArray(dedupe.analisis_risiko.duplicate_audit),
+      ...safeArray(dedupe.rencana_pengendalian.duplicate_audit),
+      ...safeArray(dedupe.realisasi_pengendalian.duplicate_audit),
+      ...safeArray(dedupe.kejadian_risiko.duplicate_audit),
     ],
     export_history_rows: safeArray(report.export_history_rows),
     lineage_rows: [buildReportLineage(report)],
@@ -1161,13 +1206,21 @@ const buildReportGovernanceContract = (report = {}) => {
   const status = readiness.status === 'ready' && evidence.status === 'hijau' ? 'hijau' : 'kuning';
 
   return {
+    constOfficialPayload: buildOfficialReportPayload(report),
     official_report_contract: {
       source_summary: {
         ...safeObject(report.summary),
         display_rows: sourceSummaryRows,
       },
       context_items: dedupe.context_items,
-      lampiran: safeObject(report.lampiran),
+      lampiran: buildOfficialReportPayload(report).lampiran,
+      lampiran_dedupe_contract: {
+        daftar_risiko: dedupe.daftar_risiko,
+        analisis_risiko: dedupe.analisis_risiko,
+        rencana_pengendalian: dedupe.rencana_pengendalian,
+        realisasi_pengendalian: dedupe.realisasi_pengendalian,
+        kejadian_risiko: dedupe.kejadian_risiko,
+      },
       generated_sections: safeObject(report.lampiran?.generated_sections),
       history_summary: historyContract.official_history_summary,
       final_record_summary: resolveFinalReportRecords(report),

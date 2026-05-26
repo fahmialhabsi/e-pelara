@@ -8,6 +8,9 @@ import MrPlanningReportPage from "@/pages/mr/MrPlanningReportPage";
 import MrPlanningMitigationListPage from "@/pages/mr/MrPlanningMitigationListPage";
 import MrPlanningMitigationForm from "@/pages/mr/MrPlanningMitigationForm";
 import MrPlanningMonitoringListPage from "@/pages/mr/MrPlanningMonitoringListPage";
+import MrModuleErrorBoundary from "@/features/mr/components/MrModuleErrorBoundary";
+
+const withMrBoundary = (element) => <MrModuleErrorBoundary>{element}</MrModuleErrorBoundary>;
 
 const MR_READ_ROLES = [
   "SUPER_ADMIN",
@@ -23,37 +26,37 @@ const MR_HISTORY_ROLES = ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS"];
 const mrRoutes = [
   {
     path: "/mr/planning-context",
-    element: <MrPlanningContextPage />,
+    element: withMrBoundary(<MrPlanningContextPage />),
     role: MR_READ_ROLES,
   },
   {
     path: "/mr/planning-risk",
-    element: <MrPlanningRiskListPage />,
+    element: withMrBoundary(<MrPlanningRiskListPage />),
     role: MR_READ_ROLES,
   },
   {
     path: "/mr/planning-risk/create",
-    element: <MrPlanningRiskForm mode="create" />,
+    element: withMrBoundary(<MrPlanningRiskForm mode="create" />),
     role: MR_WRITE_ROLES,
   },
   {
     path: "/mr/planning-risk/edit/:id",
-    element: <MrPlanningRiskForm mode="edit" />,
+    element: withMrBoundary(<MrPlanningRiskForm mode="edit" />),
     role: MR_WRITE_ROLES,
   },
   {
     path: "/mr/planning-risk/revisi/:id",
-    element: <MrPlanningRiskForm mode="revisi" />,
+    element: withMrBoundary(<MrPlanningRiskForm mode="revisi" />),
     role: MR_WRITE_ROLES,
   },
   {
     path: "/mr/planning-risk/detail/:id",
-    element: <MrPlanningRiskForm mode="detail" />,
+    element: withMrBoundary(<MrPlanningRiskForm mode="detail" />),
     role: MR_READ_ROLES,
   },
   {
     path: "/mr/planning-risk/:id/history",
-    element: <MrPlanningRiskHistoryPage />,
+    element: withMrBoundary(<MrPlanningRiskHistoryPage />),
     role: MR_HISTORY_ROLES,
   },
 
@@ -65,17 +68,17 @@ const mrRoutes = [
   // - Tidak menghitung substansi laporan di frontend.
   {
     path: "/mr/planning-risk/:riskId/mitigation",
-    element: <MrPlanningMitigationListPage />,
+    element: withMrBoundary(<MrPlanningMitigationListPage />),
     role: MR_READ_ROLES,
   },
   {
     path: "/mr/planning-risk/:riskId/mitigation/create",
-    element: <MrPlanningMitigationForm mode="create" />,
+    element: withMrBoundary(<MrPlanningMitigationForm mode="create" />),
     role: MR_WRITE_ROLES,
   },
   {
     path: "/mr/planning-risk/:riskId/mitigation/:mitigationId/edit",
-    element: <MrPlanningMitigationForm mode="edit" />,
+    element: withMrBoundary(<MrPlanningMitigationForm mode="edit" />),
     role: MR_WRITE_ROLES,
   },
 
@@ -87,13 +90,13 @@ const mrRoutes = [
   // - Tidak menghitung substansi laporan di frontend.
   {
     path: "/mr/planning-risk/:riskId/monitoring",
-    element: <MrPlanningMonitoringListPage />,
+    element: withMrBoundary(<MrPlanningMonitoringListPage />),
     role: MR_READ_ROLES,
   },
 
   {
     path: "/mr/planning-report",
-    element: <MrPlanningReportPage />,
+    element: withMrBoundary(<MrPlanningReportPage />),
     role: MR_READ_ROLES,
   },
 ];

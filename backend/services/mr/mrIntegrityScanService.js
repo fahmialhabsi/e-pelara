@@ -65,6 +65,134 @@ const normalizeRecommendedAction = (code) => {
   }
 };
 
+const getFindingUxMeta = (code) => {
+  switch (code) {
+    case CODES.PEDOMAN_1_CONTEXT_SOURCE_MISSING:
+      return {
+        user_title: "Sumber risiko belum lengkap",
+        user_message:
+          "Data konteks/sumber risiko pada laporan ini belum lengkap dan perlu dilengkapi.",
+        target_module: "mr_planning_context",
+        target_route: "/mr/planning-context",
+      };
+    case CODES.PEDOMAN_4_RISK_CATEGORY_MISSING:
+      return {
+        user_title: "Kategori risiko belum lengkap",
+        user_message:
+          "Sebagian risiko belum memiliki kategori risiko. Lengkapi kategori sebelum finalisasi.",
+        target_module: "mr_planning_risk",
+        target_route: "/mr/planning-risk",
+      };
+    case CODES.PEDOMAN_5_ANALYSIS_MISSING:
+      return {
+        user_title: "Analisis risiko belum lengkap",
+        user_message:
+          "Analisis kemungkinan/dampak/residual pada risiko terkait belum lengkap.",
+        target_module: "mr_planning_risk",
+        target_route: "/mr/planning-risk",
+      };
+    case CODES.PEDOMAN_8_ROOT_CAUSE_MISSING:
+      return {
+        user_title: "Root cause belum lengkap",
+        user_message:
+          "Akar penyebab risiko (root cause) pada risiko prioritas belum lengkap.",
+        target_module: "mr_planning_risk",
+        target_route: "/mr/planning-risk",
+      };
+    case CODES.PEDOMAN_10_MONITORING_MISSING:
+      return {
+        user_title: "Monitoring RTP belum lengkap",
+        user_message:
+          "Masih ada RTP aktif yang belum memiliki data monitoring dalam cakupan laporan.",
+        target_module: "mr_planning_risk",
+        target_route: "/mr/planning-risk",
+      };
+    case CODES.PEDOMAN_15_EFFECTIVENESS_UNRATED:
+      return {
+        user_title: "Efektivitas pengendalian belum dinilai",
+        user_message:
+          "Penilaian efektivitas pengendalian pada monitoring terkait belum lengkap.",
+        target_module: "mr_planning_risk",
+        target_route: "/mr/planning-risk",
+      };
+    case CODES.RESIDUAL_GATE_NOT_EVALUATED:
+      return {
+        user_title: "Evaluasi residual risk belum lengkap",
+        user_message:
+          "Residual risk pada risiko prioritas belum dievaluasi sehingga finalisasi belum diizinkan.",
+        target_module: "mr_planning_risk",
+        target_route: "/mr/planning-risk",
+      };
+    default:
+      return {
+        user_title: "Temuan governance perlu ditindaklanjuti",
+        user_message:
+          "Masih ada temuan yang harus diperbaiki sebelum proses review/finalisasi.",
+        target_module: "mr_planning_report",
+        target_route: "/mr/planning-report",
+      };
+  }
+};
+
+const toArray = (value) => (Array.isArray(value) ? value : []);
+
+const normalizeRiskRefs = (rows = []) => {
+  const dedupe = new Set();
+  const result = [];
+  toArray(rows).forEach((row) => {
+    const riskId =
+      row?.risk_id ??
+      row?.mr_planning_risk_id ??
+      row?.id_risiko ??
+      row?.id ??
+      null;
+    const kodeRisiko = row?.kode_risiko || null;
+    if (!riskId && !kodeRisiko) return;
+    const key = `${riskId || ""}|${kodeRisiko || ""}`;
+    if (dedupe.has(key)) return;
+    dedupe.add(key);
+    result.push({ risk_id: riskId ? Number(riskId) : null, kode_risiko: kodeRisiko });
+  });
+  return result;
+};
+
+const collectRiskRefsByCode = (report = {}) => {
+  const lampiran = report?.lampiran || {};
+  const refs = {
+    [CODES.PEDOMAN_4_RISK_CATEGORY_MISSING]: [],
+    [CODES.PEDOMAN_5_ANALYSIS_MISSING]: [],
+    [CODES.PEDOMAN_8_ROOT_CAUSE_MISSING]: [],
+    [CODES.PEDOMAN_10_MONITORING_MISSING]: [],
+    [CODES.PEDOMAN_15_EFFECTIVENESS_UNRATED]: [],
+    [CODES.RESIDUAL_GATE_NOT_EVALUATED]: [],
+  };
+
+  refs[CODES.PEDOMAN_4_RISK_CATEGORY_MISSING] = normalizeRiskRefs(lampiran?.daftar_risiko);
+  refs[CODES.PEDOMAN_5_ANALYSIS_MISSING] = normalizeRiskRefs(lampiran?.risiko_prioritas);
+  refs[CODES.PEDOMAN_8_ROOT_CAUSE_MISSING] = normalizeRiskRefs(lampiran?.risiko_prioritas);
+  refs[CODES.PEDOMAN_10_MONITORING_MISSING] = normalizeRiskRefs(lampiran?.rencana_pengendalian);
+  refs[CODES.PEDOMAN_15_EFFECTIVENESS_UNRATED] = normalizeRiskRefs(lampiran?.realisasi_pengendalian);
+  refs[CODES.RESIDUAL_GATE_NOT_EVALUATED] = normalizeRiskRefs(lampiran?.risiko_prioritas);
+
+  return refs;
+};
+
+const hasContextSourceData = (report = {}) => {
+  const contextItemsTop = toArray(report?.context_items);
+  const contextItemsNested = toArray(report?.context?.items);
+  const pedomanContextRows = toArray(
+    report?.lampiran?.generated_sections?.pedoman_no_1_penetapan_konteks?.rows
+  );
+  const lampiranDaftarRisikoRows = toArray(report?.lampiran?.daftar_risiko);
+
+  return (
+    contextItemsTop.length > 0 ||
+    contextItemsNested.length > 0 ||
+    pedomanContextRows.length > 0 ||
+    lampiranDaftarRisikoRows.length > 0
+  );
+};
+
 const scanContextIntegrity = async (contextId, options = {}) => {
   const report = await reportQueryService.getFullReport(contextId, {
     flow: options.flow || "integrity_scan",
@@ -82,36 +210,67 @@ const scanContextIntegrity = async (contextId, options = {}) => {
   const finalBlockers = Array.isArray(qualityGate.final_report_blocking_issues)
     ? qualityGate.final_report_blocking_issues
     : [];
+  const riskRefsByCode = collectRiskRefsByCode(report);
 
   const findings = [];
 
   for (const item of pedomanIssues) {
     const code = mapMessageToCode(item);
+    const uxMeta = getFindingUxMeta(code);
+    if (
+      code === CODES.PEDOMAN_1_CONTEXT_SOURCE_MISSING &&
+      hasContextSourceData(report)
+    ) {
+      // suppress false blocker Pedoman 1 saat context aktif faktual sudah punya sumber/item
+      continue;
+    }
     const kodeRisiko = extractKodeRisiko(item);
     findings.push({
       code,
       severity: SEVERITY.BLOCKING,
       message: item,
       context_id: Number(contextId),
-      risk_id: null,
-      kode_risiko: kodeRisiko,
+      risk_id: riskRefsByCode[code]?.[0]?.risk_id || null,
+      kode_risiko: kodeRisiko || riskRefsByCode[code]?.[0]?.kode_risiko || null,
+      risk_refs: riskRefsByCode[code] || [],
       issue_count: extractCountFromMessage(item),
       source_section: "report_quality_gate.pedoman_blocking_issues",
       suggested_fix: normalizeRecommendedAction(code),
+      user_title: uxMeta.user_title,
+      user_message: uxMeta.user_message,
+      target_module: uxMeta.target_module,
+      target_route: uxMeta.target_route,
+      technical_detail: {
+        raw_message: item,
+        source_section: "report_quality_gate.pedoman_blocking_issues",
+      },
     });
   }
 
   for (const item of finalBlockers) {
+    const code = CODES.RESIDUAL_GATE_NOT_EVALUATED;
+    const uxMeta = getFindingUxMeta(code);
     findings.push({
-      code: CODES.RESIDUAL_GATE_NOT_EVALUATED,
+      code,
       severity: SEVERITY.BLOCKING,
       message: item,
       context_id: Number(contextId),
-      risk_id: null,
-      kode_risiko: null,
+      risk_id:
+        riskRefsByCode[CODES.RESIDUAL_GATE_NOT_EVALUATED]?.[0]?.risk_id || null,
+      kode_risiko:
+        riskRefsByCode[CODES.RESIDUAL_GATE_NOT_EVALUATED]?.[0]?.kode_risiko || null,
+      risk_refs: riskRefsByCode[CODES.RESIDUAL_GATE_NOT_EVALUATED] || [],
       issue_count: extractCountFromMessage(item),
       source_section: "report_quality_gate.final_report_blocking_issues",
-      suggested_fix: normalizeRecommendedAction(CODES.RESIDUAL_GATE_NOT_EVALUATED),
+      suggested_fix: normalizeRecommendedAction(code),
+      user_title: uxMeta.user_title,
+      user_message: uxMeta.user_message,
+      target_module: uxMeta.target_module,
+      target_route: uxMeta.target_route,
+      technical_detail: {
+        raw_message: item,
+        source_section: "report_quality_gate.final_report_blocking_issues",
+      },
     });
   }
 

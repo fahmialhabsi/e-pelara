@@ -1,8 +1,9 @@
-const { assertFinalReportNotOverwrite, assertResidualRiskEvaluated, assertSnapshotExists } = require("./mrPolicyEngineService");
+const { assertFinalReportNotOverwrite, assertResidualRiskEvaluated, assertReportReadinessForFinalFlow } = require("./mrPolicyEngineService");
+const { ensureReportSnapshotForFlow } = require("./mrSnapshotService");
 const { buildReportGovernanceContract, dedupeRisikoPrioritas, dedupeRencanaPengendalian, dedupeRealisasiPengendalian, dedupeKejadianRisiko } = require("../../helpers/mr/mrReportGovernanceContractHelper");
 // backend/services/mr/mrPlanningReportQueryService.js
 
-const { sequelize } = require('../../models');
+const { sequelize, MrPlanningSnapshot } = require('../../models');
 const { QueryTypes } = require('sequelize');
 
 const toNumber = (value, fallback = 0) => {
@@ -5079,6 +5080,15 @@ const getFullReport = async (contextId, options = {}) => {
 
   const context = enrichContextWithReportScope(anchorContext, reportScope);
 
+  const flow = String(options.flow || "report").toLowerCase();
+  const mode = String(options.snapshot_mode || "prefer_existing").toLowerCase();
+  const snapshotMode =
+    mode !== "prefer_existing"
+      ? mode
+      : ["export_word", "export_pdf", "correction", "addendum", "final_export"].includes(flow)
+        ? "final_export"
+        : "prefer_existing";
+
   const [contextItems, summary, lampiran, settingParameter] = await Promise.all([
     getContextItems(id, { reportScope }),
     getSummary(id, { reportScope }),
@@ -5123,6 +5133,37 @@ const getFullReport = async (contextId, options = {}) => {
     generated_sections: lampiran.generated_sections,
   });
 
+  assertReportReadinessForFinalFlow({
+    report: {
+      report_quality_gate: reportQualityGate,
+      report_approval_gate: reportApprovalGate,
+    },
+    flow,
+  });
+
+  await ensureReportSnapshotForFlow({
+    SnapshotModel: MrPlanningSnapshot,
+    context,
+    report: {
+      context,
+      summary: {
+        ...summary,
+        cakupan_laporan: reportScope.cakupan_laporan,
+        tipe_periode_laporan: context.periode_type,
+        periode_pelaporan: context.periode_label,
+        report_scope: reportScope,
+      },
+      report_quality_gate: reportQualityGate,
+      official_report_contract: governanceContract.official_report_contract,
+    },
+    flow,
+    mode: snapshotMode,
+    userId: options.user_id || null,
+    sourceEndpoint: options.source_endpoint || null,
+    idempotencyKey: options.idempotency_key || null,
+    requestId: options.request_id || null,
+  });
+
   return {
     context,
     context_items: contextItems,
@@ -5134,7 +5175,9 @@ const getFullReport = async (contextId, options = {}) => {
       report_scope: reportScope,
     },
     narasi: buildNarasi({ context, summary }),
-    lampiran,
+    // Gunakan lampiran display_rows (deduped) untuk konsumsi UI/export,
+    // sementara raw_rows + duplicate_audit tetap tersimpan di governance contract.
+    lampiran: governanceContract?.official_report_contract?.lampiran || lampiran,
 
     report_approval_gate: reportApprovalGate,
 

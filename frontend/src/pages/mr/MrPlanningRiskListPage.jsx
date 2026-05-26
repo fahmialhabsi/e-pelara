@@ -468,6 +468,7 @@ export default function MrPlanningRiskListPage() {
   const canExport = EXPORT_ROLES.has(roleNorm);
 
   const [searchText, setSearchText] = useState('');
+  const [searchInput, setSearchInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [backendWarning, setBackendWarning] = useState(null);
 
@@ -494,6 +495,28 @@ export default function MrPlanningRiskListPage() {
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
   });
+
+  const filteredRisks = useMemo(() => {
+    const keyword = String(searchText || '')
+      .trim()
+      .toLowerCase();
+    if (!keyword) return risks;
+
+    return (Array.isArray(risks) ? risks : []).filter((item) => {
+      const haystack = [
+        item?.kode_risiko,
+        item?.nama_risiko,
+        item?.uraian_risiko,
+        item?.indikator_sumber,
+        item?.nama_indikator,
+        item?.stage,
+      ]
+        .filter(Boolean)
+        .map((v) => String(v).toLowerCase())
+        .join(' ');
+      return haystack.includes(keyword);
+    });
+  }, [risks, searchText]);
 
   const removeMutation = useMutation({
     mutationFn: (id) => mrPlanningRiskService.remove(id),
@@ -1358,11 +1381,23 @@ export default function MrPlanningRiskListPage() {
         <Space style={{ marginBottom: 16 }} wrap>
           <Search
             allowClear
+            enterButton
             placeholder="Cari kode/nama/uraian risiko..."
             style={{ width: 320 }}
-            onSearch={(value) => setSearchText(value)}
+            value={searchInput}
+            onSearch={(value) => {
+              const normalized = String(value || '').trim();
+              setSearchInput(value || '');
+              setSearchText(normalized);
+            }}
             onChange={(event) => {
-              if (!event.target.value) setSearchText('');
+              const nextValue = event.target.value || '';
+              setSearchInput(nextValue);
+              if (!nextValue) setSearchText('');
+            }}
+            onPressEnter={(event) => {
+              const normalized = String(event?.target?.value || '').trim();
+              setSearchText(normalized);
             }}
           />
 
@@ -1398,11 +1433,11 @@ export default function MrPlanningRiskListPage() {
           </Button>
         </Space>
 
-        <Table
+          <Table
           rowKey={(record) => getRecordId(record)}
           loading={isLoading || isFetching}
           columns={columns}
-          dataSource={risks}
+            dataSource={filteredRisks}
           bordered
           size="middle"
           scroll={{ x: 1500 }}

@@ -1,0 +1,2 @@
+{"success":false,"message":"Flow final/correction belum memenuhi policy readiness. Selesaikan approval dan quality gate sebelum finalisasi.","blocked":true,"audit_mode":false,"code":"MR_POLICY_REPORT_NOT_READY","details":null,"meta":{}}
+HTTP:422

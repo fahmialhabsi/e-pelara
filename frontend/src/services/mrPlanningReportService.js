@@ -78,6 +78,15 @@ const mrPlanningReportService = {
     return getResponseData(response);
   },
 
+  async repairDraftFromFindings(contextId, payload = {}) {
+    assertContextId(contextId);
+    const response = await api.post(
+      `${ENDPOINT}/context/${contextId}/repair-draft-from-findings`,
+      payload,
+    );
+    return getResponseData(response);
+  },
+
   exportExcel(contextId) {
     return exportReportFile(contextId, 'excel');
   },
