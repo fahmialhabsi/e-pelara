@@ -30,6 +30,8 @@ const DEFAULT_SAFE_VALUES = {
   control_adequacy_status: 'Cukup Memadai',
   inherent_level: 'Sedang',
   residual_level: 'Rendah',
+  existing_control_description:
+    'Pengendalian internal melalui supervisi dan review berkala oleh atasan langsung.',
 };
 
 const REFERENCE_OPTIONS = {
