@@ -30,9 +30,12 @@ import {
   SearchOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 
 import mrPlanningReportService from '@/services/mrPlanningReportService';
 import { useMrIdempotency } from '@/features/mr/hooks/useMrIdempotency';
+import MrQuickRepairPanel from '@/features/mr/components/MrQuickRepairPanel';
+import api from '@/services/api';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -40,6 +43,7 @@ const QUERY_KEYS = {
   contexts: ['mr-report', 'contexts'],
   fullReport: (contextId) => ['mr-report', 'full', contextId],
   exportHistory: (contextId) => ['mr-report', 'export-history', contextId],
+  integrityScan: (contextId) => ['mr-report', 'integrity-scan', contextId],
 };
 
 const unwrapRows = (response) => {
@@ -64,7 +68,7 @@ const formatContextLabel = (context) => {
     context.status_revisi ? `Status: ${context.status_revisi}` : null,
   ].filter(Boolean);
 
-  return parts.join(' — ');
+  return parts.join(' - ');
 };
 
 const normalizePeriodeType = (context) => {
@@ -151,10 +155,10 @@ const getReportOpdLabel = (context) => {
   }
 
   if (isFallbackOpdName(namaOpd)) {
-    return ` — ${namaOpd} belum ter-resolve`;
+    return ` - ${namaOpd} belum ter-resolve`;
   }
 
-  return ` — ${namaOpd}`;
+  return ` - ${namaOpd}`;
 };
 
 const getReportGroupLabel = (context) => {
@@ -163,22 +167,22 @@ const getReportGroupLabel = (context) => {
   const opdLabel = getReportOpdLabel(context);
 
   if (periodeType === 'bulanan') {
-    return `Laporan Bulanan — ${periodeLabel}${opdLabel}`;
+    return `Laporan Bulanan - ${periodeLabel}${opdLabel}`;
   }
 
   if (periodeType === 'triwulan') {
-    return `Laporan Triwulan — ${periodeLabel}${opdLabel}`;
+    return `Laporan Triwulan - ${periodeLabel}${opdLabel}`;
   }
 
   if (periodeType === 'semesteran') {
-    return `Laporan Semesteran — ${periodeLabel}${opdLabel}`;
+    return `Laporan Semesteran - ${periodeLabel}${opdLabel}`;
   }
 
   if (periodeType === 'tahunan') {
-    return `Laporan Tahunan — ${periodeLabel}${opdLabel}`;
+    return `Laporan Tahunan - ${periodeLabel}${opdLabel}`;
   }
 
-  return `Laporan MR — ${periodeLabel}${opdLabel}`;
+  return `Laporan MR - ${periodeLabel}${opdLabel}`;
 };
 
 const getReportGroupKey = (context) => {
@@ -769,7 +773,7 @@ const formatPlaceholderIssue = (issue) => {
   const field = issue?.field || '-';
   const value = issue?.value || '-';
 
-  return `${source} → ${field}: ${value}`;
+  return `${source} -> ${field}: ${value}`;
 };
 
 const formatRiskList = (values = []) => {
@@ -780,10 +784,55 @@ const formatRiskList = (values = []) => {
   return list.join(', ');
 };
 
+const getIntegrityStatusColor = (status) => {
+  const value = String(status || '').toLowerCase();
+  if (value === 'merah') return 'red';
+  if (value === 'kuning') return 'orange';
+  if (value.includes('hijau')) return 'green';
+  return 'default';
+};
+
+const getGovernanceStatusLabel = (status, blockingCount) => {
+  const value = String(status || '').toLowerCase();
+  if (value === 'merah') return 'MERAH';
+  if (value === 'kuning') return 'KUNING TERKENDALI';
+  if (value.includes('hijau') && Number(blockingCount || 0) === 0) return 'HIJAU TERKENDALI';
+  return 'KUNING';
+};
+
+const getFindingRepairPath = (code) => {
+  const value = String(code || '').toUpperCase();
+  if (value.includes('PEDOMAN_1')) return '/mr/planning-context';
+  if (value.includes('PEDOMAN_4')) return '/mr/planning-risk';
+  if (value.includes('PEDOMAN_5')) return '/mr/planning-risk';
+  if (value.includes('PEDOMAN_8')) return '/mr/planning-risk';
+  if (value.includes('PEDOMAN_10')) return '/mr/planning-risk';
+  if (value.includes('PEDOMAN_15')) return '/mr/planning-risk';
+  if (value.includes('RESIDUAL')) return '/mr/planning-risk';
+  return '/mr/planning-report';
+};
+
+const getFindingRoute = (finding) => {
+  const targetRoute = String(finding?.target_route || '').trim();
+  if (targetRoute) return targetRoute;
+  return getFindingRepairPath(finding?.code);
+};
+
+const extractIssueCount = (message = '') => {
+  const hit = String(message).match(/Terdapat\s+(\d+)/i);
+  return hit ? Number(hit[1]) : 0;
+};
+
 const MrPlanningReportPage = () => {
+  const navigate = useNavigate();
   const [form] = Form.useForm();
   const [selectedContextId, setSelectedContextId] = useState(null);
   const [downloadingType, setDownloadingType] = useState(null);
+  const [repairingDraft, setRepairingDraft] = useState(false);
+  const [repairDraftSummary, setRepairDraftSummary] = useState(null);
+  const [showRepairPanel, setShowRepairPanel] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState(null);
+  const [changedStepNos, setChangedStepNos] = useState([]);
   const { guard } = useMrIdempotency();
 
   const currentUserRole = String(getCurrentUserRole() || '').toUpperCase();
@@ -881,6 +930,20 @@ const MrPlanningReportPage = () => {
     enabled: Boolean(selectedContextId) && canReadExportHistory,
   });
 
+  const {
+    data: integrityScanResponse,
+    isLoading: isLoadingIntegrityScan,
+    isFetching: isFetchingIntegrityScan,
+    refetch: refetchIntegrityScan,
+  } = useQuery({
+    queryKey: QUERY_KEYS.integrityScan(selectedContextId),
+    queryFn: async () => {
+      const response = await api.get(`/mr-report/context/${selectedContextId}/integrity-scan`);
+      return response?.data;
+    },
+    enabled: Boolean(selectedContextId),
+  });
+
   const report = fullReportResponse?.data || null;
   const context = report?.context || null;
   const summary = report?.summary || null;
@@ -921,6 +984,241 @@ const MrPlanningReportPage = () => {
 
   const exportHistoryRows = unwrapRows(exportHistoryResponse);
   const exportHistoryMeta = exportHistoryResponse?.meta || {};
+  const integrityScan = integrityScanResponse?.data || null;
+  const integrityFindings = ensureArray(integrityScan?.findings);
+  const integrityActions = ensureArray(integrityScan?.recommended_actions);
+  const integrityBlockingCount = Number(integrityScan?.blocking_count || 0);
+  const isIntegrityBlocked = integrityBlockingCount > 0;
+  const hasSelectedContext = Boolean(selectedContextId || form.getFieldValue('context_id'));
+  const governanceStatusLabel = getGovernanceStatusLabel(
+    integrityScan?.overall_status,
+    integrityScan?.blocking_count,
+  );
+  const findByCode = (code) =>
+    integrityFindings.filter((f) => String(f?.code || '').toUpperCase() === code);
+  const getFirstByCode = (code) => findByCode(code)[0] || null;
+  const ped1Open = findByCode('PEDOMAN_1_CONTEXT_SOURCE_MISSING').length > 0;
+  const ped4Count = findByCode('PEDOMAN_4_RISK_CATEGORY_MISSING').length;
+  const computeStepOpenCount = (code) => {
+    const rows = findByCode(code);
+    if (rows.length === 0) return 0;
+    const messageMax = rows.reduce((max, f) => Math.max(max, extractIssueCount(f?.message)), 0);
+    if (messageMax > 0) return messageMax;
+    // Fallback saat backend tidak mengirim pola "Terdapat X ..." pada message
+    return rows.length;
+  };
+  const ped5Max = computeStepOpenCount('PEDOMAN_5_ANALYSIS_MISSING');
+  const ped8Max = computeStepOpenCount('PEDOMAN_8_ROOT_CAUSE_MISSING');
+  const ped10Max = computeStepOpenCount('PEDOMAN_10_MONITORING_MISSING');
+  const ped15Max = computeStepOpenCount('PEDOMAN_15_EFFECTIVENESS_UNRATED');
+  const ped1Finding = getFirstByCode('PEDOMAN_1_CONTEXT_SOURCE_MISSING');
+  const ped4Finding = getFirstByCode('PEDOMAN_4_RISK_CATEGORY_MISSING');
+  const ped5Finding = getFirstByCode('PEDOMAN_5_ANALYSIS_MISSING');
+  const ped8Finding = getFirstByCode('PEDOMAN_8_ROOT_CAUSE_MISSING');
+  const ped10Finding = getFirstByCode('PEDOMAN_10_MONITORING_MISSING');
+  const ped15Finding = getFirstByCode('PEDOMAN_15_EFFECTIVENESS_UNRATED');
+  const actionChecklist = [
+    {
+      no: 1,
+      title: ped1Finding?.user_title || 'Buat konteks & sumber risiko',
+      desc:
+        ped1Finding?.user_message ||
+        'Isi OPD, periode, dan minimal 1 sumber risiko (konteks)',
+      status: ped1Open ? 'Belum selesai' : 'Selesai',
+      countLabel: ped1Open ? 'Belum' : 'Selesai',
+      path: getFindingRoute(ped1Finding) || '/mr/planning-context',
+      done: !ped1Open,
+      cta: 'Perbaiki di Context',
+      technicalDetails: findByCode('PEDOMAN_1_CONTEXT_SOURCE_MISSING'),
+    },
+    {
+      no: 2,
+      title: ped4Finding?.user_title || 'Lengkapi data risiko',
+      desc:
+        ped4Finding?.user_message ||
+        'Lengkapi kategori risiko pada data risiko yang masih kosong.',
+      status: ped4Count > 0 ? `${ped4Count} belum diisi` : 'Selesai',
+      countLabel: ped4Count > 0 ? `${ped4Count} belum diisi` : 'Selesai',
+      path: getFindingRoute(ped4Finding) || '/mr/planning-risk',
+      done: ped4Count === 0,
+      cta: 'Perbaiki di Daftar Risiko',
+      technicalDetails: findByCode('PEDOMAN_4_RISK_CATEGORY_MISSING'),
+    },
+    {
+      no: 3,
+      title: ped5Finding?.user_title || 'Isi analisis risiko',
+      desc:
+        ped5Finding?.user_message ||
+        'Lengkapi analisis kemungkinan, dampak, dan residual pada risiko terkait.',
+      status: ped5Max > 0 ? `${ped5Max} belum` : 'Selesai',
+      countLabel: ped5Max > 0 ? `${ped5Max} belum` : 'Selesai',
+      path: getFindingRoute(ped5Finding) || '/mr/planning-risk',
+      done: ped5Max === 0,
+      cta: 'Perbaiki di Analisis Risiko',
+      technicalDetails: findByCode('PEDOMAN_5_ANALYSIS_MISSING'),
+    },
+    {
+      no: 4,
+      title: ped8Finding?.user_title || 'Isi root cause analysis',
+      desc:
+        ped8Finding?.user_message ||
+        'Lengkapi akar penyebab (root cause) pada risiko prioritas yang belum terisi.',
+      status: ped8Max > 0 ? `${ped8Max} belum` : 'Selesai',
+      countLabel: ped8Max > 0 ? `${ped8Max} belum` : 'Selesai',
+      path: getFindingRoute(ped8Finding) || '/mr/planning-risk',
+      done: ped8Max === 0,
+      cta: 'Perbaiki di Root Cause',
+      technicalDetails: findByCode('PEDOMAN_8_ROOT_CAUSE_MISSING'),
+    },
+    {
+      no: 5,
+      title: ped10Finding?.user_title || 'Monitoring rencana pengendalian',
+      desc:
+        ped10Finding?.user_message ||
+        'Lengkapi data monitoring pada RTP aktif yang belum dimonitoring.',
+      status: ped10Max > 0 ? `${ped10Max} belum` : 'Selesai',
+      countLabel: ped10Max > 0 ? `${ped10Max} belum` : 'Selesai',
+      path: getFindingRoute(ped10Finding) || '/mr/planning-risk',
+      done: ped10Max === 0,
+      cta: 'Perbaiki di Monitoring',
+      technicalDetails: findByCode('PEDOMAN_10_MONITORING_MISSING'),
+    },
+    {
+      no: 6,
+      title: ped15Finding?.user_title || 'Nilai efektivitas pengendalian',
+      desc:
+        ped15Finding?.user_message ||
+        'Lengkapi penilaian efektivitas pengendalian pada monitoring terkait.',
+      status: ped15Max > 0 ? `${ped15Max} belum` : 'Selesai',
+      countLabel: ped15Max > 0 ? `${ped15Max} belum` : 'Selesai',
+      path: getFindingRoute(ped15Finding) || '/mr/planning-risk',
+      done: ped15Max === 0,
+      cta: 'Perbaiki di Efektivitas',
+      technicalDetails: findByCode('PEDOMAN_15_EFFECTIVENESS_UNRATED'),
+    },
+  ];
+  const completedChecklistCount = actionChecklist.filter((item) => item.done).length;
+  const totalChecklistCount = actionChecklist.length;
+  const computeChecklistMetricsFromFindings = (findings = []) => {
+    const byCode = (code) =>
+      ensureArray(findings).filter((f) => String(f?.code || '').toUpperCase() === code);
+    const maxFromMessageOrLength = (code) => {
+      const rows = byCode(code);
+      if (rows.length === 0) return 0;
+      const max = rows.reduce((curr, f) => Math.max(curr, extractIssueCount(f?.message)), 0);
+      return max > 0 ? max : rows.length;
+    };
+
+    return {
+      ped1Open: byCode('PEDOMAN_1_CONTEXT_SOURCE_MISSING').length > 0,
+      ped4Count: byCode('PEDOMAN_4_RISK_CATEGORY_MISSING').length,
+      ped5Max: maxFromMessageOrLength('PEDOMAN_5_ANALYSIS_MISSING'),
+      ped8Max: maxFromMessageOrLength('PEDOMAN_8_ROOT_CAUSE_MISSING'),
+      ped10Max: maxFromMessageOrLength('PEDOMAN_10_MONITORING_MISSING'),
+      ped15Max: maxFromMessageOrLength('PEDOMAN_15_EFFECTIVENESS_UNRATED'),
+    };
+  };
+
+  const getChangedStepNumbers = (before, after) => {
+    const changed = [];
+    if (!!before.ped1Open !== !!after.ped1Open) changed.push(1);
+    if (Number(before.ped4Count || 0) !== Number(after.ped4Count || 0)) changed.push(2);
+    if (Number(before.ped5Max || 0) !== Number(after.ped5Max || 0)) changed.push(3);
+    if (Number(before.ped8Max || 0) !== Number(after.ped8Max || 0)) changed.push(4);
+    if (Number(before.ped10Max || 0) !== Number(after.ped10Max || 0)) changed.push(5);
+    if (Number(before.ped15Max || 0) !== Number(after.ped15Max || 0)) changed.push(6);
+    return changed;
+  };
+
+  const handleRescan = async () => {
+    const beforeBlocking = Number(integrityScan?.blocking_count || 0);
+    const beforeMetrics = computeChecklistMetricsFromFindings(integrityFindings);
+    const latestScanResponse = await refetchIntegrityScan();
+    const latestScan = latestScanResponse?.data?.data || latestScanResponse?.data || {};
+    const afterBlocking = Number(latestScan?.blocking_count || 0);
+    const afterFindings = ensureArray(latestScan?.findings);
+    const afterMetrics = computeChecklistMetricsFromFindings(afterFindings);
+    const changed = getChangedStepNumbers(beforeMetrics, afterMetrics);
+    setChangedStepNos(changed);
+    if (changed.length > 0) {
+      window.setTimeout(() => setChangedStepNos([]), 2500);
+    }
+
+    const delta = afterBlocking - beforeBlocking;
+    let summary = `Scan selesai. Blocking: ${beforeBlocking} -> ${afterBlocking}.`;
+    if (delta < 0) {
+      summary = `Scan selesai. Bagus, blocker berkurang ${Math.abs(delta)} (${beforeBlocking} -> ${afterBlocking}).`;
+      message.success(summary);
+    } else if (delta > 0) {
+      summary = `Scan selesai. Perhatian, blocker bertambah ${delta} (${beforeBlocking} -> ${afterBlocking}).`;
+      message.warning(summary);
+    } else {
+      message.info(summary);
+    }
+    setScanFeedback({ summary, changedCount: changed.length });
+  };
+  const buildRepairUrl = (basePath, findingCode = '') => {
+    const contextIdForNav = selectedContextId || form.getFieldValue('context_id');
+    const params = new URLSearchParams();
+    if (contextIdForNav) params.set('context_id', String(contextIdForNav));
+    params.set('from', 'integrity_scan');
+    if (findingCode) params.set('finding', String(findingCode).toUpperCase());
+    const query = params.toString();
+    return query ? `${basePath}?${query}` : basePath;
+  };
+
+  const handleRepairDraftFromFindings = guard(async () => {
+    const contextId = selectedContextId || form.getFieldValue('context_id');
+    if (!contextId) {
+      message.warning('Pilih periode laporan terlebih dahulu sebelum membuat draft perbaikan.');
+      return;
+    }
+
+    const findingCodes = Array.from(
+      new Set(
+        ensureArray(integrityFindings)
+          .map((f) => String(f?.code || '').toUpperCase())
+          .filter(Boolean),
+      ),
+    );
+
+    if (findingCodes.length === 0) {
+      message.info('Tidak ada finding aktif untuk dibuatkan draft perbaikan otomatis.');
+      return;
+    }
+
+    const confirmed = await new Promise((resolve) => {
+      Modal.confirm({
+        title: 'Konfirmasi Buat Draft Perbaikan Otomatis',
+        content:
+          'Sistem akan membuat draft perbaikan awal berdasarkan finding terpilih (tanpa auto-approve/final). Lanjutkan?',
+        okText: 'Ya, Buat Draft',
+        cancelText: 'Batal',
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+
+    if (!confirmed) return;
+
+    try {
+      setRepairingDraft(true);
+      const result = await mrPlanningReportService.repairDraftFromFindings(contextId, {
+        finding_codes: findingCodes,
+        repair_mode: 'draft_only',
+        confirm: true,
+      });
+      const summary = result?.data || result || {};
+      setRepairDraftSummary(summary);
+      await refetchIntegrityScan();
+      message.success('Proses draft perbaikan otomatis selesai.');
+    } catch (error) {
+      const msg = getBackendErrorMessage(error, 'Gagal membuat draft perbaikan otomatis.');
+      message.error(msg);
+    } finally {
+      setRepairingDraft(false);
+    }
+  });
 
   const placeholderSummaryColumns = [
     {
@@ -1050,6 +1348,55 @@ const MrPlanningReportPage = () => {
     }
 
     const isFinalFlow = type === 'word' || type === 'pdf';
+    const latestScanResponse = await refetchIntegrityScan();
+    const latestScan = latestScanResponse?.data?.data || latestScanResponse?.data || integrityScan;
+    const blockingCount = Number(latestScan?.blocking_count || 0);
+    const topBlockingFindings = ensureArray(latestScan?.findings)
+      .filter((f) => String(f?.severity || '').toLowerCase() === 'blocking')
+      .slice(0, 3)
+      .map((f) => `- ${f?.message || f?.code || 'Temuan blocking'}`)
+      .join('\n');
+
+    if (blockingCount > 0) {
+      message.error(
+        `Aksi ditolak oleh integrity-scan. Status: ${getGovernanceStatusLabel(
+          latestScan?.overall_status,
+          blockingCount,
+        )}. Blocking: ${blockingCount}.`,
+      );
+        const modalRef = Modal.confirm({
+        title: 'Laporan belum siap diekspor',
+        okText: 'Perbaiki Sekarang',
+        cancelText: 'Tutup',
+        content: (
+          <div>
+            <p>Status: {getGovernanceStatusLabel(latestScan?.overall_status, blockingCount)}</p>
+            <p>Ada {blockingCount} blocker yang perlu diperbaiki.</p>
+            <pre style={{ whiteSpace: 'pre-wrap', marginBottom: 12 }}>{topBlockingFindings}</pre>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={async () => {
+                await refetchIntegrityScan();
+                modalRef.destroy();
+              }}
+            >
+              Scan Ulang / Cek Ulang Data
+            </Button>
+          </div>
+        ),
+        onOk: () => {
+          if (!hasSelectedContext) {
+            message.warning('Pilih periode laporan terlebih dahulu sebelum perbaikan.');
+            return;
+          }
+          const firstFinding = latestScan?.findings?.[0] || null;
+          const firstFindingCode = String(firstFinding?.code || '');
+          navigate(buildRepairUrl(getFindingRoute(firstFinding), firstFindingCode));
+        },
+      });
+      return;
+    }
+
     if (isFinalFlow) {
       const confirmed = await new Promise((resolve) => {
         Modal.confirm({
@@ -1132,6 +1479,7 @@ const MrPlanningReportPage = () => {
               loading={downloadingType === 'word'}
               disabled={
                 Boolean(downloadingType) ||
+                isIntegrityBlocked ||
                 (!selectedContextId && !form.getFieldValue('context_id'))
               }
               onClick={() => handleDownloadReport('word')}
@@ -1145,6 +1493,7 @@ const MrPlanningReportPage = () => {
               loading={downloadingType === 'excel'}
               disabled={
                 Boolean(downloadingType) ||
+                isIntegrityBlocked ||
                 (!selectedContextId && !form.getFieldValue('context_id'))
               }
               onClick={() => handleDownloadReport('excel')}
@@ -1158,6 +1507,7 @@ const MrPlanningReportPage = () => {
               loading={downloadingType === 'pdf'}
               disabled={
                 Boolean(downloadingType) ||
+                isIntegrityBlocked ||
                 (!selectedContextId && !form.getFieldValue('context_id'))
               }
               onClick={() => handleDownloadReport('pdf')}
@@ -1176,6 +1526,205 @@ const MrPlanningReportPage = () => {
           message="Guard Laporan MR"
           description="Frontend hanya menampilkan laporan, mengunduh file dari backend, dan membaca histori export secara read-only. Word, Excel, PDF, quality gate, dan audit/export record tetap dibuat oleh backend."
         />
+
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="Integrity Scan (Detect-Only)"
+          description={
+            <div>
+              <div>
+                Scan ini menampilkan blocker sebelum export/final. Endpoint read-only dan tidak
+                mengubah data bisnis MR.
+              </div>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Scan ulang hanya memeriksa kondisi data terbaru. Jika masih ada blocker, lakukan
+                perbaikan pada data sumber terlebih dahulu.
+              </Text>
+            </div>
+          }
+        />
+
+        <Space
+          align="center"
+          style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}
+        >
+          <Space>
+            <Tag color={getIntegrityStatusColor(integrityScan?.overall_status)}>
+              {governanceStatusLabel}
+            </Tag>
+            <Text>Blocking: {integrityScan?.blocking_count ?? '-'}</Text>
+            <Text>Warning: {integrityScan?.warning_count ?? '-'}</Text>
+            {Number(integrityScan?.blocking_count || 0) > 0 && (
+              <Button
+                type="primary"
+                disabled={!hasSelectedContext}
+                onClick={() =>
+                  navigate(
+                    buildRepairUrl(
+                      getFindingRoute(integrityFindings[0]),
+                      integrityFindings[0]?.code,
+                    ),
+                  )
+                }
+              >
+                Perbaiki Sekarang
+              </Button>
+            )}
+            {Number(integrityScan?.blocking_count || 0) > 0 && (
+              <Button
+                onClick={handleRepairDraftFromFindings}
+                loading={repairingDraft}
+                disabled={!hasSelectedContext}
+              >
+                Buat Draft Perbaikan Otomatis
+              </Button>
+            )}
+          </Space>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={handleRescan}
+            loading={isLoadingIntegrityScan || isFetchingIntegrityScan}
+            disabled={!selectedContextId}
+          >
+            Scan Ulang / Cek Ulang Data
+          </Button>
+        </Space>
+        {scanFeedback?.summary && (
+          <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+            {scanFeedback.summary}
+            {scanFeedback.changedCount > 0
+              ? ` ${scanFeedback.changedCount} langkah berubah.`
+              : ' Tidak ada perubahan langkah.'}
+          </Text>
+        )}
+        <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+          {isIntegrityBlocked
+            ? 'Tindakan sekarang: klik "Perbaiki Sekarang", lengkapi data yang diminta, lalu klik "Scan Ulang / Cek Ulang Data".'
+            : 'Tidak ada blocker aktif. Anda dapat lanjut review dan export sesuai policy.'}
+        </Text>
+        {integrityBlockingCount > 0 && (
+          <Button onClick={() => setShowRepairPanel(true)} style={{ marginTop: 8, marginBottom: 12 }}>
+            Perbaiki sekarang ↗
+          </Button>
+        )}
+        <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
+          Konteks aktif: {form.getFieldValue('context_id') || selectedContextId || '-'} (navigasi
+          perbaikan akan membawa context ini otomatis).
+        </Text>
+        {isIntegrityBlocked && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="Tombol download dinonaktifkan sementara"
+            description={`Masih ada ${integrityBlockingCount} blocker aktif. Selesaikan blocker terlebih dahulu, lalu scan ulang untuk membuka kembali aksi export.`}
+          />
+        )}
+        {repairDraftSummary && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="Ringkasan Draft Perbaikan Otomatis"
+            description={
+              <div>
+                <div>Repaired: {Number(repairDraftSummary?.repaired_count || 0)}</div>
+                <div>Skipped: {Number(repairDraftSummary?.skipped_count || 0)}</div>
+                {ensureArray(repairDraftSummary?.skipped_reasons).length > 0 && (
+                  <List
+                    size="small"
+                    dataSource={ensureArray(repairDraftSummary?.skipped_reasons).slice(0, 5)}
+                    renderItem={(item) => (
+                      <List.Item style={{ padding: '2px 0' }}>
+                        <Text type="secondary">{item}</Text>
+                      </List.Item>
+                    )}
+                  />
+                )}
+              </div>
+            }
+          />
+        )}
+
+        {showRepairPanel && (
+          <div style={{ marginBottom: 16 }}>
+            <MrQuickRepairPanel
+              findings={integrityScan?.findings || []}
+              contextId={selectedContextId || form.getFieldValue('context_id')}
+              onRepaired={async () => {
+                setShowRepairPanel(false);
+                await refetchReport();
+                await refetchIntegrityScan();
+              }}
+            />
+          </div>
+        )}
+
+        {isIntegrityBlocked ? (
+        <List
+          size="small"
+          header={
+            <Space direction="vertical" size={0}>
+              <Text strong>Langkah Perbaikan</Text>
+              <Text type="secondary">
+                Progress: {completedChecklistCount}/{totalChecklistCount} langkah selesai
+              </Text>
+            </Space>
+          }
+          dataSource={actionChecklist}
+          renderItem={(row) => (
+            <List.Item
+              style={
+                changedStepNos.includes(row.no)
+                  ? { background: '#f6ffed', borderRadius: 6, paddingInline: 8 }
+                  : undefined
+              }
+            >
+              <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                <Text strong>
+                  {row.no} · {row.title}
+                </Text>
+                <Text>{row.desc}</Text>
+                <Text type={row.done ? 'success' : 'danger'}>{row.countLabel}</Text>
+                {!row.done && (
+                  <Button
+                    type="link"
+                    style={{ padding: 0, height: 'auto', width: 'fit-content' }}
+                    onClick={() => navigate(buildRepairUrl(row.path || getFindingRepairPath()))}
+                  >
+                    {row.cta || 'Buka modul perbaikan'} (buka)
+                  </Button>
+                )}
+                {!row.done && ensureArray(row.technicalDetails).length > 0 && (
+                  <details style={{ marginTop: 4 }}>
+                    <summary style={{ cursor: 'pointer' }}>
+                      <Text type="secondary">Lihat detail teknis</Text>
+                    </summary>
+                    <Space direction="vertical" size={0} style={{ marginTop: 4 }}>
+                      {ensureArray(row.technicalDetails).map((item, idx) => (
+                        <Text key={`${row.no}-${idx}`} type="secondary" style={{ fontSize: 12 }}>
+                          {String(item?.code || '').toUpperCase()}
+                        </Text>
+                      ))}
+                    </Space>
+                  </details>
+                )}
+              </Space>
+            </List.Item>
+          )}
+          style={{ marginBottom: 16 }}
+        />
+        ) : (
+          <Alert
+            type="success"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="Semua blocker integrity scan sudah terselesaikan"
+            description="Laporan siap dilanjutkan ke proses review dan export sesuai policy yang berlaku."
+          />
+        )}
 
         <Form form={form} layout="vertical">
           <Row gutter={16}>
@@ -1400,7 +1949,7 @@ const MrPlanningReportPage = () => {
 
             <Title level={4}>Preview Lampiran</Title>
 
-            <Card size="small" title="Lampiran 1 — Daftar Risiko" style={{ marginBottom: 16 }}>
+            <Card size="small" title="Lampiran 1 - Daftar Risiko" style={{ marginBottom: 16 }}>
               <Table
                 size="small"
                 rowKey="id"
@@ -1411,7 +1960,7 @@ const MrPlanningReportPage = () => {
               />
             </Card>
 
-            <Card size="small" title="Lampiran 2 — Analisis Risiko" style={{ marginBottom: 16 }}>
+            <Card size="small" title="Lampiran 2 - Analisis Risiko" style={{ marginBottom: 16 }}>
               <Table
                 size="small"
                 rowKey="id"
@@ -1424,7 +1973,7 @@ const MrPlanningReportPage = () => {
 
             <Card
               size="small"
-              title="Lampiran 4 — Rencana Tindak Pengendalian"
+              title="Lampiran 4 - Rencana Tindak Pengendalian"
               style={{ marginBottom: 16 }}
             >
               <Table
@@ -1439,7 +1988,7 @@ const MrPlanningReportPage = () => {
 
             <Card
               size="small"
-              title="Lampiran 5 — Realisasi Pengendalian"
+              title="Lampiran 5 - Realisasi Pengendalian"
               style={{ marginBottom: 16 }}
             >
               <Table
@@ -1452,7 +2001,7 @@ const MrPlanningReportPage = () => {
               />
             </Card>
 
-            <Card size="small" title="Lampiran 6 — Kejadian Risiko">
+            <Card size="small" title="Lampiran 6 - Kejadian Risiko">
               {ensureArray(lampiran.kejadian_risiko).length ? (
                 <Table
                   size="small"
@@ -1533,3 +2082,5 @@ const MrPlanningReportPage = () => {
 };
 
 export default MrPlanningReportPage;
+
+
