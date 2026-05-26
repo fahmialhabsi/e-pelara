@@ -33,6 +33,13 @@ router.get(
 );
 
 router.get(
+  "/context/:contextId/integrity-scan",
+  verifyToken,
+  allowRoles(READ),
+  controller.getIntegrityScan
+);
+
+router.get(
   "/context/:contextId/export-history",
   verifyToken,
   allowRoles(HISTORY),
