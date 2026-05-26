@@ -11,6 +11,7 @@ import {
   Empty,
   Form,
   List,
+  Modal,
   Row,
   Select,
   Space,
@@ -31,6 +32,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 
 import mrPlanningReportService from '@/services/mrPlanningReportService';
+import { useMrIdempotency } from '@/features/mr/hooks/useMrIdempotency';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -782,6 +784,7 @@ const MrPlanningReportPage = () => {
   const [form] = Form.useForm();
   const [selectedContextId, setSelectedContextId] = useState(null);
   const [downloadingType, setDownloadingType] = useState(null);
+  const { guard } = useMrIdempotency();
 
   const currentUserRole = String(getCurrentUserRole() || '').toUpperCase();
   const canReadExportHistory = EXPORT_HISTORY_ROLES.includes(currentUserRole);
@@ -886,6 +889,29 @@ const MrPlanningReportPage = () => {
   const narasiEntries = Object.entries(narasi || {});
 
   const dataQualityGate = getDataQualityGate(report);
+  const governanceGate = report?.report_governance_gate || {};
+  const officialContract = report?.official_report_contract || {};
+  const finalRecordSummary = officialContract?.final_record_summary || {};
+  const officialDataSource = String(
+    finalRecordSummary?.official_data_source || report?.official_data_source || '',
+  ).toLowerCase();
+  const finalStatus = String(
+    finalRecordSummary?.final_status || report?.final_status || context?.status_revisi || '',
+  ).toLowerCase();
+  const reportVersion = String(
+    finalRecordSummary?.active_version || report?.active_version || context?.versi || '',
+  ).trim();
+  const latestApprovedVersion = String(
+    finalRecordSummary?.latest_approved_version || report?.latest_approved_version || '',
+  ).trim();
+  const latestApprovedFallbackAlert =
+    officialDataSource.includes('latest_approved') ||
+    Boolean(
+      governanceGate?.exception_register?.some?.(
+        (item) => String(item?.code || '').toUpperCase() === 'EXCEPTION_LATEST_APPROVED_USED',
+      ),
+    );
+  const supersededLikeStatus = ['superseded', 'obsolete', 'replaced'].includes(finalStatus);
   const dataQualityIssues = getDataQualityIssuePreview(dataQualityGate);
   const placeholderSummaryRows = ensureArray(dataQualityGate?.placeholder_summary);
   const hasBlockingPlaceholder = Boolean(
@@ -968,7 +994,7 @@ const MrPlanningReportPage = () => {
     setSelectedContextId(contextId);
   };
 
-  const handleDownloadReport = async (type) => {
+  const handleDownloadReport = guard(async (type) => {
     const contextId = form.getFieldValue('context_id') || selectedContextId;
 
     if (!contextId) {
@@ -1023,6 +1049,25 @@ const MrPlanningReportPage = () => {
       );
     }
 
+    const isFinalFlow = type === 'word' || type === 'pdf';
+    if (isFinalFlow) {
+      const confirmed = await new Promise((resolve) => {
+        Modal.confirm({
+          title: 'Konfirmasi Review Sebelum Export Final',
+          content:
+            'Pastikan laporan sudah direview. Export Word/PDF diperlakukan sebagai flow final/correction sesuai policy backend.',
+          okText: 'Lanjut Export',
+          cancelText: 'Batal',
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false),
+        });
+      });
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
     try {
       setDownloadingType(type);
 
@@ -1041,7 +1086,7 @@ const MrPlanningReportPage = () => {
     } finally {
       setDownloadingType(null);
     }
-  };
+  });
 
   return (
     <div style={{ padding: 24 }}>
@@ -1236,6 +1281,36 @@ const MrPlanningReportPage = () => {
                     )}
                   </div>
                 }
+              />
+            )}
+
+            {latestApprovedFallbackAlert && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginTop: 16 }}
+                message="Laporan memakai latest approved version"
+                description="Data aktif sedang revisi/draft. Laporan resmi fallback ke latest approved sesuai policy governance."
+              />
+            )}
+
+            {supersededLikeStatus && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginTop: 16 }}
+                message="Versi laporan lama / superseded"
+                description="Dokumen ini terdeteksi sebagai versi yang sudah tergantikan. Gunakan versi terbaru sebelum finalisasi."
+              />
+            )}
+
+            {(reportVersion || latestApprovedVersion) && (
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginTop: 16 }}
+                message="Informasi Versi Final Resolver"
+                description={`active_version: ${reportVersion || '-'} | latest_approved_version: ${latestApprovedVersion || '-'}`}
               />
             )}
 

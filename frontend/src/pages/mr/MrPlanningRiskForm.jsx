@@ -35,6 +35,9 @@ import RenstraSelector from '@/features/mr/components/RenstraSelector';
 import api from '@/services/api';
 
 import AuthContext from '@/contexts/authContext';
+import useDirtyFormGuard from '@/features/mr/hooks/useDirtyFormGuard';
+import { useMrDirtyGuard } from '@/features/mr/hooks/useMrDirtyGuard';
+import { MrConfirmSubmitDialog } from '@/features/mr/components/MrConfirmSubmitDialog';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -1761,6 +1764,11 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
   const [narrativePreviewError, setNarrativePreviewError] = useState('');
   const [narrativeDraftApplied, setNarrativeDraftApplied] = useState(false);
   const [repairLoading, setRepairLoading] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  useDirtyFormGuard(isDirty);
+  useMrDirtyGuard(isDirty);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [pendingSubmitValues, setPendingSubmitValues] = useState(null);
 
   const lastAutoDraftRef = useRef(null);
 
@@ -2161,6 +2169,7 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
       mrPlanningRiskService.createFromContext(contextId, payload),
     onSuccess: (response) => {
       message.success(response?.message || 'Draft MR Planning Risk berhasil dibuat.');
+      setIsDirty(false);
       invalidateAll();
       navigate(LIST_PATH);
     },
@@ -2188,6 +2197,7 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
       }
 
       message.success(response?.message || 'Draft usulan risiko berhasil dibuat.');
+      setIsDirty(false);
 
       navigate(LIST_PATH);
     },
@@ -2201,6 +2211,7 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
     mutationFn: (payload) => mrPlanningRiskService.update(id, payload),
     onSuccess: (response) => {
       message.success(response?.message || 'MR Planning Risk berhasil diperbarui.');
+      setIsDirty(false);
       invalidateAll();
       navigate(LIST_PATH);
     },
@@ -2214,6 +2225,7 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
     mutationFn: (payload) => mrPlanningRiskService.repairPlaceholderSources(payload),
     onSuccess: (response) => {
       message.success(response?.message || 'Placeholder sumber risiko berhasil diperbarui.');
+      setIsDirty(false);
       invalidateAll();
     },
     onError: (error) => {
@@ -2226,6 +2238,7 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
     mutationFn: (payload) => mrPlanningRiskService.createRevisi(id, payload),
     onSuccess: (response) => {
       message.success(response?.message || 'Revisi MR Planning Risk berhasil disimpan.');
+      setIsDirty(false);
       invalidateAll();
       navigate(LIST_PATH);
     },
@@ -2278,6 +2291,18 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
       revisiMutation,
       updateMutation,
     });
+  };
+
+  const handleSubmitRequest = (values) => {
+    setPendingSubmitValues(values);
+    setShowConfirm(true);
+  };
+
+  const handleConfirmed = async () => {
+    setShowConfirm(false);
+    if (!pendingSubmitValues) return;
+    handleFinish(pendingSubmitValues);
+    setPendingSubmitValues(null);
   };
 
   const handleRepairPlaceholderSources = async () => {
@@ -2659,7 +2684,8 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
           form={form}
           layout="vertical"
           disabled={isReadonly || submitting}
-          onFinish={handleFinish}
+          onFinish={handleSubmitRequest}
+          onValuesChange={() => setIsDirty(true)}
         >
           {isCreateMode && (
             <>
@@ -3994,6 +4020,13 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
           )}
         </Form>
       </Card>
+      <MrConfirmSubmitDialog
+        open={showConfirm}
+        title="Konfirmasi Simpan Risiko"
+        message="Pastikan data sudah benar sebelum disimpan."
+        onConfirm={handleConfirmed}
+        onCancel={() => setShowConfirm(false)}
+      />
     </div>
   );
 }
