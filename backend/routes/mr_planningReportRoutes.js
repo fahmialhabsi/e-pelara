@@ -81,4 +81,11 @@ router.get(
   controller.exportPdf
 );
 
+router.post(
+  "/context/:contextId/quick-repair",
+  verifyToken,
+  allowRoles(READ),
+  controller.quickRepair
+);
+
 module.exports = router;

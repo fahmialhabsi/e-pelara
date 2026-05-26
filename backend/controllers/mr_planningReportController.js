@@ -10,6 +10,7 @@ const mrIntegrityScanService = require("../services/mr/mrIntegrityScanService");
 const mrPlanningReportRepairDraftService = require("../services/mr/mrPlanningReportRepairDraftService");
 const { assertReportExportPolicy } = require("../services/mr/mrPolicyEngineService");
 const { logActivity } = require("../services/auditService");
+const db = require("../models");
 
 const getErrorStatus = (error) => error.status || error.statusCode || 500;
 
@@ -506,12 +507,35 @@ const exportPdf = async (req, res) => {
   }
 };
 
+const quickRepair = async (req, res) => {
+  try {
+    const contextId = Number(req.params.contextId);
+    const { repairs = [] } = req.body || {};
+    const results = [];
+    for (const item of repairs) {
+      const { risk_id, fields = {} } = item || {};
+      if (!risk_id || !Object.keys(fields).length) continue;
+      await db.MrPlanningRiskAnalysis.upsert({
+        mr_planning_risk_id: risk_id,
+        ...fields,
+        updated_by: req.user?.id || null,
+        updated_at: new Date(),
+      });
+      results.push({ risk_id, status: "repaired" });
+    }
+    return res.json({ success: true, context_id: contextId, repaired: results.length, results });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 module.exports = {
   getSummary,
   getLampiran,
   getFullReport,
   getIntegrityScan,
   repairDraftFromFindings,
+  quickRepair,
   getExportHistory,
   exportExcel,
   exportExcelInspektorat,
