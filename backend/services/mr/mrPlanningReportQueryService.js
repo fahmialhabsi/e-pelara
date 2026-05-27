@@ -4205,8 +4205,8 @@ const buildReportQualityGate = ({
     if (!isMeaningfulValue(context.jabatan_koordinator)) {
       nonBlockingNotes.push('Jabatan koordinator risiko belum tersedia.');
     }
-
-    if (finalReport && nonBlockingNotes.length) {
+    const identityNotes = nonBlockingNotes.filter(n => n.includes('pemilik risiko') || n.includes('koordinator') || n.includes('penandatangan'));
+    if (finalReport && identityNotes.length) {
       blockingIssues.push(
         'Identitas pemilik risiko/koordinator/penandatangan masih belum lengkap untuk laporan final/PDF.',
       );
