@@ -2659,6 +2659,8 @@ const getRootCauseAnalysis = async (contextId, options = {}) => {
       ON m.root_cause_id = rc.id
       AND m.is_active = 1
     WHERE ${riskScopeWhere}
+      AND rc.is_active = 1
+      AND rc.is_latest = 1
     ORDER BY rc.id ASC
     `,
     {

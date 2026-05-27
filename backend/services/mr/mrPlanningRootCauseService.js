@@ -403,6 +403,10 @@ const createRootCauseFromRisk = async ({
     transaction,
   });
 
+  await MrPlanningRootCause.update(
+    { is_latest: false },
+    { where: { mr_planning_risk_id: risk.id }, transaction }
+  );
   return MrPlanningRootCause.create(
     {
       ...systemPayload,
