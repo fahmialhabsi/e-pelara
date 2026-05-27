@@ -4058,14 +4058,22 @@ const buildPedomanGate = ({
   };
 };
 
-const findRowsWithMissingFields = ({ rows = [], requiredFields = [], label = 'Data' }) =>
-  rows.flatMap((row, index) => {
+const findRowsWithMissingFields = ({ rows = [], requiredFields = [], label = 'Data' }) => {
+  const seen = new Set();
+  const uniqueRows = rows.filter(row => {
+    const key = row?.kode_risiko || row?.id || JSON.stringify(row);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return uniqueRows.flatMap((row, index) => {
     const missingFields = requiredFields.filter((field) => !isMeaningfulValue(row?.[field]));
 
     if (!missingFields.length) return [];
 
     return `${label} ${makeKode(row) || index + 1} belum lengkap: ${missingFields.join(', ')}.`;
   });
+};
 
 const buildReportQualityGate = ({
   context = {},
