@@ -516,18 +516,26 @@ const quickRepair = async (req, res) => {
     for (const item of repairs) {
       const { risk_id, fields = {} } = item;
       if (!risk_id || !Object.keys(fields).length) continue;
-      await db.MrPlanningRiskAnalysis.upsert({
-        mr_planning_risk_id: risk_id,
-      is_active: 1,
-      is_latest: 1,
-      inherent_score: fields.inherent_score ?? 6,
-      inherent_level: fields.inherent_level ?? 'Sedang',
-      residual_score: fields.residual_score ?? 3,
-      residual_level: fields.residual_level ?? 'Rendah',
+      const existing = await db.MrPlanningRiskAnalysis.findOne({
+        where: { mr_planning_risk_id: risk_id, is_active: 1, is_latest: 1 },
+        order: [['id', 'DESC']],
+      });
+      const patch = {
         ...fields,
+        inherent_score: fields.inherent_score ?? 6,
+        inherent_level: fields.inherent_level ?? 'Sedang',
+        residual_score: fields.residual_score ?? 3,
+        residual_level: fields.residual_level ?? 'Rendah',
+        is_active: 1,
+        is_latest: 1,
         updated_by: req.user?.id || null,
         updated_at: new Date(),
-      });
+      };
+      if (existing) {
+        await existing.update(patch);
+      } else {
+        await db.MrPlanningRiskAnalysis.create({ mr_planning_risk_id: risk_id, ...patch });
+      }
       try {
         await recalculateRiskMatrixForPayload({
           riskId: risk_id,
