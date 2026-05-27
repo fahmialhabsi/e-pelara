@@ -516,8 +516,9 @@ const quickRepair = async (req, res) => {
     for (const item of repairs) {
       const { risk_id, fields = {} } = item;
       if (!risk_id || !Object.keys(fields).length) continue;
+      await db.MrPlanningRiskAnalysis.update({ is_latest: 0 }, { where: { mr_planning_risk_id: risk_id } });
       const existing = await db.MrPlanningRiskAnalysis.findOne({
-        where: { mr_planning_risk_id: risk_id, is_active: 1, is_latest: 1 },
+        where: { mr_planning_risk_id: risk_id, is_active: 1 },
         order: [['id', 'DESC']],
       });
       const patch = {
@@ -540,17 +541,12 @@ const quickRepair = async (req, res) => {
           is_above_appetite: false,
           status_revisi: 'draft',
           versi: 1,
-          is_active: 1,
-          is_latest: 1,
         });
       }
       try {
-        await recalculateRiskMatrixForPayload({
-          riskId: risk_id,
-          userId: req.user?.id || null,
-        });
-      } catch (e) { /* kalkulasi gagal tidak batalkan repair */ }
-      results.push({ risk_id, status: "repaired" });
+        await recalculateRiskMatrixForPayload({ riskId: risk_id, userId: req.user?.id || null });
+      } catch (e) {}
+      results.push({ risk_id, status: 'repaired' });
     }
     return res.json({ success: true, context_id: contextId, repaired: results.length, results });
   } catch (err) {
