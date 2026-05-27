@@ -1828,6 +1828,8 @@ const getSummary = async (contextId, options = {}) => {
         JOIN mr_planning_risk r
           ON r.id = rc.mr_planning_risk_id
         WHERE ${riskScopeWhere}
+          AND rc.is_active = 1
+          AND rc.is_latest = 1
       ) AS total_root_cause,
 
       (
@@ -1836,6 +1838,8 @@ const getSummary = async (contextId, options = {}) => {
         JOIN mr_planning_risk r
           ON r.id = m.mr_planning_risk_id
         WHERE ${riskScopeWhere}
+          AND m.is_active = 1
+          AND m.is_latest = 1
       ) AS total_kegiatan_pengendalian,
 
       (
@@ -1844,6 +1848,8 @@ const getSummary = async (contextId, options = {}) => {
         JOIN mr_planning_risk r
           ON r.id = mon.mr_planning_risk_id
         WHERE ${riskScopeWhere}
+          AND mon.is_active = 1
+          AND mon.is_latest = 1
       ) AS total_monitoring,
 
       (
@@ -1852,6 +1858,8 @@ const getSummary = async (contextId, options = {}) => {
         JOIN mr_planning_risk r
           ON r.id = mon.mr_planning_risk_id
         WHERE ${riskScopeWhere}
+          AND mon.is_active = 1
+          AND mon.is_latest = 1
           AND mon.progress_persen > 0
       ) AS total_pengendalian_terealisasi,
 
@@ -1861,6 +1869,8 @@ const getSummary = async (contextId, options = {}) => {
         JOIN mr_planning_risk r
           ON r.id = mon.mr_planning_risk_id
         WHERE ${riskScopeWhere}
+          AND mon.is_active = 1
+          AND mon.is_latest = 1
       ) AS rata_rata_progress,
 
       (
@@ -1869,6 +1879,8 @@ const getSummary = async (contextId, options = {}) => {
         JOIN mr_planning_risk r
           ON r.id = mon.mr_planning_risk_id
         WHERE ${riskScopeWhere}
+          AND mon.is_active = 1
+          AND mon.is_latest = 1
           AND mon.terjadi_risiko = 1
       ) AS total_kejadian_risiko
 
@@ -2436,6 +2448,8 @@ const getRencanaPengendalian = async (contextId, options = {}) => {
     JOIN mr_planning_risk r
       ON r.id = m.mr_planning_risk_id
     WHERE ${riskScopeWhere}
+      AND m.is_active = 1
+      AND m.is_latest = 1
     ORDER BY m.id ASC
     `,
     {
@@ -2508,6 +2522,8 @@ const getRealisasiPengendalian = async (contextId, options = {}) => {
     JOIN mr_planning_risk r
       ON r.id = mon.mr_planning_risk_id
     WHERE ${riskScopeWhere}
+      AND mon.is_active = 1
+      AND mon.is_latest = 1
     ORDER BY mon.id ASC
     `,
     {
@@ -2549,6 +2565,8 @@ const getKejadianRisiko = async (contextId, options = {}) => {
     JOIN mr_planning_risk r
       ON r.id = mon.mr_planning_risk_id
     WHERE ${riskScopeWhere}
+      AND mon.is_active = 1
+      AND mon.is_latest = 1
       AND mon.terjadi_risiko = 1
     ORDER BY mon.id ASC
     `,
@@ -2668,6 +2686,7 @@ const getRootCauseAnalysis = async (contextId, options = {}) => {
     LEFT JOIN mr_planning_mitigation m
       ON m.root_cause_id = rc.id
       AND m.is_active = 1
+      AND m.is_latest = 1
     WHERE ${riskScopeWhere}
       AND rc.is_active = 1
       AND rc.is_latest = 1
@@ -2718,6 +2737,8 @@ const getMonitoringLevelRisiko = async (contextId, options = {}) => {
     JOIN mr_planning_risk r
       ON r.id = mon.mr_planning_risk_id
     WHERE ${riskScopeWhere}
+      AND mon.is_active = 1
+      AND mon.is_latest = 1
     ORDER BY mon.id ASC
     `,
     {
@@ -2775,6 +2796,8 @@ const getPengendalianBelumTerealisasi = async (contextId, options = {}) => {
     JOIN mr_planning_risk r
       ON r.id = mon.mr_planning_risk_id
     WHERE ${riskScopeWhere}
+      AND mon.is_active = 1
+      AND mon.is_latest = 1
       AND (
         mon.progress_persen IS NULL
         OR mon.progress_persen < 100
@@ -3071,6 +3094,8 @@ const getEfektivitasPengendalian = async (contextId, options = {}) => {
     JOIN mr_planning_risk r
       ON r.id = mon.mr_planning_risk_id
     WHERE ${riskScopeWhere}
+      AND mon.is_active = 1
+      AND mon.is_latest = 1
     ORDER BY mon.id ASC
     `,
     {
