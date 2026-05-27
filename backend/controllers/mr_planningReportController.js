@@ -534,7 +534,15 @@ const quickRepair = async (req, res) => {
       if (existing) {
         await existing.update(patch);
       } else {
-        await db.MrPlanningRiskAnalysis.create({ mr_planning_risk_id: risk_id, ...patch });
+        await db.MrPlanningRiskAnalysis.create({
+          mr_planning_risk_id: risk_id,
+          ...patch,
+          is_above_appetite: false,
+          status_revisi: 'draft',
+          versi: 1,
+          is_active: 1,
+          is_latest: 1,
+        });
       }
       try {
         await recalculateRiskMatrixForPayload({
