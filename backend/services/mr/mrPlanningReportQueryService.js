@@ -2651,6 +2651,16 @@ const getRootCauseAnalysis = async (contextId, options = {}) => {
         columns: rootCauseColumns,
         alias: 'rc',
         column: 'versi',
+      })},
+      ${selectColumn({
+        columns: rootCauseColumns,
+        alias: 'rc',
+        column: 'is_active',
+      })},
+      ${selectColumn({
+        columns: rootCauseColumns,
+        alias: 'rc',
+        column: 'is_latest',
       })}
     FROM mr_planning_root_cause rc
     JOIN mr_planning_risk r
@@ -4060,10 +4070,16 @@ const buildPedomanGate = ({
   };
 };
 
-const findRowsWithMissingFields = ({ rows = [], requiredFields = [], label = 'Data' }) => {
+const findRowsWithMissingFields = ({
+  rows = [],
+  requiredFields = [],
+  label = 'Data',
+  dedupeField = null,
+}) => {
   const seen = new Set();
   const uniqueRows = rows.filter(row => {
-    const key = row?.kode_risiko || row?.id || JSON.stringify(row);
+    const dedupeValue = dedupeField ? row?.[dedupeField] : null;
+    const key = dedupeValue || row?.kode_risiko || row?.id || JSON.stringify(row);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -4094,7 +4110,12 @@ const buildReportQualityGate = ({
     dedupeRealisasiPengendalian(lampiran.realisasi_pengendalian || []),
   );
   const kejadianRisiko = getRows(dedupeKejadianRisiko(lampiran.kejadian_risiko || []));
-  const rootCauseAnalysis = lampiran.root_cause_analysis || [];
+  const rootCauseAnalysis = getRows(lampiran.root_cause_analysis || []);
+  const rootCauseAnalysisFiltered = rootCauseAnalysis.filter(
+    (item) =>
+      (item?.is_active === undefined || item?.is_active === null || toBooleanFlag(item.is_active)) &&
+      (item?.is_latest === undefined || item?.is_latest === null || toBooleanFlag(item.is_latest)),
+  );
   const monitoringLevelRisiko = lampiran.monitoring_level_risiko || [];
   const efektivitasPengendalian = lampiran.efektivitas_pengendalian || [];
   const reviuUsulanRisikoBaru = lampiran.reviu_usulan_risiko_baru || [];
@@ -4106,7 +4127,7 @@ const buildReportQualityGate = ({
   const interimReport = isInterimReport(context);
 
   const analisisByRiskId = makeIdSet(analisisRisiko);
-  const rootCauseByRiskId = makeIdSet(rootCauseAnalysis);
+  const rootCauseByRiskId = makeIdSet(rootCauseAnalysisFiltered);
   const prioritasKodeSet = makeKodeSet(risikoPrioritas);
   const rtpKodeSet = makeKodeSet(rencanaPengendalian);
   const monitoringKodeSet = makeKodeSet(realisasiPengendalian);
@@ -4514,9 +4535,10 @@ const buildReportQualityGate = ({
     }
 
     const missingRootCauseFields = findRowsWithMissingFields({
-      rows: rootCauseAnalysis,
+      rows: rootCauseAnalysisFiltered,
       label: 'Root cause',
       requiredFields: ['uraian_penyebab', 'akar_penyebab'],
+      dedupeField: 'kode_risiko',
     });
 
     if (missingRootCauseFields.length) {
@@ -4530,7 +4552,7 @@ const buildReportQualityGate = ({
       blockingIssues,
       nonBlockingNotes,
       counts: {
-        total_root_cause: rootCauseAnalysis.length,
+        total_root_cause: rootCauseAnalysisFiltered.length,
         risiko_prioritas_tanpa_root_cause: priorityWithoutRootCause.length,
       },
     });
