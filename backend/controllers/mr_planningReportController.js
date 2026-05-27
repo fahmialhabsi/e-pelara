@@ -518,6 +518,8 @@ const quickRepair = async (req, res) => {
       if (!risk_id || !Object.keys(fields).length) continue;
       await db.MrPlanningRiskAnalysis.upsert({
         mr_planning_risk_id: risk_id,
+      is_active: 1,
+      is_latest: 1,
       inherent_score: fields.inherent_score ?? 6,
       inherent_level: fields.inherent_level ?? 'Sedang',
       residual_score: fields.residual_score ?? 3,
