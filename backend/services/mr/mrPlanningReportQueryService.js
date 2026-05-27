@@ -4129,7 +4129,11 @@ const buildReportQualityGate = ({
     }
 
     if (!contextItems.length) {
-      blockingIssues.push('Context item/sumber risiko belum tersedia.');
+      if (daftarRisiko.length > 0) {
+        nonBlockingNotes.push('Context item/sumber risiko belum tersedia, namun data risiko sudah ada.');
+      } else {
+        blockingIssues.push('Context item/sumber risiko belum tersedia.');
+      }
     }
 
     contextItems.forEach((item) => {
