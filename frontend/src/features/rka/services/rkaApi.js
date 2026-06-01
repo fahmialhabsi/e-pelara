@@ -1,7 +1,7 @@
-import api from "../../../services/api";
+import api from '../../../services/api';
 
 export const getAllRka = async () => {
-  const res = await api.get("/rka");
+  const res = await api.get('/rka');
   return res.data;
 };
 
@@ -18,7 +18,7 @@ export const getRkaAudit = async (id) => {
 };
 
 export const createRka = async (body) => {
-  const res = await api.post("/rka", body);
+  const res = await api.post('/rka', body);
   return res.data;
 };
 
@@ -30,4 +30,28 @@ export const updateRka = async (id, body) => {
 export const deleteRka = async (id, body = {}) => {
   const res = await api.delete(`/rka/${id}`, { data: body });
   return res.data;
+};
+
+// =========================
+// OPD Dropdown
+// =========================
+
+export const getOpdDropdown = async () => {
+  const res = await api.get('/opd-penanggung-jawab/dropdown');
+  return res.data?.data || res.data || [];
+};
+
+// =========================
+// Renja by OPD
+// =========================
+
+export const getRenjaByOpd = async (opdId) => {
+  const res = await api.get('/renja', {
+    params: {
+      opd_id: opdId,
+      limit: 500,
+    },
+  });
+
+  return res.data?.data || [];
 };

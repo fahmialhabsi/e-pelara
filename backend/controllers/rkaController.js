@@ -1,40 +1,80 @@
-const { Rka, PeriodeRpjmd, Renja, RPJMD, PlanningAuditEvent } = require("../models");
-const Joi = require("joi");
-const { splitPlanningBody } = require("../helpers/planningDocumentMutation");
+const {
+  Rka,
+  RkaRincianBelanja,
+  PeriodeRpjmd,
+  Renja,
+  RPJMD,
+  PlanningAuditEvent,
+} = require('../models');
+const Joi = require('joi');
+const { splitPlanningBody } = require('../helpers/planningDocumentMutation');
 const {
   writePlanningAudit,
   captureRow,
   enrichPlanningAuditRows,
   auditValuesFromRows,
-} = require("../services/planningDocumentAuditService");
-const { validateMultiYearPaguAgainstTotal } = require("../helpers/planningPaguConsistency");
-const { assertEffectiveRpjmdId } = require("../helpers/rpjmdBaseline");
+} = require('../services/planningDocumentAuditService');
+const { validateMultiYearPaguAgainstTotal } = require('../helpers/planningPaguConsistency');
+const { assertEffectiveRpjmdId } = require('../helpers/rpjmdBaseline');
 
-const rkaSchema = Joi.object({
+const rkaCreateSchema = Joi.object({
   tahun: Joi.string().required(),
   periode_id: Joi.number().required(),
   program: Joi.string().required(),
   kegiatan: Joi.string().required(),
   sub_kegiatan: Joi.string().required(),
-  indikator: Joi.string().allow(null, ""),
-  target: Joi.string().allow(null, ""),
+
+  indikator: Joi.string().allow(null, ''),
+  target: Joi.string().allow(null, ''),
   anggaran: Joi.number().allow(null),
-  jenis_dokumen: Joi.string().allow(null, ""),
+  jenis_dokumen: Joi.string().allow(null, ''),
   renja_id: Joi.number().allow(null),
+
   pagu_year_1: Joi.number().allow(null),
   pagu_year_2: Joi.number().allow(null),
   pagu_year_3: Joi.number().allow(null),
   pagu_year_4: Joi.number().allow(null),
   pagu_year_5: Joi.number().allow(null),
   pagu_total: Joi.number().allow(null),
+
+  rincian_belanja: Joi.alternatives().try(Joi.object(), Joi.array()).allow(null),
+
+  opd_id: Joi.number().allow(null),
 });
 
+const rkaUpdateSchema = Joi.object({
+  tahun: Joi.string(),
+  periode_id: Joi.number(),
+  program: Joi.string(),
+  kegiatan: Joi.string(),
+  sub_kegiatan: Joi.string(),
+
+  indikator: Joi.string().allow(null, ''),
+  target: Joi.string().allow(null, ''),
+  anggaran: Joi.number().allow(null),
+  jenis_dokumen: Joi.string().allow(null, ''),
+  renja_id: Joi.number().allow(null),
+
+  pagu_year_1: Joi.number().allow(null),
+  pagu_year_2: Joi.number().allow(null),
+  pagu_year_3: Joi.number().allow(null),
+  pagu_year_4: Joi.number().allow(null),
+  pagu_year_5: Joi.number().allow(null),
+  pagu_total: Joi.number().allow(null),
+
+  rincian_belanja: Joi.alternatives().try(Joi.object(), Joi.array()).allow(null),
+
+  change_reason_text: Joi.string().allow(null, ''),
+
+  opd_id: Joi.number().allow(null),
+}).min(1);
+
 async function assertRenjaChain(renja_id) {
-  if (renja_id == null || renja_id === "") return { ok: true };
+  if (renja_id == null || renja_id === '') return { ok: true };
   const id = Number(renja_id);
-  if (!Number.isFinite(id)) return { ok: false, msg: "renja_id tidak valid" };
+  if (!Number.isFinite(id)) return { ok: false, msg: 'renja_id tidak valid' };
   const row = await Renja.findByPk(id);
-  if (!row) return { ok: false, msg: "Renja tidak ditemukan untuk renja_id" };
+  if (!row) return { ok: false, msg: 'Renja tidak ditemukan untuk renja_id' };
   return { ok: true };
 }
 
@@ -42,9 +82,9 @@ async function assertRkaRenjaRpjmdBaseline(renja_id, rpjmd_id) {
   if (renja_id == null || rpjmd_id == null || !Number.isFinite(Number(rpjmd_id))) {
     return { ok: true };
   }
-  const renja = await Renja.findByPk(Number(renja_id), { attributes: ["rpjmd_id"] });
+  const renja = await Renja.findByPk(Number(renja_id), { attributes: ['rpjmd_id'] });
   if (renja && renja.rpjmd_id != null && Number(renja.rpjmd_id) !== Number(rpjmd_id)) {
-    return { ok: false, msg: "rpjmd_id RKA harus selaras dengan Renja (baseline)." };
+    return { ok: false, msg: 'rpjmd_id RKA harus selaras dengan Renja (baseline).' };
   }
   return { ok: true };
 }
@@ -54,8 +94,8 @@ module.exports = {
     try {
       const { id } = req.params;
       const rows = await PlanningAuditEvent.findAll({
-        where: { table_name: "rka", record_id: Number(id) },
-        order: [["changed_at", "DESC"]],
+        where: { table_name: 'rka', record_id: Number(id) },
+        order: [['changed_at', 'DESC']],
         limit: 100,
       });
       res.json({ success: true, data: enrichPlanningAuditRows(rows) });
@@ -75,8 +115,14 @@ module.exports = {
 
       const data = await Rka.findAll({
         where,
-        include: [{ model: PeriodeRpjmd, as: "periode" }],
-        order: [["tahun", "DESC"]],
+        include: [
+          { model: PeriodeRpjmd, as: 'periode' },
+          {
+            model: RkaRincianBelanja,
+            as: 'rincianBelanja',
+          },
+        ],
+        order: [['tahun', 'DESC']],
       });
 
       res.json(data);
@@ -89,11 +135,23 @@ module.exports = {
     try {
       const { id } = req.params;
       const data = await Rka.findByPk(id, {
-        include: [{ model: PeriodeRpjmd, as: "periode" }],
+        include: [
+          { model: PeriodeRpjmd, as: 'periode' },
+          {
+            model: RkaRincianBelanja,
+            as: 'rincianBelanja',
+            order: [['urutan', 'ASC']],
+          },
+        ],
       });
 
-      if (!data) return res.status(404).json({ error: "Data tidak ditemukan" });
-      res.json(data);
+      if (!data) return res.status(404).json({ error: 'Data tidak ditemukan' });
+      const json = data.toJSON();
+
+      json.rincian_belanja = json.rincianBelanja || [];
+      delete json.rincianBelanja;
+
+      res.json(json);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -101,11 +159,11 @@ module.exports = {
 
   async create(req, res) {
     try {
-      const { payload, change_reason_text, change_reason_file, rpjmd_id } =
-        splitPlanningBody(req.body);
-      const { error, value } = rkaSchema.validate(payload);
-      if (error)
-        return res.status(400).json({ error: error.details[0].message });
+      const { payload, change_reason_text, change_reason_file, rpjmd_id } = splitPlanningBody(
+        req.body,
+      );
+      const { error, value } = rkaCreateSchema.validate(payload);
+      if (error) return res.status(400).json({ error: error.details[0].message });
 
       const ch = await assertRenjaChain(value.renja_id);
       if (!ch.ok) return res.status(400).json({ error: ch.msg });
@@ -119,8 +177,10 @@ module.exports = {
       if (!paguChk.ok) return res.status(400).json({ error: paguChk.message });
 
       const uid = req.user?.id ?? req.user?.userId ?? null;
+      const { rincian_belanja = [], ...rkaPayload } = value;
+
       const created = await Rka.create({
-        ...value,
+        ...rkaPayload,
         version: 1,
         is_active_version: true,
         rpjmd_id: rp.id,
@@ -128,12 +188,31 @@ module.exports = {
         change_reason_file: change_reason_file || null,
       });
 
+      if (Array.isArray(rincian_belanja) && rincian_belanja.length) {
+        await RkaRincianBelanja.bulkCreate(
+          rincian_belanja.map((item, idx) => ({
+            rka_id: created.id,
+            urutan: item.urutan || idx + 1,
+            kode_rekening: item.kode_rekening,
+            nama_rekening: item.nama_rekening || null,
+            uraian: item.uraian,
+            volume: item.volume,
+            satuan: item.satuan,
+            harga_satuan: item.harga_satuan,
+            jumlah: item.jumlah,
+            sumber_dana: item.sumber_dana,
+            lokasi: item.lokasi,
+            keterangan: item.keterangan,
+          })),
+        );
+      }
+
       const { old_value, new_value } = auditValuesFromRows(null, created);
       await writePlanningAudit({
-        module_name: "rka",
-        table_name: "rka",
+        module_name: 'rka',
+        table_name: 'rka',
         record_id: created.id,
-        action_type: "CREATE",
+        action_type: 'CREATE',
         old_value,
         new_value,
         change_reason_text: change_reason_text || null,
@@ -143,7 +222,21 @@ module.exports = {
         version_after: 1,
       });
 
-      res.status(201).json(created);
+      const result = await Rka.findByPk(created.id, {
+        include: [
+          {
+            model: RkaRincianBelanja,
+            as: 'rincianBelanja',
+          },
+        ],
+      });
+
+      const json = result.toJSON();
+
+      json.rincian_belanja = json.rincianBelanja || [];
+      delete json.rincianBelanja;
+
+      res.status(201).json(json);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -152,14 +245,14 @@ module.exports = {
   async update(req, res) {
     try {
       const { id } = req.params;
-      const { payload, change_reason_text, change_reason_file, rpjmd_id } =
-        splitPlanningBody(req.body);
-      const { error, value } = rkaSchema.validate(payload);
-      if (error)
-        return res.status(400).json({ error: error.details[0].message });
+      const { payload, change_reason_text, change_reason_file, rpjmd_id } = splitPlanningBody(
+        req.body,
+      );
+      const { error, value } = rkaUpdateSchema.validate(payload);
+      if (error) return res.status(400).json({ error: error.details[0].message });
 
       const oldRow = await Rka.findByPk(id);
-      if (!oldRow) return res.status(404).json({ error: "Data tidak ditemukan" });
+      if (!oldRow) return res.status(404).json({ error: 'Data tidak ditemukan' });
 
       const rp = await assertEffectiveRpjmdId(RPJMD, rpjmd_id, oldRow.rpjmd_id);
       if (!rp.ok) return res.status(400).json({ error: rp.msg });
@@ -177,8 +270,12 @@ module.exports = {
       const version_after = version_before + 1;
       const uid = req.user?.id ?? req.user?.userId ?? null;
 
+      const hasRincianBelanja = Object.prototype.hasOwnProperty.call(value, 'rincian_belanja');
+
+      const { rincian_belanja, ...rkaPayload } = value;
+
       const patch = {
-        ...value,
+        ...rkaPayload,
         version: version_after,
         is_active_version: true,
         change_reason_text: change_reason_text || null,
@@ -187,14 +284,53 @@ module.exports = {
       };
 
       await Rka.update(patch, { where: { id } });
-      const result = await Rka.findByPk(id);
+
+      /**
+       * Sinkronisasi child hanya jika field rincian_belanja
+       * memang dikirim oleh client.
+       */
+      if (hasRincianBelanja) {
+        await RkaRincianBelanja.destroy({
+          where: {
+            rka_id: id,
+          },
+        });
+
+        if (Array.isArray(rincian_belanja) && rincian_belanja.length) {
+          await RkaRincianBelanja.bulkCreate(
+            rincian_belanja.map((item, idx) => ({
+              rka_id: id,
+              urutan: item.urutan || idx + 1,
+              kode_rekening: item.kode_rekening,
+              nama_rekening: item.nama_rekening || null,
+              uraian: item.uraian,
+              volume: item.volume,
+              satuan: item.satuan,
+              harga_satuan: item.harga_satuan,
+              jumlah: item.jumlah,
+              sumber_dana: item.sumber_dana,
+              lokasi: item.lokasi,
+              keterangan: item.keterangan,
+            })),
+          );
+        }
+      }
+
+      const result = await Rka.findByPk(id, {
+        include: [
+          {
+            model: RkaRincianBelanja,
+            as: 'rincianBelanja',
+          },
+        ],
+      });
       const { old_value, new_value } = auditValuesFromRows(oldRow, result);
 
       await writePlanningAudit({
-        module_name: "rka",
-        table_name: "rka",
+        module_name: 'rka',
+        table_name: 'rka',
         record_id: Number(id),
-        action_type: "UPDATE",
+        action_type: 'UPDATE',
         old_value,
         new_value,
         change_reason_text,
@@ -204,7 +340,12 @@ module.exports = {
         version_after,
       });
 
-      res.json(result);
+      const json = result.toJSON();
+
+      json.rincian_belanja = json.rincianBelanja || [];
+      delete json.rincianBelanja;
+
+      res.json(json);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -214,20 +355,18 @@ module.exports = {
     try {
       const { id } = req.params;
       const oldRow = await Rka.findByPk(id);
-      if (!oldRow) return res.status(404).json({ error: "Data tidak ditemukan" });
+      if (!oldRow) return res.status(404).json({ error: 'Data tidak ditemukan' });
 
-      const { change_reason_text, change_reason_file } = splitPlanningBody(
-        req.body
-      );
+      const { change_reason_text, change_reason_file } = splitPlanningBody(req.body);
       const uid = req.user?.id ?? req.user?.userId ?? null;
       const version_before = Number(oldRow.version) || 1;
 
       const { old_value, new_value } = auditValuesFromRows(oldRow, null);
       await writePlanningAudit({
-        module_name: "rka",
-        table_name: "rka",
+        module_name: 'rka',
+        table_name: 'rka',
         record_id: Number(id),
-        action_type: "DELETE",
+        action_type: 'DELETE',
         old_value,
         new_value,
         change_reason_text,
@@ -237,8 +376,14 @@ module.exports = {
         version_after: null,
       });
 
-      await Rka.destroy({ where: { id } });
-      res.json({ message: "Data berhasil dihapus" });
+      await RkaRincianBelanja.destroy({
+        where: { rka_id: id },
+      });
+
+      await Rka.destroy({
+        where: { id },
+      });
+      res.json({ message: 'Data berhasil dihapus' });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }

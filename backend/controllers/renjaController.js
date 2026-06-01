@@ -1,6 +1,6 @@
-"use strict";
+'use strict';
 
-const { Op, QueryTypes } = require("sequelize");
+const { Op, QueryTypes } = require('sequelize');
 const {
   Renja,
   Renstra,
@@ -9,19 +9,19 @@ const {
   RPJMD,
   PlanningAuditEvent,
   sequelize,
-} = require("../models");
-const { linkRenjaToRkpd } = require("../services/renjaRkpdLinkService");
-const ePelara = require("../services/ePelaraService");
-const { logPlanning, logStatusChange, toPlain } = require("../services/planningAuditService");
-const { splitPlanningBody } = require("../helpers/planningDocumentMutation");
+} = require('../models');
+const { linkRenjaToRkpd } = require('../services/renjaRkpdLinkService');
+const ePelara = require('../services/ePelaraService');
+const { logPlanning, logStatusChange, toPlain } = require('../services/planningAuditService');
+const { splitPlanningBody } = require('../helpers/planningDocumentMutation');
 const {
   writePlanningAudit,
   captureRow,
   auditValuesFromRows,
   enrichPlanningAuditRows,
-} = require("../services/planningDocumentAuditService");
-const { workflowActionToAuditType } = require("../constants/planningAuditMaterialFields");
-const { validateMultiYearPaguAgainstTotal } = require("../helpers/planningPaguConsistency");
+} = require('../services/planningDocumentAuditService');
+const { workflowActionToAuditType } = require('../constants/planningAuditMaterialFields');
+const { validateMultiYearPaguAgainstTotal } = require('../helpers/planningPaguConsistency');
 const {
   WORKFLOW_STATUS,
   normalizeStatus,
@@ -36,16 +36,16 @@ const {
   parseYear,
   assertNonNegative,
   parseBoolean,
-} = require("../services/planningWorkflowService");
+} = require('../services/planningWorkflowService');
 
 function toInt(value) {
-  if (value === null || value === undefined || value === "") return null;
+  if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
 }
 
 function toNullableDecimal(value) {
-  if (value === null || value === undefined || value === "") return null;
+  if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -57,7 +57,7 @@ function asNullableString(value) {
 }
 
 function toNullableDate(value) {
-  if (value === null || value === undefined || value === "") return null;
+  if (value === null || value === undefined || value === '') return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
@@ -69,27 +69,25 @@ function parsePaging(query = {}) {
 }
 
 function isUnknownColumnError(err) {
-  return /Unknown column/i.test(String(err?.message || ""));
+  return /Unknown column/i.test(String(err?.message || ''));
 }
 
 function pickOrderColumn(availableColumns = []) {
-  if (availableColumns.includes("updated_at")) return "updated_at";
-  if (availableColumns.includes("updatedAt")) return "updatedAt";
-  return "id";
+  if (availableColumns.includes('updated_at')) return 'updated_at';
+  if (availableColumns.includes('updatedAt')) return 'updatedAt';
+  return 'id';
 }
 
 function normalizeLegacyRenjaRow(row = {}) {
-  const status = normalizeStatus(row.status ?? row.approval_status, "draft");
-  const approvalStatus = String(
-    row.approval_status || status || "draft",
-  ).toUpperCase();
+  const status = normalizeStatus(row.status ?? row.approval_status, 'draft');
+  const approvalStatus = String(row.approval_status || status || 'draft').toUpperCase();
 
   return {
     ...row,
     status,
     approval_status: approvalStatus,
     judul: row.judul || row.program || null,
-    sinkronisasi_status: row.sinkronisasi_status || "belum_sinkron",
+    sinkronisasi_status: row.sinkronisasi_status || 'belum_sinkron',
   };
 }
 
@@ -98,68 +96,73 @@ async function listRenjaLegacyCompat(req, res) {
   const tahun = toInt(req.query.tahun);
   const statusFilter = asNullableString(req.query.status);
   const search = asNullableString(req.query.search);
+  const opdId = toInt(req.query.opd_id);
 
-  const tableInfo = await sequelize.getQueryInterface().describeTable("renja");
+  const tableInfo = await sequelize.getQueryInterface().describeTable('renja');
   const availableColumns = Object.keys(tableInfo || {});
   const availableSet = new Set(availableColumns);
 
   const selectCandidates = [
-    "id",
-    "tahun",
-    "judul",
-    "program",
-    "kegiatan",
-    "sub_kegiatan",
-    "indikator",
-    "target",
-    "anggaran",
-    "status",
-    "approval_status",
-    "sinkronisasi_status",
-    "sinkronisasi_terakhir",
-    "updated_at",
-    "updatedAt",
+    'id',
+    'tahun',
+    'judul',
+    'opd_id',
+    'opd_penanggung_jawab',
+    'program',
+    'kegiatan',
+    'sub_kegiatan',
+    'indikator',
+    'target',
+    'anggaran',
+    'status',
+    'approval_status',
+    'sinkronisasi_status',
+    'sinkronisasi_terakhir',
+    'updated_at',
+    'updatedAt',
   ];
   const selectColumns = selectCandidates.filter((col) => availableSet.has(col));
-  if (!selectColumns.length) selectColumns.push("id");
+  if (!selectColumns.length) selectColumns.push('id');
 
   const whereClauses = [];
   const replacements = { limit, offset };
 
-  if (tahun && availableSet.has("tahun")) {
-    whereClauses.push("`tahun` = :tahun");
+  if (tahun && availableSet.has('tahun')) {
+    whereClauses.push('`tahun` = :tahun');
     replacements.tahun = tahun;
   }
-  if (statusFilter && availableSet.has("status")) {
-    whereClauses.push("LOWER(`status`) = :status");
+  if (statusFilter && availableSet.has('status')) {
+    whereClauses.push('LOWER(`status`) = :status');
     replacements.status = normalizeStatus(statusFilter);
   }
   if (search) {
-    const searchColumns = ["judul", "program", "kegiatan"].filter((col) =>
-      availableSet.has(col),
-    );
+    const searchColumns = ['judul', 'program', 'kegiatan'].filter((col) => availableSet.has(col));
     if (searchColumns.length) {
       whereClauses.push(
         `(${searchColumns
           .map((col) => `LOWER(CAST(\`${col}\` AS CHAR)) LIKE :search`)
-          .join(" OR ")})`,
+          .join(' OR ')})`,
       );
       replacements.search = `%${search.toLowerCase()}%`;
     }
   }
 
-  const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
+  if (opdId && availableSet.has('opd_id')) {
+    whereClauses.push('`opd_id` = :opd_id');
+    replacements.opd_id = opdId;
+  }
+  const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
   const orderColumn = pickOrderColumn(availableColumns);
-  const selectSql = selectColumns.map((col) => `\`${col}\``).join(", ");
+  const selectSql = selectColumns.map((col) => `\`${col}\``).join(', ');
 
   const rows = await sequelize.query(
     `SELECT ${selectSql} FROM \`renja\` ${whereSql} ORDER BY \`${orderColumn}\` DESC LIMIT :limit OFFSET :offset`,
     { replacements, type: QueryTypes.SELECT },
   );
-  const countRows = await sequelize.query(
-    `SELECT COUNT(*) AS total FROM \`renja\` ${whereSql}`,
-    { replacements, type: QueryTypes.SELECT },
-  );
+  const countRows = await sequelize.query(`SELECT COUNT(*) AS total FROM \`renja\` ${whereSql}`, {
+    replacements,
+    type: QueryTypes.SELECT,
+  });
   const total = Number(countRows?.[0]?.total || 0);
 
   return res.json({
@@ -171,7 +174,7 @@ async function listRenjaLegacyCompat(req, res) {
       totalPages: Math.max(Math.ceil(total / limit), 1),
       totalItems: total,
     },
-    compatibility_mode: "legacy_schema_fallback",
+    compatibility_mode: 'legacy_schema_fallback',
   });
 }
 
@@ -194,7 +197,7 @@ function resolveCurrentWorkflowStatus(row) {
 
 function buildRenjaPayload(input = {}, existing = null, userId = null) {
   const tahun = parseYear(input.tahun ?? input.tahun_perencanaan ?? existing?.tahun, {
-    fieldName: "tahun",
+    fieldName: 'tahun',
   });
 
   const status = normalizeStatus(input.status ?? existing?.status);
@@ -207,9 +210,7 @@ function buildRenjaPayload(input = {}, existing = null, userId = null) {
       asNullableString(input.judul ?? existing?.judul) ||
       asNullableString(input.program ?? existing?.program) ||
       `Renja ${tahun}`,
-    perangkat_daerah: asNullableString(
-      input.perangkat_daerah ?? existing?.perangkat_daerah,
-    ),
+    perangkat_daerah: asNullableString(input.perangkat_daerah ?? existing?.perangkat_daerah),
     ketersediaan_submitted: parseBoolean(
       input.ketersediaan_submitted,
       existing?.ketersediaan_submitted ?? false,
@@ -224,22 +225,18 @@ function buildRenjaPayload(input = {}, existing = null, userId = null) {
     ),
     uptd_submitted: parseBoolean(input.uptd_submitted, existing?.uptd_submitted ?? false),
     ...buildStatusFields(status, userId, existing),
-    epelara_renja_id: asNullableString(
-      input.epelara_renja_id ?? existing?.epelara_renja_id,
-    ),
+    epelara_renja_id: asNullableString(input.epelara_renja_id ?? existing?.epelara_renja_id),
     sinkronisasi_status: normalizeSyncStatus(
       input.sinkronisasi_status ?? existing?.sinkronisasi_status,
     ),
     sinkronisasi_terakhir:
       input.sinkronisasi_terakhir !== undefined
         ? toNullableDate(input.sinkronisasi_terakhir)
-        : existing?.sinkronisasi_terakhir ?? null,
+        : (existing?.sinkronisasi_terakhir ?? null),
     dibuat_oleh: existing?.dibuat_oleh ?? userId ?? null,
 
     // Field legacy
-    periode_id: toInt(
-      input.periode_id ?? input.periode_rpjmd_id ?? existing?.periode_id,
-    ),
+    periode_id: toInt(input.periode_id ?? input.periode_rpjmd_id ?? existing?.periode_id),
     program: asNullableString(input.program ?? input.nama_program ?? existing?.program),
     kegiatan: asNullableString(input.kegiatan ?? input.nama_kegiatan ?? existing?.kegiatan),
     sub_kegiatan: asNullableString(
@@ -248,9 +245,15 @@ function buildRenjaPayload(input = {}, existing = null, userId = null) {
     indikator: asNullableString(input.indikator ?? existing?.indikator),
     target: asNullableString(input.target ?? existing?.target),
     anggaran: toNullableDecimal(input.anggaran ?? existing?.anggaran),
-    jenis_dokumen:
-      asNullableString(input.jenis_dokumen ?? existing?.jenis_dokumen) || "renja",
+    jenis_dokumen: asNullableString(input.jenis_dokumen ?? existing?.jenis_dokumen) || 'renja',
     rkpd_id: toInt(input.rkpd_id ?? existing?.rkpd_id),
+
+    // OPD Penanggung Jawab
+    opd_id: toInt(input.opd_id ?? existing?.opd_id),
+
+    opd_penanggung_jawab: asNullableString(
+      input.opd_penanggung_jawab ?? existing?.opd_penanggung_jawab,
+    ),
   };
 
   for (let i = 1; i <= 5; i += 1) {
@@ -261,8 +264,8 @@ function buildRenjaPayload(input = {}, existing = null, userId = null) {
 
   // Guard kompatibilitas schema lama yang mewajibkan field ini.
   payload.program = payload.program || payload.judul;
-  payload.kegiatan = payload.kegiatan || "-";
-  payload.sub_kegiatan = payload.sub_kegiatan || "-";
+  payload.kegiatan = payload.kegiatan || '-';
+  payload.sub_kegiatan = payload.sub_kegiatan || '-';
 
   return payload;
 }
@@ -270,7 +273,7 @@ function buildRenjaPayload(input = {}, existing = null, userId = null) {
 async function assertRpjmdId(rpjmd_id) {
   if (rpjmd_id == null || !Number.isFinite(Number(rpjmd_id))) return { ok: true };
   const row = await RPJMD.findByPk(Number(rpjmd_id));
-  if (!row) return { ok: false, msg: "rpjmd_id tidak valid" };
+  if (!row) return { ok: false, msg: 'rpjmd_id tidak valid' };
   return { ok: true };
 }
 
@@ -279,20 +282,20 @@ async function assertRenstraRpjmdBaseline(renstra_id, rpjmd_id) {
     return { ok: true };
   }
   const renstra = await Renstra.findByPk(Number(renstra_id), {
-    attributes: ["id", "rpjmd_id"],
+    attributes: ['id', 'rpjmd_id'],
   });
-  if (!renstra) return { ok: false, msg: "Renstra acuan tidak ditemukan" };
+  if (!renstra) return { ok: false, msg: 'Renstra acuan tidak ditemukan' };
   if (renstra.rpjmd_id != null && Number(renstra.rpjmd_id) !== Number(rpjmd_id)) {
     return {
       ok: false,
-      msg: "rpjmd_id Renja harus sama dengan rpjmd_id pada Renstra acuan (baseline).",
+      msg: 'rpjmd_id Renja harus sama dengan rpjmd_id pada Renstra acuan (baseline).',
     };
   }
   return { ok: true };
 }
 
 async function validateRenjaPayload(payload) {
-  assertNonNegative(payload.anggaran, "anggaran");
+  assertNonNegative(payload.anggaran, 'anggaran');
 
   const paguChk = validateMultiYearPaguAgainstTotal(payload);
   if (!paguChk.ok) {
@@ -301,10 +304,10 @@ async function validateRenjaPayload(payload) {
 
   if (payload.renstra_id) {
     const renstra = await Renstra.findByPk(payload.renstra_id, {
-      attributes: ["id", "periode_awal", "periode_akhir", "rpjmd_id"],
+      attributes: ['id', 'periode_awal', 'periode_akhir', 'rpjmd_id'],
     });
     if (!renstra) {
-      throw new Error("renstra_id tidak ditemukan");
+      throw new Error('renstra_id tidak ditemukan');
     }
     if (payload.tahun < renstra.periode_awal || payload.tahun > renstra.periode_akhir) {
       throw new Error(
@@ -315,10 +318,10 @@ async function validateRenjaPayload(payload) {
 
   if (payload.periode_id) {
     const periode = await PeriodeRpjmd.findByPk(payload.periode_id, {
-      attributes: ["id", "tahun_awal", "tahun_akhir"],
+      attributes: ['id', 'tahun_awal', 'tahun_akhir'],
     });
     if (!periode) {
-      throw new Error("periode_id tidak ditemukan");
+      throw new Error('periode_id tidak ditemukan');
     }
     if (payload.tahun < periode.tahun_awal || payload.tahun > periode.tahun_akhir) {
       throw new Error(
@@ -336,6 +339,9 @@ const listRenja = async (req, res) => {
     const tahun = toInt(req.query.tahun);
     if (tahun) where.tahun = tahun;
 
+    const opdId = toInt(req.query.opd_id);
+    if (opdId) where.opd_id = opdId;
+
     const statusFilter = asNullableString(req.query.status);
     if (statusFilter) where.status = normalizeStatus(statusFilter);
 
@@ -349,27 +355,27 @@ const listRenja = async (req, res) => {
     }
 
     const includeRkpd =
-      String(req.query.include_rkpd || "").toLowerCase() === "1" ||
-      String(req.query.include_rkpd || "").toLowerCase() === "true";
+      String(req.query.include_rkpd || '').toLowerCase() === '1' ||
+      String(req.query.include_rkpd || '').toLowerCase() === 'true';
 
     const include = [];
     if (includeRkpd) {
       include.push({
         model: Rkpd,
-        as: "rkpds",
+        as: 'rkpds',
         attributes: [
-          "id",
-          "tahun",
-          "nama_sub_kegiatan",
-          "kode_sub_kegiatan",
-          "pagu_anggaran",
-          "status",
-          "renja_id",
+          'id',
+          'tahun',
+          'nama_sub_kegiatan',
+          'kode_sub_kegiatan',
+          'pagu_anggaran',
+          'status',
+          'renja_id',
         ],
         required: false,
         separate: true,
         limit: 200,
-        order: [["id", "ASC"]],
+        order: [['id', 'ASC']],
       });
     }
 
@@ -377,7 +383,7 @@ const listRenja = async (req, res) => {
       where,
       limit,
       offset,
-      order: [["updated_at", "DESC"]],
+      order: [['updated_at', 'DESC']],
       include,
       distinct: true,
     });
@@ -399,14 +405,14 @@ const listRenja = async (req, res) => {
       } catch (fallbackErr) {
         return res.status(500).json({
           success: false,
-          message: "Gagal memuat Renja (fallback compatibility)",
+          message: 'Gagal memuat Renja (fallback compatibility)',
           error: fallbackErr.message,
         });
       }
     }
     return res
       .status(500)
-      .json({ success: false, message: "Gagal memuat Renja", error: err.message });
+      .json({ success: false, message: 'Gagal memuat Renja', error: err.message });
   }
 };
 
@@ -416,27 +422,27 @@ const getRenja = async (req, res) => {
       include: [
         {
           model: Rkpd,
-          as: "rkpds",
+          as: 'rkpds',
           separate: true,
           limit: 1000,
-          order: [["id", "ASC"]],
+          order: [['id', 'ASC']],
         },
         {
           model: Renstra,
-          as: "renstra",
+          as: 'renstra',
           required: false,
-          attributes: ["id", "judul", "periode_awal", "periode_akhir", "status"],
+          attributes: ['id', 'judul', 'periode_awal', 'periode_akhir', 'status'],
         },
       ],
     });
     if (!row) {
-      return res.status(404).json({ success: false, message: "Renja tidak ditemukan" });
+      return res.status(404).json({ success: false, message: 'Renja tidak ditemukan' });
     }
     return res.json({ success: true, data: row });
   } catch (err) {
     return res
       .status(500)
-      .json({ success: false, message: "Gagal memuat detail Renja", error: err.message });
+      .json({ success: false, message: 'Gagal memuat detail Renja', error: err.message });
   }
 };
 
@@ -445,22 +451,22 @@ const listRenjaRkpd = async (req, res) => {
   try {
     const renjaId = toInt(req.params.id);
     if (!renjaId) {
-      return res.status(400).json({ success: false, message: "ID Renja tidak valid" });
+      return res.status(400).json({ success: false, message: 'ID Renja tidak valid' });
     }
     const parent = await Renja.findByPk(renjaId, {
       attributes: [
-        "id",
-        "tahun",
-        "judul",
-        "program",
-        "kegiatan",
-        "sub_kegiatan",
-        "perangkat_daerah",
-        "status",
+        'id',
+        'tahun',
+        'judul',
+        'program',
+        'kegiatan',
+        'sub_kegiatan',
+        'perangkat_daerah',
+        'status',
       ],
     });
     if (!parent) {
-      return res.status(404).json({ success: false, message: "Renja tidak ditemukan" });
+      return res.status(404).json({ success: false, message: 'Renja tidak ditemukan' });
     }
 
     const { page, limit, offset } = parsePaging(req.query);
@@ -468,7 +474,7 @@ const listRenjaRkpd = async (req, res) => {
       where: { renja_id: renjaId },
       limit,
       offset,
-      order: [["updated_at", "DESC"]],
+      order: [['updated_at', 'DESC']],
     });
 
     return res.json({
@@ -485,7 +491,7 @@ const listRenjaRkpd = async (req, res) => {
   } catch (err) {
     return res.status(500).json({
       success: false,
-      message: "Gagal memuat RKPD untuk Renja",
+      message: 'Gagal memuat RKPD untuk Renja',
       error: err.message,
     });
   }
@@ -494,8 +500,7 @@ const listRenjaRkpd = async (req, res) => {
 /** POST /api/renja/link-rkpd — tautkan RKPD lama ke Renja (opsional dry_run) */
 const postLinkRkpd = async (req, res) => {
   try {
-    const dryRun =
-      String(req.query.dry_run || "") === "1" || Boolean(req.body?.dry_run);
+    const dryRun = String(req.query.dry_run || '') === '1' || Boolean(req.body?.dry_run);
     const lim = toInt(req.query.limit);
     const result = await linkRenjaToRkpd({
       dryRun,
@@ -504,14 +509,14 @@ const postLinkRkpd = async (req, res) => {
     return res.json({
       success: true,
       message: dryRun
-        ? "Simulasi penautan selesai (tidak ada perubahan DB)"
-        : "Penautan Renja ↔ RKPD selesai",
+        ? 'Simulasi penautan selesai (tidak ada perubahan DB)'
+        : 'Penautan Renja ↔ RKPD selesai',
       data: result,
     });
   } catch (err) {
     return res.status(500).json({
       success: false,
-      message: "Gagal menjalankan penautan Renja–RKPD",
+      message: 'Gagal menjalankan penautan Renja–RKPD',
       error: err.message,
     });
   }
@@ -520,8 +525,8 @@ const postLinkRkpd = async (req, res) => {
 const getRenjaAudit = async (req, res) => {
   try {
     const rows = await PlanningAuditEvent.findAll({
-      where: { table_name: "renja", record_id: Number(req.params.id) },
-      order: [["changed_at", "DESC"]],
+      where: { table_name: 'renja', record_id: Number(req.params.id) },
+      order: [['changed_at', 'DESC']],
       limit: 100,
     });
     return res.json({ success: true, data: enrichPlanningAuditRows(rows) });
@@ -532,8 +537,12 @@ const getRenjaAudit = async (req, res) => {
 
 const createRenja = async (req, res) => {
   try {
-    const { payload: bodyRest, change_reason_text, change_reason_file, rpjmd_id } =
-      splitPlanningBody(req.body);
+    const {
+      payload: bodyRest,
+      change_reason_text,
+      change_reason_file,
+      rpjmd_id,
+    } = splitPlanningBody(req.body);
     const rp = await assertRpjmdId(rpjmd_id);
     if (!rp.ok) {
       return res.status(400).json({ success: false, message: rp.msg });
@@ -558,8 +567,8 @@ const createRenja = async (req, res) => {
     });
 
     logPlanning(req, {
-      action: "CREATE",
-      entityType: "RENJA",
+      action: 'CREATE',
+      entityType: 'RENJA',
       entityId: row.id,
       before: null,
       after: row,
@@ -567,10 +576,10 @@ const createRenja = async (req, res) => {
 
     const { old_value, new_value } = auditValuesFromRows(null, row);
     await writePlanningAudit({
-      module_name: "renja",
-      table_name: "renja",
+      module_name: 'renja',
+      table_name: 'renja',
       record_id: row.id,
-      action_type: "CREATE",
+      action_type: 'CREATE',
       old_value,
       new_value,
       change_reason_text: change_reason_text || null,
@@ -584,7 +593,7 @@ const createRenja = async (req, res) => {
   } catch (err) {
     return res
       .status(400)
-      .json({ success: false, message: "Gagal membuat Renja", error: err.message });
+      .json({ success: false, message: 'Gagal membuat Renja', error: err.message });
   }
 };
 
@@ -592,11 +601,15 @@ const updateRenja = async (req, res) => {
   try {
     const row = await Renja.findByPk(req.params.id);
     if (!row) {
-      return res.status(404).json({ success: false, message: "Renja tidak ditemukan" });
+      return res.status(404).json({ success: false, message: 'Renja tidak ditemukan' });
     }
 
-    const { payload: bodyRest, change_reason_text, change_reason_file, rpjmd_id } =
-      splitPlanningBody(req.body);
+    const {
+      payload: bodyRest,
+      change_reason_text,
+      change_reason_file,
+      rpjmd_id,
+    } = splitPlanningBody(req.body);
     const rp = await assertRpjmdId(rpjmd_id);
     if (!rp.ok) {
       return res.status(400).json({ success: false, message: rp.msg });
@@ -623,15 +636,14 @@ const updateRenja = async (req, res) => {
       is_active_version: true,
       change_reason_text: change_reason_text || null,
       change_reason_file: change_reason_file || null,
-      rpjmd_id:
-        rpjmd_id != null && Number.isFinite(rpjmd_id) ? rpjmd_id : row.rpjmd_id,
+      rpjmd_id: rpjmd_id != null && Number.isFinite(rpjmd_id) ? rpjmd_id : row.rpjmd_id,
     });
 
     const fresh = await Renja.findByPk(req.params.id);
 
     logPlanning(req, {
-      action: "UPDATE",
-      entityType: "RENJA",
+      action: 'UPDATE',
+      entityType: 'RENJA',
       entityId: row.id,
       before,
       after: fresh,
@@ -639,10 +651,10 @@ const updateRenja = async (req, res) => {
 
     const { old_value, new_value } = auditValuesFromRows(oldSnap, fresh);
     await writePlanningAudit({
-      module_name: "renja",
-      table_name: "renja",
+      module_name: 'renja',
+      table_name: 'renja',
       record_id: row.id,
-      action_type: "UPDATE",
+      action_type: 'UPDATE',
       old_value,
       new_value,
       change_reason_text,
@@ -656,7 +668,7 @@ const updateRenja = async (req, res) => {
   } catch (err) {
     return res
       .status(400)
-      .json({ success: false, message: "Gagal memperbarui Renja", error: err.message });
+      .json({ success: false, message: 'Gagal memperbarui Renja', error: err.message });
   }
 };
 
@@ -664,7 +676,7 @@ const deleteRenja = async (req, res) => {
   try {
     const row = await Renja.findByPk(req.params.id);
     if (!row) {
-      return res.status(404).json({ success: false, message: "Renja tidak ditemukan" });
+      return res.status(404).json({ success: false, message: 'Renja tidak ditemukan' });
     }
 
     const { change_reason_text, change_reason_file } = splitPlanningBody(req.body);
@@ -674,10 +686,10 @@ const deleteRenja = async (req, res) => {
 
     const { old_value, new_value } = auditValuesFromRows(row, null);
     await writePlanningAudit({
-      module_name: "renja",
-      table_name: "renja",
+      module_name: 'renja',
+      table_name: 'renja',
       record_id: row.id,
-      action_type: "DELETE",
+      action_type: 'DELETE',
       old_value,
       new_value,
       change_reason_text,
@@ -690,18 +702,18 @@ const deleteRenja = async (req, res) => {
     await row.destroy();
 
     logPlanning(req, {
-      action: "DELETE",
-      entityType: "RENJA",
+      action: 'DELETE',
+      entityType: 'RENJA',
       entityId: row.id,
       before,
       after: null,
     });
 
-    return res.json({ success: true, message: "Renja dihapus" });
+    return res.json({ success: true, message: 'Renja dihapus' });
   } catch (err) {
     return res
       .status(500)
-      .json({ success: false, message: "Gagal menghapus Renja", error: err.message });
+      .json({ success: false, message: 'Gagal menghapus Renja', error: err.message });
   }
 };
 
@@ -709,17 +721,18 @@ async function processStatusTransition(req, res, forcedAction = null) {
   try {
     const row = await Renja.findByPk(req.params.id);
     if (!row) {
-      return res.status(404).json({ success: false, message: "Renja tidak ditemukan" });
+      return res.status(404).json({ success: false, message: 'Renja tidak ditemukan' });
     }
 
     const { change_reason_text, change_reason_file } = splitPlanningBody(req.body || {});
-    const reasonText = String(change_reason_text || "").trim();
-    const reasonFile = String(change_reason_file || "").trim();
+    const reasonText = String(change_reason_text || '').trim();
+    const reasonFile = String(change_reason_file || '').trim();
     if (!reasonText && !reasonFile) {
       return res.status(400).json({
         success: false,
-        code: "CHANGE_REASON_REQUIRED",
-        message: "Alasan wajib untuk transisi workflow (change_reason_text atau change_reason_file).",
+        code: 'CHANGE_REASON_REQUIRED',
+        message:
+          'Alasan wajib untuk transisi workflow (change_reason_text atau change_reason_file).',
       });
     }
 
@@ -733,7 +746,7 @@ async function processStatusTransition(req, res, forcedAction = null) {
     if (!nextStatus) {
       return res.status(400).json({
         success: false,
-        message: `action atau status wajib diisi. Action valid: ${getAllowedActions().join(", ")}`,
+        message: `action atau status wajib diisi. Action valid: ${getAllowedActions().join(', ')}`,
       });
     }
 
@@ -745,13 +758,13 @@ async function processStatusTransition(req, res, forcedAction = null) {
     if (isAdminOnlyStatus(nextStatus) && !isWorkflowAdminRole(req.user?.role)) {
       return res.status(403).json({
         success: false,
-        message: "Hanya ADMINISTRATOR/SUPER_ADMIN yang bisa approve atau reject.",
+        message: 'Hanya ADMINISTRATOR/SUPER_ADMIN yang bisa approve atau reject.',
       });
     }
 
     const before = toPlain(row);
     const workflowAction = normalizeAction(input.action) || forcedAction;
-    const auditAction = workflowActionToAuditType(workflowAction, "WORKFLOW");
+    const auditAction = workflowActionToAuditType(workflowAction, 'WORKFLOW');
     const oldSnap = captureRow(row);
     const version_before = Number(row.version) || 1;
     const version_after = version_before + 1;
@@ -768,11 +781,11 @@ async function processStatusTransition(req, res, forcedAction = null) {
     const fresh = await Renja.findByPk(req.params.id);
 
     logStatusChange(req, {
-      entityType: "RENJA",
+      entityType: 'RENJA',
       entityId: row.id,
       fromStatus: currentStatus,
       toStatus: nextStatus,
-      workflowAction: workflowAction || (input.status ? "direct_status" : null),
+      workflowAction: workflowAction || (input.status ? 'direct_status' : null),
       note: asNullableString(input.catatan ?? input.note),
       before,
       after: fresh,
@@ -780,8 +793,8 @@ async function processStatusTransition(req, res, forcedAction = null) {
 
     const { old_value, new_value } = auditValuesFromRows(oldSnap, fresh);
     await writePlanningAudit({
-      module_name: "renja",
-      table_name: "renja",
+      module_name: 'renja',
+      table_name: 'renja',
       record_id: row.id,
       action_type: auditAction,
       old_value,
@@ -801,7 +814,7 @@ async function processStatusTransition(req, res, forcedAction = null) {
   } catch (err) {
     return res
       .status(500)
-      .json({ success: false, message: "Gagal mengubah status Renja", error: err.message });
+      .json({ success: false, message: 'Gagal mengubah status Renja', error: err.message });
   }
 }
 
@@ -815,7 +828,7 @@ const runStatusAction = async (req, res) => {
 
 const syncFromEPelara = async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace(/^Bearer\s+/i, "") || null;
+    const token = req.headers.authorization?.replace(/^Bearer\s+/i, '') || null;
     const upstream = await ePelara.getRenja(token, req.query);
     const rows = Array.isArray(upstream) ? upstream : upstream?.data || [];
 
@@ -842,7 +855,7 @@ const syncFromEPelara = async (req, res) => {
             judul: item.judul || item.nama_dokumen,
             status: item.status || WORKFLOW_STATUS.DRAFT,
             epelara_renja_id: epelaraId,
-            sinkronisasi_status: "sinkron",
+            sinkronisasi_status: 'sinkron',
             sinkronisasi_terakhir: new Date(),
           },
           existing,
@@ -869,9 +882,9 @@ const syncFromEPelara = async (req, res) => {
 
     return res.json({
       success: true,
-      message: "Sinkronisasi Renja selesai",
+      message: 'Sinkronisasi Renja selesai',
       data: {
-        source: "e-pelara-stub",
+        source: 'e-pelara-stub',
         total_received: rows.length,
         inserted,
         updated,
@@ -882,7 +895,7 @@ const syncFromEPelara = async (req, res) => {
   } catch (err) {
     return res.status(502).json({
       success: false,
-      message: "Gagal sinkronisasi Renja",
+      message: 'Gagal sinkronisasi Renja',
       error: err.message,
     });
   }

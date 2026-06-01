@@ -1,19 +1,9 @@
 // src/features/renstra/indikator/umumRentra/pages/indikatorUmumRenstraListPage.jsx
-import React from "react";
-import {
-  Table,
-  Button,
-  Popconfirm,
-  Spin,
-  Alert,
-  Empty,
-  Card,
-  Space,
-  App,
-} from "antd";
-import { useNavigate } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import api from "@/services/api";
+import React from 'react';
+import { Table, Button, Popconfirm, Spin, Alert, Empty, Card, Space, App } from 'antd';
+import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '@/services/api';
 
 // 🔹 Komponen Tombol Import
 const ImportFromRPJMDButton = ({ stage, renstraId, onSuccess }) => {
@@ -21,15 +11,15 @@ const ImportFromRPJMDButton = ({ stage, renstraId, onSuccess }) => {
 
   const handleImport = async () => {
     try {
-      const res = await api.post("/indikator-renstra/import", {
+      const res = await api.post('/indikator-renstra/import', {
         stage,
         renstra_id: renstraId,
       });
-      message.success(res.data.message || "Import berhasil");
+      message.success(res.data.message || 'Import berhasil');
       if (onSuccess) onSuccess(); // refresh data list
     } catch (err) {
       console.error(err);
-      message.error("Gagal import dari RPJMD");
+      message.error('Gagal import dari RPJMD');
     }
   };
 };
@@ -43,9 +33,9 @@ const IndikatorUmumRenstraListPage = () => {
   const renstraId = 1;
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["indikator-umum-renstra"],
+    queryKey: ['indikator-umum-renstra'],
     queryFn: async () => {
-      const res = await api.get("/indikator-renstra");
+      const res = await api.get('/indikator-renstra');
       return res.data;
     },
   });
@@ -55,36 +45,36 @@ const IndikatorUmumRenstraListPage = () => {
       await api.delete(`/indikator-renstra/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(["indikator-umum-renstra"]);
-      message.success("Data berhasil dihapus");
+      queryClient.invalidateQueries(['indikator-umum-renstra']);
+      message.success('Data berhasil dihapus');
     },
     onError: () => {
-      message.error("Gagal menghapus data");
+      message.error('Gagal menghapus data');
     },
   });
 
   const columns = [
     {
-      title: "No",
+      title: 'No',
       render: (_, __, index) => index + 1,
     },
     {
-      title: "Nama Indikator",
-      dataIndex: "nama_indikator",
-      key: "nama_indikator",
+      title: 'Nama Indikator',
+      dataIndex: 'nama_indikator',
+      key: 'nama_indikator',
     },
     {
-      title: "Satuan",
-      dataIndex: "satuan",
-      key: "satuan",
+      title: 'Satuan',
+      dataIndex: 'satuan',
+      key: 'satuan',
     },
     {
-      title: "Target (th. ke-1)",
-      dataIndex: "target_tahun_1",
-      key: "target_tahun_1",
+      title: 'Target (th. ke-1)',
+      dataIndex: 'target_tahun_1',
+      key: 'target_tahun_1',
     },
     {
-      title: "Aksi",
+      title: 'Aksi',
       render: (_, record) => (
         <Space>
           <Button onClick={() => navigate(`edit/${record.id}`)} size="small">
@@ -110,15 +100,13 @@ const IndikatorUmumRenstraListPage = () => {
       title="Indikator Umum Renstra"
       extra={
         <Space>
-          <Button onClick={() => navigate("/dashboard-renstra")}>
+          <Button onClick={() => navigate('/dashboard-renstra')}>
             🔙 Kembali ke Dashboard Renstra
           </Button>
           <ImportFromRPJMDButton
             stage="tujuan"
             renstraId={renstraId}
-            onSuccess={() =>
-              queryClient.invalidateQueries(["indikator-umum-renstra"])
-            }
+            onSuccess={() => queryClient.invalidateQueries(['indikator-umum-renstra'])}
           />
         </Space>
       }
@@ -126,14 +114,10 @@ const IndikatorUmumRenstraListPage = () => {
       {isLoading ? (
         <Spin fullscreen />
       ) : isError ? (
-        <Alert
-          type="error"
-          message="Terjadi kesalahan"
-          description={error.message}
-        />
+        <Alert type="error" message="Terjadi kesalahan" description={error.message} />
       ) : data?.length === 0 ? (
         <Empty description="Belum ada data">
-          <Button type="primary" onClick={() => navigate("create")}>
+          <Button type="primary" onClick={() => navigate('create')}>
             ➕ Tambah
           </Button>
         </Empty>

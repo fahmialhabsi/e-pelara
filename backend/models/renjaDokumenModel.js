@@ -1,48 +1,48 @@
-"use strict";
-const { Model } = require("sequelize");
+'use strict';
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class RenjaDokumen extends Model {
     static associate(models) {
       RenjaDokumen.belongsTo(models.PeriodeRpjmd, {
-        foreignKey: "periode_id",
-        as: "periode",
+        foreignKey: 'periode_id',
+        as: 'periode',
       });
       RenjaDokumen.belongsTo(models.PerangkatDaerah, {
-        foreignKey: "perangkat_daerah_id",
-        as: "perangkatDaerah",
+        foreignKey: 'perangkat_daerah_id',
+        as: 'perangkatDaerah',
       });
       RenjaDokumen.belongsTo(models.RenstraPdDokumen, {
-        foreignKey: "renstra_pd_dokumen_id",
-        as: "renstraPdDokumen",
+        foreignKey: 'renstra_pd_dokumen_id',
+        as: 'renstraPdDokumen',
       });
       RenjaDokumen.belongsTo(models.RkpdDokumen, {
-        foreignKey: "rkpd_dokumen_id",
-        as: "rkpdDokumen",
+        foreignKey: 'rkpd_dokumen_id',
+        as: 'rkpdDokumen',
       });
       RenjaDokumen.belongsTo(models.Renja, {
-        foreignKey: "legacy_renja_id",
-        as: "legacyRenja",
+        foreignKey: 'legacy_renja_id',
+        as: 'legacyRenja',
       });
       RenjaDokumen.hasMany(models.RenjaItem, {
-        foreignKey: "renja_dokumen_id",
-        as: "items",
+        foreignKey: 'renja_dokumen_id',
+        as: 'items',
       });
       RenjaDokumen.hasMany(models.RenjaDokumenSection, {
-        foreignKey: "renja_dokumen_id",
-        as: "sections",
+        foreignKey: 'renja_dokumen_id',
+        as: 'sections',
       });
       RenjaDokumen.hasMany(models.RenjaDokumenVersion, {
-        foreignKey: "renja_dokumen_id",
-        as: "versions",
+        foreignKey: 'renja_dokumen_id',
+        as: 'versions',
       });
       RenjaDokumen.hasMany(models.RenjaSnapshot, {
-        foreignKey: "renja_dokumen_id",
-        as: "snapshots",
+        foreignKey: 'renja_dokumen_id',
+        as: 'snapshots',
       });
       RenjaDokumen.hasMany(models.RenjaRevisionLog, {
-        foreignKey: "renja_dokumen_id",
-        as: "revisionLogs",
+        foreignKey: 'renja_dokumen_id',
+        as: 'revisionLogs',
       });
     }
   }
@@ -58,24 +58,24 @@ module.exports = (sequelize, DataTypes) => {
       judul: { type: DataTypes.STRING(512), allowNull: false },
       versi: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
       status: {
-        type: DataTypes.ENUM("draft", "review", "final"),
+        type: DataTypes.ENUM('draft', 'review', 'final'),
         allowNull: false,
-        defaultValue: "draft",
+        defaultValue: 'draft',
       },
       workflow_status: {
         type: DataTypes.STRING(32),
         allowNull: false,
-        defaultValue: "draft",
+        defaultValue: 'draft',
       },
       document_phase: {
         type: DataTypes.STRING(32),
         allowNull: false,
-        defaultValue: "rancangan_awal",
+        defaultValue: 'rancangan_awal',
       },
       document_kind: {
         type: DataTypes.STRING(32),
         allowNull: false,
-        defaultValue: "renja_awal",
+        defaultValue: 'renja_awal',
       },
       is_final_active: {
         type: DataTypes.BOOLEAN,
@@ -99,6 +99,18 @@ module.exports = (sequelize, DataTypes) => {
       approved_at: { type: DataTypes.DATE, allowNull: true },
       derivation_key: { type: DataTypes.STRING(128), allowNull: true },
       legacy_renja_id: { type: DataTypes.INTEGER, allowNull: true },
+      legacy_renja_id: { type: DataTypes.INTEGER, allowNull: true },
+
+      opd_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+
+      opd_penanggung_jawab: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+      },
+
       /** Narasi opsional bab dokumen resmi (override boilerplate generator) */
       text_bab1: { type: DataTypes.TEXT, allowNull: true },
       text_bab2: { type: DataTypes.TEXT, allowNull: true },
@@ -111,12 +123,12 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       sequelize,
-      modelName: "RenjaDokumen",
-      tableName: "renja_dokumen",
+      modelName: 'RenjaDokumen',
+      tableName: 'renja_dokumen',
       underscored: true,
       timestamps: true,
-      createdAt: "created_at",
-      updatedAt: "updated_at",
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
     },
   );
 

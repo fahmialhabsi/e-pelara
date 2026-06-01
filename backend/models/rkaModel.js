@@ -1,17 +1,22 @@
-"use strict";
-const { Model } = require("sequelize");
+'use strict';
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class Rka extends Model {
     static associate(models) {
       Rka.belongsTo(models.PeriodeRpjmd, {
-        foreignKey: "periode_id",
-        as: "periode",
+        foreignKey: 'periode_id',
+        as: 'periode',
       });
 
       Rka.belongsTo(models.Renja, {
-        foreignKey: "renja_id",
-        as: "renja",
+        foreignKey: 'renja_id',
+        as: 'renja',
+      });
+      Rka.hasMany(models.RkaRincianBelanja, {
+        foreignKey: 'rka_id',
+        as: 'rincianBelanja',
+        onDelete: 'CASCADE',
       });
     }
   }
@@ -70,16 +75,17 @@ module.exports = (sequelize, DataTypes) => {
       pagu_year_4: { type: DataTypes.DECIMAL(20, 2), allowNull: true },
       pagu_year_5: { type: DataTypes.DECIMAL(20, 2), allowNull: true },
       pagu_total: { type: DataTypes.DECIMAL(20, 2), allowNull: true },
+      rincian_belanja: { type: DataTypes.JSON, allowNull: true },
     },
     {
       sequelize,
-      modelName: "Rka",
-      tableName: "rka",
+      modelName: 'Rka',
+      tableName: 'rka',
       underscored: true,
       timestamps: true,
-      createdAt: "created_at",
-      updatedAt: "updated_at",
-    }
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+    },
   );
 
   return Rka;
