@@ -38,9 +38,6 @@ const RkpdPlanningSidebar = () => {
       >
         📊 Ringkasan perencanaan v2
       </ListGroup.Item>
-      <ListGroup.Item action as={Link} to="/dashboard-rkpd/v2/buat" className="small">
-        ➕ Buat dokumen RKPD (v2)
-      </ListGroup.Item>
       <ListGroup.Item action as={Link} to="/dashboard-rkpd/form" className="small">
         📎 Entri RKPD klasik (legacy)
       </ListGroup.Item>

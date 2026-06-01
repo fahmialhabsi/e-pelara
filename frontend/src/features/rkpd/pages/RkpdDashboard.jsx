@@ -1,3 +1,4 @@
+// File: frontend/src/features/rkpd/pages/RkpdDashboard.jsx
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -563,14 +564,7 @@ const RkpdDashboard = () => {
               >
                 Sync RKPD (Stub)
               </button>
-              <button
-                type="button"
-                onClick={() => navigate("/dashboard-rkpd/form")}
-                disabled={!canManageWorkflow}
-                className="btn btn-primary btn-sm"
-              >
-                Tambah RKPD
-              </button>
+
             </div>
             <input
               value={search}

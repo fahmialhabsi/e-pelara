@@ -1,8 +1,8 @@
-import React, { useMemo } from "react";
-import AuditTimeline from "./AuditTimeline";
-import BeforeAfterDiffCard from "./BeforeAfterDiffCard";
-import DocumentTracePanel from "./DocumentTracePanel";
-import VersionHistoryPanel from "./VersionHistoryPanel";
+import React, { useMemo } from 'react';
+import AuditTimeline from './AuditTimeline';
+import BeforeAfterDiffCard from './BeforeAfterDiffCard';
+import DocumentTracePanel from './DocumentTracePanel';
+import VersionHistoryPanel from './VersionHistoryPanel';
 
 /**
  * Pola audit bersama (Renstra/RPJMD) — dipakai ulang untuk Renja/RKPD/RKA/DPA/v2 dokumen.
@@ -13,16 +13,55 @@ export default function PlanningAuditSection({
   auditRows = [],
   auditLoading = false,
   allowRestore = false,
-  title = "Audit dokumen",
+  title = 'Audit dokumen',
   onVersionRestored,
+  fieldLabelMap = {},
+  statusLabelMap = {},
 }) {
+  const localizedAuditRows = useMemo(() => {
+    return (auditRows || []).map((row) => {
+      const normalized = row?.normalized;
+
+      if (!normalized) return row;
+
+      const mapKey = (k) => fieldLabelMap[k] || k;
+      const mapStatus = (v) => statusLabelMap[v] || v;
+
+      return {
+        ...row,
+
+        action_type: statusLabelMap[row.action_type] || row.action_type,
+
+        normalized: {
+          ...normalized,
+
+          changed_fields: (normalized.changed_fields || []).map(mapKey),
+
+          before:
+            normalized.before && typeof normalized.before === 'object'
+              ? Object.fromEntries(
+                  Object.entries(normalized.before).map(([k, v]) => [mapKey(k), mapStatus(v)]),
+                )
+              : normalized.before,
+
+          after:
+            normalized.after && typeof normalized.after === 'object'
+              ? Object.fromEntries(
+                  Object.entries(normalized.after).map(([k, v]) => [mapKey(k), mapStatus(v)]),
+                )
+              : normalized.after,
+        },
+      };
+    });
+  }, [auditRows, fieldLabelMap, statusLabelMap]);
   const latestDiffNormalized = useMemo(
     () =>
-      auditRows.find((e) => e.normalized?.changed_fields?.length)?.normalized ||
-      auditRows.find((e) => e.action_type === "UPDATE" && e.normalized)?.normalized ||
-      auditRows.find((e) => e.normalized)?.normalized ||
+      localizedAuditRows.find((e) => e.normalized?.changed_fields?.length)?.normalized ||
+      localizedAuditRows.find((e) => e.action_type === 'Perubahan Data' && e.normalized)
+        ?.normalized ||
+      localizedAuditRows.find((e) => e.normalized)?.normalized ||
       null,
-    [auditRows],
+    [localizedAuditRows],
   );
 
   if (!documentType || !documentId) return null;
@@ -46,10 +85,14 @@ export default function PlanningAuditSection({
           {latestDiffNormalized ? (
             <div className="mb-4">
               <div className="mb-1 text-xs font-medium text-gray-600">Ringkasan perubahan</div>
-              <BeforeAfterDiffCard normalized={latestDiffNormalized} />
+              <BeforeAfterDiffCard
+                normalized={latestDiffNormalized}
+                fieldLabelMap={fieldLabelMap}
+                statusLabelMap={statusLabelMap}
+              />
             </div>
           ) : null}
-          <AuditTimeline rows={auditRows} loading={false} />
+          <AuditTimeline rows={localizedAuditRows} loading={false} fieldLabelMap={fieldLabelMap} />
         </>
       )}
     </div>

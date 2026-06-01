@@ -1,20 +1,14 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { Card, CardBody, Button, Table, Form, Modal, Spinner, Badge, Alert } from 'react-bootstrap';
+import { toast } from 'react-toastify';
+import { useAuth } from '../../../hooks/useAuth';
+import api from '../../../services/api';
 import {
-  Card,
-  CardBody,
-  Button,
-  Table,
-  Form,
-  Modal,
-  Spinner,
-  Badge,
-  Alert,
-} from "react-bootstrap";
-import { toast } from "react-toastify";
-import { useAuth } from "../../../hooks/useAuth";
-import { canManagePlanningWorkflow, canRestorePlanningDocumentVersion } from "../../../utils/roleUtils";
-import PlanningAuditSection from "../../planning-audit/components/PlanningAuditSection";
+  canManagePlanningWorkflow,
+  canRestorePlanningDocumentVersion,
+} from '../../../utils/roleUtils';
+import PlanningAuditSection from '../../planning-audit/components/PlanningAuditSection';
 import {
   fetchRenjaDokumenById,
   fetchRenjaDokumenAudit,
@@ -28,23 +22,28 @@ import {
   saveRenjaOfficialPdfToFile,
   fetchRenjaValidateOfficial,
   linkRenjaItemToRkpd,
-} from "../services/planningRenjaApi";
+} from '../services/planningRenjaApi';
 import {
   createRenjaRevision,
   getRenjaReadiness,
   runRenjaWorkflowAction,
-} from "../services/renjaGovernanceApi";
-import RenjaPlanningDashboardLayout from "./RenjaPlanningDashboardLayout";
-import RenjaDokumenNavTabs from "../components/RenjaDokumenNavTabs";
+} from '../services/renjaGovernanceApi';
+import RenjaPlanningDashboardLayout from './RenjaPlanningDashboardLayout';
+import RenjaDokumenNavTabs from '../components/RenjaDokumenNavTabs';
+import MasterBelanjaCascading from '../../../shared/components/MasterBelanjaCascading';
+import MasterRekeningCascading from '../../../shared/components/MasterRekeningCascading';
 
 const emptyItem = {
-  program: "",
-  kegiatan: "",
-  sub_kegiatan: "",
-  indikator: "",
-  target: "",
-  satuan: "",
-  pagu: "",
+  program: '',
+  kegiatan: '',
+  sub_kegiatan: '',
+  indikator: '',
+  target: '',
+  satuan: '',
+  pagu: '',
+  kode_rekening: '',
+  nama_rekening: '',
+  rincian_belanja: null,
   urutan: 0,
 };
 
@@ -55,15 +54,15 @@ const RenjaDokumenDetailPage = () => {
 
   const [doc, setDoc] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [err, setErr] = useState('');
   const [officialValidate, setOfficialValidate] = useState(null);
   const [busyValidate, setBusyValidate] = useState(false);
 
-  const [judul, setJudul] = useState("");
-  const [status, setStatus] = useState("draft");
+  const [judul, setJudul] = useState('');
+  const [status, setStatus] = useState('draft');
   const [savingMeta, setSavingMeta] = useState(false);
-  const [metaReasonText, setMetaReasonText] = useState("");
-  const [metaReasonFile, setMetaReasonFile] = useState("");
+  const [metaReasonText, setMetaReasonText] = useState('');
+  const [metaReasonFile, setMetaReasonFile] = useState('');
   const [auditRows, setAuditRows] = useState([]);
 
   const [itemModal, setItemModal] = useState(false);
@@ -73,30 +72,30 @@ const RenjaDokumenDetailPage = () => {
 
   const [linkModal, setLinkModal] = useState(false);
   const [linkTarget, setLinkTarget] = useState(null);
-  const [rkpdItemId, setRkpdItemId] = useState("");
+  const [rkpdItemId, setRkpdItemId] = useState('');
   const [linkBusy, setLinkBusy] = useState(false);
-  const [itemReasonText, setItemReasonText] = useState("");
-  const [itemReasonFile, setItemReasonFile] = useState("");
-  const [linkReasonText, setLinkReasonText] = useState("");
-  const [linkReasonFile, setLinkReasonFile] = useState("");
+  const [itemReasonText, setItemReasonText] = useState('');
+  const [itemReasonFile, setItemReasonFile] = useState('');
+  const [linkReasonText, setLinkReasonText] = useState('');
+  const [linkReasonFile, setLinkReasonFile] = useState('');
 
   const [logModal, setLogModal] = useState(false);
   const [logs, setLogs] = useState([]);
   const [logLoading, setLogLoading] = useState(false);
   const [wfBusy, setWfBusy] = useState(false);
-  const [revisionReason, setRevisionReason] = useState("");
+  const [revisionReason, setRevisionReason] = useState('');
   const [readiness, setReadiness] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setErr("");
+    setErr('');
     try {
       const d = await fetchRenjaDokumenById(id);
       setDoc(d);
-      setJudul(d?.judul || "");
-      setStatus(d?.status || "draft");
+      setJudul(d?.judul || '');
+      setStatus(d?.status || 'draft');
     } catch (e) {
-      setErr(e?.response?.data?.message || e.message || "Gagal memuat dokumen.");
+      setErr(e?.response?.data?.message || e.message || 'Gagal memuat dokumen.');
     } finally {
       setLoading(false);
     }
@@ -123,7 +122,7 @@ const RenjaDokumenDetailPage = () => {
     let ok = true;
     (async () => {
       try {
-        const data = await getRenjaReadiness(id, { action: "publish" });
+        const data = await getRenjaReadiness(id, { action: 'publish' });
         if (ok) setReadiness(data);
       } catch {
         if (ok) setReadiness(null);
@@ -139,7 +138,7 @@ const RenjaDokumenDetailPage = () => {
     const rt = metaReasonText.trim();
     const rf = metaReasonFile.trim();
     if (!rt && !rf) {
-      toast.error("Isi alasan perubahan (teks) atau referensi berkas dasar perubahan.");
+      toast.error('Isi alasan perubahan (teks) atau referensi berkas dasar perubahan.');
       return;
     }
     setSavingMeta(true);
@@ -151,10 +150,10 @@ const RenjaDokumenDetailPage = () => {
         change_reason_file: rf || undefined,
       });
       setDoc(d);
-      toast.success("Dokumen diperbarui.");
+      toast.success('Dokumen diperbarui.');
       await loadAudit();
     } catch (e) {
-      toast.error(e?.response?.data?.message || e.message || "Gagal simpan.");
+      toast.error(e?.response?.data?.message || e.message || 'Gagal simpan.');
     } finally {
       setSavingMeta(false);
     }
@@ -162,26 +161,26 @@ const RenjaDokumenDetailPage = () => {
 
   const openAddItem = () => {
     setEditingItem(null);
-    setItemForm({ ...emptyItem, urutan: (doc?.items?.length || 0) + 1 });
-    setItemReasonText("");
-    setItemReasonFile("");
+    setItemForm({ ...emptyItem, urutan: (doc?.items?.length || 0) + 1, rincian_belanja: null });
+    setItemReasonText('');
+    setItemReasonFile('');
     setItemModal(true);
   };
 
   const openEditItem = (row) => {
     setEditingItem(row);
     setItemForm({
-      program: row.program || "",
-      kegiatan: row.kegiatan || "",
-      sub_kegiatan: row.sub_kegiatan || "",
-      indikator: row.indikator || "",
-      target: row.target != null ? String(row.target) : "",
-      satuan: row.satuan || "",
-      pagu: row.pagu != null ? String(row.pagu) : "",
+      program: row.program || '',
+      kegiatan: row.kegiatan || '',
+      sub_kegiatan: row.sub_kegiatan || '',
+      indikator: row.indikator || '',
+      target: row.target != null ? String(row.target) : '',
+      satuan: row.satuan || '',
+      pagu: row.pagu != null ? String(row.pagu) : '',
       urutan: row.urutan ?? 0,
     });
-    setItemReasonText("");
-    setItemReasonFile("");
+    setItemReasonText('');
+    setItemReasonFile('');
     setItemModal(true);
   };
 
@@ -190,7 +189,7 @@ const RenjaDokumenDetailPage = () => {
     const rt = itemReasonText.trim();
     const rf = itemReasonFile.trim();
     if (!rt && !rf) {
-      toast.error("Isi alasan perubahan item (teks) atau referensi berkas.");
+      toast.error('Isi alasan perubahan item (teks) atau referensi berkas.');
       return;
     }
     setSavingItem(true);
@@ -201,24 +200,25 @@ const RenjaDokumenDetailPage = () => {
         kegiatan: itemForm.kegiatan || null,
         sub_kegiatan: itemForm.sub_kegiatan || null,
         indikator: itemForm.indikator || null,
-        target: itemForm.target === "" ? null : Number(itemForm.target),
+        target: itemForm.target === '' ? null : Number(itemForm.target),
         satuan: itemForm.satuan || null,
-        pagu: itemForm.pagu === "" ? null : Number(itemForm.pagu),
-        status_baris: "draft",
+        pagu: itemForm.pagu === '' ? null : Number(itemForm.pagu),
+        status_baris: 'draft',
         change_reason_text: rt || undefined,
         change_reason_file: rf || undefined,
+        rincian_belanja: itemForm.rincian_belanja || null,
       };
       if (editingItem) {
         await updateRenjaItemV2(editingItem.id, base);
-        toast.success("Item Renja diperbarui.");
+        toast.success('Item Renja diperbarui.');
       } else {
         await createRenjaItemV2({ ...base, renja_dokumen_id: Number(id) });
-        toast.success("Item Renja ditambahkan.");
+        toast.success('Item Renja ditambahkan.');
       }
       setItemModal(false);
       load();
     } catch (e) {
-      toast.error(e?.response?.data?.message || e.message || "Gagal simpan item.");
+      toast.error(e?.response?.data?.message || e.message || 'Gagal simpan item.');
     } finally {
       setSavingItem(false);
     }
@@ -226,21 +226,21 @@ const RenjaDokumenDetailPage = () => {
 
   const openLink = (row) => {
     setLinkTarget(row);
-    setRkpdItemId(row?.rkpdLink?.rkpd_item_id ? String(row.rkpdLink.rkpd_item_id) : "");
-    setLinkReasonText("");
-    setLinkReasonFile("");
+    setRkpdItemId(row?.rkpdLink?.rkpd_item_id ? String(row.rkpdLink.rkpd_item_id) : '');
+    setLinkReasonText('');
+    setLinkReasonFile('');
     setLinkModal(true);
   };
 
   const saveLink = async () => {
     if (!linkTarget || !rkpdItemId.trim()) {
-      toast.error("Masukkan rkpd_item_id.");
+      toast.error('Masukkan rkpd_item_id.');
       return;
     }
     const rt = linkReasonText.trim();
     const rf = linkReasonFile.trim();
     if (!rt && !rf) {
-      toast.error("Isi alasan mapping (teks) atau referensi berkas.");
+      toast.error('Isi alasan mapping (teks) atau referensi berkas.');
       return;
     }
     setLinkBusy(true);
@@ -249,11 +249,11 @@ const RenjaDokumenDetailPage = () => {
         change_reason_text: rt || undefined,
         change_reason_file: rf || undefined,
       });
-      toast.success("Mapping RKPD disimpan.");
+      toast.success('Mapping RKPD disimpan.');
       setLinkModal(false);
       load();
     } catch (e) {
-      toast.error(e?.response?.data?.message || e.message || "Gagal mapping.");
+      toast.error(e?.response?.data?.message || e.message || 'Gagal mapping.');
     } finally {
       setLinkBusy(false);
     }
@@ -266,7 +266,7 @@ const RenjaDokumenDetailPage = () => {
       const rows = await fetchRenjaDokumenChangeLog(id);
       setLogs(Array.isArray(rows) ? rows : []);
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Gagal log.");
+      toast.error(e?.response?.data?.message || 'Gagal log.');
       setLogs([]);
     } finally {
       setLogLoading(false);
@@ -280,17 +280,17 @@ const RenjaDokumenDetailPage = () => {
     try {
       const r = await fetchRenjaValidateOfficial(doc.id);
       setOfficialValidate(r);
-      if (r.ok) toast.success("Prasyarat ekspor resmi terpenuhi.");
-      else toast.warning("Prasyarat ekspor resmi belum terpenuhi — lihat daftar di bawah.");
+      if (r.ok) toast.success('Prasyarat ekspor resmi terpenuhi.');
+      else toast.warning('Prasyarat ekspor resmi belum terpenuhi — lihat daftar di bawah.');
     } catch (e) {
-      toast.error(e?.response?.data?.message || e.message || "Gagal memvalidasi.");
+      toast.error(e?.response?.data?.message || e.message || 'Gagal memvalidasi.');
     } finally {
       setBusyValidate(false);
     }
   };
 
   const items = doc?.items || [];
-  const isReadonly = doc?.workflow_status === "published";
+  const isReadonly = doc?.workflow_status === 'published';
 
   const runAction = async (action) => {
     setWfBusy(true);
@@ -301,7 +301,7 @@ const RenjaDokumenDetailPage = () => {
       await load();
       await loadAudit();
     } catch (e) {
-      toast.error(e?.response?.data?.message || e.message || "Gagal update workflow.");
+      toast.error(e?.response?.data?.message || e.message || 'Gagal update workflow.');
     } finally {
       setWfBusy(false);
     }
@@ -309,19 +309,19 @@ const RenjaDokumenDetailPage = () => {
 
   const runCreateRevision = async () => {
     if (!revisionReason.trim()) {
-      toast.error("Alasan perubahan wajib diisi.");
+      toast.error('Alasan perubahan wajib diisi.');
       return;
     }
     setWfBusy(true);
     try {
       const row = await createRenjaRevision(doc.id, {
-        revision_type: "perubahan",
+        revision_type: 'perubahan',
         change_reason: revisionReason.trim(),
         change_reason_text: revisionReason.trim(),
       });
       window.location.href = `/dashboard-renja/v2/dokumen/${row.id}`;
     } catch (e) {
-      toast.error(e?.response?.data?.message || e.message || "Gagal membuat revision.");
+      toast.error(e?.response?.data?.message || e.message || 'Gagal membuat revision.');
     } finally {
       setWfBusy(false);
     }
@@ -338,26 +338,56 @@ const RenjaDokumenDetailPage = () => {
   if (err || !doc) {
     return (
       <RenjaPlanningDashboardLayout>
-        <Alert variant="danger">{err || "Tidak ditemukan."}</Alert>
+        <Alert variant="danger">{err || 'Tidak ditemukan.'}</Alert>
         <Link to="/dashboard-renja">← Dashboard</Link>
       </RenjaPlanningDashboardLayout>
     );
   }
 
+  const handleMasterRekeningChange = async ({ program, kegiatan, subKegiatan }) => {
+    setItemForm((prev) => ({
+      ...prev,
+      program: program?.nama_program || prev.program,
+      kegiatan: kegiatan?.nama_kegiatan || prev.kegiatan,
+      sub_kegiatan: subKegiatan?.nama_sub_kegiatan || prev.sub_kegiatan,
+    }));
+
+    if (subKegiatan?.kode_sub_kegiatan_full) {
+      try {
+        const res = await api.get('/rkpd-dokumen/item', {
+          params: { sub_kegiatan: subKegiatan.nama_sub_kegiatan, limit: 1 },
+        });
+
+        const item = res.data?.data?.[0];
+        if (item) {
+          setItemForm((prev) => ({
+            ...prev,
+            indikator: item.indikator || prev.indikator,
+            target: item.target != null ? String(item.target) : prev.target,
+            satuan: item.satuan || prev.satuan,
+            pagu: item.pagu != null ? String(item.pagu) : prev.pagu,
+          }));
+        }
+      } catch (e) {
+        console.error('Auto-fill RKPD gagal:', e);
+      }
+    }
+  };
+
   return (
     <RenjaPlanningDashboardLayout>
       <Alert variant="info" className="small mb-3">
-        <strong>Data internal:</strong> tabel <code>renja_item</code> di bawah.{" "}
+        <strong>Data internal:</strong> tabel <code>renja_item</code> di bawah.{' '}
         <strong>Preview dokumen:</strong> Word/PDF preview = ringkasan baris (bukan struktur bab
         resmi). <strong>Dokumen resmi:</strong> gunakan tombol hijau/biru — keluaran Document Engine
         (BAB I–V, OOXML/PDF terstruktur). Narasi bab tertentu dapat diisi lewat API (
-        <code>text_bab1</code>, <code>text_bab2</code>, <code>text_bab5</code> pada dokumen).
-        Ekspor resmi memvalidasi isi (baris, BAB II, Renstra); generate diblokir jika prasyarat tidak
+        <code>text_bab1</code>, <code>text_bab2</code>, <code>text_bab5</code> pada dokumen). Ekspor
+        resmi memvalidasi isi (baris, BAB II, Renstra); generate diblokir jika prasyarat tidak
         terpenuhi.
       </Alert>
       {officialValidate && (
-        <Alert variant={officialValidate.ok ? "success" : "warning"} className="small mb-3">
-          <strong>{officialValidate.ok ? "Siap ekspor resmi." : "Belum siap ekspor resmi."}</strong>
+        <Alert variant={officialValidate.ok ? 'success' : 'warning'} className="small mb-3">
+          <strong>{officialValidate.ok ? 'Siap ekspor resmi.' : 'Belum siap ekspor resmi.'}</strong>
           <ul className="mb-0 mt-2">
             {(officialValidate.errors || []).map((e) => (
               <li key={e.code}>{e.message}</li>
@@ -372,8 +402,8 @@ const RenjaDokumenDetailPage = () => {
           </Link>
           <h4 className="fw-bold text-success mb-0 mt-1">Dokumen Renja v2 #{doc.id}</h4>
           <div className="small text-muted">
-            Tahun {doc.tahun} · PD {doc.perangkat_daerah_id} · RKPD acuan{" "}
-            {doc.rkpd_dokumen_id ? `#${doc.rkpd_dokumen_id}` : "—"}
+            Tahun {doc.tahun} · PD {doc.perangkat_daerah_id} · RKPD acuan{' '}
+            {doc.rkpd_dokumen_id ? `#${doc.rkpd_dokumen_id}` : '—'}
           </div>
         </div>
         <div className="d-flex flex-column align-items-end gap-2">
@@ -384,7 +414,7 @@ const RenjaDokumenDetailPage = () => {
               size="sm"
               onClick={() =>
                 saveRenjaDokumenDocxToFile(doc.id, doc.judul).catch((e) =>
-                  toast.error(e?.message || "Gagal preview Word"),
+                  toast.error(e?.message || 'Gagal preview Word'),
                 )
               }
             >
@@ -395,7 +425,7 @@ const RenjaDokumenDetailPage = () => {
               size="sm"
               onClick={() =>
                 saveRenjaDokumenPdfToFile(doc.id, doc.judul).catch((e) =>
-                  toast.error(e?.message || "Gagal preview PDF"),
+                  toast.error(e?.message || 'Gagal preview PDF'),
                 )
               }
             >
@@ -410,14 +440,14 @@ const RenjaDokumenDetailPage = () => {
               disabled={busyValidate}
               onClick={runOfficialValidate}
             >
-              {busyValidate ? "Memeriksa…" : "Cek prasyarat ekspor"}
+              {busyValidate ? 'Memeriksa…' : 'Cek prasyarat ekspor'}
             </Button>
             <Button
               variant="success"
               size="sm"
               onClick={() =>
                 saveRenjaOfficialDocxToFile(doc.id, doc.judul).catch((e) =>
-                  toast.error(e?.message || "Gagal dokumen resmi Word"),
+                  toast.error(e?.message || 'Gagal dokumen resmi Word'),
                 )
               }
             >
@@ -428,7 +458,7 @@ const RenjaDokumenDetailPage = () => {
               size="sm"
               onClick={() =>
                 saveRenjaOfficialPdfToFile(doc.id, doc.judul).catch((e) =>
-                  toast.error(e?.message || "Gagal dokumen resmi PDF"),
+                  toast.error(e?.message || 'Gagal dokumen resmi PDF'),
                 )
               }
             >
@@ -444,7 +474,7 @@ const RenjaDokumenDetailPage = () => {
       <Card className="mb-3 shadow-sm">
         <CardBody>
           <div className="d-flex flex-wrap gap-2 align-items-center">
-            {["submit", "review", "approve", "publish"].map((action) => (
+            {['submit', 'review', 'approve', 'publish'].map((action) => (
               <Button
                 key={action}
                 size="sm"
@@ -452,8 +482,8 @@ const RenjaDokumenDetailPage = () => {
                 disabled={
                   wfBusy ||
                   !can ||
-                  (action === "submit" && readiness && !readiness.readiness?.ready_for_submit) ||
-                  (action === "publish" && readiness && !readiness.readiness?.ready_for_publish)
+                  (action === 'submit' && readiness && !readiness.readiness?.ready_for_submit) ||
+                  (action === 'publish' && readiness && !readiness.readiness?.ready_for_publish)
                 }
                 onClick={() => runAction(action)}
               >
@@ -470,7 +500,7 @@ const RenjaDokumenDetailPage = () => {
             <Button
               size="sm"
               variant="warning"
-              disabled={wfBusy || !can || !["approved", "published"].includes(doc?.workflow_status)}
+              disabled={wfBusy || !can || !['approved', 'published'].includes(doc?.workflow_status)}
               onClick={runCreateRevision}
             >
               Create Revision
@@ -483,8 +513,8 @@ const RenjaDokumenDetailPage = () => {
             >
               Data Fix & Mapping
             </Button>
-            <Badge bg={isReadonly ? "success" : "secondary"}>
-              {isReadonly ? "Readonly Final" : "Editable Draft"}
+            <Badge bg={isReadonly ? 'success' : 'secondary'}>
+              {isReadonly ? 'Readonly Final' : 'Editable Draft'}
             </Badge>
           </div>
         </CardBody>
@@ -493,11 +523,12 @@ const RenjaDokumenDetailPage = () => {
         <CardBody>
           <h6 className="fw-bold mb-1">Readiness Panel</h6>
           <div className="small">
-            Siap submit: <b>{readiness?.readiness?.ready_for_submit ? "Ya" : "Tidak"}</b> · Siap publish:{" "}
-            <b>{readiness?.readiness?.ready_for_publish ? "Ya" : "Tidak"}</b>
+            Siap submit: <b>{readiness?.readiness?.ready_for_submit ? 'Ya' : 'Tidak'}</b> · Siap
+            publish: <b>{readiness?.readiness?.ready_for_publish ? 'Ya' : 'Tidak'}</b>
           </div>
           <div className="small text-muted">
-            blocker {readiness?.summary?.blocking_count ?? 0} · warning {readiness?.summary?.warning_count ?? 0}
+            blocker {readiness?.summary?.blocking_count ?? 0} · warning{' '}
+            {readiness?.summary?.warning_count ?? 0}
           </div>
           {!!(readiness?.next_actions || []).length && (
             <ul className="small mb-0 mt-1">
@@ -554,7 +585,7 @@ const RenjaDokumenDetailPage = () => {
           </Form.Group>
           {can && (
             <Button size="sm" onClick={saveMeta} disabled={savingMeta || isReadonly}>
-              {savingMeta ? <Spinner size="sm" /> : "Simpan metadata"}
+              {savingMeta ? <Spinner size="sm" /> : 'Simpan metadata'}
             </Button>
           )}
         </CardBody>
@@ -630,7 +661,12 @@ const RenjaDokumenDetailPage = () => {
                           >
                             Edit
                           </Button>
-                          <Button size="sm" variant="outline-warning" disabled={isReadonly} onClick={() => openLink(row)}>
+                          <Button
+                            size="sm"
+                            variant="outline-warning"
+                            disabled={isReadonly}
+                            onClick={() => openLink(row)}
+                          >
                             Map RKPD
                           </Button>
                         </>
@@ -642,35 +678,56 @@ const RenjaDokumenDetailPage = () => {
             </tbody>
           </Table>
           <p className="small text-muted mb-0">
-            Edit manual Renja saat ini <strong>tidak</strong> menulis{" "}
-            <code>planning_line_item_change_log</code> — log terisi untuk baris Renja
-            saat <strong>cascade dari RKPD</strong> (bukti di backend update RKPD item).
+            Edit manual Renja saat ini <strong>tidak</strong> menulis{' '}
+            <code>planning_line_item_change_log</code> — log terisi untuk baris Renja saat{' '}
+            <strong>cascade dari RKPD</strong> (bukti di backend update RKPD item).
           </p>
         </CardBody>
       </Card>
 
       <Modal show={itemModal} onHide={() => setItemModal(false)} size="lg">
         <Modal.Header closeButton>
-          <Modal.Title>{editingItem ? "Edit item Renja" : "Item Renja baru"}</Modal.Title>
+          <Modal.Title>{editingItem ? 'Edit item Renja' : 'Item Renja baru'}</Modal.Title>
         </Modal.Header>
         <Modal.Body>
           <Form.Group className="mb-2">
-            <Form.Label>Urutan</Form.Label>
+            <Form.Label>Nomor Urut</Form.Label>
             <Form.Control
               type="number"
               value={itemForm.urutan}
               onChange={(e) => setItemForm({ ...itemForm, urutan: e.target.value })}
             />
           </Form.Group>
-          {["program", "kegiatan", "sub_kegiatan", "indikator", "satuan"].map((k) => (
-            <Form.Group className="mb-2" key={k}>
-              <Form.Label>{k}</Form.Label>
-              <Form.Control
-                value={itemForm[k]}
-                onChange={(e) => setItemForm({ ...itemForm, [k]: e.target.value })}
-              />
-            </Form.Group>
-          ))}
+
+          <Form.Group className="mb-2">
+            <Form.Label>Program / Kegiatan / Sub Kegiatan</Form.Label>
+            <MasterRekeningCascading onChange={handleMasterRekeningChange} />
+          </Form.Group>
+
+          <Form.Group className="mb-2">
+            <Form.Label>Indikator Kinerja</Form.Label>
+            <Form.Control
+              value={itemForm.indikator}
+              onChange={(e) => setItemForm({ ...itemForm, indikator: e.target.value })}
+            />
+          </Form.Group>
+
+          <Form.Group className="mb-2">
+            <Form.Label>Target Kinerja</Form.Label>
+            <Form.Control
+              value={itemForm.target}
+              onChange={(e) => setItemForm({ ...itemForm, target: e.target.value })}
+            />
+          </Form.Group>
+
+          <Form.Group className="mb-2">
+            <Form.Label>Satuan Pengukuran</Form.Label>
+            <Form.Control
+              value={itemForm.satuan}
+              onChange={(e) => setItemForm({ ...itemForm, satuan: e.target.value })}
+            />
+          </Form.Group>
+
           <Form.Group className="mb-2">
             <Form.Label>target</Form.Label>
             <Form.Control
@@ -679,10 +736,16 @@ const RenjaDokumenDetailPage = () => {
             />
           </Form.Group>
           <Form.Group className="mb-2">
-            <Form.Label>pagu</Form.Label>
+            <Form.Label>Pagu Anggaran (Rp)</Form.Label>
             <Form.Control
               value={itemForm.pagu}
               onChange={(e) => setItemForm({ ...itemForm, pagu: e.target.value })}
+            />
+          </Form.Group>
+          <Form.Group className="mb-2">
+            <Form.Label>Rincian Kode Rekening Belanja (Permendagri 90)</Form.Label>
+            <MasterBelanjaCascading
+              onChange={(selected) => setItemForm({ ...itemForm, rincian_belanja: selected })}
             />
           </Form.Group>
           <Form.Group className="mb-2">
@@ -709,7 +772,7 @@ const RenjaDokumenDetailPage = () => {
             Batal
           </Button>
           <Button onClick={saveItem} disabled={savingItem || !can}>
-            {savingItem ? <Spinner size="sm" /> : "Simpan"}
+            {savingItem ? <Spinner size="sm" /> : 'Simpan'}
           </Button>
         </Modal.Footer>
       </Modal>
@@ -750,7 +813,7 @@ const RenjaDokumenDetailPage = () => {
             Batal
           </Button>
           <Button onClick={saveLink} disabled={linkBusy}>
-            {linkBusy ? <Spinner size="sm" /> : "Simpan mapping"}
+            {linkBusy ? <Spinner size="sm" /> : 'Simpan mapping'}
           </Button>
         </Modal.Footer>
       </Modal>
@@ -764,8 +827,7 @@ const RenjaDokumenDetailPage = () => {
             <Spinner />
           ) : logs.length === 0 ? (
             <div className="text-muted small">
-              Kosong — umumnya terisi setelah cascade dari perubahan RKPD, bukan edit
-              manual Renja.
+              Kosong — umumnya terisi setelah cascade dari perubahan RKPD, bukan edit manual Renja.
             </div>
           ) : (
             <Table size="sm" striped bordered>
@@ -782,11 +844,11 @@ const RenjaDokumenDetailPage = () => {
               <tbody>
                 {logs.map((L) => (
                   <tr key={L.id}>
-                    <td className="text-nowrap small">{L.created_at || "—"}</td>
+                    <td className="text-nowrap small">{L.created_at || '—'}</td>
                     <td>{L.entity_id}</td>
                     <td>{L.field_key}</td>
-                    <td className="small">{String(L.old_value ?? "").slice(0, 80)}</td>
-                    <td className="small">{String(L.new_value ?? "").slice(0, 80)}</td>
+                    <td className="small">{String(L.old_value ?? '').slice(0, 80)}</td>
+                    <td className="small">{String(L.new_value ?? '').slice(0, 80)}</td>
                     <td>
                       <Badge bg="secondary">{L.change_type || L.source}</Badge>
                     </td>

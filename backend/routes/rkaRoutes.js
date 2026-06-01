@@ -1,56 +1,79 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const RkaController = require("../controllers/rkaController");
-const verifyToken = require("../middlewares/verifyToken");
-const allowRoles = require("../middlewares/allowRoles");
-const guardApproved = require("../middlewares/guardApproved");
-const requireChangeReason = require("../middlewares/requireChangeReason");
+const RkaController = require('../controllers/rkaController');
+const verifyToken = require('../middlewares/verifyToken');
+const allowRoles = require('../middlewares/allowRoles');
+const guardApproved = require('../middlewares/guardApproved');
+const requireChangeReason = require('../middlewares/requireChangeReason');
+const { exportExcel, exportWord, exportPdf } = require('../controllers/rkaExportController');
 
 router.get(
-  "/",
+  '/',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  RkaController.getAll
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  RkaController.getAll,
 );
 
 router.get(
-  "/:id/audit",
+  '/:id/audit',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  RkaController.getAudit
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  RkaController.getAudit,
 );
 
 router.get(
-  "/:id",
+  '/:id',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  RkaController.getById
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  RkaController.getById,
 );
 
 router.post(
-  "/",
+  '/',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
   requireChangeReason,
   RkaController.create,
 );
 
 router.put(
-  "/:id",
+  '/:id',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  guardApproved("rka"),
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
+  guardApproved('rka'),
   requireChangeReason,
-  RkaController.update
+  RkaController.update,
 );
 
 router.delete(
-  "/:id",
+  '/:id',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  guardApproved("rka"),
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
+  guardApproved('rka'),
   requireChangeReason,
-  RkaController.destroy
+  RkaController.destroy,
+);
+
+// DAFTAR ENDPOINT UNTUK EXPORT DOKUMEN RKA MULTI-FORMULIR
+router.get(
+  '/:id/export-excel',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  exportExcel,
+);
+
+router.get(
+  '/:id/export-word',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  exportWord,
+);
+
+router.get(
+  '/:id/export-pdf',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  exportPdf,
 );
 
 module.exports = router;

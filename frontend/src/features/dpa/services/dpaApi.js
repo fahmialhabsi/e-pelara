@@ -1,8 +1,8 @@
 // dpaApi — panggilan API DPA (axios + Bearer token)
-import api from "../../../services/api";
+import api from '../../../services/api';
 
 export const getAllDpa = async () => {
-  const res = await api.get("/dpa");
+  const res = await api.get('/dpa');
   return res.data;
 };
 
@@ -19,12 +19,17 @@ export const getDpaAudit = async (id) => {
 };
 
 export const createDpa = async (body) => {
-  const res = await api.post("/dpa", body);
+  const res = await api.post('/dpa', body);
   return res.data;
 };
 
 export const updateDpa = async (id, body) => {
   const res = await api.put(`/dpa/${id}`, body);
+  return res.data;
+};
+
+export const submitDpa = async (id, body = {}) => {
+  const res = await api.post(`/dpa/${id}/submit`, body);
   return res.data;
 };
 

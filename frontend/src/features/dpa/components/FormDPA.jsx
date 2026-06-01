@@ -4,9 +4,10 @@
  * tanpa menunggu alur RKPD→Renja→RKA lengkap. Fallback input teks jika master kosong.
  * + Autocomplete kode rekening Permendagri 90.
  */
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Select, Spin, Collapse, Typography, Alert, message } from "antd";
-import KodeRekeningAutocomplete from "./KodeRekeningAutocomplete";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Select, Spin, Collapse, Typography, Alert, message } from 'antd';
+// import KodeRekeningAutocomplete from './KodeRekeningAutocomplete';
+import MasterBelanjaCascading from '../../../shared/components/MasterBelanjaCascading';
 import {
   fetchProgramsForDpa,
   fetchKegiatanByProgram,
@@ -15,43 +16,43 @@ import {
   formatProgramLabel,
   formatKegiatanLabel,
   formatSubKegiatanLabel,
-} from "../services/dpaMasterApi";
+} from '../services/dpaMasterApi';
+import api from '../../../services/api';
 
 const { Text } = Typography;
 
 const INITIAL = {
   tahun: String(new Date().getFullYear()),
-  periode_id: "",
-  program: "",
-  kegiatan: "",
-  sub_kegiatan: "",
-  indikator: "",
-  target: "",
-  anggaran: "",
-  jenis_dokumen: "DPA",
-  kode_rekening: "",
-  nama_rekening: "",
-  rka_id: "",
-  rpjmd_id: "",
+  periode_id: '',
+  program: '',
+  kegiatan: '',
+  sub_kegiatan: '',
+  indikator: '',
+  target: '',
+  anggaran: '',
+  jenis_dokumen: 'DPA',
+  kode_rekening: '',
+  nama_rekening: '',
+  // REMOVED: handled by smart chain backend
 };
 
 function targetOptionsFromIndikator(row) {
   if (!row) return [];
   const keys = [
-    "target_kinerja",
-    "target_akhir",
-    "target_awal",
-    "target_tahun_1",
-    "target_tahun_2",
-    "target_tahun_3",
-    "target_tahun_4",
-    "target_tahun_5",
+    'target_kinerja',
+    'target_akhir',
+    'target_awal',
+    'target_tahun_1',
+    'target_tahun_2',
+    'target_tahun_3',
+    'target_tahun_4',
+    'target_tahun_5',
   ];
   const out = [];
   const seen = new Set();
   for (const k of keys) {
     const v = row[k];
-    if (v == null || v === "") continue;
+    if (v == null || v === '') continue;
     const s = String(v).trim();
     if (!s || seen.has(s)) continue;
     seen.add(s);
@@ -67,10 +68,8 @@ const FormDPA = ({
   loading = false,
   periodeList = [],
 }) => {
-  const [form, setForm] = useState(() =>
-    initialData ? { ...INITIAL, ...initialData } : INITIAL,
-  );
-  const [kodeErr, setKodeErr] = useState("");
+  const [form, setForm] = useState(() => (initialData ? { ...INITIAL, ...initialData } : INITIAL));
+  const [kodeErr, setKodeErr] = useState('');
 
   const [programs, setPrograms] = useState([]);
   const [kegiatans, setKegiatans] = useState([]);
@@ -87,8 +86,19 @@ const FormDPA = ({
   const [sid, setSid] = useState(null);
   const [iid, setIid] = useState(null);
 
+  const [rkaOptions, setRkaOptions] = useState([]);
+
+  useEffect(() => {
+    api
+      .get('/rka')
+      .then((res) => setRkaOptions(Array.isArray(res.data) ? res.data : []))
+      .catch(console.error);
+  }, []);
+
+  // REMOVED: RKA manual selection (handled by backend smart chain)
+
   const [manualOpen, setManualOpen] = useState(false);
-  const committedTahun = useRef(String(form.tahun || ""));
+  const committedTahun = useRef(String(form.tahun || ''));
 
   const pushForm = useCallback(
     (next) => {
@@ -102,14 +112,14 @@ const FormDPA = ({
     if (initialData) {
       const next = { ...INITIAL, ...initialData };
       pushForm(next);
-      committedTahun.current = String(next.tahun || "");
+      committedTahun.current = String(next.tahun || '');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData?.id]);
 
   /* ── Muat program saat tahun berubah ───────────────────────────── */
   useEffect(() => {
-    const th = String(form.tahun || "").trim();
+    const th = String(form.tahun || '').trim();
     if (!th) {
       setPrograms([]);
       return;
@@ -134,7 +144,7 @@ const FormDPA = ({
   /* ── Cocokkan pilihan master dengan teks tersimpan (mode edit) ───── */
   useEffect(() => {
     if (!initialData?.id || programs.length === 0) return;
-    const wantP = (initialData.program || "").trim();
+    const wantP = (initialData.program || '').trim();
     if (!wantP) return;
     const hit = programs.find(
       (p) =>
@@ -174,7 +184,7 @@ const FormDPA = ({
 
   useEffect(() => {
     if (!initialData?.id || kegiatans.length === 0) return;
-    const wantK = (initialData.kegiatan || "").trim();
+    const wantK = (initialData.kegiatan || '').trim();
     if (!wantK) return;
     const hit = kegiatans.find(
       (k) =>
@@ -210,7 +220,7 @@ const FormDPA = ({
 
   useEffect(() => {
     if (!initialData?.id || subs.length === 0) return;
-    const wantS = (initialData.sub_kegiatan || "").trim();
+    const wantS = (initialData.sub_kegiatan || '').trim();
     if (!wantS) return;
     const hit = subs.find(
       (s) =>
@@ -222,7 +232,7 @@ const FormDPA = ({
       setSid(hit.id);
       const fillPagu =
         hit.pagu_anggaran != null &&
-        (initialData.anggaran === "" ||
+        (initialData.anggaran === '' ||
           initialData.anggaran == null ||
           initialData.anggaran === undefined);
       if (fillPagu) {
@@ -233,13 +243,7 @@ const FormDPA = ({
         });
       }
     }
-  }, [
-    initialData?.id,
-    initialData?.sub_kegiatan,
-    initialData?.anggaran,
-    subs,
-    onChange,
-  ]);
+  }, [initialData?.id, initialData?.sub_kegiatan, initialData?.anggaran, subs, onChange]);
 
   useEffect(() => {
     if (!kid || !form.tahun) {
@@ -279,10 +283,10 @@ const FormDPA = ({
     pushForm({ ...form, [name]: value });
   };
 
-  const handleRekening = ({ kode_rekening, nama_rekening }) => {
-    setKodeErr("");
-    pushForm({ ...form, kode_rekening, nama_rekening });
-  };
+  // const handleRekening = ({ kode_rekening, nama_rekening }) => {
+  //   setKodeErr('');
+  //   pushForm({ ...form, kode_rekening, nama_rekening });
+  // };
 
   const onPickProgram = (value) => {
     const id = value ? Number(value) : null;
@@ -291,15 +295,15 @@ const FormDPA = ({
     setSid(null);
     setIid(null);
     const p = programs.find((x) => x.id === id);
-    const label = p ? formatProgramLabel(p) : "";
+    const label = p ? formatProgramLabel(p) : '';
     pushForm({
       ...form,
       program: label,
-      kegiatan: "",
-      sub_kegiatan: "",
-      indikator: "",
-      target: "",
-      anggaran: "",
+      kegiatan: '',
+      sub_kegiatan: '',
+      indikator: '',
+      target: '',
+      anggaran: '',
     });
   };
 
@@ -309,14 +313,14 @@ const FormDPA = ({
     setSid(null);
     setIid(null);
     const k = kegiatans.find((x) => x.id === id);
-    const label = k ? formatKegiatanLabel(k) : "";
+    const label = k ? formatKegiatanLabel(k) : '';
     pushForm({
       ...form,
       kegiatan: label,
-      sub_kegiatan: "",
-      indikator: "",
-      target: "",
-      anggaran: "",
+      sub_kegiatan: '',
+      indikator: '',
+      target: '',
+      anggaran: '',
     });
   };
 
@@ -324,13 +328,12 @@ const FormDPA = ({
     const id = value ? Number(value) : null;
     setSid(id);
     const s = subs.find((x) => x.id === id);
-    const label = s ? formatSubKegiatanLabel(s) : "";
-    const pagu =
-      s && s.pagu_anggaran != null ? Number(s.pagu_anggaran) : form.anggaran;
+    const label = s ? formatSubKegiatanLabel(s) : '';
+    const pagu = s && s.pagu_anggaran != null ? Number(s.pagu_anggaran) : form.anggaran;
     pushForm({
       ...form,
       sub_kegiatan: label,
-      anggaran: pagu === "" || pagu == null ? "" : pagu,
+      anggaran: pagu === '' || pagu == null ? '' : pagu,
     });
   };
 
@@ -338,72 +341,107 @@ const FormDPA = ({
     const id = value ? Number(value) : null;
     setIid(id);
     const row = indikators.find((x) => x.id === id);
-    const nama = row?.nama_indikator ? String(row.nama_indikator) : "";
-    const t0 = targetOptionsFromIndikator(row)[0]?.value || "";
+    const nama = row?.nama_indikator ? String(row.nama_indikator) : '';
+    const t0 = targetOptionsFromIndikator(row)[0]?.value || '';
     pushForm({ ...form, indikator: nama, target: t0 || form.target });
   };
 
   const onPickTarget = (value) => {
-    pushForm({ ...form, target: value != null ? String(value) : "" });
+    pushForm({ ...form, target: value != null ? String(value) : '' });
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (form.kode_rekening && !form.nama_rekening) {
-      setKodeErr(
-        "Pilih kode rekening dari daftar referensi (gunakan hasil pencarian).",
-      );
+      setKodeErr('Pilih kode rekening dari daftar referensi (gunakan hasil pencarian).');
       return;
     }
-    if (!String(form.program || "").trim()) {
-      message.warning("Program wajib diisi (pilih dari master atau isi manual).");
+    if (!String(form.program || '').trim()) {
+      message.warning('Program wajib diisi (pilih dari master atau isi manual).');
       return;
     }
-    if (!String(form.kegiatan || "").trim()) {
-      message.warning("Kegiatan wajib diisi.");
+    if (!String(form.kegiatan || '').trim()) {
+      message.warning('Kegiatan wajib diisi.');
       return;
     }
-    if (!String(form.sub_kegiatan || "").trim()) {
-      message.warning("Sub kegiatan wajib diisi.");
+    if (!String(form.sub_kegiatan || '').trim()) {
+      message.warning('Sub kegiatan wajib diisi.');
       return;
     }
-    if (onSubmit) onSubmit(form);
+    // REMOVED: RPJMD auto-resolved by backend smart chain
+    const cleanPayload = {
+      ...form,
+
+      // HARD LOCK FRONTEND: jangan pernah kirim id struktur
+      rka_id: '',
+      rpjmd_id: '',
+    };
+
+    onSubmit(cleanPayload);
   };
 
   const inputStyle = {
-    width: "100%",
-    padding: "7px 10px",
-    border: "1px solid #d9d9d9",
+    width: '100%',
+    padding: '7px 10px',
+    border: '1px solid #d9d9d9',
     borderRadius: 6,
     fontSize: 13,
-    boxSizing: "border-box",
+    boxSizing: 'border-box',
   };
   const labelStyle = {
-    display: "block",
+    display: 'block',
     marginBottom: 4,
     fontWeight: 600,
     fontSize: 13,
-    color: "#333",
+    color: '#333',
   };
   const fieldStyle = { marginBottom: 14 };
-  const errStyle = { color: "#f5222d", fontSize: 11, marginTop: 3 };
+  const errStyle = { color: '#f5222d', fontSize: 11, marginTop: 3 };
+
+  const sectionStyle = {
+    borderTop: '1px solid #e5e7eb',
+    paddingTop: 16,
+    marginTop: 20,
+  };
+
+  const sectionTitleStyle = {
+    fontWeight: 600,
+    fontSize: 14,
+    color: '#1d4ed8',
+    marginBottom: 8,
+    marginTop: 16,
+  };
 
   const selectProps = {
     showSearch: true,
     allowClear: true,
-    optionFilterProp: "label",
-    style: { width: "100%" },
-    size: "middle",
+    optionFilterProp: 'label',
+    style: { width: '100%' },
+    size: 'middle',
   };
 
-  const masterEmpty =
-    !lp && programs.length === 0 && String(form.tahun || "").trim();
+  const masterEmpty = !lp && programs.length === 0 && String(form.tahun || '').trim();
 
   return (
-    <form onSubmit={handleSubmit} style={{ padding: "4px 0" }}>
+    <form onSubmit={handleSubmit} style={{ padding: '4px 0' }}>
+      <div style={sectionTitleStyle}>Identitas Dokumen</div>
+      <div style={fieldStyle}>
+        <label style={labelStyle}>Jenis Dokumen</label>
+        <select
+          style={inputStyle}
+          name="jenis_dokumen"
+          value={form.jenis_dokumen}
+          onChange={handle}
+        >
+          <option value="DPA">DPA</option>
+          <option value="DPA-P">DPA-P (Perubahan)</option>
+          <option value="DPPA">DPPA</option>
+        </select>
+      </div>
+
       <div style={fieldStyle}>
         <label style={labelStyle}>
-          Tahun <span style={{ color: "red" }}>*</span>
+          Tahun <span style={{ color: 'red' }}>*</span>
         </label>
         <input
           style={inputStyle}
@@ -412,7 +450,7 @@ const FormDPA = ({
           value={form.tahun}
           onChange={handle}
           onBlur={() => {
-            const t = String(form.tahun || "").trim();
+            const t = String(form.tahun || '').trim();
             if (t && t !== committedTahun.current) {
               committedTahun.current = t;
               setPid(null);
@@ -432,7 +470,7 @@ const FormDPA = ({
       {periodeList.length > 0 && (
         <div style={fieldStyle}>
           <label style={labelStyle}>
-            Periode RPJMD <span style={{ color: "red" }}>*</span>
+            Periode RPJMD <span style={{ color: 'red' }}>*</span>
           </label>
           <select
             style={inputStyle}
@@ -450,6 +488,11 @@ const FormDPA = ({
           </select>
         </div>
       )}
+      <div style={sectionStyle}>
+        <div style={sectionTitleStyle}>Referensi Dokumen Sumber</div>
+      </div>
+
+      {/* REMOVED: RKA selection handled automatically by system */}
 
       {masterEmpty && (
         <Alert
@@ -461,10 +504,66 @@ const FormDPA = ({
         />
       )}
 
+      <div style={fieldStyle}>
+        <label style={labelStyle}>Dokumen RKA (Referensi)</label>
+        <select
+          style={inputStyle}
+          value={form.rka_id || ''}
+          onChange={(e) => {
+            const val = e.target.value;
+            const rka = rkaOptions.find((r) => String(r.id) === String(val));
+            pushForm({
+              ...form,
+              rka_id: val,
+              rpjmd_id: rka?.rpjmd_id ? String(rka.rpjmd_id) : form.rpjmd_id,
+              program: rka?.program || form.program,
+              kegiatan: rka?.kegiatan || form.kegiatan,
+              sub_kegiatan: rka?.sub_kegiatan || form.sub_kegiatan,
+              indikator: rka?.indikator || form.indikator,
+              target: rka?.target || form.target,
+              anggaran: rka?.anggaran != null ? String(rka.anggaran) : form.anggaran,
+            });
+          }}
+        >
+          <option value="">— Pilih RKA —</option>
+          {rkaOptions.map((r) => (
+            <option key={r.id} value={String(r.id)}>
+              {r.tahun} - {(r.program || '').substring(0, 60)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div style={fieldStyle}>
+        <label style={labelStyle}>rpjmd_id (opsional, baseline RPJMD)</label>
+        <input
+          style={inputStyle}
+          type="text"
+          name="rpjmd_id"
+          value={form.rpjmd_id}
+          onChange={handle}
+          placeholder="ID dokumen RPJMD"
+        />
+      </div>
+
+      <div style={sectionStyle}>
+        <div style={sectionTitleStyle}>Program, Kegiatan & Sub Kegiatan</div>
+
+        <div
+          style={{
+            fontSize: 12,
+            color: '#6b7280',
+            marginBottom: 12,
+          }}
+        >
+          Data berikut otomatis terisi dari RKA. Anda dapat mengubah jika diperlukan.
+        </div>
+      </div>
+
       {/* Program */}
       <div style={fieldStyle}>
         <label style={labelStyle}>
-          Program <span style={{ color: "red" }}>*</span>
+          Program <span style={{ color: 'red' }}>*</span>
         </label>
         <Spin spinning={lp}>
           {programs.length > 0 ? (
@@ -495,7 +594,7 @@ const FormDPA = ({
       {/* Kegiatan */}
       <div style={fieldStyle}>
         <label style={labelStyle}>
-          Kegiatan <span style={{ color: "red" }}>*</span>
+          Kegiatan <span style={{ color: 'red' }}>*</span>
         </label>
         <Spin spinning={lk}>
           {pid && kegiatans.length > 0 ? (
@@ -517,9 +616,7 @@ const FormDPA = ({
               value={form.kegiatan}
               onChange={handle}
               required
-              placeholder={
-                pid ? "Memuat kegiatan… atau ketik manual" : "Pilih program dulu"
-              }
+              placeholder={pid ? 'Memuat kegiatan… atau ketik manual' : 'Pilih program dulu'}
               disabled={Boolean(pid) && lk}
             />
           )}
@@ -529,7 +626,7 @@ const FormDPA = ({
       {/* Sub Kegiatan */}
       <div style={fieldStyle}>
         <label style={labelStyle}>
-          Sub Kegiatan <span style={{ color: "red" }}>*</span>
+          Sub Kegiatan <span style={{ color: 'red' }}>*</span>
         </label>
         <Spin spinning={ls}>
           {kid && subs.length > 0 ? (
@@ -551,9 +648,7 @@ const FormDPA = ({
               value={form.sub_kegiatan}
               onChange={handle}
               required
-              placeholder={
-                kid ? "Memuat sub kegiatan… atau ketik manual" : "Pilih kegiatan dulu"
-              }
+              placeholder={kid ? 'Memuat sub kegiatan… atau ketik manual' : 'Pilih kegiatan dulu'}
               disabled={Boolean(kid) && ls}
             />
           )}
@@ -628,54 +723,54 @@ const FormDPA = ({
         />
       </div>
 
-      <div style={fieldStyle}>
-        <label style={labelStyle}>Jenis Dokumen</label>
-        <select
-          style={inputStyle}
-          name="jenis_dokumen"
-          value={form.jenis_dokumen}
-          onChange={handle}
-        >
-          <option value="DPA">DPA</option>
-          <option value="DPA-P">DPA-P (Perubahan)</option>
-          <option value="DPPA">DPPA</option>
-        </select>
-      </div>
+      {/* <div style={sectionStyle}>
+        <div style={sectionTitleStyle}>Kode Rekening Belanja (Permendagri 90)</div>
 
-      <div style={fieldStyle}>
-        <label style={labelStyle}>rka_id (opsional, taut ke RKA)</label>
-        <input
-          style={inputStyle}
-          type="text"
-          name="rka_id"
-          value={form.rka_id}
-          onChange={handle}
-          placeholder="ID RKA terkait"
-        />
-      </div>
+        <div style={{ marginTop: 12 }}>
+          <label style={labelStyle}>
+            Kode Rekening (Permendagri 90)
+            <span style={{ fontWeight: 400, color: '#888', marginLeft: 6, fontSize: 11 }}>
+              — Opsional, ketik 2+ karakter untuk mencari
+            </span>
+          </label>
+          <KodeRekeningAutocomplete
+            value={form.kode_rekening || ''}
+            namaValue={form.nama_rekening || ''}
+            onChange={handleRekening}
+            placeholder="Misal: 5.1 atau Belanja Pegawai..."
+          />
+          <div style={{ marginTop: 16 }}>
+            <label style={labelStyle}>Rincian Kode Rekening</label>
 
-      <div style={fieldStyle}>
-        <label style={labelStyle}>rpjmd_id (opsional, baseline RPJMD)</label>
-        <input
-          style={inputStyle}
-          type="text"
-          name="rpjmd_id"
-          value={form.rpjmd_id}
-          onChange={handle}
-          placeholder="ID dokumen RPJMD"
-        />
+            <MasterBelanjaCascading
+              onChange={(rekening) => {
+                console.log('rekening terpilih', rekening);
+              }}
+            />
+          </div>
+          {kodeErr && <div style={errStyle}>⚠ {kodeErr}</div>}
+          {form.kode_rekening && form.nama_rekening && (
+            <div style={{ fontSize: 11, color: '#595959', marginTop: 4 }}>
+              Akan disimpan: <strong>{form.kode_rekening}</strong> — {form.nama_rekening}
+            </div>
+          )}
+        </div>
+      </div> */}
+
+      <div style={sectionStyle}>
+        <div style={sectionTitleStyle}>Keterangan Tambahan (opsional)</div>
       </div>
 
       <Collapse
         ghost
-        activeKey={manualOpen ? ["m"] : []}
-        onChange={(k) => setManualOpen(k.includes("m"))}
+        activeKey={manualOpen ? ['m'] : []}
+        onChange={(k) => setManualOpen(k.includes('m'))}
         items={[
           {
-            key: "m",
-            label: "Isi manual (teks bebas) untuk Program / Kegiatan / Sub / Indikator",
+            key: 'm',
+            label: 'Isi manual (teks bebas) untuk Program / Kegiatan / Sub / Indikator',
             children: (
-              <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: 'grid', gap: 10 }}>
                 <input
                   style={inputStyle}
                   name="program"
@@ -717,53 +812,22 @@ const FormDPA = ({
         ]}
       />
 
-      <div
-        style={{
-          ...fieldStyle,
-          borderTop: "1px dashed #e8e8e8",
-          paddingTop: 14,
-          marginTop: 4,
-        }}
-      >
-        <label style={labelStyle}>
-          Kode Rekening (Permendagri 90)
-          <span
-            style={{ fontWeight: 400, color: "#888", marginLeft: 6, fontSize: 11 }}
-          >
-            — Opsional, ketik 2+ karakter untuk mencari
-          </span>
-        </label>
-        <KodeRekeningAutocomplete
-          value={form.kode_rekening || ""}
-          namaValue={form.nama_rekening || ""}
-          onChange={handleRekening}
-          placeholder="Misal: 5.1 atau Belanja Pegawai..."
-        />
-        {kodeErr && <div style={errStyle}>⚠ {kodeErr}</div>}
-        {form.kode_rekening && form.nama_rekening && (
-          <div style={{ fontSize: 11, color: "#595959", marginTop: 4 }}>
-            Akan disimpan: <strong>{form.kode_rekening}</strong> —{" "}
-            {form.nama_rekening}
-          </div>
-        )}
-      </div>
-
       <div style={{ marginTop: 20 }}>
         <button
           type="submit"
           disabled={loading}
           style={{
-            padding: "8px 24px",
-            background: loading ? "#d9d9d9" : "#1677ff",
-            color: "white",
-            border: "none",
+            padding: '8px 24px',
+            background: loading ? '#d9d9d9' : '#1677ff',
+            color: 'white',
+            border: 'none',
             borderRadius: 6,
             fontSize: 13,
-            cursor: loading ? "not-allowed" : "pointer",
+            cursor: loading ? 'not-allowed' : 'pointer',
             fontWeight: 600,
           }}
         >
-          {loading ? "Menyimpan..." : "Simpan DPA"}
+          {loading ? 'Menyimpan...' : 'Simpan DPA'}
         </button>
       </div>
     </form>

@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { fetchDocumentTrace } from "../services/planningHubApi";
+import React, { useEffect, useState } from 'react';
+import { fetchDocumentTrace } from '../services/planningHubApi';
 
 export default function DocumentTracePanel({ documentType, documentId }) {
   const [data, setData] = useState(null);
@@ -10,7 +10,9 @@ export default function DocumentTracePanel({ documentType, documentId }) {
     if (!documentType || !documentId) return undefined;
     (async () => {
       try {
-        const t = await fetchDocumentTrace(documentType, documentId);
+        const safeDocumentType = documentType?.replace('_dokumen', '');
+
+        const t = await fetchDocumentTrace(safeDocumentType, documentId);
         if (!cancelled) setData(t);
       } catch (e) {
         if (!cancelled) setErr(e?.response?.data?.message || e.message);
@@ -45,7 +47,7 @@ export default function DocumentTracePanel({ documentType, documentId }) {
             {data.parents.map((p, i) => (
               <li key={i}>
                 {p.type} #{p.id}
-                {p.row?.judul || p.row?.nama_rpjmd ? ` — ${p.row.judul || p.row.nama_rpjmd}` : ""}
+                {p.row?.judul || p.row?.nama_rpjmd ? ` — ${p.row.judul || p.row.nama_rpjmd}` : ''}
               </li>
             ))}
           </ul>

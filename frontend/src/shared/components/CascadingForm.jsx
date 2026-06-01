@@ -13,7 +13,7 @@
  * 4. mergeRowsWithSnapshot menginjeksi opsi sintetis bila nested object null.
  */
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Form,
   Button,
@@ -25,92 +25,127 @@ import {
   Badge,
   Row,
   Col,
-} from "react-bootstrap";
-import { useNavigate } from "react-router-dom";
-import api from "../../services/api";
-import { useAuth } from "../../hooks/useAuth";
-import CascadingSelectField from "./CascadingSelectField";
-import CascadingMultiSelectField from "./CascadingMultiSelectField";
-import { useDokumen } from "../../hooks/useDokumen";
-import { usePeriodeAktif } from "../../features/rpjmd/hooks/usePeriodeAktif";
-import { normalizeId, normalizeListItems } from "../../utils/apiResponse";
-import {
-  konteksBannerRows,
-  isDokumenLevelPeriode,
-} from "../../utils/planningDokumenUtils";
+} from 'react-bootstrap';
+import { useNavigate } from 'react-router-dom';
+import api from '../../services/api';
+import { useAuth } from '../../hooks/useAuth';
+import CascadingSelectField from './CascadingSelectField';
+import CascadingMultiSelectField from './CascadingMultiSelectField';
+import { useDokumen } from '../../hooks/useDokumen';
+import { usePeriodeAktif } from '../../features/rpjmd/hooks/usePeriodeAktif';
+import { normalizeId, normalizeListItems } from '../../utils/apiResponse';
+import { konteksBannerRows, isDokumenLevelPeriode } from '../../utils/planningDokumenUtils';
 
 // ─── Konstanta level cascading ──────────────────────────────────────────────
 
 const LEVELS = [
-  { key: "misi",         label: "Misi",                  api: "misi",             paramKey: null,          group: "rpjmd" },
-  { key: "priorNasional",label: "Prioritas Nasional",     api: "prioritas-nasional",paramKey: "misi",        group: "prioritas" },
-  { key: "priorDaerah",  label: "Prioritas Daerah",       api: "prioritas-daerah", paramKey: "priorNasional",group: "prioritas" },
-  { key: "priorKepda",   label: "Prioritas Kepala Daerah",api: "prioritas-gubernur",paramKey: "priorDaerah", group: "prioritas" },
-  { key: "tujuan",       label: "Tujuan",                 api: "tujuan",           paramKey: "misi",         group: "rpjmd" },
-  { key: "sasaran",      label: "Sasaran",                api: "sasaran",          paramKey: "tujuan",       group: "rpjmd" },
-  { key: "strategi",     label: "Strategi",               api: "strategi",         paramKey: "sasaran",      group: "rpjmd", multi: true },
-  { key: "arahKebijakan",label: "Arah Kebijakan",         api: "arah-kebijakan",   paramKey: "strategi",     group: "rpjmd", multi: true },
-  { key: "program",      label: "Program",                api: "programs",         paramKey: "sasaran",      group: "program" },
-  { key: "kegiatan",     label: "Kegiatan",               api: "kegiatan",         paramKey: "program",      group: "program" },
-  { key: "subKegiatan",  label: "Sub Kegiatan",           api: "sub-kegiatan",     paramKey: "kegiatan",     group: "program" },
+  { key: 'misi', label: 'Misi', api: 'misi', paramKey: null, group: 'rpjmd' },
+  {
+    key: 'priorNasional',
+    label: 'Prioritas Nasional',
+    api: 'prioritas-nasional',
+    paramKey: 'misi',
+    group: 'prioritas',
+  },
+  {
+    key: 'priorDaerah',
+    label: 'Prioritas Daerah',
+    api: 'prioritas-daerah',
+    paramKey: 'priorNasional',
+    group: 'prioritas',
+  },
+  {
+    key: 'priorKepda',
+    label: 'Prioritas Kepala Daerah',
+    api: 'prioritas-gubernur',
+    paramKey: 'priorDaerah',
+    group: 'prioritas',
+  },
+  { key: 'tujuan', label: 'Tujuan', api: 'tujuan', paramKey: 'misi', group: 'rpjmd' },
+  { key: 'sasaran', label: 'Sasaran', api: 'sasaran', paramKey: 'tujuan', group: 'rpjmd' },
+  {
+    key: 'strategi',
+    label: 'Strategi',
+    api: 'strategi',
+    paramKey: 'sasaran',
+    group: 'rpjmd',
+    multi: true,
+  },
+  {
+    key: 'arahKebijakan',
+    label: 'Arah Kebijakan',
+    api: 'arah-kebijakan',
+    paramKey: 'strategi',
+    group: 'rpjmd',
+    multi: true,
+  },
+  { key: 'program', label: 'Program', api: 'programs', paramKey: 'sasaran', group: 'program' },
+  { key: 'kegiatan', label: 'Kegiatan', api: 'kegiatan', paramKey: 'program', group: 'program' },
+  {
+    key: 'subKegiatan',
+    label: 'Sub Kegiatan',
+    api: 'sub-kegiatan',
+    paramKey: 'kegiatan',
+    group: 'program',
+  },
 ];
 
 // Limit besar agar seluruh pilihan tersedia di edit mode
 const FETCH_LIMITS = {
   misi: {},
-  "prioritas-nasional": { page: 1, limit: 1000 },
-  "prioritas-daerah":   { page: 1, limit: 1000 },
-  "prioritas-gubernur": { page: 1, limit: 1000 },
-  tujuan:               { limit: 1000, offset: 0 },
-  sasaran:              { limit: 1000, offset: 0 },
-  strategi:             { page: 1, limit: 1000 },
-  "arah-kebijakan":     { page: 1, limit: 1000 },
-  programs:             { page: 1, limit: 1000 },
-  kegiatan:             { page: 1, limit: 1000 },
-  "sub-kegiatan":       { page: 1, limit: 1000 },
+  'prioritas-nasional': { page: 1, limit: 1000 },
+  'prioritas-daerah': { page: 1, limit: 1000 },
+  'prioritas-gubernur': { page: 1, limit: 1000 },
+  tujuan: { limit: 1000, offset: 0 },
+  sasaran: { limit: 1000, offset: 0 },
+  strategi: { page: 1, limit: 1000 },
+  'arah-kebijakan': { page: 1, limit: 1000 },
+  programs: { page: 1, limit: 1000 },
+  kegiatan: { page: 1, limit: 1000 },
+  'sub-kegiatan': { page: 1, limit: 1000 },
 };
 
 // FK field pada tabel cascading → key di LEVELS
 const FK_MAP = {
-  misi:          "misi_id",
-  priorNasional: "prior_nas_id",
-  priorDaerah:   "prior_daerah_id",
-  priorKepda:    "prior_kepda_id",
-  tujuan:        "tujuan_id",
-  sasaran:       "sasaran_id",
-  program:       "program_id",
-  kegiatan:      "kegiatan_id",
-  subKegiatan:   "sub_kegiatan_id",
+  misi: 'misi_id',
+  priorNasional: 'prior_nas_id',
+  priorDaerah: 'prior_daerah_id',
+  priorKepda: 'prior_kepda_id',
+  tujuan: 'tujuan_id',
+  sasaran: 'sasaran_id',
+  program: 'program_id',
+  kegiatan: 'kegiatan_id',
+  subKegiatan: 'sub_kegiatan_id',
 };
 
 const NESTED_MAP = {
-  misi:          "misi",
-  priorNasional: "priorNasional",
-  priorDaerah:   "priorDaerah",
-  priorKepda:    "priorKepda",
-  tujuan:        "tujuan",
-  sasaran:       "sasaran",
-  program:       "program",
-  kegiatan:      "kegiatan",
-  subKegiatan:   "subKegiatan",
+  misi: 'misi',
+  priorNasional: 'priorNasional',
+  priorDaerah: 'priorDaerah',
+  priorKepda: 'priorKepda',
+  tujuan: 'tujuan',
+  sasaran: 'sasaran',
+  program: 'program',
+  kegiatan: 'kegiatan',
+  subKegiatan: 'subKegiatan',
 };
 
 const PARENT_QUERY_KEYS = {
-  misi:          "misi_id",
-  priorNasional: "prioritas_nasional_id",
-  priorDaerah:   "prioritas_daerah_id",
-  priorKepda:    "prioritas_kepala_daerah_id",
-  tujuan:        "tujuan_id",
-  sasaran:       "sasaran_id",
-  strategi:      "strategi_id",
-  program:       "program_id",
-  kegiatan:      "kegiatan_id",
+  misi: 'misi_id',
+  priorNasional: 'prioritas_nasional_id',
+  priorDaerah: 'prioritas_daerah_id',
+  priorKepda: 'prioritas_kepala_daerah_id',
+  tujuan: 'tujuan_id',
+  sasaran: 'sasaran_id',
+  strategi: 'strategi_id',
+  program: 'program_id',
+  kegiatan: 'kegiatan_id',
 };
 
 const GROUP_LABELS = {
-  rpjmd:    { label: "RPJMD",            color: "primary" },
-  prioritas:{ label: "Prioritas",        color: "warning" },
-  program:  { label: "Program / Kegiatan", color: "success" },
+  rpjmd: { label: 'RPJMD', color: 'primary' },
+  prioritas: { label: 'Prioritas', color: 'warning' },
+  program: { label: 'Program / Kegiatan', color: 'success' },
 };
 
 /**
@@ -120,50 +155,57 @@ const GROUP_LABELS = {
  */
 const CLEAR_WHEN_CHANGED = {
   misi: [
-    "priorNasional", "priorDaerah", "priorKepda",
-    "tujuan", "sasaran", "strategi", "arahKebijakan",
-    "program", "kegiatan", "subKegiatan",
+    'priorNasional',
+    'priorDaerah',
+    'priorKepda',
+    'tujuan',
+    'sasaran',
+    'strategi',
+    'arahKebijakan',
+    'program',
+    'kegiatan',
+    'subKegiatan',
   ],
-  priorNasional: ["priorDaerah", "priorKepda"],
-  priorDaerah: ["priorKepda"],
+  priorNasional: ['priorDaerah', 'priorKepda'],
+  priorDaerah: ['priorKepda'],
   priorKepda: [],
-  tujuan: ["sasaran", "strategi", "arahKebijakan", "program", "kegiatan", "subKegiatan"],
-  sasaran: ["strategi", "arahKebijakan", "program", "kegiatan", "subKegiatan"],
-  strategi: ["arahKebijakan"],
+  tujuan: ['sasaran', 'strategi', 'arahKebijakan', 'program', 'kegiatan', 'subKegiatan'],
+  sasaran: ['strategi', 'arahKebijakan', 'program', 'kegiatan', 'subKegiatan'],
+  strategi: ['arahKebijakan'],
   arahKebijakan: [],
-  program: ["kegiatan", "subKegiatan"],
-  kegiatan: ["subKegiatan"],
+  program: ['kegiatan', 'subKegiatan'],
+  kegiatan: ['subKegiatan'],
   subKegiatan: [],
 };
 
 // ─── Helper functions ────────────────────────────────────────────────────────
 
 function isMultiField(key) {
-  return key === "strategi" || key === "arahKebijakan";
+  return key === 'strategi' || key === 'arahKebijakan';
 }
 
 function resolveExistingValue(key, existingData) {
-  if (!existingData) return isMultiField(key) ? [] : "";
+  if (!existingData) return isMultiField(key) ? [] : '';
 
-  if (key === "strategi") {
+  if (key === 'strategi') {
     return (existingData.strategis || []).map((item) => normalizeId(item.id));
   }
-  if (key === "arahKebijakan") {
+  if (key === 'arahKebijakan') {
     return (existingData.arahKebijakans || []).map((item) => normalizeId(item.id));
   }
 
   const nestedName = NESTED_MAP[key];
   const nested = nestedName ? existingData[nestedName] : null;
-  if (nested && typeof nested === "object" && nested.id != null && nested.id !== "") {
+  if (nested && typeof nested === 'object' && nested.id != null && nested.id !== '') {
     return normalizeId(nested.id);
   }
 
   const fk = FK_MAP[key];
-  if (fk && existingData[fk] != null && existingData[fk] !== "") {
+  if (fk && existingData[fk] != null && existingData[fk] !== '') {
     return normalizeId(existingData[fk]);
   }
 
-  return normalizeId(existingData?.[key]?.id ?? existingData?.[`${key}_id`] ?? "");
+  return normalizeId(existingData?.[key]?.id ?? existingData?.[`${key}_id`] ?? '');
 }
 
 /**
@@ -172,12 +214,12 @@ function resolveExistingValue(key, existingData) {
  */
 /** Label tampilan prioritas: uraian/nama dulu; kode hanya fallback jika tidak ada teks. */
 function prioritasOptionText(item, { uraianKey, namaKey, kodeKey }) {
-  const u = String(item?.[uraianKey] ?? "").trim();
-  const n = String(item?.[namaKey] ?? "").trim();
+  const u = String(item?.[uraianKey] ?? '').trim();
+  const n = String(item?.[namaKey] ?? '').trim();
   if (u) return u;
   if (n) return n;
-  const k = String(item?.[kodeKey] ?? "").trim();
-  return k || String(item?.id ?? "");
+  const k = String(item?.[kodeKey] ?? '').trim();
+  return k || String(item?.id ?? '');
 }
 
 function mergeRowsWithSnapshot(levelKey, rows, snapshot) {
@@ -185,23 +227,29 @@ function mergeRowsWithSnapshot(levelKey, rows, snapshot) {
   if (!snapshot) return base;
 
   // Multi-select: tambah semua baris dari snapshot yang belum ada
-  if (levelKey === "strategi") {
+  if (levelKey === 'strategi') {
     const fromApi = Array.isArray(snapshot.strategis) ? snapshot.strategis : [];
-    const ids = new Set(base.map((r) => String(r?.id ?? "")));
+    const ids = new Set(base.map((r) => String(r?.id ?? '')));
     fromApi.forEach((ent) => {
       if (ent?.id == null) return;
       const id = normalizeId(ent.id);
-      if (!ids.has(id)) { base.push({ ...ent, id }); ids.add(id); }
+      if (!ids.has(id)) {
+        base.push({ ...ent, id });
+        ids.add(id);
+      }
     });
     return base;
   }
-  if (levelKey === "arahKebijakan") {
+  if (levelKey === 'arahKebijakan') {
     const fromApi = Array.isArray(snapshot.arahKebijakans) ? snapshot.arahKebijakans : [];
-    const ids = new Set(base.map((r) => String(r?.id ?? "")));
+    const ids = new Set(base.map((r) => String(r?.id ?? '')));
     fromApi.forEach((ent) => {
       if (ent?.id == null) return;
       const id = normalizeId(ent.id);
-      if (!ids.has(id)) { base.push({ ...ent, id }); ids.add(id); }
+      if (!ids.has(id)) {
+        base.push({ ...ent, id });
+        ids.add(id);
+      }
     });
     return base;
   }
@@ -213,7 +261,7 @@ function mergeRowsWithSnapshot(levelKey, rows, snapshot) {
   // Coba injeksi dari nested object
   const nk = NESTED_MAP[levelKey];
   const ent = nk ? snapshot[nk] : null;
-  if (ent && typeof ent === "object" && ent.id != null) {
+  if (ent && typeof ent === 'object' && ent.id != null) {
     if (String(normalizeId(ent.id)) === String(selectedId)) {
       return [...base, { ...ent, id: normalizeId(ent.id) }];
     }
@@ -226,33 +274,42 @@ function mergeRowsWithSnapshot(levelKey, rows, snapshot) {
 function getOptionLabel(key, item) {
   if (item?._synthetic) return `[Tersimpan ID: ${item.id}]`;
   switch (key) {
-    case "misi":         return `${item.no_misi ?? ""} - ${item.isi_misi ?? ""}`;
-    case "priorNasional":
+    case 'misi':
+      return `${item.no_misi ?? ''} - ${item.isi_misi ?? ''}`;
+    case 'priorNasional':
       return prioritasOptionText(item, {
-        uraianKey: "uraian_prionas",
-        namaKey: "nama_prionas",
-        kodeKey: "kode_prionas",
+        uraianKey: 'uraian_prionas',
+        namaKey: 'nama_prionas',
+        kodeKey: 'kode_prionas',
       });
-    case "priorDaerah":
+    case 'priorDaerah':
       return prioritasOptionText(item, {
-        uraianKey: "uraian_prioda",
-        namaKey: "nama_prioda",
-        kodeKey: "kode_prioda",
+        uraianKey: 'uraian_prioda',
+        namaKey: 'nama_prioda',
+        kodeKey: 'kode_prioda',
       });
-    case "priorKepda":
+    case 'priorKepda':
       return prioritasOptionText(item, {
-        uraianKey: "uraian_priogub",
-        namaKey: "nama_priogub",
-        kodeKey: "kode_priogub",
+        uraianKey: 'uraian_priogub',
+        namaKey: 'nama_priogub',
+        kodeKey: 'kode_priogub',
       });
-    case "tujuan":       return `${item.no_tujuan ?? ""} - ${item.isi_tujuan ?? ""}`;
-    case "sasaran":      return `${item.nomor ?? ""} - ${item.isi_sasaran ?? ""}`;
-    case "strategi":     return `${item.kode_strategi ?? ""} - ${item.deskripsi ?? ""}`;
-    case "arahKebijakan":return `${item.kode_arah ?? ""} - ${item.nama_arah ?? item.deskripsi ?? ""}`;
-    case "program":      return `${item.kode_program ?? ""} - ${item.nama_program ?? ""}`;
-    case "kegiatan":     return `${item.kode_kegiatan ?? ""} - ${item.nama_kegiatan ?? ""}`;
-    case "subKegiatan":  return `${item.kode_sub_kegiatan ?? ""} - ${item.nama_sub_kegiatan ?? ""}`;
-    default:             return item.nama || String(item.id);
+    case 'tujuan':
+      return `${item.no_tujuan ?? ''} - ${item.isi_tujuan ?? ''}`;
+    case 'sasaran':
+      return `${item.nomor ?? ''} - ${item.isi_sasaran ?? ''}`;
+    case 'strategi':
+      return `${item.kode_strategi ?? ''} - ${item.deskripsi ?? ''}`;
+    case 'arahKebijakan':
+      return `${item.kode_arah ?? ''} - ${item.nama_arah ?? item.deskripsi ?? ''}`;
+    case 'program':
+      return `${item.kode_program ?? ''} - ${item.nama_program ?? ''}`;
+    case 'kegiatan':
+      return `${item.kode_kegiatan ?? ''} - ${item.nama_kegiatan ?? ''}`;
+    case 'subKegiatan':
+      return `${item.kode_sub_kegiatan ?? ''} - ${item.nama_sub_kegiatan ?? ''}`;
+    default:
+      return item.nama || String(item.id);
   }
 }
 
@@ -263,15 +320,13 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
   const navigate = useNavigate();
   const { dokumen, tahun } = useDokumen();
   const { periode_id: periodeAktifId, periodeList } = usePeriodeAktif();
-  const periodeAktif = periodeList.find(
-    (p) => String(p.id) === String(periodeAktifId),
-  );
+  const periodeAktif = periodeList.find((p) => String(p.id) === String(periodeAktifId));
 
-  const [data,    setData]    = useState({});
+  const [data, setData] = useState({});
   const [options, setOptions] = useState({});
   const [loading, setLoading] = useState({});
   const [globalLoading, setGlobalLoading] = useState(false);
-  const [error,   setError]   = useState(null);
+  const [error, setError] = useState(null);
   const [submitSuccess, setSubmitSuccess] = useState(null);
 
   const isEditMode = Boolean(existingData);
@@ -279,13 +334,18 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
 
   // Selalu ada akses ke periodeAktifId terbaru tanpa perlu masukkan ke deps
   const periodeAktifIdRef = useRef(periodeAktifId);
-  useEffect(() => { periodeAktifIdRef.current = periodeAktifId; });
+  useEffect(() => {
+    periodeAktifIdRef.current = periodeAktifId;
+  });
 
-  const baseParams = useMemo(() => ({
-    jenis_dokumen: String(dokumen || "").toLowerCase(),
-    tahun: String(tahun || ""),
-    _ts: Date.now(),
-  }), [dokumen, tahun]);
+  const baseParams = useMemo(
+    () => ({
+      jenis_dokumen: String(dokumen || '').toLowerCase(),
+      tahun: String(tahun || ''),
+      _ts: Date.now(),
+    }),
+    [dokumen, tahun],
+  );
 
   // ── Helper: fetch satu endpoint dan normalisasi ────────────────────────────
   const fetchOne = useCallback(async (path, params, signal) => {
@@ -293,7 +353,7 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
       const res = await api.get(path, { params, signal });
       return normalizeListItems(res.data);
     } catch (err) {
-      if (err.name === "CanceledError" || err.code === "ERR_CANCELED") return null;
+      if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return null;
       console.warn(`Gagal fetch ${path}:`, err.message);
       return [];
     }
@@ -302,76 +362,91 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
   // ══════════════════════════════════════════════════════════════════════════
   // EDIT MODE — fetch semua opsi secara paralel
   // ══════════════════════════════════════════════════════════════════════════
-  const initEditMode = useCallback(async (ed) => {
-    setGlobalLoading(true);
-    setError(null);
+  const initEditMode = useCallback(
+    async (ed) => {
+      setGlobalLoading(true);
+      setError(null);
 
-    // 1. Pre-set semua nilai terpilih dari existingData
-    const selectedValues = {};
-    LEVELS.forEach((lv) => {
-      selectedValues[lv.key] = resolveExistingValue(lv.key, ed);
-    });
-    setData(selectedValues);
+      // 1. Pre-set semua nilai terpilih dari existingData
+      const selectedValues = {};
+      LEVELS.forEach((lv) => {
+        selectedValues[lv.key] = resolveExistingValue(lv.key, ed);
+      });
+      setData(selectedValues);
 
-    const controller = new AbortController();
-    abortControllers.current["__edit__"] = controller;
-    const sig = controller.signal;
+      const controller = new AbortController();
+      abortControllers.current['__edit__'] = controller;
+      const sig = controller.signal;
 
-    const bp = { ...baseParams, _ts: Date.now() };
+      const bp = { ...baseParams, _ts: Date.now() };
 
-    // 2. Tentukan ID yang dibutuhkan untuk fetch parent-dependent endpoints
-    const tujuanId  = ed.tujuan_id  ?? ed.tujuan?.id;
-    const programId = ed.program_id ?? ed.program?.id;
-    const kegiatanId= ed.kegiatan_id?? ed.kegiatan?.id;
-    const sasaranId = ed.sasaran_id ?? ed.sasaran?.id;
+      // 2. Tentukan ID yang dibutuhkan untuk fetch parent-dependent endpoints
+      const tujuanId = ed.tujuan_id ?? ed.tujuan?.id;
+      const programId = ed.program_id ?? ed.program?.id;
+      const kegiatanId = ed.kegiatan_id ?? ed.kegiatan?.id;
+      const sasaranId = ed.sasaran_id ?? ed.sasaran?.id;
 
-    // 3. Jalankan semua fetch secara paralel (no periode_id untuk prioritas)
-    const [
-      misiRows, priorNasRows, priorDaeRows, priorKepRows,
-      tujuanRows, sasaranRows,
-      strategiRows, arahRows,
-      programRows, kegiatanRows, subKegiatanRows,
-    ] = await Promise.all([
-      fetchOne("misi",              { ...bp },                                                  sig),
-      fetchOne("prioritas-nasional",{ ...bp, ...FETCH_LIMITS["prioritas-nasional"] },          sig),
-      fetchOne("prioritas-daerah",  { ...bp, ...FETCH_LIMITS["prioritas-daerah"] },            sig),
-      fetchOne("prioritas-gubernur",{ ...bp, ...FETCH_LIMITS["prioritas-gubernur"] },          sig),
-      fetchOne("tujuan",            { ...bp, ...FETCH_LIMITS["tujuan"] },                      sig),
-      tujuanId
-        ? fetchOne(`sasaran/by-tujuan/${tujuanId}`, { ...bp },                                 sig)
-        : Promise.resolve([]),
-      fetchOne("strategi",          { ...bp, ...FETCH_LIMITS["strategi"],
-                                      ...(sasaranId ? { sasaran_id: sasaranId } : {}) },        sig),
-      fetchOne("arah-kebijakan",    { ...bp, ...FETCH_LIMITS["arah-kebijakan"] },              sig),
-      fetchOne("programs",          { ...bp, ...FETCH_LIMITS["programs"] },                    sig),
-      programId
-        ? fetchOne("kegiatan",      { ...bp, ...FETCH_LIMITS["kegiatan"], program_id: programId }, sig)
-        : Promise.resolve([]),
-      kegiatanId
-        ? fetchOne("sub-kegiatan",  { ...bp, ...FETCH_LIMITS["sub-kegiatan"], kegiatan_id: kegiatanId }, sig)
-        : Promise.resolve([]),
-    ]);
+      // 3. Jalankan semua fetch secara paralel (no periode_id untuk prioritas)
+      const [
+        misiRows,
+        priorNasRows,
+        priorDaeRows,
+        priorKepRows,
+        tujuanRows,
+        sasaranRows,
+        strategiRows,
+        arahRows,
+        programRows,
+        kegiatanRows,
+        subKegiatanRows,
+      ] = await Promise.all([
+        fetchOne('misi', { ...bp }, sig),
+        fetchOne('prioritas-nasional', { ...bp, ...FETCH_LIMITS['prioritas-nasional'] }, sig),
+        fetchOne('prioritas-daerah', { ...bp, ...FETCH_LIMITS['prioritas-daerah'] }, sig),
+        fetchOne('prioritas-gubernur', { ...bp, ...FETCH_LIMITS['prioritas-gubernur'] }, sig),
+        fetchOne('tujuan', { ...bp, ...FETCH_LIMITS['tujuan'] }, sig),
+        tujuanId ? fetchOne(`sasaran/by-tujuan/${tujuanId}`, { ...bp }, sig) : Promise.resolve([]),
+        fetchOne(
+          'strategi',
+          { ...bp, ...FETCH_LIMITS['strategi'], ...(sasaranId ? { sasaran_id: sasaranId } : {}) },
+          sig,
+        ),
+        fetchOne('arah-kebijakan', { ...bp, ...FETCH_LIMITS['arah-kebijakan'] }, sig),
+        fetchOne('programs', { ...bp, ...FETCH_LIMITS['programs'] }, sig),
+        programId
+          ? fetchOne('kegiatan', { ...bp, ...FETCH_LIMITS['kegiatan'], program_id: programId }, sig)
+          : Promise.resolve([]),
+        kegiatanId
+          ? fetchOne(
+              'sub-kegiatan',
+              { ...bp, ...FETCH_LIMITS['sub-kegiatan'], kegiatan_id: kegiatanId },
+              sig,
+            )
+          : Promise.resolve([]),
+      ]);
 
-    if (controller.signal.aborted) return;
+      if (controller.signal.aborted) return;
 
-    // 4. Merge dengan snapshot agar nilai terpilih selalu ada di opsi
-    const newOptions = {
-      misi:          mergeRowsWithSnapshot("misi",          misiRows      ?? [], ed),
-      priorNasional: mergeRowsWithSnapshot("priorNasional", priorNasRows  ?? [], ed),
-      priorDaerah:   mergeRowsWithSnapshot("priorDaerah",   priorDaeRows  ?? [], ed),
-      priorKepda:    mergeRowsWithSnapshot("priorKepda",    priorKepRows  ?? [], ed),
-      tujuan:        mergeRowsWithSnapshot("tujuan",        tujuanRows    ?? [], ed),
-      sasaran:       mergeRowsWithSnapshot("sasaran",       sasaranRows   ?? [], ed),
-      strategi:      mergeRowsWithSnapshot("strategi",      strategiRows  ?? [], ed),
-      arahKebijakan: mergeRowsWithSnapshot("arahKebijakan", arahRows      ?? [], ed),
-      program:       mergeRowsWithSnapshot("program",       programRows   ?? [], ed),
-      kegiatan:      mergeRowsWithSnapshot("kegiatan",      kegiatanRows  ?? [], ed),
-      subKegiatan:   mergeRowsWithSnapshot("subKegiatan",   subKegiatanRows ?? [], ed),
-    };
+      // 4. Merge dengan snapshot agar nilai terpilih selalu ada di opsi
+      const newOptions = {
+        misi: mergeRowsWithSnapshot('misi', misiRows ?? [], ed),
+        priorNasional: mergeRowsWithSnapshot('priorNasional', priorNasRows ?? [], ed),
+        priorDaerah: mergeRowsWithSnapshot('priorDaerah', priorDaeRows ?? [], ed),
+        priorKepda: mergeRowsWithSnapshot('priorKepda', priorKepRows ?? [], ed),
+        tujuan: mergeRowsWithSnapshot('tujuan', tujuanRows ?? [], ed),
+        sasaran: mergeRowsWithSnapshot('sasaran', sasaranRows ?? [], ed),
+        strategi: mergeRowsWithSnapshot('strategi', strategiRows ?? [], ed),
+        arahKebijakan: mergeRowsWithSnapshot('arahKebijakan', arahRows ?? [], ed),
+        program: mergeRowsWithSnapshot('program', programRows ?? [], ed),
+        kegiatan: mergeRowsWithSnapshot('kegiatan', kegiatanRows ?? [], ed),
+        subKegiatan: mergeRowsWithSnapshot('subKegiatan', subKegiatanRows ?? [], ed),
+      };
 
-    setOptions(newOptions);
-    setGlobalLoading(false);
-  }, [baseParams, fetchOne]);
+      setOptions(newOptions);
+      setGlobalLoading(false);
+    },
+    [baseParams, fetchOne],
+  );
 
   // ══════════════════════════════════════════════════════════════════════════
   // NEW MODE — fetch level pertama, sisanya di-trigger oleh handleChange
@@ -382,60 +457,65 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
 
     const emptyData = {};
     LEVELS.forEach((lv) => {
-      emptyData[lv.key] = isMultiField(lv.key) ? [] : "";
+      emptyData[lv.key] = isMultiField(lv.key) ? [] : '';
     });
     setData(emptyData);
 
     const controller = new AbortController();
-    abortControllers.current["__new__"] = controller;
+    abortControllers.current['__new__'] = controller;
     const sig = controller.signal;
 
-    const rows = await fetchOne("misi", { ...baseParams, _ts: Date.now() }, sig);
+    const rows = await fetchOne('misi', { ...baseParams, _ts: Date.now() }, sig);
     if (controller.signal.aborted) return;
     setOptions({ misi: rows ?? [] });
     setGlobalLoading(false);
   }, [baseParams, fetchOne]);
 
   // ── fetchChildOptions: dipakai saat pengguna memilih di new mode ──────────
-  const fetchChildOptions = useCallback(async (levelKey, parentValue, strategiValue) => {
-    const level = LEVELS.find((l) => l.key === levelKey);
-    if (!level) return;
+  const fetchChildOptions = useCallback(
+    async (levelKey, parentValue, strategiValue) => {
+      const level = LEVELS.find((l) => l.key === levelKey);
+      if (!level) return;
 
-    // Abort request sebelumnya untuk level ini
-    abortControllers.current[levelKey]?.abort?.();
-    const controller = new AbortController();
-    abortControllers.current[levelKey] = controller;
-    const sig = controller.signal;
+      // Abort request sebelumnya untuk level ini
+      abortControllers.current[levelKey]?.abort?.();
+      const controller = new AbortController();
+      abortControllers.current[levelKey] = controller;
+      const sig = controller.signal;
 
-    setLoading((prev) => ({ ...prev, [levelKey]: true }));
+      setLoading((prev) => ({ ...prev, [levelKey]: true }));
 
-    const bp = { ...baseParams, _ts: Date.now() };
-    let requestPath = level.api;
-    let params = { ...bp, ...(FETCH_LIMITS[level.api] || {}) };
+      const bp = { ...baseParams, _ts: Date.now() };
+      let requestPath = level.api;
+      let params = { ...bp, ...(FETCH_LIMITS[level.api] || {}) };
 
-    // Sasaran: gunakan endpoint by-tujuan
-    if (levelKey === "sasaran" && parentValue) {
-      requestPath = `sasaran/by-tujuan/${encodeURIComponent(String(parentValue))}`;
-      params = { ...bp };
-      // Kirim periode_id ke sasaran/by-tujuan (backend punya fallback)
-      const pid = Number(periodeAktifIdRef.current);
-      if (Number.isFinite(pid) && pid > 0) params.periode_id = pid;
-    } else if (level.paramKey) {
-      const pqk = PARENT_QUERY_KEYS[level.paramKey] || `${level.paramKey}_id`;
-      if (parentValue) {
-        params[pqk] = Array.isArray(parentValue) ? parentValue.join(",") : String(parentValue);
+      // Sasaran: gunakan endpoint by-tujuan
+      if (levelKey === 'sasaran' && parentValue) {
+        requestPath = `sasaran/by-tujuan/${encodeURIComponent(String(parentValue))}`;
+        params = { ...bp };
+        // Kirim periode_id ke sasaran/by-tujuan (backend punya fallback)
+        const pid = Number(periodeAktifIdRef.current);
+        if (Number.isFinite(pid) && pid > 0) params.periode_id = pid;
+      } else if (level.paramKey) {
+        const pqk = PARENT_QUERY_KEYS[level.paramKey] || `${level.paramKey}_id`;
+        if (parentValue) {
+          params[pqk] = Array.isArray(parentValue) ? parentValue.join(',') : String(parentValue);
+        }
+        if (levelKey === 'arahKebijakan' && strategiValue) {
+          params.strategi_id = Array.isArray(strategiValue)
+            ? strategiValue.join(',')
+            : String(strategiValue);
+        }
       }
-      if (levelKey === "arahKebijakan" && strategiValue) {
-        params.strategi_id = Array.isArray(strategiValue) ? strategiValue.join(",") : String(strategiValue);
-      }
-    }
 
-    const rows = await fetchOne(requestPath, params, sig);
-    if (controller.signal.aborted) return;
+      const rows = await fetchOne(requestPath, params, sig);
+      if (controller.signal.aborted) return;
 
-    setOptions((prev) => ({ ...prev, [levelKey]: rows ?? [] }));
-    setLoading((prev) => ({ ...prev, [levelKey]: false }));
-  }, [baseParams, fetchOne]);
+      setOptions((prev) => ({ ...prev, [levelKey]: rows ?? [] }));
+      setLoading((prev) => ({ ...prev, [levelKey]: false }));
+    },
+    [baseParams, fetchOne],
+  );
 
   // ── Effect: inisialisasi form ─────────────────────────────────────────────
   useEffect(() => {
@@ -455,7 +535,7 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
       Object.values(abortControllers.current).forEach((c) => c?.abort?.());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dokumen, tahun, existingData?.id ?? (isEditMode ? "edit" : null)]);
+  }, [dokumen, tahun, existingData?.id ?? (isEditMode ? 'edit' : null)]);
 
   // Cleanup saat unmount
   useEffect(() => {
@@ -465,63 +545,75 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
   }, []);
 
   // ── handleChange: cascade select (new mode) ───────────────────────────────
-  const handleChange = useCallback(async (event, levelIndex) => {
-    const level = LEVELS[levelIndex];
-    const raw = event.target.value;
-    const nextValue = isMultiField(level.key)
-      ? (Array.isArray(raw) ? raw : [raw]).filter(Boolean).map(normalizeId)
-      : normalizeId(raw);
+  const handleChange = useCallback(
+    async (event, levelIndex) => {
+      const level = LEVELS[levelIndex];
+      const raw = event.target.value;
+      const nextValue = isMultiField(level.key)
+        ? (Array.isArray(raw) ? raw : [raw]).filter(Boolean).map(normalizeId)
+        : normalizeId(raw);
 
-    const nextData = { ...data, [level.key]: nextValue };
-    const toClear = CLEAR_WHEN_CHANGED[level.key] || [];
-    toClear.forEach((lvKey) => {
-      nextData[lvKey] = isMultiField(lvKey) ? [] : "";
-      abortControllers.current[lvKey]?.abort?.();
-    });
-
-    // Auto-fill prioritas berdasarkan histori cascading untuk misi ini (agar user tidak bingung).
-    // Hanya berlaku di new mode, dan hanya mengisi field yang kosong (tidak override pilihan user).
-    if (!isEditMode && level.key === "misi" && nextData.misi && baseParams.jenis_dokumen && baseParams.tahun) {
-      try {
-        const res = await api.get("/cascading/suggest-prioritas", {
-          params: {
-            misi_id: nextData.misi,
-            jenis_dokumen: baseParams.jenis_dokumen,
-            tahun: baseParams.tahun,
-          },
-        });
-        const sug = res?.data?.data || {};
-        if (!nextData.priorNasional && sug.prior_nas_id) nextData.priorNasional = normalizeId(sug.prior_nas_id);
-        if (!nextData.priorDaerah   && sug.prior_daerah_id) nextData.priorDaerah = normalizeId(sug.prior_daerah_id);
-        if (!nextData.priorKepda    && sug.prior_kepda_id) nextData.priorKepda = normalizeId(sug.prior_kepda_id);
-      } catch (err) {
-        console.warn("Gagal auto-fill prioritas:", err?.message || err);
-      }
-    }
-
-    setData(nextData);
-    setOptions((prev) => {
-      const cleared = { ...prev };
+      const nextData = { ...data, [level.key]: nextValue };
+      const toClear = CLEAR_WHEN_CHANGED[level.key] || [];
       toClear.forEach((lvKey) => {
-        cleared[lvKey] = [];
+        nextData[lvKey] = isMultiField(lvKey) ? [] : '';
+        abortControllers.current[lvKey]?.abort?.();
       });
-      return cleared;
-    });
 
-    /* Muat ulang opsi tiap level yang punya induk terisi (urutan LEVELS = topo kasar). */
-    for (let i = 0; i < LEVELS.length; i++) {
-      const childLevel = LEVELS[i];
-      if (!childLevel.paramKey) continue;
-      const pv = nextData[childLevel.paramKey];
-      const hasPv = Array.isArray(pv) ? pv.length > 0 : Boolean(pv);
-      if (!hasPv) continue;
-      await fetchChildOptions(
-        childLevel.key,
-        pv,
-        childLevel.key === "arahKebijakan" ? nextData.strategi : null,
-      );
-    }
-  }, [data, fetchChildOptions, isEditMode, baseParams.jenis_dokumen, baseParams.tahun]);
+      // Auto-fill prioritas berdasarkan histori cascading untuk misi ini (agar user tidak bingung).
+      // Hanya berlaku di new mode, dan hanya mengisi field yang kosong (tidak override pilihan user).
+      if (
+        !isEditMode &&
+        level.key === 'misi' &&
+        nextData.misi &&
+        baseParams.jenis_dokumen &&
+        baseParams.tahun
+      ) {
+        try {
+          const res = await api.get('/cascading/suggest-prioritas', {
+            params: {
+              misi_id: nextData.misi,
+              jenis_dokumen: baseParams.jenis_dokumen,
+              tahun: baseParams.tahun,
+            },
+          });
+          const sug = res?.data?.data || {};
+          if (!nextData.priorNasional && sug.prior_nas_id)
+            nextData.priorNasional = normalizeId(sug.prior_nas_id);
+          if (!nextData.priorDaerah && sug.prior_daerah_id)
+            nextData.priorDaerah = normalizeId(sug.prior_daerah_id);
+          if (!nextData.priorKepda && sug.prior_kepda_id)
+            nextData.priorKepda = normalizeId(sug.prior_kepda_id);
+        } catch (err) {
+          console.warn('Gagal auto-fill prioritas:', err?.message || err);
+        }
+      }
+
+      setData(nextData);
+      setOptions((prev) => {
+        const cleared = { ...prev };
+        toClear.forEach((lvKey) => {
+          cleared[lvKey] = [];
+        });
+        return cleared;
+      });
+
+      /* Muat ulang opsi tiap level yang punya induk terisi (urutan LEVELS = topo kasar). */
+      for (let i = 0; i < LEVELS.length; i++) {
+        const childLevel = LEVELS[i];
+        if (!childLevel.paramKey) continue;
+        const pv = nextData[childLevel.paramKey];
+        const hasPv = Array.isArray(pv) ? pv.length > 0 : Boolean(pv);
+        if (!hasPv) continue;
+        await fetchChildOptions(
+          childLevel.key,
+          pv,
+          childLevel.key === 'arahKebijakan' ? nextData.strategi : null,
+        );
+      }
+    },
+    [data, fetchChildOptions, isEditMode, baseParams.jenis_dokumen, baseParams.tahun],
+  );
 
   // ── handleSubmit ──────────────────────────────────────────────────────────
   const handleSubmit = async (event) => {
@@ -530,10 +622,17 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
     setSubmitSuccess(null);
 
     const PAYLOAD_MAP = {
-      misi: "misi", priorNasional: "prior_nas", priorDaerah: "prior_daerah",
-      priorKepda: "prior_kepda", tujuan: "tujuan", sasaran: "sasaran",
-      strategi: "strategi", arahKebijakan: "arah_kebijakan",
-      program: "program", kegiatan: "kegiatan", subKegiatan: "sub_kegiatan",
+      misi: 'misi',
+      priorNasional: 'prior_nas',
+      priorDaerah: 'prior_daerah',
+      priorKepda: 'prior_kepda',
+      tujuan: 'tujuan',
+      sasaran: 'sasaran',
+      strategi: 'strategi',
+      arahKebijakan: 'arah_kebijakan',
+      program: 'program',
+      kegiatan: 'kegiatan',
+      subKegiatan: 'sub_kegiatan',
     };
 
     const payload = {};
@@ -541,10 +640,16 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
       const value = data[level.key];
       const mappedKey = PAYLOAD_MAP[level.key] || level.key;
       if (Array.isArray(value)) {
-        if (value.length === 0) { setError(`Field ${level.label} wajib dipilih`); return; }
+        if (value.length === 0) {
+          setError(`Field ${level.label} wajib dipilih`);
+          return;
+        }
         payload[`${mappedKey}_ids`] = value;
       } else {
-        if (!value) { setError(`Field ${level.label} wajib dipilih`); return; }
+        if (!value) {
+          setError(`Field ${level.label} wajib dipilih`);
+          return;
+        }
         payload[`${mappedKey}_id`] = value;
       }
     }
@@ -555,13 +660,16 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
       if (existingData?.id) {
         await api.put(`/cascading/${existingData.id}`, payload);
       } else {
-        await api.post("/cascading", payload);
+        await api.post('/cascading', payload);
       }
-      setSubmitSuccess("Data berhasil disimpan");
-      if (!existingData) { setData({}); setOptions({}); }
+      setSubmitSuccess('Data berhasil disimpan');
+      if (!existingData) {
+        setData({});
+        setOptions({});
+      }
       onSaved();
     } catch (err) {
-      setError(err.response?.data?.message || "Gagal menyimpan data.");
+      setError(err.response?.data?.message || 'Gagal menyimpan data.');
     }
   };
 
@@ -569,8 +677,10 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
   const renderField = (level, idx) => {
     const rawValue = data[level.key];
     const value = isMultiField(level.key)
-      ? (Array.isArray(rawValue) ? rawValue : [])
-      : rawValue ?? "";
+      ? Array.isArray(rawValue)
+        ? rawValue
+        : []
+      : (rawValue ?? '');
 
     const commonProps = {
       label: level.label,
@@ -586,9 +696,7 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
           key={level.key}
           {...commonProps}
           isMulti
-          onChange={(key, selectedValue) =>
-            handleChange({ target: { value: selectedValue } }, idx)
-          }
+          onChange={(key, selectedValue) => handleChange({ target: { value: selectedValue } }, idx)}
         />
       );
     }
@@ -616,8 +724,8 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
       <div className="text-center my-5">
         <Alert variant="warning">
           {isDokumenLevelPeriode(dokumen)
-            ? "Atur jenis dokumen di header. RPJMD/Renstra memakai satu periode (lima tahun); tidak perlu memilih tahun terpisah."
-            : "Silakan pilih jenis dokumen dan konteks waktu di header terlebih dahulu."}
+            ? 'Atur jenis dokumen di header. RPJMD/Renstra memakai satu periode (lima tahun); tidak perlu memilih tahun terpisah.'
+            : 'Silakan pilih jenis dokumen dan konteks waktu di header terlebih dahulu.'}
         </Alert>
       </div>
     );
@@ -625,7 +733,7 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
 
   // Kelompokkan level per grup
   const groupedLevels = LEVELS.reduce((acc, lv, idx) => {
-    const g = lv.group || "lainnya";
+    const g = lv.group || 'lainnya';
     if (!acc[g]) acc[g] = [];
     acc[g].push({ ...lv, idx });
     return acc;
@@ -639,8 +747,8 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
   return (
     <Container className="my-4">
       <Breadcrumb>
-        <Breadcrumb.Item onClick={() => navigate("/dashboard")}>Home</Breadcrumb.Item>
-        <Breadcrumb.Item onClick={() => navigate("/rpjmd/cascading-list")}>
+        <Breadcrumb.Item onClick={() => navigate('/dashboard')}>Home</Breadcrumb.Item>
+        <Breadcrumb.Item onClick={() => navigate('/rpjmd/cascading-list')}>
           Daftar Cascading
         </Breadcrumb.Item>
         {isEditMode && <Breadcrumb.Item active>Edit Cascading</Breadcrumb.Item>}
@@ -663,19 +771,30 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
       )}
 
       <Form onSubmit={handleSubmit}>
-        {error         && <Alert variant="danger"  onClose={() => setError(null)} dismissible>{error}</Alert>}
-        {submitSuccess && <Alert variant="success" onClose={() => setSubmitSuccess(null)} dismissible>{submitSuccess}</Alert>}
+        {error && (
+          <Alert variant="danger" onClose={() => setError(null)} dismissible>
+            {error}
+          </Alert>
+        )}
+        {submitSuccess && (
+          <Alert variant="success" onClose={() => setSubmitSuccess(null)} dismissible>
+            {submitSuccess}
+          </Alert>
+        )}
 
         {/* Render per grup */}
         {Object.entries(groupedLevels).map(([groupKey, groupLevels]) => {
-          const gInfo = GROUP_LABELS[groupKey] || { label: groupKey, color: "secondary" };
+          const gInfo = GROUP_LABELS[groupKey] || { label: groupKey, color: 'secondary' };
           return (
             <Card key={groupKey} className="mb-3 shadow-sm">
               <Card.Header className={`bg-${gInfo.color} bg-opacity-10 fw-semibold`}>
-                <Badge bg={gInfo.color} className="me-2">{gInfo.label}</Badge>
-                {groupKey === "rpjmd"     && "Data RPJMD (Misi, Tujuan, Sasaran, Strategi & Arah Kebijakan)"}
-                {groupKey === "prioritas" && "Keterkaitan Prioritas Pembangunan"}
-                {groupKey === "program"   && "Program, Kegiatan & Sub Kegiatan OPD"}
+                <Badge bg={gInfo.color} className="me-2">
+                  {gInfo.label}
+                </Badge>
+                {groupKey === 'rpjmd' &&
+                  'Data RPJMD (Misi, Tujuan, Sasaran, Strategi & Arah Kebijakan)'}
+                {groupKey === 'prioritas' && 'Keterkaitan Prioritas Pembangunan'}
+                {groupKey === 'program' && 'Program, Kegiatan & Sub Kegiatan OPD'}
               </Card.Header>
               <Card.Body>
                 <Row>
@@ -695,7 +814,7 @@ function CascadingForm({ existingData = null, onSaved = () => {} }) {
             Batal
           </Button>
           <Button type="submit" disabled={!isFormComplete}>
-            {isEditMode ? "Simpan Perubahan" : "Simpan"}
+            {isEditMode ? 'Simpan Perubahan' : 'Simpan'}
           </Button>
         </div>
       </Form>
