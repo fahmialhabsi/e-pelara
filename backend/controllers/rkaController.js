@@ -1,212 +1,136 @@
-const {
-  Rka,
-  RkaRincianBelanja,
-  PeriodeRpjmd,
-  Renja,
-  RPJMD,
-  PlanningAuditEvent,
-} = require('../models');
-const Joi = require('joi');
+// File: controllers/rkaController.js
+const { Rka, RkaRincianBelanja, PeriodeRpjmd, RPJMD } = require('../models');
 const { splitPlanningBody } = require('../helpers/planningDocumentMutation');
 const {
   writePlanningAudit,
-  captureRow,
   enrichPlanningAuditRows,
   auditValuesFromRows,
 } = require('../services/planningDocumentAuditService');
-const { validateMultiYearPaguAgainstTotal } = require('../helpers/planningPaguConsistency');
 const { assertEffectiveRpjmdId } = require('../helpers/rpjmdBaseline');
+const budgetCascadeValidator = require('../services/budgetCascadeValidator');
 
-const rkaCreateSchema = Joi.object({
-  tahun: Joi.string().required(),
-  periode_id: Joi.number().required(),
-  program: Joi.string().required(),
-  kegiatan: Joi.string().required(),
-  sub_kegiatan: Joi.string().required(),
-
-  indikator: Joi.string().allow(null, ''),
-  target: Joi.string().allow(null, ''),
-  anggaran: Joi.number().allow(null),
-  jenis_dokumen: Joi.string().allow(null, ''),
-  renja_id: Joi.number().allow(null),
-
-  pagu_year_1: Joi.number().allow(null),
-  pagu_year_2: Joi.number().allow(null),
-  pagu_year_3: Joi.number().allow(null),
-  pagu_year_4: Joi.number().allow(null),
-  pagu_year_5: Joi.number().allow(null),
-  pagu_total: Joi.number().allow(null),
-
-  rincian_belanja: Joi.alternatives().try(Joi.object(), Joi.array()).allow(null),
-
-  opd_id: Joi.number().allow(null),
-});
-
-const rkaUpdateSchema = Joi.object({
-  tahun: Joi.string(),
-  periode_id: Joi.number(),
-  program: Joi.string(),
-  kegiatan: Joi.string(),
-  sub_kegiatan: Joi.string(),
-
-  indikator: Joi.string().allow(null, ''),
-  target: Joi.string().allow(null, ''),
-  anggaran: Joi.number().allow(null),
-  jenis_dokumen: Joi.string().allow(null, ''),
-  renja_id: Joi.number().allow(null),
-
-  pagu_year_1: Joi.number().allow(null),
-  pagu_year_2: Joi.number().allow(null),
-  pagu_year_3: Joi.number().allow(null),
-  pagu_year_4: Joi.number().allow(null),
-  pagu_year_5: Joi.number().allow(null),
-  pagu_total: Joi.number().allow(null),
-
-  rincian_belanja: Joi.alternatives().try(Joi.object(), Joi.array()).allow(null),
-
-  change_reason_text: Joi.string().allow(null, ''),
-
-  opd_id: Joi.number().allow(null),
-}).min(1);
-
-async function assertRenjaChain(renja_id) {
-  if (renja_id == null || renja_id === '') return { ok: true };
-  const id = Number(renja_id);
-  if (!Number.isFinite(id)) return { ok: false, msg: 'renja_id tidak valid' };
-  const row = await Renja.findByPk(id);
-  if (!row) return { ok: false, msg: 'Renja tidak ditemukan untuk renja_id' };
-  return { ok: true };
-}
-
-async function assertRkaRenjaRpjmdBaseline(renja_id, rpjmd_id) {
-  if (renja_id == null || rpjmd_id == null || !Number.isFinite(Number(rpjmd_id))) {
-    return { ok: true };
-  }
-  const renja = await Renja.findByPk(Number(renja_id), { attributes: ['rpjmd_id'] });
-  if (renja && renja.rpjmd_id != null && Number(renja.rpjmd_id) !== Number(rpjmd_id)) {
-    return { ok: false, msg: 'rpjmd_id RKA harus selaras dengan Renja (baseline).' };
-  }
-  return { ok: true };
-}
+// Import modul modular yang baru kita bangun
+const rkaCalculationHelper = require('../helpers/rkaCalculationHelper');
+const rkaValidationService = require('../services/rkaValidationService');
+const rkaRevisiService = require('../services/rkaRevisiService');
 
 module.exports = {
-  async getAudit(req, res) {
-    try {
-      const { id } = req.params;
-      const rows = await PlanningAuditEvent.findAll({
-        where: { table_name: 'rka', record_id: Number(id) },
-        order: [['changed_at', 'DESC']],
-        limit: 100,
-      });
-      res.json({ success: true, data: enrichPlanningAuditRows(rows) });
-    } catch (error) {
-      res.status(500).json({ success: false, message: error.message });
-    }
-  },
-
+  /**
+   * Mengambil semua dokumen RKA berdasarkan filter
+   */
   async getAll(req, res) {
     try {
       const where = {};
-      const { tahun, periode_id, program } = req.query;
+      const { tahun, periode_id, program, tahapan } = req.query;
 
       if (tahun) where.tahun = tahun;
       if (periode_id) where.periode_id = periode_id;
       if (program) where.program = program;
+      if (tahapan) where.tahapan = tahapan; // Tambahan filter tahapan anggaran
 
       const data = await Rka.findAll({
         where,
-        include: [
-          { model: PeriodeRpjmd, as: 'periode' },
-          {
-            model: RkaRincianBelanja,
-            as: 'rincianBelanja',
-          },
+        include: [{ model: PeriodeRpjmd, as: 'periode' }],
+        order: [
+          ['tahun', 'DESC'],
+          ['created_at', 'DESC'],
         ],
-        order: [['tahun', 'DESC']],
       });
 
-      res.json(data);
+      return res.json({ success: true, data });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return res.status(500).json({ success: false, error: error.message });
     }
   },
 
+  /**
+   * Mengambil detail RKA berdasarkan ID (Beserta Rincian Belanja Multi-Volume)
+   */
   async getById(req, res) {
     try {
       const { id } = req.params;
       const data = await Rka.findByPk(id, {
-        include: [
-          { model: PeriodeRpjmd, as: 'periode' },
-          {
-            model: RkaRincianBelanja,
-            as: 'rincianBelanja',
-            order: [['urutan', 'ASC']],
-          },
-        ],
+        include: [{ model: RkaRincianBelanja, as: 'rincianBelanja' }],
+        order: [[{ model: RkaRincianBelanja, as: 'rincianBelanja' }, 'urutan', 'ASC']],
       });
 
-      if (!data) return res.status(404).json({ error: 'Data tidak ditemukan' });
+      if (!data)
+        return res.status(404).json({ success: false, error: 'Dokumen RKA tidak ditemukan.' });
+
       const json = data.toJSON();
 
-      json.rincian_belanja = json.rincianBelanja || [];
+      // Deserialisasi data string JSON koefisien_array dari DB kembali menjadi array Object untuk frontend
+      json.rincian_belanja = (json.rincianBelanja || []).map((item) => ({
+        ...item,
+        koefisien_array:
+          typeof item.koefisien_array === 'string'
+            ? JSON.parse(item.koefisien_array)
+            : item.koefisien_array,
+      }));
       delete json.rincianBelanja;
 
-      res.json(json);
+      return res.json({ success: true, data: json });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return res.status(500).json({ success: false, error: error.message });
     }
   },
 
+  /**
+   * Membuat dokumen RKA Baru (APBD Induk / Tahapan Awal)
+   */
   async create(req, res) {
     try {
       const { payload, change_reason_text, change_reason_file, rpjmd_id } = splitPlanningBody(
         req.body,
       );
-      const { error, value } = rkaCreateSchema.validate(payload);
-      if (error) return res.status(400).json({ error: error.details[0].message });
 
-      const ch = await assertRenjaChain(value.renja_id);
-      if (!ch.ok) return res.status(400).json({ error: ch.msg });
+      // 1. Validasi Skema Objek via Service
+      const validatedValue = rkaValidationService.validatePayload(payload, false);
+      const { rincian_belanja = [], ...rkaPayload } = validatedValue;
+
+      // 2. Kalkulasi Multi-Volume & Total Anggaran via Helper
+      const { processedRincian, totalAnggaranSubKegiatan } =
+        rkaCalculationHelper.processRincianBelanja(rincian_belanja);
+
+      // 3. Validasi Batasan Pagu Renja
+      await rkaValidationService.validatePaguRenja(
+        validatedValue.renja_id,
+        totalAnggaranSubKegiatan,
+      );
+
+      // 4. Validasi Baseline RPJMD
       const rp = await assertEffectiveRpjmdId(RPJMD, rpjmd_id, null);
-      if (!rp.ok) return res.status(400).json({ error: rp.msg });
+      if (!rp.ok) return res.status(400).json({ success: false, error: rp.msg });
 
-      const line = await assertRkaRenjaRpjmdBaseline(value.renja_id, rp.id);
-      if (!line.ok) return res.status(400).json({ error: line.msg });
+      // Injeksi nilai kalkulasi bersih server-side ke payload utama
+      rkaPayload.anggaran = totalAnggaranSubKegiatan;
+      rkaPayload.rpjmd_id = rp.id;
+      rkaPayload.kode_unik_sub_kegiatan = `${rkaPayload.tahun}-${rkaPayload.opd_id}-${rkaPayload.sub_kegiatan}-${rkaPayload.tahapan || 'APBD_INDUK'}`;
 
-      const paguChk = validateMultiYearPaguAgainstTotal(value);
-      if (!paguChk.ok) return res.status(400).json({ error: paguChk.message });
+      // Validasi konsistensi cascading bawaan sistem
+      await budgetCascadeValidator.validateFullChain({
+        payload: { ...rkaPayload, rincian_belanja: processedRincian, rpjmd_id: rp.id },
+      });
 
-      const uid = req.user?.id ?? req.user?.userId ?? null;
-      const { rincian_belanja = [], ...rkaPayload } = value;
-
+      // 5. Eksekusi Penyimpanan Database Parent
       const created = await Rka.create({
         ...rkaPayload,
         version: 1,
         is_active_version: true,
-        rpjmd_id: rp.id,
+        approval_status: 'DRAFT',
         change_reason_text: change_reason_text || null,
         change_reason_file: change_reason_file || null,
       });
 
-      if (Array.isArray(rincian_belanja) && rincian_belanja.length) {
+      // 6. Bulk Create Item Anak Rincian Belanja
+      if (processedRincian.length) {
         await RkaRincianBelanja.bulkCreate(
-          rincian_belanja.map((item, idx) => ({
-            rka_id: created.id,
-            urutan: item.urutan || idx + 1,
-            kode_rekening: item.kode_rekening,
-            nama_rekening: item.nama_rekening || null,
-            uraian: item.uraian,
-            volume: item.volume,
-            satuan: item.satuan,
-            harga_satuan: item.harga_satuan,
-            jumlah: item.jumlah,
-            sumber_dana: item.sumber_dana,
-            lokasi: item.lokasi,
-            keterangan: item.keterangan,
-          })),
+          processedRincian.map((item) => ({ ...item, rka_id: created.id })),
         );
       }
 
+      // 7. Audit Log Trail Creation
+      const uid = req.user?.id ?? req.user?.userId ?? null;
       const { old_value, new_value } = auditValuesFromRows(null, created);
       await writePlanningAudit({
         module_name: 'rka',
@@ -215,117 +139,86 @@ module.exports = {
         action_type: 'CREATE',
         old_value,
         new_value,
-        change_reason_text: change_reason_text || null,
-        change_reason_file: change_reason_file || null,
+        change_reason_text,
+        change_reason_file,
         changed_by: uid,
         version_before: null,
         version_after: 1,
       });
 
-      const result = await Rka.findByPk(created.id, {
-        include: [
-          {
-            model: RkaRincianBelanja,
-            as: 'rincianBelanja',
-          },
-        ],
-      });
-
-      const json = result.toJSON();
-
-      json.rincian_belanja = json.rincianBelanja || [];
-      delete json.rincianBelanja;
-
-      res.status(201).json(json);
+      return res
+        .status(201)
+        .json({ success: true, message: 'RKA Berhasil dibuat.', id: created.id });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return res.status(error.status || 500).json({
+        success: false,
+        error: error.message,
+        details: error.details || undefined,
+      });
     }
   },
 
+  /**
+   * Mengubah data rincian RKA pada tahapan berjalan
+   */
   async update(req, res) {
     try {
       const { id } = req.params;
       const { payload, change_reason_text, change_reason_file, rpjmd_id } = splitPlanningBody(
         req.body,
       );
-      const { error, value } = rkaUpdateSchema.validate(payload);
-      if (error) return res.status(400).json({ error: error.details[0].message });
 
+      const validatedValue = rkaValidationService.validatePayload(payload, true);
       const oldRow = await Rka.findByPk(id);
-      if (!oldRow) return res.status(404).json({ error: 'Data tidak ditemukan' });
+      if (!oldRow)
+        return res.status(404).json({ success: false, error: 'Dokumen RKA tidak ditemukan.' });
 
-      const rp = await assertEffectiveRpjmdId(RPJMD, rpjmd_id, oldRow.rpjmd_id);
-      if (!rp.ok) return res.status(400).json({ error: rp.msg });
+      await budgetCascadeValidator.enforceBudgetLocking(id, req);
 
-      const ch = await assertRenjaChain(value.renja_id);
-      if (!ch.ok) return res.status(400).json({ error: ch.msg });
+      const hasRincianBelanja = Object.prototype.hasOwnProperty.call(
+        validatedValue,
+        'rincian_belanja',
+      );
+      const { rincian_belanja, ...rkaPayload } = validatedValue;
 
-      const line = await assertRkaRenjaRpjmdBaseline(value.renja_id, rp.id);
-      if (!line.ok) return res.status(400).json({ error: line.msg });
+      let processedRincian = [];
+      if (hasRincianBelanja) {
+        // Jika client mengirim rincian baru, hitung ulang total anggaran di server
+        const { processedRincian: pr, totalAnggaranSubKegiatan } =
+          rkaCalculationHelper.processRincianBelanja(rincian_belanja);
+        processedRincian = pr;
+        rkaPayload.anggaran = totalAnggaranSubKegiatan;
 
-      const paguChk = validateMultiYearPaguAgainstTotal(value);
-      if (!paguChk.ok) return res.status(400).json({ error: paguChk.message });
+        // Cek kembali pagu Renja dengan total kalkulasi yang baru
+        await rkaValidationService.validatePaguRenja(oldRow.renja_id, totalAnggaranSubKegiatan);
+      }
 
       const version_before = Number(oldRow.version) || 1;
       const version_after = version_before + 1;
       const uid = req.user?.id ?? req.user?.userId ?? null;
 
-      const hasRincianBelanja = Object.prototype.hasOwnProperty.call(value, 'rincian_belanja');
-
-      const { rincian_belanja, ...rkaPayload } = value;
-
+      // Update Parent Record
       const patch = {
         ...rkaPayload,
         version: version_after,
-        is_active_version: true,
         change_reason_text: change_reason_text || null,
         change_reason_file: change_reason_file || null,
-        rpjmd_id: rp.id,
       };
-
       await Rka.update(patch, { where: { id } });
 
-      /**
-       * Sinkronisasi child hanya jika field rincian_belanja
-       * memang dikirim oleh client.
-       */
+      // Sinkronisasi Data Rincian Anak jika dikirim
       if (hasRincianBelanja) {
-        await RkaRincianBelanja.destroy({
-          where: {
-            rka_id: id,
-          },
-        });
-
-        if (Array.isArray(rincian_belanja) && rincian_belanja.length) {
+        await RkaRincianBelanja.destroy({ where: { rka_id: id } });
+        if (processedRincian.length) {
           await RkaRincianBelanja.bulkCreate(
-            rincian_belanja.map((item, idx) => ({
-              rka_id: id,
-              urutan: item.urutan || idx + 1,
-              kode_rekening: item.kode_rekening,
-              nama_rekening: item.nama_rekening || null,
-              uraian: item.uraian,
-              volume: item.volume,
-              satuan: item.satuan,
-              harga_satuan: item.harga_satuan,
-              jumlah: item.jumlah,
-              sumber_dana: item.sumber_dana,
-              lokasi: item.lokasi,
-              keterangan: item.keterangan,
-            })),
+            processedRincian.map((item) => ({ ...item, rka_id: id })),
           );
         }
       }
 
-      const result = await Rka.findByPk(id, {
-        include: [
-          {
-            model: RkaRincianBelanja,
-            as: 'rincianBelanja',
-          },
-        ],
-      });
-      const { old_value, new_value } = auditValuesFromRows(oldRow, result);
-
+      // Audit Trail Log Update
+      const updatedRow = await Rka.findByPk(id);
+      const { old_value, new_value } = auditValuesFromRows(oldRow, updatedRow);
       await writePlanningAudit({
         module_name: 'rka',
         table_name: 'rka',
@@ -340,52 +233,89 @@ module.exports = {
         version_after,
       });
 
-      const json = result.toJSON();
-
-      json.rincian_belanja = json.rincianBelanja || [];
-      delete json.rincianBelanja;
-
-      res.json(json);
+      return res.json({ success: true, message: 'Dokumen RKA berhasil diperbarui.' });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return res
+        .status(error.status || 500)
+        .json({ success: false, error: error.message, details: error.details });
     }
   },
 
+  /**
+   * FITUR UNGGULAN: Memicu proses kloning revisi (Pergeseran / Perubahan Anggaran)
+   * POST /api/rka/:id/revisi
+   */
+  async pemicuRevisi(req, res) {
+    try {
+      const { id } = req.params;
+      const { tahapan_tujuan } = req.body; // Contoh: 'PERGESERAN_1' atau 'APBD_PERUBAHAN'
+      const uid = req.user?.id ?? req.user?.userId ?? null;
+
+      if (!tahapan_tujuan) {
+        return res
+          .status(400)
+          .json({ success: false, error: 'Tahapan tujuan revisi wajib ditentukan.' });
+      }
+
+      const result = await rkaRevisiService.cloneRkaToNextTahapan({
+        rkaId: Number(id),
+        tahapanTujuan: tahapan_tujuan,
+        userId: uid,
+      });
+
+      return res.status(201).json(result);
+    } catch (error) {
+      return res.status(error.status || 500).json({ success: false, error: error.message });
+    }
+  },
+
+  /**
+   * Menghapus Dokumen RKA beserta komponen anak (Cascading onDelete)
+   */
   async destroy(req, res) {
     try {
       const { id } = req.params;
       const oldRow = await Rka.findByPk(id);
-      if (!oldRow) return res.status(404).json({ error: 'Data tidak ditemukan' });
+      if (!oldRow) return res.status(404).json({ success: false, error: 'Data tidak ditemukan.' });
 
-      const { change_reason_text, change_reason_file } = splitPlanningBody(req.body);
       const uid = req.user?.id ?? req.user?.userId ?? null;
-      const version_before = Number(oldRow.version) || 1;
+      const { old_value } = auditValuesFromRows(oldRow, null);
 
-      const { old_value, new_value } = auditValuesFromRows(oldRow, null);
       await writePlanningAudit({
         module_name: 'rka',
         table_name: 'rka',
         record_id: Number(id),
         action_type: 'DELETE',
         old_value,
-        new_value,
-        change_reason_text,
-        change_reason_file,
+        new_value: null,
+        change_reason_text: 'Penghapusan Dokumen RKA',
+        change_reason_file: null,
         changed_by: uid,
-        version_before,
+        version_before: oldRow.version,
         version_after: null,
       });
 
-      await RkaRincianBelanja.destroy({
-        where: { rka_id: id },
-      });
+      // Hapus Parent (Anak otomatis terhapus karena aturan CASCADE pada model database)
+      await Rka.destroy({ where: { id } });
 
-      await Rka.destroy({
-        where: { id },
-      });
-      res.json({ message: 'Data berhasil dihapus' });
+      return res.json({ success: true, message: 'Dokumen RKA berhasil dihapus secara permanen.' });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  },
+
+  // Mengembalikan data log audit trail
+  async getAudit(req, res) {
+    try {
+      const { id } = req.params;
+      const rows = await require('../models').PlanningAuditEvent.findAll({
+        where: { table_name: 'rka', record_id: Number(id) },
+        order: [['changed_at', 'DESC']],
+        limit: 100,
+      });
+      return res.json({ success: true, data: enrichPlanningAuditRows(rows) });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
     }
   },
 };

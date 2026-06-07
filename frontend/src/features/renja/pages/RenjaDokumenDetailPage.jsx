@@ -21,6 +21,7 @@ import {
   saveRenjaOfficialDocxToFile,
   saveRenjaOfficialPdfToFile,
   fetchRenjaValidateOfficial,
+  deleteRenjaItemV2,
   linkRenjaItemToRkpd,
 } from '../services/planningRenjaApi';
 import {
@@ -32,6 +33,7 @@ import RenjaPlanningDashboardLayout from './RenjaPlanningDashboardLayout';
 import RenjaDokumenNavTabs from '../components/RenjaDokumenNavTabs';
 import MasterBelanjaCascading from '../../../shared/components/MasterBelanjaCascading';
 import MasterRekeningCascading from '../../../shared/components/MasterRekeningCascading';
+import RenjaItemModal from '../components/RenjaItemModal';
 
 const emptyItem = {
   program: '',
@@ -57,6 +59,7 @@ const RenjaDokumenDetailPage = () => {
   const [err, setErr] = useState('');
   const [officialValidate, setOfficialValidate] = useState(null);
   const [busyValidate, setBusyValidate] = useState(false);
+  const [busyGenBab, setBusyGenBab] = useState(false);
 
   const [judul, setJudul] = useState('');
   const [status, setStatus] = useState('draft');
@@ -137,16 +140,13 @@ const RenjaDokumenDetailPage = () => {
     if (!can) return;
     const rt = metaReasonText.trim();
     const rf = metaReasonFile.trim();
-    if (!rt && !rf) {
-      toast.error('Isi alasan perubahan (teks) atau referensi berkas dasar perubahan.');
-      return;
-    }
+    // Catatan perubahan opsional
     setSavingMeta(true);
     try {
       const d = await updateRenjaDokumenV2(id, {
         judul: judul.trim(),
         status,
-        change_reason_text: rt || undefined,
+        change_reason_text: rt || 'Pembaruan metadata dokumen',
         change_reason_file: rf || undefined,
       });
       setDoc(d);
@@ -161,9 +161,6 @@ const RenjaDokumenDetailPage = () => {
 
   const openAddItem = () => {
     setEditingItem(null);
-    setItemForm({ ...emptyItem, urutan: (doc?.items?.length || 0) + 1, rincian_belanja: null });
-    setItemReasonText('');
-    setItemReasonFile('');
     setItemModal(true);
   };
 
@@ -184,6 +181,25 @@ const RenjaDokumenDetailPage = () => {
     setItemModal(true);
   };
 
+  const deleteItem = async (row) => {
+    if (!window.confirm(`Hapus item "${row.sub_kegiatan || row.program}"?`)) return;
+    const reason = window.prompt('Alasan penghapusan (wajib):');
+    if (!reason?.trim()) {
+      toast.error('Alasan wajib diisi.');
+      return;
+    }
+    try {
+      await deleteRenjaItemV2(row.id, {
+        change_reason_text: reason.trim(),
+        renja_dokumen_id: Number(id),
+      });
+      toast.success('Item dihapus.');
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.message || e.message || 'Gagal menghapus.');
+    }
+  };
+
   const saveItem = async () => {
     if (!can) return;
     const rt = itemReasonText.trim();
@@ -197,6 +213,7 @@ const RenjaDokumenDetailPage = () => {
       const base = {
         urutan: Number(itemForm.urutan) || 0,
         program: itemForm.program || null,
+        rkpd_item_id: formData?.rkpd_item_id || null,
         kegiatan: itemForm.kegiatan || null,
         sub_kegiatan: itemForm.sub_kegiatan || null,
         indikator: itemForm.indikator || null,
@@ -226,8 +243,14 @@ const RenjaDokumenDetailPage = () => {
 
   const openLink = (row) => {
     setLinkTarget(row);
-    setRkpdItemId(row?.rkpdLink?.rkpd_item_id ? String(row.rkpdLink.rkpd_item_id) : '');
-    setLinkReasonText('');
+    setRkpdItemId(
+      row?.rkpdLink?.rkpd_item_id
+        ? String(row.rkpdLink.rkpd_item_id)
+        : row?.rkpd_item_id
+          ? String(row.rkpd_item_id)
+          : '',
+    );
+    setLinkReasonText(`Mapping otomatis dari RKPD acuan dokumen #${doc?.rkpd_dokumen_id || ''}`);
     setLinkReasonFile('');
     setLinkModal(true);
   };
@@ -289,6 +312,25 @@ const RenjaDokumenDetailPage = () => {
     }
   };
 
+  const autoGenerateBab = async () => {
+    if (
+      !window.confirm(
+        'Generate narasi BAB I, II, III, V secara otomatis? Data yang ada akan ditimpa.',
+      )
+    )
+      return;
+    setBusyGenBab(true);
+    try {
+      await api.post(`/renja/dokumen/${id}/auto-generate-bab`);
+      toast.success('Narasi BAB berhasil di-generate. Silakan cek tab BAB I–V.');
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'Gagal generate BAB.');
+    } finally {
+      setBusyGenBab(false);
+    }
+  };
+
   const items = doc?.items || [];
   const isReadonly = doc?.workflow_status === 'published';
 
@@ -309,7 +351,7 @@ const RenjaDokumenDetailPage = () => {
 
   const runCreateRevision = async () => {
     if (!revisionReason.trim()) {
-      toast.error('Alasan perubahan wajib diisi.');
+      toast.error('Catatan perubahan atau upload dasar hukum wajib diisi.');
       return;
     }
     setWfBusy(true);
@@ -430,6 +472,16 @@ const RenjaDokumenDetailPage = () => {
               }
             >
               Preview PDF
+            </Button>
+          </div>
+          <div className="d-flex flex-wrap gap-2 justify-content-end mb-2">
+            <Button
+              variant="outline-info"
+              size="sm"
+              disabled={busyGenBab || isReadonly}
+              onClick={autoGenerateBab}
+            >
+              {busyGenBab ? <Spinner size="sm" /> : 'Auto-Generate Narasi BAB'}
             </Button>
           </div>
           <div className="d-flex flex-wrap gap-2 justify-content-end">
@@ -564,24 +616,28 @@ const RenjaDokumenDetailPage = () => {
             </Form.Select>
           </Form.Group>
           <Form.Group className="mb-2">
-            <Form.Label className="small">Alasan perubahan (wajib salah satu)</Form.Label>
+            <Form.Label className="small fw-semibold">Catatan Perubahan</Form.Label>
             <Form.Control
               as="textarea"
               rows={2}
               value={metaReasonText}
               onChange={(e) => setMetaReasonText(e.target.value)}
               disabled={!can || isReadonly}
-              placeholder="Ringkasan alasan"
+              placeholder="Isi catatan jika ada perubahan pada dokumen"
             />
+            <Form.Text className="text-muted">Kosongkan jika tidak ada perubahan.</Form.Text>
           </Form.Group>
           <Form.Group className="mb-2">
-            <Form.Label className="small">Referensi berkas</Form.Label>
+            <Form.Label className="small fw-semibold">📎 Upload Dasar Hukum Perubahan</Form.Label>
             <Form.Control
-              value={metaReasonFile}
-              onChange={(e) => setMetaReasonFile(e.target.value)}
+              type="file"
+              accept=".pdf,.doc,.docx"
               disabled={!can || isReadonly}
-              placeholder="path / URL / nama berkas"
+              onChange={(e) => setMetaReasonFile(e.target.files?.[0]?.name || '')}
             />
+            {metaReasonFile && (
+              <Form.Text className="text-success">File: {metaReasonFile}</Form.Text>
+            )}
           </Form.Group>
           {can && (
             <Button size="sm" onClick={saveMeta} disabled={savingMeta || isReadonly}>
@@ -669,6 +725,15 @@ const RenjaDokumenDetailPage = () => {
                           >
                             Map RKPD
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="outline-danger"
+                            className="ms-1"
+                            disabled={isReadonly}
+                            onClick={() => deleteItem(row)}
+                          >
+                            Hapus
+                          </Button>
                         </>
                       )}
                     </td>
@@ -685,113 +750,66 @@ const RenjaDokumenDetailPage = () => {
         </CardBody>
       </Card>
 
-      <Modal show={itemModal} onHide={() => setItemModal(false)} size="lg">
-        <Modal.Header closeButton>
-          <Modal.Title>{editingItem ? 'Edit item Renja' : 'Item Renja baru'}</Modal.Title>
+      <RenjaItemModal
+        show={itemModal}
+        onHide={() => setItemModal(false)}
+        editData={editingItem ? itemForm : null}
+        rkpdDokumenId={doc?.rkpd_dokumen_id}
+        urutan={(doc?.items?.length || 0) + 1}
+        onSave={async (formData) => {
+          if (!can) return;
+          const base = {
+            urutan: Number(formData.urutan) || 0,
+            program: formData.program || null,
+            kegiatan: formData.kegiatan || null,
+            sub_kegiatan: formData.sub_kegiatan || null,
+            indikator: formData.indikator || null,
+            target: formData.target === '' ? null : Number(formData.target),
+            satuan: formData.satuan || null,
+            pagu: formData.pagu === '' ? null : Number(formData.pagu),
+            status_baris: 'draft',
+            change_reason_text: formData.dasar_hukum || 'Input dari form item Renja',
+            rincian_belanja: formData.rincian_belanja || null,
+            rkpd_item_id: formData.rkpd_item_id || null,
+          };
+          if (editingItem) {
+            await updateRenjaItemV2(editingItem.id, base);
+            toast.success('Item Renja diperbarui.');
+          } else {
+            await createRenjaItemV2({ ...base, renja_dokumen_id: Number(id) });
+            toast.success('Item Renja ditambahkan.');
+          }
+          setItemModal(false);
+          load();
+        }}
+      />
+
+      <Modal
+        show={linkModal}
+        onHide={() => setLinkModal(false)}
+        style={{ marginTop: '40px', marginBottom: '20px' }}
+      >
+        <Modal.Header closeButton className="bg-warning">
+          <Modal.Title className="fs-6 fw-bold">🔗 Map ke RKPD Item</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <Form.Group className="mb-2">
-            <Form.Label>Nomor Urut</Form.Label>
-            <Form.Control
-              type="number"
-              value={itemForm.urutan}
-              onChange={(e) => setItemForm({ ...itemForm, urutan: e.target.value })}
-            />
-          </Form.Group>
-
-          <Form.Group className="mb-2">
-            <Form.Label>Program / Kegiatan / Sub Kegiatan</Form.Label>
-            <MasterRekeningCascading onChange={handleMasterRekeningChange} />
-          </Form.Group>
-
-          <Form.Group className="mb-2">
-            <Form.Label>Indikator Kinerja</Form.Label>
-            <Form.Control
-              value={itemForm.indikator}
-              onChange={(e) => setItemForm({ ...itemForm, indikator: e.target.value })}
-            />
-          </Form.Group>
-
-          <Form.Group className="mb-2">
-            <Form.Label>Target Kinerja</Form.Label>
-            <Form.Control
-              value={itemForm.target}
-              onChange={(e) => setItemForm({ ...itemForm, target: e.target.value })}
-            />
-          </Form.Group>
-
-          <Form.Group className="mb-2">
-            <Form.Label>Satuan Pengukuran</Form.Label>
-            <Form.Control
-              value={itemForm.satuan}
-              onChange={(e) => setItemForm({ ...itemForm, satuan: e.target.value })}
-            />
-          </Form.Group>
-
-          <Form.Group className="mb-2">
-            <Form.Label>target</Form.Label>
-            <Form.Control
-              value={itemForm.target}
-              onChange={(e) => setItemForm({ ...itemForm, target: e.target.value })}
-            />
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label>Pagu Anggaran (Rp)</Form.Label>
-            <Form.Control
-              value={itemForm.pagu}
-              onChange={(e) => setItemForm({ ...itemForm, pagu: e.target.value })}
-            />
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label>Rincian Kode Rekening Belanja (Permendagri 90)</Form.Label>
-            <MasterBelanjaCascading
-              onChange={(selected) => setItemForm({ ...itemForm, rincian_belanja: selected })}
-            />
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label className="small">Alasan perubahan item (wajib salah satu)</Form.Label>
-            <Form.Control
-              as="textarea"
-              rows={2}
-              value={itemReasonText}
-              onChange={(e) => setItemReasonText(e.target.value)}
-              placeholder="Ringkasan alasan"
-            />
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label className="small">Referensi berkas</Form.Label>
-            <Form.Control
-              value={itemReasonFile}
-              onChange={(e) => setItemReasonFile(e.target.value)}
-              placeholder="path / URL / nama berkas"
-            />
-          </Form.Group>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setItemModal(false)}>
-            Batal
-          </Button>
-          <Button onClick={saveItem} disabled={savingItem || !can}>
-            {savingItem ? <Spinner size="sm" /> : 'Simpan'}
-          </Button>
-        </Modal.Footer>
-      </Modal>
-
-      <Modal show={linkModal} onHide={() => setLinkModal(false)}>
-        <Modal.Header closeButton>
-          <Modal.Title>Map ke rkpd_item</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <Form.Group>
-            <Form.Label>rkpd_item_id</Form.Label>
+          <Form.Group className="mb-3">
+            <Form.Label className="fw-semibold small">RKPD Item ID</Form.Label>
             <Form.Control
               value={rkpdItemId}
               onChange={(e) => setRkpdItemId(e.target.value)}
               placeholder="ID baris rkpd_item"
+              readOnly={!!rkpdItemId}
+              className={rkpdItemId ? 'bg-light' : ''}
             />
+            {rkpdItemId && (
+              <Form.Text className="text-success">
+                ✅ Auto-fill dari item RKPD yang dipilih
+              </Form.Text>
+            )}
           </Form.Group>
-          <Form.Group className="mt-2">
-            <Form.Label className="small">Alasan mapping (wajib salah satu)</Form.Label>
+          <Form.Group className="mb-3">
+            <Form.Label className="fw-semibold small">Alasan Mapping</Form.Label>
             <Form.Control
               as="textarea"
               rows={2}
@@ -799,21 +817,23 @@ const RenjaDokumenDetailPage = () => {
               onChange={(e) => setLinkReasonText(e.target.value)}
             />
           </Form.Group>
-          <Form.Group className="mt-2">
-            <Form.Label className="small">Referensi berkas</Form.Label>
+          <Form.Group className="mb-2">
+            <Form.Label className="fw-semibold small">📎 Upload Berkas Referensi</Form.Label>
             <Form.Control
-              value={linkReasonFile}
-              onChange={(e) => setLinkReasonFile(e.target.value)}
-              placeholder="path / URL / nama berkas"
+              type="file"
+              onChange={(e) => setLinkReasonFile(e.target.files?.[0]?.name || '')}
             />
+            {linkReasonFile && (
+              <Form.Text className="text-success">File: {linkReasonFile}</Form.Text>
+            )}
           </Form.Group>
         </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setLinkModal(false)}>
+        <Modal.Footer className="d-flex justify-content-between">
+          <Button variant="outline-secondary" size="sm" onClick={() => setLinkModal(false)}>
             Batal
           </Button>
-          <Button onClick={saveLink} disabled={linkBusy}>
-            {linkBusy ? <Spinner size="sm" /> : 'Simpan mapping'}
+          <Button variant="warning" size="sm" onClick={saveLink} disabled={linkBusy}>
+            {linkBusy ? <Spinner size="sm" /> : '💾 Simpan Mapping'}
           </Button>
         </Modal.Footer>
       </Modal>

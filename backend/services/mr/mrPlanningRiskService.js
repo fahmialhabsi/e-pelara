@@ -16,9 +16,12 @@
  * - Backend membuat history setiap create/update workflow.
  */
 
+const crypto = require("crypto");
 const db = require("../../models");
 const { assertFinalReportNotOverwrite } = require("./mrPolicyEngineService");
 const { QueryTypes } = require("sequelize");
+
+const MAX_KODE_KONTEKS_LENGTH = 100;
 
 const {
   sequelize,
@@ -1524,6 +1527,19 @@ const countProposalContextItems = async ({ contextId, stage, transaction }) => {
   });
 };
 
+const limitKodeKonteks = (rawCode) => {
+  const code = String(rawCode || "").trim();
+  if (!code) return code;
+  if (code.length <= MAX_KODE_KONTEKS_LENGTH) return code;
+
+  const hash = crypto.createHash("sha1").update(code).digest("hex").slice(0, 8);
+  const suffix = `-${hash}`;
+  const maxPrefixLen = MAX_KODE_KONTEKS_LENGTH - suffix.length;
+  const trimmed = code.slice(0, maxPrefixLen).replace(/-+$/g, "");
+
+  return `${trimmed}${suffix}`;
+};
+
 const buildProposalObjectCode = ({ sourceRef, payload }) => {
   const clean = (value, fallback) => {
     const normalized = String(value || "")
@@ -1535,42 +1551,65 @@ const buildProposalObjectCode = ({ sourceRef, payload }) => {
     return normalized || fallback;
   };
 
+  const buildCode = (prefix, slugSource, fallback = "OBJEK") =>
+    limitKodeKonteks(`${prefix}-${clean(slugSource, fallback)}`);
+
   switch (sourceRef.kode_item) {
     case PROPOSAL_SOURCE.TINDAK_LANJUT_BPK:
-      return `BPK-${clean(payload.nomor_temuan, "TANPA-NOMOR")}`;
+      return buildCode("BPK", payload.nomor_temuan, "TANPA-NOMOR");
 
     case PROPOSAL_SOURCE.TINDAK_LANJUT_INSPEKTORAT:
-      return `INSPEKTORAT-${clean(payload.nomor_temuan, "TANPA-NOMOR")}`;
+      return buildCode("INSPEKTORAT", payload.nomor_temuan, "TANPA-NOMOR");
 
     case PROPOSAL_SOURCE.LAKIP:
-      return `LAKIP-${clean(payload.objek_risiko || payload.nama_risiko, "OBJEK")}`;
+      return buildCode(
+        "LAKIP",
+        payload.objek_risiko || payload.nama_risiko,
+        "OBJEK"
+      );
 
     case PROPOSAL_SOURCE.LAPORAN_KEUANGAN:
-      return `LK-${clean(payload.akun_pos || payload.objek_risiko, "OBJEK")}`;
+      return buildCode("LK", payload.akun_pos || payload.objek_risiko, "OBJEK");
 
     case PROPOSAL_SOURCE.PELAKSANAAN_KEGIATAN:
-      return `GIAT-${clean(payload.nama_kegiatan || payload.objek_risiko, "OBJEK")}`;
+      return buildCode(
+        "GIAT",
+        payload.nama_kegiatan || payload.objek_risiko,
+        "OBJEK"
+      );
 
     case PROPOSAL_SOURCE.PERTANGGUNGJAWABAN_KEUANGAN:
-      return `SPJ-${clean(
+      return buildCode(
+        "SPJ",
         payload.jenis_dokumen_pertanggungjawaban || payload.objek_risiko,
         "OBJEK"
-      )}`;
+      );
 
     case PROPOSAL_SOURCE.SPIP_E_SIGAP:
-      return `SPIP-${clean(payload.objek_risiko || payload.nama_risiko, "OBJEK")}`;
+      return buildCode(
+        "SPIP",
+        payload.objek_risiko || payload.nama_risiko,
+        "OBJEK"
+      );
 
     case PROPOSAL_SOURCE.MANUAL_ADHOC:
-      return `ADHOC-${clean(payload.objek_risiko || payload.nama_risiko, "OBJEK")}`;
+      return buildCode(
+        "ADHOC",
+        payload.objek_risiko || payload.nama_risiko,
+        "OBJEK"
+      );
 
     case PROPOSAL_SOURCE.LAINNYA:
-      return `CUSTOM-${clean(
+      return buildCode(
+        "CUSTOM",
         payload.nama_kategori_baru || payload.objek_risiko,
         "OBJEK"
-      )}`;
+      );
 
     default:
-      return `${sourceRef.kode_item}-${clean(payload.objek_risiko, "OBJECT")}`;
+      return limitKodeKonteks(
+        `${sourceRef.kode_item}-${clean(payload.objek_risiko, "OBJECT")}`
+      );
   }
 };
 

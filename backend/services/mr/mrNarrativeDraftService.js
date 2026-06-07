@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 /**
  * MR Narrative Draft Service
@@ -17,139 +17,136 @@
 const {
   executeNarrativeProvider,
   executeRuleEnhancedFallbackProvider,
-} = require("./narrativeProviders/narrativeProviderFactory");
+} = require('./narrativeProviders/narrativeProviderFactory');
+const { getAuditNarrativeStyleBlock } = require('./narrativeProviders/narrativeAuditStyleHelper');
 
 const TECHNICAL_BLOCKED_FIELDS = [
-  "id",
-  "context_id",
-  "context_item_id",
-  "periode_id",
-  "renstra_id",
-  "indikator_id",
-  "stage",
-  "ref_id",
-  "source_table",
-  "source_id",
-  "kode_risiko",
-  "kemungkinan",
-  "dampak",
-  "skor_risiko",
-  "level_risiko",
-  "level_risiko_ref_id",
-  "matrix_code",
-  "matrix_id",
-  "is_above_appetite",
-  "risk_code_auto_generated",
-  "is_priority_candidate",
-  "owner_user_id",
-  "owner_division_id",
-  "versi",
-  "status_revisi",
-  "last_revised_at",
-  "last_revised_by",
-  "dibuat_oleh",
-  "diverifikasi_oleh",
-  "disetujui_oleh",
-  "ditolak_oleh",
-  "dibuat_pada",
-  "diverifikasi_pada",
-  "disetujui_pada",
-  "ditolak_pada",
-  "created_by",
-  "updated_by",
-  "created_at",
-  "updated_at",
+  'id',
+  'context_id',
+  'context_item_id',
+  'periode_id',
+  'renstra_id',
+  'indikator_id',
+  'stage',
+  'ref_id',
+  'source_table',
+  'source_id',
+  'kode_risiko',
+  'kemungkinan',
+  'dampak',
+  'skor_risiko',
+  'level_risiko',
+  'level_risiko_ref_id',
+  'matrix_code',
+  'matrix_id',
+  'is_above_appetite',
+  'risk_code_auto_generated',
+  'is_priority_candidate',
+  'owner_user_id',
+  'owner_division_id',
+  'versi',
+  'status_revisi',
+  'last_revised_at',
+  'last_revised_by',
+  'dibuat_oleh',
+  'diverifikasi_oleh',
+  'disetujui_oleh',
+  'ditolak_oleh',
+  'dibuat_pada',
+  'diverifikasi_pada',
+  'disetujui_pada',
+  'ditolak_pada',
+  'created_by',
+  'updated_by',
+  'created_at',
+  'updated_at',
 ];
 
 const ALLOWED_SOURCE_TYPES = [
-  "TINDAK_LANJUT_BPK",
-  "TINDAK_LANJUT_INSPEKTORAT",
-  "LAKIP",
-  "LAPORAN_KEUANGAN",
-  "PELAKSANAAN_KEGIATAN",
-  "PERTANGGUNGJAWABAN_KEUANGAN",
-  "SPIP_E_SIGAP",
-  "MANUAL_ADHOC",
-  "LAINNYA",
+  'TINDAK_LANJUT_BPK',
+  'TINDAK_LANJUT_INSPEKTORAT',
+  'LAKIP',
+  'LAPORAN_KEUANGAN',
+  'PELAKSANAAN_KEGIATAN',
+  'PERTANGGUNGJAWABAN_KEUANGAN',
+  'SPIP_E_SIGAP',
+  'MANUAL_ADHOC',
+  'LAINNYA',
 ];
 
 const OUTPUT_FIELDS = [
-  "rekomendasi",
-  "objek_risiko",
-  "nama_risiko",
-  "uraian_risiko",
-  "penyebab_risiko",
-  "dampak_risiko",
-  "rencana_tindak_lanjut_awal",
-  "pic",
-  "target_waktu",
-  "catatan",
+  'rekomendasi',
+  'objek_risiko',
+  'nama_risiko',
+  'uraian_risiko',
+  'penyebab_risiko',
+  'dampak_risiko',
+  'rencana_tindak_lanjut_awal',
+  'pic',
+  'target_waktu',
+  'catatan',
 ];
 
 const REQUIRED_OUTPUT_FIELDS = [
-  "rekomendasi",
-  "objek_risiko",
-  "nama_risiko",
-  "uraian_risiko",
-  "penyebab_risiko",
-  "dampak_risiko",
-  "rencana_tindak_lanjut_awal",
-  "pic",
-  "catatan",
+  'rekomendasi',
+  'objek_risiko',
+  'nama_risiko',
+  'uraian_risiko',
+  'penyebab_risiko',
+  'dampak_risiko',
+  'rencana_tindak_lanjut_awal',
+  'pic',
+  'catatan',
 ];
 
 class NarrativeDraftError extends Error {
   constructor(message, statusCode = 400, details = null) {
     super(message);
-    this.name = "NarrativeDraftError";
+    this.name = 'NarrativeDraftError';
     this.statusCode = statusCode;
     this.details = details;
   }
 }
 
 const cleanText = (value) =>
-  String(value || "")
-    .replace(/\r/g, "\n")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
+  String(value || '')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 
 const normalizeSourceType = (value) =>
-  String(value || "")
+  String(value || '')
     .trim()
     .toUpperCase()
-    .replace(/[\s-]+/g, "_")
-    .replace(/_+/g, "_");
+    .replace(/[\s-]+/g, '_')
+    .replace(/_+/g, '_');
 
 const cleanObject = (payload = {}) =>
   Object.fromEntries(
     Object.entries(payload).filter(([, value]) => {
       if (value === undefined || value === null) return false;
-      if (typeof value === "string" && value.trim() === "") return false;
+      if (typeof value === 'string' && value.trim() === '') return false;
       return true;
-    })
+    }),
   );
 
 const assertRequired = (payload = {}, fields = []) => {
   const missing = fields.filter((field) => {
     const value = payload[field];
-    return value === undefined || value === null || value === "";
+    return value === undefined || value === null || value === '';
   });
 
   if (missing.length > 0) {
-    throw new NarrativeDraftError(
-      `Field wajib belum lengkap: ${missing.join(", ")}`,
-      400,
-      {
-        missing_fields: missing,
-      }
-    );
+    throw new NarrativeDraftError(`Field wajib belum lengkap: ${missing.join(', ')}`, 400, {
+      missing_fields: missing,
+    });
   }
 };
 
 const assertNoBlockedFields = (payload = {}) => {
   const blocked = TECHNICAL_BLOCKED_FIELDS.filter((field) =>
-    Object.prototype.hasOwnProperty.call(payload, field)
+    Object.prototype.hasOwnProperty.call(payload, field),
   );
 
   if (blocked.length > 0) {
@@ -159,41 +156,42 @@ const assertNoBlockedFields = (payload = {}) => {
       {
         blocked: true,
         blocked_fields: blocked,
-      }
+      },
     );
   }
 };
 
-const getRequiredFieldsBySource = (sourceType) => {
-  if (
-    sourceType === "TINDAK_LANJUT_BPK" ||
-    sourceType === "TINDAK_LANJUT_INSPEKTORAT"
-  ) {
-    return [
-      "proposal_source_type",
-      "judul_temuan",
-      "ringkasan_temuan",
-      "status_tindak_lanjut",
-    ];
+// UBAH FUNGSI INI
+const getRequiredFieldsBySource = (payload) => {
+  const sourceType = normalizeSourceType(payload.proposal_source_type);
+
+  if (sourceType === 'TINDAK_LANJUT_BPK' || sourceType === 'TINDAK_LANJUT_INSPEKTORAT') {
+    return ['proposal_source_type', 'judul_temuan', 'ringkasan_temuan', 'status_tindak_lanjut'];
   }
 
-  if (sourceType === "LAKIP") {
-    return ["proposal_source_type", "ringkasan_temuan"];
+  if (sourceType === 'LAKIP') {
+    return ['proposal_source_type', 'ringkasan_temuan'];
   }
 
-  if (sourceType === "LAPORAN_KEUANGAN") {
-    return ["proposal_source_type", "akun_pos"];
+  if (sourceType === 'LAPORAN_KEUANGAN') {
+    return ['proposal_source_type', 'akun_pos'];
   }
 
-  if (sourceType === "PELAKSANAAN_KEGIATAN") {
-    return ["proposal_source_type", "nama_kegiatan"];
+  if (sourceType === 'PELAKSANAAN_KEGIATAN') {
+    return ['proposal_source_type', 'nama_kegiatan'];
   }
 
-  if (sourceType === "PERTANGGUNGJAWABAN_KEUANGAN") {
-    return ["proposal_source_type", "jenis_dokumen_pertanggungjawaban"];
+  if (sourceType === 'PERTANGGUNGJAWABAN_KEUANGAN') {
+    return ['proposal_source_type', 'jenis_dokumen_pertanggungjawaban'];
   }
 
-  return ["proposal_source_type", "ringkasan_temuan"];
+  // ✨ TAMBAHKAN LOGIKA INI:
+  // Jika nama_kegiatan ada (jalur Renstra), ringkasan_temuan tidak lagi diwajibkan
+  if (payload.nama_kegiatan) {
+    return ['proposal_source_type'];
+  }
+
+  return ['proposal_source_type', 'ringkasan_temuan'];
 };
 
 const buildSourceInstruction = (sourceType) => {
@@ -216,28 +214,30 @@ Tugas:
 
   const sourceSpecific = {
     TINDAK_LANJUT_BPK:
-      "Fokus pada tindak lanjut temuan pemeriksaan BPK, rekomendasi pemeriksaan, penguatan pengendalian, bukti tindak lanjut, PIC, target waktu, dan akuntabilitas penyelesaian.",
+      'Fokus pada tindak lanjut temuan pemeriksaan BPK, rekomendasi pemeriksaan, penguatan pengendalian, bukti tindak lanjut, PIC, target waktu, dan akuntabilitas penyelesaian.',
     TINDAK_LANJUT_INSPEKTORAT:
-      "Fokus pada hasil pengawasan internal, perbaikan pengendalian intern, kepatuhan, penyelesaian rekomendasi, dan bukti tindak lanjut.",
+      'Fokus pada hasil pengawasan internal, perbaikan pengendalian intern, kepatuhan, penyelesaian rekomendasi, dan bukti tindak lanjut.',
     LAKIP:
-      "Fokus pada akuntabilitas kinerja, indikator, target, capaian, output, outcome, perjanjian kinerja, evaluasi SAKIP, dan konsistensi data kinerja.",
+      'Fokus pada akuntabilitas kinerja: penyusunan dan penyampaian LAKIP, indikator kinerja, target dan capaian, output/outcome, perjanjian kinerja, evaluasi SAKIP/APIP, kelengkapan bukti dukung, dan konsistensi data kinerja. Gunakan pola narasi pengawasan BPKP/BPK (bukan ringkasan generik).',
     LAPORAN_KEUANGAN:
-      "Fokus pada akun/pos laporan keuangan, pengakuan, pengukuran, penyajian, pengungkapan, rekonsiliasi, bukti transaksi, dan kepatuhan standar akuntansi pemerintahan.",
+      'Fokus pada akun/pos laporan keuangan, pengakuan, pengukuran, penyajian, pengungkapan, rekonsiliasi, bukti transaksi, dan kepatuhan standar akuntansi pemerintahan.',
     PELAKSANAAN_KEGIATAN:
-      "Fokus pada target kegiatan, tahapan pelaksanaan, output, lokasi, kendala, keterlambatan, kualitas pelaksanaan, dan manfaat kegiatan.",
+      'Fokus pada target kegiatan, tahapan pelaksanaan, output, lokasi, kendala, keterlambatan, kualitas pelaksanaan, dan manfaat kegiatan.',
     PERTANGGUNGJAWABAN_KEUANGAN:
-      "Fokus pada SPJ, bukti pengeluaran, validitas transaksi, kelengkapan dokumen, pajak, pertanggungjawaban bendahara, dan kepatuhan administrasi keuangan.",
+      'Fokus pada SPJ, bukti pengeluaran, validitas transaksi, kelengkapan dokumen, pajak, pertanggungjawaban bendahara, dan kepatuhan administrasi keuangan.',
     SPIP_E_SIGAP:
-      "Fokus pada pengendalian intern, RTP, risiko operasional, monitoring SPIP, evidence, dan perbaikan kontrol.",
+      'Fokus pada pengendalian intern, RTP, risiko operasional, monitoring SPIP, evidence, dan perbaikan kontrol.',
     MANUAL_ADHOC:
-      "Fokus pada isu risiko ad hoc yang belum masuk kategori formal, tetapi tetap harus disusun secara terstruktur dan dapat diaudit.",
+      'Fokus pada isu risiko ad hoc yang belum masuk kategori formal, tetapi tetap harus disusun secara terstruktur dan dapat diaudit.',
     LAINNYA:
-      "Fokus pada kategori risiko baru, alasan pengajuan, objek pengendalian, potensi dampak, dan kebutuhan review oleh pengelola MR.",
+      'Fokus pada kategori risiko baru, alasan pengajuan, objek pengendalian, potensi dampak, dan kebutuhan review oleh pengelola MR.',
   };
 
-  return `${commonInstruction}\nFokus sumber risiko:\n${
-    sourceSpecific[sourceType] || sourceSpecific.LAINNYA
-  }`;
+  const auditStyle = getAuditNarrativeStyleBlock();
+
+  return [auditStyle, commonInstruction, `Fokus sumber risiko:\n${sourceSpecific[sourceType] || sourceSpecific.LAINNYA}`]
+    .filter(Boolean)
+    .join('\n\n');
 };
 
 const buildNarrativeJsonSchemaInstruction = () => `
@@ -274,7 +274,7 @@ const buildPrompt = (payload = {}) => {
   return [
     buildSourceInstruction(sourceType),
     buildNarrativeJsonSchemaInstruction(),
-    "Input proposal intake:",
+    'Input proposal intake:',
     JSON.stringify(
       cleanObject({
         proposal_source_type: sourceType,
@@ -289,8 +289,7 @@ const buildPrompt = (payload = {}) => {
         unit_terkait: payload.unit_terkait,
         akun_pos: payload.akun_pos,
         jenis_transaksi: payload.jenis_transaksi,
-        jenis_dokumen_pertanggungjawaban:
-          payload.jenis_dokumen_pertanggungjawaban,
+        jenis_dokumen_pertanggungjawaban: payload.jenis_dokumen_pertanggungjawaban,
         nama_kegiatan: payload.nama_kegiatan,
         tahapan_pelaksanaan: payload.tahapan_pelaksanaan,
         lokasi: payload.lokasi,
@@ -303,17 +302,14 @@ const buildPrompt = (payload = {}) => {
         contoh_sumber_risiko: payload.contoh_sumber_risiko,
       }),
       null,
-      2
+      2,
     ),
-  ].join("\n\n");
+  ].join('\n\n');
 };
 
 const parseJsonStrict = (rawText) => {
-  if (!rawText || typeof rawText !== "string") {
-    throw new NarrativeDraftError(
-      "Provider narasi tidak mengembalikan teks.",
-      502
-    );
+  if (!rawText || typeof rawText !== 'string') {
+    throw new NarrativeDraftError('Provider narasi tidak mengembalikan teks.', 502);
   }
 
   const trimmed = rawText.trim();
@@ -324,47 +320,35 @@ const parseJsonStrict = (rawText) => {
     const match = trimmed.match(/\{[\s\S]*\}/);
 
     if (!match) {
-      throw new NarrativeDraftError(
-        "Output provider narasi bukan JSON valid.",
-        502,
-        {
-          provider_output_preview: trimmed.slice(0, 500),
-        }
-      );
+      throw new NarrativeDraftError('Output provider narasi bukan JSON valid.', 502, {
+        provider_output_preview: trimmed.slice(0, 500),
+      });
     }
 
     try {
       return JSON.parse(match[0]);
     } catch (innerError) {
-      throw new NarrativeDraftError(
-        "Output provider narasi gagal diparse sebagai JSON.",
-        502,
-        {
-          provider_output_preview: trimmed.slice(0, 500),
-        }
-      );
+      throw new NarrativeDraftError('Output provider narasi gagal diparse sebagai JSON.', 502, {
+        provider_output_preview: trimmed.slice(0, 500),
+      });
     }
   }
 };
 
 const validateNarrativeResult = (result = {}) => {
   const missing = REQUIRED_OUTPUT_FIELDS.filter((field) => {
-  const value = result[field];
-  return value === undefined || value === null || String(value).trim() === "";
-});
+    const value = result[field];
+    return value === undefined || value === null || String(value).trim() === '';
+  });
 
   if (missing.length > 0) {
-    throw new NarrativeDraftError(
-      `Draft narasi belum lengkap: ${missing.join(", ")}`,
-      502,
-      {
-        missing_output_fields: missing,
-      }
-    );
+    throw new NarrativeDraftError(`Draft narasi belum lengkap: ${missing.join(', ')}`, 502, {
+      missing_output_fields: missing,
+    });
   }
 
   const technicalLeak = TECHNICAL_BLOCKED_FIELDS.filter((field) =>
-    Object.prototype.hasOwnProperty.call(result, field)
+    Object.prototype.hasOwnProperty.call(result, field),
   );
 
   if (technicalLeak.length > 0) {
@@ -373,30 +357,27 @@ const validateNarrativeResult = (result = {}) => {
       502,
       {
         blocked_output_fields: technicalLeak,
-      }
+      },
     );
   }
 
-    const tooShortFields = REQUIRED_OUTPUT_FIELDS.filter((field) => {
+  const tooShortFields = REQUIRED_OUTPUT_FIELDS.filter((field) => {
     const value = result[field];
 
-    if (typeof value !== "string") return false;
+    if (typeof value !== 'string') return false;
 
-    const wordCount = value
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean).length;
+    const wordCount = value.trim().split(/\s+/).filter(Boolean).length;
 
     return wordCount < 3;
   });
 
   if (tooShortFields.length > 0) {
     throw new NarrativeDraftError(
-      `Draft narasi terlalu pendek: ${tooShortFields.join(", ")}`,
+      `Draft narasi terlalu pendek: ${tooShortFields.join(', ')}`,
       502,
       {
         too_short_output_fields: tooShortFields,
-      }
+      },
     );
   }
 
@@ -412,9 +393,7 @@ const validateNarrativeResult = (result = {}) => {
     target_waktu: cleanText(result.target_waktu),
     catatan: cleanText(result.catatan),
     confidence:
-      typeof result.confidence === "number"
-        ? Math.max(0, Math.min(1, result.confidence))
-        : 0,
+      typeof result.confidence === 'number' ? Math.max(0, Math.min(1, result.confidence)) : 0,
     needs_user_review: true,
     basis_ringkasan: Array.isArray(result.basis_ringkasan)
       ? result.basis_ringkasan.map(cleanText).filter(Boolean).slice(0, 10)
@@ -428,15 +407,11 @@ const normalizePreviewPayload = (body = {}) => {
   const sourceType = normalizeSourceType(body.proposal_source_type);
 
   if (!ALLOWED_SOURCE_TYPES.includes(sourceType)) {
-    throw new NarrativeDraftError(
-      "Sumber usulan risiko tidak didukung untuk draft narasi.",
-      400,
-      {
-        proposal_source_type: body.proposal_source_type,
-        normalized_source_type: sourceType,
-        allowed_source_types: ALLOWED_SOURCE_TYPES,
-      }
-    );
+    throw new NarrativeDraftError('Sumber usulan risiko tidak didukung untuk draft narasi.', 400, {
+      proposal_source_type: body.proposal_source_type,
+      normalized_source_type: sourceType,
+      allowed_source_types: ALLOWED_SOURCE_TYPES,
+    });
   }
 
   const payload = cleanObject({
@@ -455,9 +430,7 @@ const normalizePreviewPayload = (body = {}) => {
 
     akun_pos: cleanText(body.akun_pos),
     jenis_transaksi: cleanText(body.jenis_transaksi),
-    jenis_dokumen_pertanggungjawaban: cleanText(
-      body.jenis_dokumen_pertanggungjawaban
-    ),
+    jenis_dokumen_pertanggungjawaban: cleanText(body.jenis_dokumen_pertanggungjawaban),
 
     nama_kegiatan: cleanText(body.nama_kegiatan),
     tahapan_pelaksanaan: cleanText(body.tahapan_pelaksanaan),
@@ -473,7 +446,7 @@ const normalizePreviewPayload = (body = {}) => {
     target_waktu: cleanText(body.target_waktu),
   });
 
-  assertRequired(payload, getRequiredFieldsBySource(sourceType));
+  assertRequired(payload, getRequiredFieldsBySource(payload));
 
   return payload;
 };
@@ -483,19 +456,19 @@ const previewProposalNarrative = async ({ body = {}, user = null } = {}) => {
   const prompt = buildPrompt(payload);
 
   let providerResult = await executeNarrativeProvider({
-  payload,
-  prompt,
-  user,
-});
+    payload,
+    prompt,
+    user,
+  });
 
-let result;
+  let result;
 
-try {
-  result = validateNarrativeResult(providerResult.data);
-} catch (error) {
-  const shouldFallbackFromExternalInvalidOutput =
-    providerResult?.meta?.external_provider_requested === true &&
-    providerResult?.meta?.provider !== "rule_enhanced";
+  try {
+    result = validateNarrativeResult(providerResult.data);
+  } catch (error) {
+    const shouldFallbackFromExternalInvalidOutput =
+      providerResult?.meta?.external_provider_requested === true &&
+      providerResult?.meta?.provider !== 'rule_enhanced';
 
     if (!shouldFallbackFromExternalInvalidOutput) {
       throw error;
@@ -508,8 +481,8 @@ try {
       requestedProvider: providerResult.meta.requested_provider,
       fallbackReason:
         error?.message ||
-        "Output provider eksternal tidak lolos validasi. Fallback ke rule_enhanced.",
-      providerErrorName: error?.name || "ProviderValidationError",
+        'Output provider eksternal tidak lolos validasi. Fallback ke rule_enhanced.',
+      providerErrorName: error?.name || 'ProviderValidationError',
       providerErrorDetails: error?.details || null,
     });
 
@@ -518,7 +491,7 @@ try {
 
   return {
     success: true,
-    message: "Draft narasi berhasil dibuat.",
+    message: 'Draft narasi berhasil dibuat.',
     data: result,
     meta: {
       provider: providerResult.meta.provider,
@@ -537,12 +510,10 @@ try {
       },
       provider_security_guard: {
         enabled: true,
-        external_provider_enabled:
-          providerResult.meta.external_provider_enabled,
-        external_provider_requested:
-          providerResult.meta.external_provider_requested,
+        external_provider_enabled: providerResult.meta.external_provider_enabled,
+        external_provider_requested: providerResult.meta.external_provider_requested,
         api_key_exposure_guard:
-          "API key tidak boleh di-hardcode, tidak boleh dikirim ke frontend, dan tidak boleh dibagikan di chat/dokumen.",
+          'API key tidak boleh di-hardcode, tidak boleh dikirim ke frontend, dan tidak boleh dibagikan di chat/dokumen.',
       },
       generated_fields: OUTPUT_FIELDS,
       blocked_technical_fields: TECHNICAL_BLOCKED_FIELDS,

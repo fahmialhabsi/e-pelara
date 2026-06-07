@@ -1,19 +1,19 @@
-"use strict";
-const { Model } = require("sequelize");
+'use strict';
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class RenstraTabelSasaran extends Model {
     static associate(models) {
       // Relasi ke model indikator (opsional)
       RenstraTabelSasaran.belongsTo(models.IndikatorRenstra, {
-        foreignKey: "indikator_id",
-        as: "indikator",
+        foreignKey: 'indikator_id',
+        as: 'indikator',
       });
 
       RenstraTabelSasaran.belongsTo(models.Sasaran, {
-        foreignKey: "sasaran_id",
-        targetKey: "id",
-        as: "sasaran_rpjmd",
+        foreignKey: 'sasaran_id',
+        targetKey: 'id',
+        as: 'sasaran_rpjmd',
       });
     }
   }
@@ -23,6 +23,7 @@ module.exports = (sequelize, DataTypes) => {
       renstra_id: DataTypes.INTEGER,
       tujuan_id: DataTypes.INTEGER,
       sasaran_id: DataTypes.INTEGER,
+      strategi_id: DataTypes.INTEGER,
       indikator_id: DataTypes.INTEGER,
       baseline: DataTypes.FLOAT,
       satuan_target: DataTypes.STRING(100),
@@ -51,11 +52,11 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       sequelize,
-      modelName: "RenstraTabelSasaran",
-      tableName: "renstra_tabel_sasaran",
+      modelName: 'RenstraTabelSasaran',
+      tableName: 'renstra_tabel_sasaran',
       underscored: true,
       timestamps: true, // gunakan createdAt dan updatedAt
-    }
+    },
   );
 
   return RenstraTabelSasaran;

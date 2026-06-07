@@ -1,10 +1,10 @@
-import { useEffect, useCallback, useMemo, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
-import { App } from "antd";
-import { yupResolver } from "@hookform/resolvers/yup";
-import api from "@/services/api";
+import { useEffect, useCallback, useMemo, useRef, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { App } from 'antd';
+import { yupResolver } from '@hookform/resolvers/yup';
+import api from '@/services/api';
 
 /**
  * Template hook generik untuk semua form Renstra.
@@ -22,11 +22,11 @@ export const useRenstraFormTemplate = ({
   defaultValues = {},
   generatePayload,
   queryKeys = [],
-  redirectPath = "/",
+  redirectPath = '/',
   onError = null,
   onSuccess = null,
   onMutationSuccess = null, // alias untuk onSuccess
-  fetchOptions = {},        // { "key": () => Promise<array> }
+  fetchOptions = {}, // { "key": () => Promise<array> }
   skipInitialDataReset = false, // true: jangan reset(initialData) — hook anak yang normalisasi field
   /** Diteruskan ke useForm; `isValid` di formState hanya andal bila mode onChange/onBlur/all. */
   mode,
@@ -48,13 +48,13 @@ export const useRenstraFormTemplate = ({
 
   const [dropdowns, setDropdowns] = useState(initDropdowns);
   const [isLoadingDropdowns, setIsLoadingDropdowns] = useState(
-    Object.keys(fetchOptions).length > 0
+    Object.keys(fetchOptions).length > 0,
   );
-  const fetchedRef = useRef("");
+  const fetchedRef = useRef('');
 
   const fetchSignature = useMemo(() => {
-    const keys = Object.keys(fetchOptions).sort().join("|");
-    const renstraId = renstraAktif?.id ?? initialData?.renstra_id ?? "";
+    const keys = Object.keys(fetchOptions).sort().join('|');
+    const renstraId = renstraAktif?.id ?? initialData?.renstra_id ?? '';
     return `${keys}::renstra=${String(renstraId)}`;
   }, [fetchOptions, renstraAktif?.id, initialData?.renstra_id]);
 
@@ -74,7 +74,7 @@ export const useRenstraFormTemplate = ({
         .catch((err) => {
           console.warn(`[useRenstraFormTemplate] Gagal fetch dropdown "${key}":`, err?.message);
           return { key, data: [] };
-        })
+        }),
     );
 
     Promise.all(promises).then((results) => {
@@ -85,16 +85,15 @@ export const useRenstraFormTemplate = ({
       setDropdowns(next);
       setIsLoadingDropdowns(false);
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchSignature]); // ulangi saat signature berubah (mis. renstraAktif baru ter-load)
 
   // ── Form ──────────────────────────────────────────────────────────────────
-  const resolvedSchema = typeof schema === "function" ? schema() : schema;
+  const resolvedSchema = typeof schema === 'function' ? schema() : schema;
 
   const finalDefaultValues = {
     ...defaultValues,
-    renstra_id:
-      defaultValues.renstra_id ?? renstraAktif?.id ?? initialData?.renstra_id,
+    renstra_id: defaultValues.renstra_id ?? renstraAktif?.id ?? initialData?.renstra_id,
   };
 
   const form = useForm({
@@ -116,19 +115,15 @@ export const useRenstraFormTemplate = ({
 
   const mutation = useMutation({
     mutationFn: (payload) =>
-      initialData
-        ? api.put(`${endpoint}/${initialData.id}`, payload)
-        : api.post(endpoint, payload),
+      initialData ? api.put(`${endpoint}/${initialData.id}`, payload) : api.post(endpoint, payload),
     onSuccess: (res) => {
       if (res.data?.blocked) {
         message.warning(res.data.message);
         console.table(res.data.warnings);
       } else {
-        message.success(
-          `Data berhasil ${initialData ? "diperbarui" : "disimpan"}!`
-        );
+        message.success(`Data berhasil ${initialData ? 'diperbarui' : 'disimpan'}!`);
         queryClient.invalidateQueries({ queryKey: queryKeys });
-        if (typeof successCallback === "function") successCallback(res.data);
+        if (typeof successCallback === 'function') successCallback(res.data);
         navigate(redirectPath);
       }
     },
@@ -138,21 +133,26 @@ export const useRenstraFormTemplate = ({
         err?.response?.data?.error ||
           err?.response?.data?.message ||
           err?.message ||
-          "Gagal menyimpan data."
+          'Gagal menyimpan data.',
       );
-      if (typeof onError === "function") onError(err);
+      if (typeof onError === 'function') onError(err);
     },
   });
 
   const onSubmit = useCallback(
     (formData) => {
-      let payload = generatePayload(formData);
+      let payload;
+      try {
+        payload = generatePayload(formData);
+      } catch (err) {
+        message.error(err.message);
+        return;
+      }
       if (!payload.renstra_id)
-        payload.renstra_id =
-          formData.renstra_id ?? renstraAktif?.id ?? initialData?.renstra_id;
+        payload.renstra_id = formData.renstra_id ?? renstraAktif?.id ?? initialData?.renstra_id;
       mutation.mutate(payload);
     },
-    [generatePayload, mutation, renstraAktif, initialData]
+    [generatePayload, mutation, renstraAktif, initialData],
   );
 
   return {

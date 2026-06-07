@@ -1,34 +1,22 @@
 // frontend/src/services/mrPlanningRiskService.js
 
-import api from "@/services/api";
+import api from '@/services/api';
 
-const ENDPOINT = "/mr-planning-risk";
-const CONTEXT_ENDPOINT = "/mr-planning-context";
-const REFERENCE_ENDPOINT = "/mr-reference-items/group";
+const ENDPOINT = '/mr-planning-risk';
+const CONTEXT_ENDPOINT = '/mr-planning-context';
+const REFERENCE_ENDPOINT = '/mr-reference-items/group';
 
 export const MR_PLANNING_RISK_QUERY_KEYS = {
-  all: ["mr-planning-risk"],
-  list: (params = {}) => ["mr-planning-risk", "list", params],
-  detail: (id) => ["mr-planning-risk", "detail", String(id || "")],
-  history: (id) => ["mr-planning-risk", "history", String(id || "")],
-  historyDetail: (historyId) => [
-    "mr-planning-risk",
-    "history-detail",
-    String(historyId || ""),
-  ],
-  contexts: (params = {}) => ["mr-planning-context", "list", params],
-  contextDetail: (id) => ["mr-planning-context", "detail", String(id || "")],
-  contextItems: (id) => ["mr-planning-context", "items", String(id || "")],
-  referenceItems: (kodeGroup) => [
-    "mr-reference-items",
-    "group",
-    String(kodeGroup || ""),
-  ],
-  proposalSources: () => [
-    "mr-reference-items",
-    "group",
-    "MR_PROPOSAL_SOURCE",
-  ],
+  all: ['mr-planning-risk'],
+  list: (params = {}) => ['mr-planning-risk', 'list', params],
+  detail: (id) => ['mr-planning-risk', 'detail', String(id || '')],
+  history: (id) => ['mr-planning-risk', 'history', String(id || '')],
+  historyDetail: (historyId) => ['mr-planning-risk', 'history-detail', String(historyId || '')],
+  contexts: (params = {}) => ['mr-planning-context', 'list', params],
+  contextDetail: (id) => ['mr-planning-context', 'detail', String(id || '')],
+  contextItems: (id) => ['mr-planning-context', 'items', String(id || '')],
+  referenceItems: (kodeGroup) => ['mr-reference-items', 'group', String(kodeGroup || '')],
+  proposalSources: () => ['mr-reference-items', 'group', 'MR_PROPOSAL_SOURCE'],
 };
 
 const getResponseData = (response) => response?.data ?? null;
@@ -48,14 +36,14 @@ const normalizeParams = (params = {}) =>
   Object.fromEntries(
     Object.entries(params || {}).filter(([, value]) => {
       if (value === undefined || value === null) return false;
-      if (typeof value === "string" && value.trim() === "") return false;
+      if (typeof value === 'string' && value.trim() === '') return false;
       return true;
-    })
+    }),
   );
 
 const buildDownloadConfig = (params = {}) => ({
   params: normalizeParams(params),
-  responseType: "blob",
+  responseType: 'blob',
 });
 
 const buildExportUnavailableError = (error, format) => {
@@ -64,7 +52,7 @@ const buildExportUnavailableError = (error, format) => {
   if (status === 404 || status === 405 || status === 501) {
     const message =
       `Endpoint export ${format.toUpperCase()} belum tersedia di backend. ` +
-      "Tombol export boleh disiapkan sebagai future-ready, tetapi export final wajib dibuat melalui backend/export service resmi.";
+      'Tombol export boleh disiapkan sebagai future-ready, tetapi export final wajib dibuat melalui backend/export service resmi.';
 
     const normalizedError = new Error(message);
     normalizedError.isExportUnavailable = true;
@@ -101,7 +89,7 @@ const mrPlanningRiskService = {
   },
 
   async getContextById(id, params = {}) {
-    if (!id) throw new Error("ID MR Planning Context wajib diisi.");
+    if (!id) throw new Error('ID MR Planning Context wajib diisi.');
 
     const response = await api.get(`${CONTEXT_ENDPOINT}/${id}`, {
       params: normalizeParams(params),
@@ -111,21 +99,21 @@ const mrPlanningRiskService = {
   },
 
   async getContextItems(id) {
-    if (!id) throw new Error("ID MR Planning Context wajib diisi.");
+    if (!id) throw new Error('ID MR Planning Context wajib diisi.');
 
     const response = await api.get(`${CONTEXT_ENDPOINT}/${id}/items`);
     return getResponseData(response);
   },
 
   async getReferenceItemsByGroup(kodeGroup) {
-    if (!kodeGroup) throw new Error("Kode group reference wajib diisi.");
+    if (!kodeGroup) throw new Error('Kode group reference wajib diisi.');
 
     const response = await api.get(`${REFERENCE_ENDPOINT}/${kodeGroup}`);
     return getResponseData(response);
   },
 
   async createFromContext(contextId, payload = {}) {
-    if (!contextId) throw new Error("ID MR Planning Context wajib diisi.");
+    if (!contextId) throw new Error('ID MR Planning Context wajib diisi.');
 
     const response = await api.post(`${ENDPOINT}/context/${contextId}`, payload);
     return getResponseData(response);
@@ -157,7 +145,7 @@ const mrPlanningRiskService = {
   },
 
   async getById(id, params = {}) {
-    if (!id) throw new Error("ID MR Planning Risk wajib diisi.");
+    if (!id) throw new Error('ID MR Planning Risk wajib diisi.');
 
     const response = await api.get(`${ENDPOINT}/${id}`, {
       params: normalizeParams(params),
@@ -172,7 +160,7 @@ const mrPlanningRiskService = {
   },
 
   async update(id, payload = {}) {
-    if (!id) throw new Error("ID MR Planning Risk wajib diisi.");
+    if (!id) throw new Error('ID MR Planning Risk wajib diisi.');
 
     // STEP 18E:
     // Draft update wajib memakai context-based service endpoint.
@@ -182,7 +170,7 @@ const mrPlanningRiskService = {
   },
 
   async createRevisi(id, payload = {}) {
-    if (!id) throw new Error("ID MR Planning Risk wajib diisi.");
+    if (!id) throw new Error('ID MR Planning Risk wajib diisi.');
 
     const response = await api.post(`${ENDPOINT}/${id}/revisi`, payload);
     return getResponseData(response);
@@ -194,7 +182,7 @@ const mrPlanningRiskService = {
   },
 
   async getHistory(id, params = {}) {
-    if (!id) throw new Error("ID MR Planning Risk wajib diisi.");
+    if (!id) throw new Error('ID MR Planning Risk wajib diisi.');
 
     const response = await api.get(`${ENDPOINT}/${id}/history`, {
       params: normalizeParams(params),
@@ -204,7 +192,7 @@ const mrPlanningRiskService = {
   },
 
   async getHistoryById(historyId, params = {}) {
-    if (!historyId) throw new Error("History ID wajib diisi.");
+    if (!historyId) throw new Error('History ID wajib diisi.');
 
     const response = await api.get(`${ENDPOINT}/history/${historyId}`, {
       params: normalizeParams(params),
@@ -214,51 +202,44 @@ const mrPlanningRiskService = {
   },
 
   async verifikasiHistory(historyId, payload = {}) {
-    if (!historyId) throw new Error("History ID wajib diisi.");
+    if (!historyId) throw new Error('History ID wajib diisi.');
 
-    const response = await api.patch(
-      `${ENDPOINT}/history/${historyId}/verifikasi`,
-      payload
-    );
+    const response = await api.patch(`${ENDPOINT}/history/${historyId}/verifikasi`, payload);
 
     return getResponseData(response);
   },
 
   async approveHistory(historyId, payload = {}) {
-    if (!historyId) throw new Error("History ID wajib diisi.");
+    if (!historyId) throw new Error('History ID wajib diisi.');
 
-    const response = await api.patch(
-      `${ENDPOINT}/history/${historyId}/approve`,
-      payload
-    );
+    const response = await api.patch(`${ENDPOINT}/history/${historyId}/approve`, payload);
 
     return getResponseData(response);
   },
 
   async tolakHistory(historyId, payload = {}) {
-    if (!historyId) throw new Error("History ID wajib diisi.");
+    if (!historyId) throw new Error('History ID wajib diisi.');
 
-    const response = await api.patch(
-      `${ENDPOINT}/history/${historyId}/tolak`,
-      payload
-    );
+    const response = await api.patch(`${ENDPOINT}/history/${historyId}/tolak`, payload);
 
     return getResponseData(response);
   },
 
   async rebuildFromHistory(id, payload = {}) {
-    if (!id) throw new Error("ID MR Planning Risk wajib diisi.");
+    if (!id) throw new Error('ID MR Planning Risk wajib diisi.');
 
-    const response = await api.post(
-      `${ENDPOINT}/${id}/rebuild-active-from-history`,
-      payload
-    );
+    const response = await api.post(`${ENDPOINT}/${id}/rebuild-active-from-history`, payload);
 
     return getResponseData(response);
   },
 
+  async syncRenstraContext(contextId) {
+    const response = await api.patch(`${CONTEXT_ENDPOINT}/${contextId}/sync-renstra`);
+    return getResponseData(response);
+  },
+
   async remove(id) {
-    if (!id) throw new Error("ID MR Planning Risk wajib diisi.");
+    if (!id) throw new Error('ID MR Planning Risk wajib diisi.');
 
     const response = await api.delete(`${ENDPOINT}/${id}`);
     return getResponseData(response);
@@ -268,10 +249,10 @@ const mrPlanningRiskService = {
     return requestExport({
       path: `${ENDPOINT}/export/excel`,
       params: {
-        jenis: "coaching-clinic",
+        jenis: 'coaching-clinic',
         ...params,
       },
-      format: "excel",
+      format: 'excel',
     });
   },
 
@@ -279,10 +260,10 @@ const mrPlanningRiskService = {
     return requestExport({
       path: `${ENDPOINT}/export/docx`,
       params: {
-        jenis: "laporan-tahunan",
+        jenis: 'laporan-tahunan',
         ...params,
       },
-      format: "docx",
+      format: 'docx',
     });
   },
 
@@ -290,10 +271,10 @@ const mrPlanningRiskService = {
     return requestExport({
       path: `${ENDPOINT}/export/pdf`,
       params: {
-        jenis: "laporan-tahunan",
+        jenis: 'laporan-tahunan',
         ...params,
       },
-      format: "pdf",
+      format: 'pdf',
     });
   },
 };
@@ -318,6 +299,7 @@ export const {
   approveHistory,
   tolakHistory,
   rebuildFromHistory,
+  syncRenstraContext,
   remove,
   exportExcel,
   exportDocx,

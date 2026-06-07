@@ -677,3 +677,124 @@ exports.getIndikatorSubKegiatan = async (req, res) => {
     res.status(500).json({ message: 'Terjadi kesalahan server internal.' });
   }
 };
+
+// 1. FUNGSI UNTUK MENGISI DROPDOWN CASCADING SECARA AMAN (ANTI-KOSONG)
+exports.getCascadingList = async (req, res) => {
+  try {
+    const { renstra_id, target_stage, parent_ref_id } = req.query;
+
+    if (!renstra_id || !target_stage) {
+      return res.status(400).json({ error: 'renstra_id dan target_stage wajib diisi' });
+    }
+
+    const whereClause = { renstra_id, stage: target_stage };
+
+    // Jika user memilih level di bawah Tujuan/Sasaran, filter berdasarkan relasi entitas induknya
+    if (parent_ref_id) {
+      const parentId = Number(parent_ref_id);
+      const { RenstraKegiatan, RenstraSubkegiatan } = require('../models');
+
+      if (target_stage === 'kegiatan') {
+        // Cari kegiatan yang berada di bawah Program tertentu
+        const kegiatanIds = await RenstraKegiatan.findAll({
+          // HAPUS renstra_id dari sini, sisakan program_id saja
+          where: { program_id: parentId },
+          attributes: ['id'],
+          raw: true,
+        }).then((rows) => rows.map((r) => r.id));
+
+        whereClause.ref_id = { [Op.in]: kegiatanIds };
+      } else if (target_stage === 'sub_kegiatan') {
+        const subKegiatanIds = await RenstraSubkegiatan.findAll({
+          where: { kegiatan_id: parentId }, // <-- Diubah ke kolom yang benar
+          attributes: ['id'],
+          raw: true,
+        }).then((rows) => rows.map((r) => r.id));
+
+        whereClause.ref_id = { [Op.in]: subKegiatanIds };
+      }
+    }
+
+    const indicators = await IndikatorRenstra.findAll({
+      where: whereClause,
+      attributes: ['id', 'ref_id', 'kode_indikator', 'nama_indikator', 'stage'],
+      order: [['kode_indikator', 'ASC']],
+    });
+
+    return res.json(indicators);
+  } catch (err) {
+    console.error('❌ [getCascadingList] Error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+// 2. FUNGSI UNTUK MELACAK AKAR DAMPAK KE ATAS (RISK PROPAGATION)
+exports.getRiskPropagation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const propagationTree = [];
+
+    // Ambil indikator aktif tempat risiko melekat
+    const activeIndicator = await IndikatorRenstra.findByPk(id, { raw: true });
+    if (!activeIndicator) {
+      return res.status(404).json({ message: 'Indikator tidak ditemukan.' });
+    }
+
+    propagationTree.push({
+      stage: activeIndicator.stage,
+      kode: activeIndicator.kode_indikator,
+      nama: activeIndicator.nama_indikator,
+    });
+
+    const { RenstraSubkegiatan, RenstraKegiatan, RenstraProgram } = require('../models');
+
+    // Lakukan pelacakan berantai ke atas berdasarkan struktur database Anda
+    if (activeIndicator.stage === 'sub_kegiatan') {
+      const subKeg = await RenstraSubkegiatan.findByPk(activeIndicator.ref_id, {
+        include: [
+          {
+            model: RenstraKegiatan,
+            as: 'kegiatan',
+            include: [{ model: RenstraProgram, as: 'program_renstra' }], // 🛠️ Ubah alias ke 'program_renstra'
+          },
+        ],
+      });
+
+      if (subKeg?.kegiatan) {
+        propagationTree.unshift({
+          stage: 'kegiatan',
+          kode: subKeg.kegiatan.kode_kegiatan,
+          nama: subKeg.kegiatan.nama_kegiatan,
+        });
+        if (subKeg.kegiatan.program_renstra) {
+          // 🛠️ Sesuaikan pemanggilan objek
+          propagationTree.unshift({
+            stage: 'program',
+            kode: subKeg.kegiatan.program_renstra.kode_program, // 🛠️ Sesuaikan pemanggilan objek
+            nama: subKeg.kegiatan.program_renstra.nama_program, // 🛠️ Sesuaikan pemanggilan objek
+          });
+        }
+      }
+    } else if (activeIndicator.stage === 'kegiatan') {
+      const keg = await RenstraKegiatan.findByPk(activeIndicator.ref_id, {
+        include: [{ model: RenstraProgram, as: 'program_renstra' }], // 🛠️ Ubah alias ke 'program_renstra'
+      });
+      if (keg?.program_renstra) {
+        // 🛠️ Sesuaikan pemanggilan objek
+        propagationTree.unshift({
+          stage: 'program',
+          kode: keg.program_renstra.kode_program, // 🛠️ Sesuaikan pemanggilan objek
+          nama: keg.program_renstra.nama_program, // 🛠️ Sesuaikan pemanggilan objek
+        });
+      }
+    }
+
+    return res.json({
+      message: 'Jalur penularan dampak risiko berhasil dianalisis.',
+      propagation_path: propagationTree,
+    });
+  } catch (err) {
+    console.error('❌ [getRiskPropagation] Error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+};

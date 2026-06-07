@@ -38,6 +38,7 @@ import AuthContext from '@/contexts/authContext';
 import useDirtyFormGuard from '@/features/mr/hooks/useDirtyFormGuard';
 import { useMrDirtyGuard } from '@/features/mr/hooks/useMrDirtyGuard';
 import { MrConfirmSubmitDialog } from '@/features/mr/components/MrConfirmSubmitDialog';
+import RiskContextForm from './RiskContextForm';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -644,24 +645,27 @@ const isNarrativeDraftReadyInput = (values = {}) => {
   }
 
   if (sourceType === PROPOSAL_SOURCE.PELAKSANAAN_KEGIATAN) {
-    return Boolean(values.nama_kegiatan || values.objek_risiko);
+    return Boolean(values.nama_kegiatan || values.judul_temuan || values.objek_risiko);
   }
 
   if (sourceType === PROPOSAL_SOURCE.PERTANGGUNGJAWABAN_KEUANGAN) {
     return Boolean(
-      values.jenis_dokumen_pertanggungjawaban || values.akun_pos || values.objek_risiko,
+      values.jenis_dokumen_pertanggungjawaban ||
+      values.akun_pos ||
+      values.judul_temuan ||
+      values.objek_risiko,
     );
   }
 
   if (sourceType === PROPOSAL_SOURCE.LAPORAN_KEUANGAN) {
-    return Boolean(values.akun_pos || values.objek_risiko);
+    return Boolean(values.akun_pos || values.judul_temuan || values.objek_risiko);
   }
 
   if (sourceType === PROPOSAL_SOURCE.LAKIP) {
-    return Boolean(values.objek_risiko || values.ringkasan_temuan);
+    return Boolean(values.objek_risiko || values.judul_temuan || values.ringkasan_temuan);
   }
 
-  return Boolean(values.objek_risiko || values.ringkasan_temuan);
+  return Boolean(values.objek_risiko || values.judul_temuan || values.ringkasan_temuan);
 };
 
 const normalizeStatus = (value) => String(value || 'draft').toLowerCase();
@@ -937,6 +941,9 @@ const useRiskFormWatchValues = (form) => {
   const selectedContextId = Form.useWatch('context_id', form);
   const kemungkinanRefId = Form.useWatch('kemungkinan_ref_id', form);
   const dampakRefId = Form.useWatch('dampak_ref_id', form);
+  const watchedObjekRisiko = Form.useWatch('objek_risiko', form);
+  const watchedRingkasanTemuan = Form.useWatch('ringkasan_temuan', form);
+  const watchedUraianRisiko = Form.useWatch('uraian_risiko', form);
 
   return {
     selectedProposalSourceType,
@@ -948,6 +955,9 @@ const useRiskFormWatchValues = (form) => {
     selectedContextId,
     kemungkinanRefId,
     dampakRefId,
+    watchedObjekRisiko,
+    watchedRingkasanTemuan,
+    watchedUraianRisiko,
   };
 };
 
@@ -1034,6 +1044,9 @@ const useMrPlanningRiskFormEffects = ({
 
   useEffect(() => {
     if (!isCreateMode || !selectedContextId || !detail) return;
+
+    if (isRenstraCreateSource) return;
+
     form.setFieldsValue({
       context_id: detail.context_id,
       context_item_id: detail.context_item_id || detail.context_item?.id || null,
@@ -1167,6 +1180,7 @@ const useRiskFormReferenceData = ({
   isEditMode,
   isRevisiMode,
   selectedContextId,
+  selectedContextItemId,
   selectedContextItemsResponse,
   selectedContext,
   activeUserOrg,
@@ -1197,11 +1211,86 @@ const useRiskFormReferenceData = ({
     enabled: isRenstraCreateSource && Boolean(selectedContextId),
   });
 
-  const { data: selectedContextItemsResponseLocal, isLoading: isLoadingContextItems } = useQuery({
+  // 1. Kembalikan useQuery ke versi standar (Tanpa onSuccess agar aman di semua versi)
+  const {
+    data: selectedContextItemsResponseLocal,
+    isLoading: isLoadingContextItems,
+    refetch: refetchContextItems,
+  } = useQuery({
     queryKey: MR_PLANNING_RISK_QUERY_KEYS.contextItems(selectedContextId),
     queryFn: () => mrPlanningRiskService.getContextItems(selectedContextId),
     enabled: isRenstraCreateSource && Boolean(selectedContextId),
   });
+
+  // 2. 🌟 SUNTIKKAN FITUR AUTO-INJECTOR MURNI DI BAWAHNYA
+  const [isAutoInjecting, setIsAutoInjecting] = useState(false);
+  const syncedRef = React.useRef(false);
+
+  useEffect(() => {
+    console.log(
+      '[AutoSync] isRenstraCreateSource:',
+      isRenstraCreateSource,
+      'selectedContextId:',
+      selectedContextId,
+    );
+    if (!isRenstraCreateSource || !selectedContextId) return;
+
+    // Ekstrak data array items dari response
+    const itemsData = selectedContextItemsResponseLocal?.data || selectedContextItemsResponseLocal;
+
+    // KONDISI KRITIS: Jika data sudah di-load tapi array-nya kosong []
+    if (
+      itemsData &&
+      Array.isArray(itemsData) &&
+      itemsData.length === 0 &&
+      !isAutoInjecting &&
+      !syncedRef.current
+    ) {
+      const triggerSilentInjector = async () => {
+        setIsAutoInjecting(true);
+        console.log(
+          `%c[React Auto-Injector] Menyinkronkan data Renstra untuk Context ID: ${selectedContextId}...`,
+          'color: #1890ff; font-weight: bold;',
+        );
+
+        try {
+          // Menggunakan native fetch langsung ke backend port 3000 agar bebas eror proxy
+          const response = await fetch(
+            `http://localhost:3000/api/mr-planning-context/${selectedContextId}/sync-renstra`,
+            {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                // Otomatis menyertakan token JWT jika sistem Anda menggunakannya
+                Authorization: localStorage.getItem('token')
+                  ? `Bearer ${localStorage.getItem('token')}`
+                  : '',
+              },
+            },
+          );
+
+          const result = await response.json();
+
+          if (response.ok || result.success) {
+            syncedRef.current = true; // ← tambah
+            if (refetchContextItems) refetchContextItems();
+          }
+        } catch (err) {
+          console.error('[React Auto-Injector] Gagal mengeksekusi sinkronisasi otomatis:', err);
+        } finally {
+          setIsAutoInjecting(false);
+        }
+      };
+
+      triggerSilentInjector();
+    }
+  }, [
+    selectedContextId,
+    selectedContextItemsResponseLocal,
+    isRenstraCreateSource,
+    isAutoInjecting,
+    refetchContextItems,
+  ]);
 
   const selectedContextResolved =
     selectedContextDetailResponse?.data ||
@@ -1227,9 +1316,9 @@ const useRiskFormReferenceData = ({
     () =>
       getSelectedContextItem({
         items: selectedContextItems,
-        selectedId: selectedContextId,
+        selectedId: selectedContextItemId, // <-- MENGGUNAKAN ID DARI FORM
       }),
-    [selectedContextItems, selectedContextId],
+    [selectedContextItems, selectedContextItemId], // <-- MENGUPDATE DEPENDENCY
   );
 
   const { data: likelihoodResponse, isLoading: isLoadingLikelihood } = useQuery({
@@ -1749,6 +1838,7 @@ const submitFormByMode = ({
 
 export default function MrPlanningRiskForm({ mode: propMode }) {
   const [form] = Form.useForm();
+  const contextOptionsRef = React.useRef([]);
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -1770,6 +1860,15 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [pendingSubmitValues, setPendingSubmitValues] = useState(null);
 
+  const watchRenstraId = Form.useWatch('renstra_id', form);
+
+  const handleIndicatorSelected = (id) => {
+    form.setFieldsValue({
+      context_item_id: id, // 🌟 DIUBAH: dari indikator_id menjadi context_item_id
+    });
+    setIsDirty(true);
+  };
+
   const lastAutoDraftRef = useRef(null);
 
   const activeUserOrg = useMemo(() => getActiveUserOrganization(user), [user]);
@@ -1789,9 +1888,9 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
     selectedContextId,
     kemungkinanRefId,
     dampakRefId,
-    sumberRisikoRefId,
-    seleraRisikoRefId,
-    statusRisikoRefId,
+    watchedObjekRisiko,
+    watchedRingkasanTemuan,
+    watchedUraianRisiko,
   } = useRiskFormWatchValues(form);
 
   const mode = propMode || (id ? 'edit' : 'create');
@@ -1804,6 +1903,23 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
   const isNonRenstraCreateSource =
     isCreateMode && selectedSourceCode && !isRenstraSource(selectedSourceCode);
   const isCustomCreateSource = isCreateMode && isCustomSource(selectedSourceCode);
+
+  useEffect(() => {
+    console.log(
+      '[AutoSelect] triggered, isRenstraCreateSource:',
+      isRenstraCreateSource,
+      'opts:',
+      contextOptionsRef.current.length,
+      'selectedContextId:',
+      selectedContextId,
+    );
+    if (!isRenstraCreateSource) return;
+    if (selectedContextId) return;
+    const opts = contextOptionsRef.current;
+    if (opts.length !== 1) return;
+    form.setFieldValue('context_id', opts[0].value);
+  }, [isRenstraCreateSource, selectedContextId, form]);
+
   const shouldShowRiskInput = !isCreateMode || Boolean(selectedSourceCode);
 
   const {
@@ -1828,6 +1944,8 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
       isDetailMode,
     });
   const isVerification = status === 'verifikasi';
+
+  const selectedContextItemId = Form.useWatch('context_item_id', form);
 
   const {
     contextOptions,
@@ -1860,11 +1978,15 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
     isEditMode,
     isRevisiMode,
     selectedContextId,
+    selectedContextItemId,
     selectedContextItemsResponse: null,
     selectedContext: null,
     activeUserOrg,
   });
 
+  useEffect(() => {
+    contextOptionsRef.current = contextOptions;
+  }, [contextOptions]);
   const likelihoodItems = getReferenceRows(likelihoodResponse);
   const impactItems = getReferenceRows(impactResponse);
   const riskCategoryItems = getReferenceRows(riskCategoryResponse);
@@ -2012,6 +2134,7 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
       values.deskripsi_kategori_baru ||
       values.contoh_sumber_risiko ||
       values.uraian_risiko ||
+      values.objek_risiko ||
       '';
 
     const judulTemuan =
@@ -2060,20 +2183,38 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
     });
   };
 
-  const isNarrativePreviewReady = () => {
+  const isNarrativePreviewReady = useMemo(() => {
     if (!isNonRenstraCreateSource) return false;
 
-    const payload = buildNarrativePreviewPayload();
-    const sourceType = String(payload.proposal_source_type || '').toUpperCase();
+    const values = form.getFieldsValue(true);
+    const sourceType = String(values.proposal_source_type || '').toUpperCase();
 
     if (!sourceType || sourceType === PROPOSAL_SOURCE.RENSTRA) {
       return false;
     }
 
-    return Boolean(
-      payload.proposal_source_type && payload.judul_temuan && payload.ringkasan_temuan,
-    );
-  };
+    const objekRisiko = watchedObjekRisiko ?? values.objek_risiko;
+    const ringkasanTemuan =
+      watchedRingkasanTemuan ??
+      values.ringkasan_temuan ??
+      watchedUraianRisiko ??
+      values.uraian_risiko ??
+      objekRisiko;
+
+    return isNarrativeDraftReadyInput({
+      ...values,
+      proposal_source_type: sourceType,
+      objek_risiko: objekRisiko,
+      judul_temuan: values.judul_temuan || objekRisiko,
+      ringkasan_temuan: ringkasanTemuan,
+    });
+  }, [
+    form,
+    isNonRenstraCreateSource,
+    watchedObjekRisiko,
+    watchedRingkasanTemuan,
+    watchedUraianRisiko,
+  ]);
 
   const buildNarrativePreviewRequest = () => buildNarrativePreviewPayload();
 
@@ -2104,7 +2245,7 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
     setNarrativePreview(null);
     setNarrativeDraftApplied(false);
 
-    if (!isNarrativePreviewReady()) {
+    if (!isNarrativePreviewReady) {
       setNarrativePreviewFailure(
         'Data dasar belum lengkap. Isi minimal sumber usulan risiko, judul/objek risiko, dan ringkasan temuan atau uraian sumber risiko terlebih dahulu.',
       );
@@ -2788,6 +2929,14 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
                 </Col>
               </Row>
 
+              <div style={{ marginBottom: '24px' }}>
+                <RiskContextForm
+                  // 🌟 PATCH CERDAS: Prioritaskan renstra_id murni dari Context yang sedang aktif
+                  renstraId={selectedContextResolved?.renstra_id || watchRenstraId || 1}
+                  onIndicatorSelected={handleIndicatorSelected}
+                />
+              </div>
+
               {!selectedProposalSourceType && (
                 <Alert
                   type="warning"
@@ -2880,30 +3029,39 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
                 </Col>
               </Row>
 
+              {/* PATCH BARIS 2904 - 2928 */}
               {isCreateMode && selectedContextId && (
                 <>
                   <Row gutter={16}>
                     <Col xs={24}>
-                      <Form.Item
-                        label="Pilih Sumber Perencanaan / Indikator Renstra"
-                        name="context_item_id"
-                        rules={[
-                          {
-                            required: true,
-                            message: 'Sumber perencanaan wajib dipilih.',
-                          },
-                        ]}
-                      >
-                        <Select
-                          showSearch
-                          allowClear
-                          loading={isLoadingContextItems}
-                          disabled={isReadonly || submitting || !selectedContextId}
-                          placeholder="Pilih sumber perencanaan dari Renstra"
-                          optionFilterProp="label"
-                          options={contextItemOptions}
-                        />
-                      </Form.Item>
+                      {isRenstraCreateSource ? (
+                        /* JALUR RENSTRA: Nilai diatur oleh RiskContextForm, buat hidden item agar tidak tabrakan visual */
+                        <Form.Item name="context_item_id" hidden>
+                          <Input />
+                        </Form.Item>
+                      ) : (
+                        /* JALUR NON-RENSTRA / DEFAULT: Tampilkan Select asli bawaan sistem */
+                        <Form.Item
+                          label="Pilih Sumber Perencanaan / Indikator Renstra"
+                          name="context_item_id"
+                          rules={[
+                            {
+                              required: true,
+                              message: 'Sumber perencanaan wajib dipilih.',
+                            },
+                          ]}
+                        >
+                          <Select
+                            showSearch
+                            allowClear
+                            loading={isLoadingContextItems}
+                            disabled={isReadonly || submitting || !selectedContextId}
+                            placeholder="Pilih sumber perencanaan dari Renstra"
+                            optionFilterProp="label"
+                            options={contextItemOptions}
+                          />
+                        </Form.Item>
+                      )}
                     </Col>
                   </Row>
 
@@ -3595,7 +3753,7 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
                         isReadonly ||
                         submitting ||
                         narrativePreviewLoading ||
-                        !isNarrativePreviewReady()
+                        !isNarrativePreviewReady
                       }
                     >
                       Buat Preview Draft
@@ -3610,7 +3768,7 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
                       description="Draft ini hanya bantuan awal. Pengguna wajib mereview, menyesuaikan, dan memastikan substansinya benar sebelum disimpan."
                     />
 
-                    {!isNarrativePreviewReady() && (
+                    {!isNarrativePreviewReady && (
                       <Alert
                         type="warning"
                         showIcon

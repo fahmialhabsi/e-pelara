@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 /**
  * MR Planning Context Service
@@ -15,8 +15,8 @@
  * - Tidak masuk DOCX R14 sebelum alur input usulan risiko dari sumber Renstra hijau.
  */
 
-const db = require("../../models");
-const { assertFinalReportNotOverwrite } = require("./mrPolicyEngineService");
+const db = require('../../models');
+const { assertFinalReportNotOverwrite } = require('./mrPolicyEngineService');
 
 const {
   sequelize,
@@ -47,75 +47,75 @@ const parsePositiveInt = (value) => {
 
 const createNotFoundError = (message, details = {}) => {
   const error = new Error(message);
-  error.name = "MR_CONTEXT_NOT_FOUND";
+  error.name = 'MR_CONTEXT_NOT_FOUND';
   error.statusCode = 404;
   error.blocked = true;
   error.audit_mode = false;
-  error.code = "MR_CONTEXT_NOT_FOUND";
+  error.code = 'MR_CONTEXT_NOT_FOUND';
   error.details = details;
   return error;
 };
 
 const createValidationError = (message, details = {}) => {
   const error = new Error(message);
-  error.name = "MR_CONTEXT_VALIDATION_ERROR";
+  error.name = 'MR_CONTEXT_VALIDATION_ERROR';
   error.statusCode = 400;
   error.blocked = true;
   error.audit_mode = false;
-  error.code = "MR_CONTEXT_VALIDATION_ERROR";
+  error.code = 'MR_CONTEXT_VALIDATION_ERROR';
   error.details = details;
   return error;
 };
 
 const createWorkflowError = (message, details = {}) => {
   const error = new Error(message);
-  error.name = "MR_CONTEXT_WORKFLOW_ERROR";
+  error.name = 'MR_CONTEXT_WORKFLOW_ERROR';
   error.statusCode = 409;
   error.blocked = true;
   error.audit_mode = true;
-  error.code = "MR_CONTEXT_WORKFLOW_ERROR";
+  error.code = 'MR_CONTEXT_WORKFLOW_ERROR';
   error.details = details;
   return error;
 };
 
 const CONTEXT_STATUS = {
-  DRAFT: "draft",
-  VERIFIKASI: "verifikasi",
-  APPROVED: "approved",
-  DITOLAK: "ditolak",
+  DRAFT: 'draft',
+  VERIFIKASI: 'verifikasi',
+  APPROVED: 'approved',
+  DITOLAK: 'ditolak',
 };
 
 const REPORT_PERIOD_TYPES = {
-  BULANAN: "bulanan",
-  TRIWULAN: "triwulan",
-  SEMESTER: "semester",
-  TAHUNAN: "tahunan",
-  ADHOC: "adhoc",
+  BULANAN: 'bulanan',
+  TRIWULAN: 'triwulan',
+  SEMESTER: 'semester',
+  TAHUNAN: 'tahunan',
+  ADHOC: 'adhoc',
 };
 
 const normalizePeriodeType = (value) => {
-  const normalized = String(value || "")
+  const normalized = String(value || '')
     .trim()
     .toLowerCase()
-    .replace(/\s+/g, "_");
+    .replace(/\s+/g, '_');
 
-  if (["bulan", "bulanan", "monthly"].includes(normalized)) {
+  if (['bulan', 'bulanan', 'monthly'].includes(normalized)) {
     return REPORT_PERIOD_TYPES.BULANAN;
   }
 
-  if (["triwulan", "triwulanan", "tw", "quarter", "quarterly"].includes(normalized)) {
+  if (['triwulan', 'triwulanan', 'tw', 'quarter', 'quarterly'].includes(normalized)) {
     return REPORT_PERIOD_TYPES.TRIWULAN;
   }
 
-  if (["semester", "semesteran"].includes(normalized)) {
+  if (['semester', 'semesteran'].includes(normalized)) {
     return REPORT_PERIOD_TYPES.SEMESTER;
   }
 
-  if (["tahun", "tahunan", "annual", "yearly"].includes(normalized)) {
+  if (['tahun', 'tahunan', 'annual', 'yearly'].includes(normalized)) {
     return REPORT_PERIOD_TYPES.TAHUNAN;
   }
 
-  if (["adhoc", "ad_hoc", "lainnya"].includes(normalized)) {
+  if (['adhoc', 'ad_hoc', 'lainnya'].includes(normalized)) {
     return REPORT_PERIOD_TYPES.ADHOC;
   }
 
@@ -123,27 +123,29 @@ const normalizePeriodeType = (value) => {
 };
 
 const isFallbackOpdName = (value) => {
-  const text = String(value || "").trim().toLowerCase();
+  const text = String(value || '')
+    .trim()
+    .toLowerCase();
 
   if (!text) return true;
 
-  return /^opd\s+\d+$/i.test(text) || text === "opd" || text === "belum diisi";
+  return /^opd\s+\d+$/i.test(text) || text === 'opd' || text === 'belum diisi';
 };
 
 const isSmokeFixtureContext = (context) => {
   const plain = normalizePlain(context);
   const metadata = plain?.metadata_json || {};
-  const source = String(metadata?.source || "").toLowerCase();
-  const generatedBy = String(metadata?.generated_by || "").toLowerCase();
-  const note = String(metadata?.note || plain?.risk_appetite_note || "").toLowerCase();
-  const alasan = String(plain?.alasan_revisi || "").toLowerCase();
+  const source = String(metadata?.source || '').toLowerCase();
+  const generatedBy = String(metadata?.generated_by || '').toLowerCase();
+  const note = String(metadata?.note || plain?.risk_appetite_note || '').toLowerCase();
+  const alasan = String(plain?.alasan_revisi || '').toLowerCase();
 
   return (
-    source.includes("smoke_fixture") ||
-    generatedBy.includes("smoke_fixture") ||
-    note.includes("smoke fixture") ||
-    alasan.includes("smoke fixture") ||
-    alasan.includes("create context smoke fixture")
+    source.includes('smoke_fixture') ||
+    generatedBy.includes('smoke_fixture') ||
+    note.includes('smoke fixture') ||
+    alasan.includes('smoke fixture') ||
+    alasan.includes('create context smoke fixture')
   );
 };
 
@@ -157,49 +159,55 @@ const isValidReportContext = (context) => {
   return true;
 };
 
-const buildPeriodeLabel = ({ periodeType, tahun, bulan = null, triwulan = null, semester = null }) => {
+const buildPeriodeLabel = ({
+  periodeType,
+  tahun,
+  bulan = null,
+  triwulan = null,
+  semester = null,
+}) => {
   if (periodeType === REPORT_PERIOD_TYPES.BULANAN) {
     const monthNames = [
       null,
-      "Januari",
-      "Februari",
-      "Maret",
-      "April",
-      "Mei",
-      "Juni",
-      "Juli",
-      "Agustus",
-      "September",
-      "Oktober",
-      "November",
-      "Desember",
+      'Januari',
+      'Februari',
+      'Maret',
+      'April',
+      'Mei',
+      'Juni',
+      'Juli',
+      'Agustus',
+      'September',
+      'Oktober',
+      'November',
+      'Desember',
     ];
 
     const monthNumber = parsePositiveInt(bulan);
-    const monthLabel = monthNames[monthNumber] || "Bulan";
+    const monthLabel = monthNames[monthNumber] || 'Bulan';
     return `${monthLabel} ${tahun}`;
   }
 
   if (periodeType === REPORT_PERIOD_TYPES.TRIWULAN) {
     const q = parsePositiveInt(triwulan);
     const roman = {
-      1: "I",
-      2: "II",
-      3: "III",
-      4: "IV",
+      1: 'I',
+      2: 'II',
+      3: 'III',
+      4: 'IV',
     };
 
-    return `Triwulan ${roman[q] || q || ""} ${tahun}`.trim();
+    return `Triwulan ${roman[q] || q || ''} ${tahun}`.trim();
   }
 
   if (periodeType === REPORT_PERIOD_TYPES.SEMESTER) {
     const s = parsePositiveInt(semester);
     const roman = {
-      1: "I",
-      2: "II",
+      1: 'I',
+      2: 'II',
     };
 
-    return `Semester ${roman[s] || s || ""} ${tahun}`.trim();
+    return `Semester ${roman[s] || s || ''} ${tahun}`.trim();
   }
 
   if (periodeType === REPORT_PERIOD_TYPES.TAHUNAN) {
@@ -218,7 +226,7 @@ const getResolvedOpdNameFromExistingContext = async ({ opdId, tahun, transaction
       tahun,
       is_active: true,
     },
-    order: [["id", "DESC"]],
+    order: [['id', 'DESC']],
     transaction,
   });
 
@@ -233,42 +241,33 @@ const getResolvedOpdNameFromExistingContext = async ({ opdId, tahun, transaction
 
 const getContextStatus = (context) => {
   const plain = normalizePlain(context);
-  return String(plain?.status_revisi || "").trim().toLowerCase();
+  return String(plain?.status_revisi || '')
+    .trim()
+    .toLowerCase();
 };
 
-const assertContextWorkflowStatus = ({
-  context,
-  allowedStatuses = [],
-  action = "workflow",
-}) => {
+const assertContextWorkflowStatus = ({ context, allowedStatuses = [], action = 'workflow' }) => {
   const currentStatus = getContextStatus(context);
 
   if (!allowedStatuses.includes(currentStatus)) {
     throw createWorkflowError(
-      `Context tidak dapat diproses untuk aksi ${action} karena status saat ini adalah ${currentStatus || "tidak diketahui"}.`,
+      `Context tidak dapat diproses untuk aksi ${action} karena status saat ini adalah ${currentStatus || 'tidak diketahui'}.`,
       {
         action,
         current_status: currentStatus,
         allowed_statuses: allowedStatuses,
-      }
+      },
     );
   }
 };
 
-const buildWorkflowAuditMetadata = ({
-  currentMetadata = null,
-  action,
-  userId,
-  note,
-}) => {
+const buildWorkflowAuditMetadata = ({ currentMetadata = null, action, userId, note }) => {
   const base =
-    currentMetadata && typeof currentMetadata === "object" && !Array.isArray(currentMetadata)
+    currentMetadata && typeof currentMetadata === 'object' && !Array.isArray(currentMetadata)
       ? currentMetadata
       : {};
 
-  const workflowLogs = Array.isArray(base.workflow_logs)
-    ? base.workflow_logs
-    : [];
+  const workflowLogs = Array.isArray(base.workflow_logs) ? base.workflow_logs : [];
 
   return {
     ...base,
@@ -287,123 +286,123 @@ const buildWorkflowAuditMetadata = ({
 const contextDetailInclude = [
   {
     model: MrReferenceItem,
-    as: "selera_risiko_ref",
+    as: 'selera_risiko_ref',
     required: false,
   },
   {
     model: MrPlanningContextItem,
-    as: "items",
+    as: 'items',
     required: false,
   },
   {
     model: MrPlanningContextStakeholder,
-    as: "stakeholders",
+    as: 'stakeholders',
     required: false,
   },
   {
     model: MrPlanningRisk,
-    as: "risks",
+    as: 'risks',
     required: false,
   },
   {
     model: MrPlanningRiskAnalysis,
-    as: "risk_analyses",
+    as: 'risk_analyses',
     required: false,
   },
   {
     model: MrPlanningRootCause,
-    as: "root_causes",
+    as: 'root_causes',
     required: false,
   },
   {
     model: MrPlanningMitigation,
-    as: "mitigations",
+    as: 'mitigations',
     required: false,
   },
   {
     model: MrPlanningMonitoring,
-    as: "monitorings",
+    as: 'monitorings',
     required: false,
   },
   {
     model: MrPlanningDeviation,
-    as: "deviations",
+    as: 'deviations',
     required: false,
   },
   {
     model: MrPlanningApprovalMonitoring,
-    as: "approvals",
+    as: 'approvals',
     required: false,
   },
   {
     model: MrPlanningWarning,
-    as: "warnings",
+    as: 'warnings',
     required: false,
   },
 ];
 
 const RENSTRA_STAGE_SOURCES = [
   {
-    stage: "tujuan",
-    table: "renstra_tabel_tujuan",
-    refCandidates: ["tujuan_id", "id"],
-    codeCandidates: ["kode_tujuan", "kode"],
-    nameCandidates: ["nama_tujuan", "tujuan", "uraian_tujuan", "deskripsi_tujuan"],
+    stage: 'tujuan',
+    table: 'renstra_tabel_tujuan',
+    refCandidates: ['tujuan_id', 'id'],
+    codeCandidates: ['kode_tujuan', 'kode'],
+    nameCandidates: ['nama_tujuan', 'tujuan', 'uraian_tujuan', 'deskripsi_tujuan'],
   },
   {
-    stage: "sasaran",
-    table: "renstra_tabel_sasaran",
-    refCandidates: ["sasaran_id", "id"],
-    codeCandidates: ["kode_sasaran", "kode"],
-    nameCandidates: ["nama_sasaran", "sasaran", "uraian_sasaran", "deskripsi_sasaran"],
+    stage: 'sasaran',
+    table: 'renstra_tabel_sasaran',
+    refCandidates: ['sasaran_id', 'id'],
+    codeCandidates: ['kode_sasaran', 'kode'],
+    nameCandidates: ['nama_sasaran', 'sasaran', 'uraian_sasaran', 'deskripsi_sasaran'],
   },
   {
-    stage: "strategi",
-    table: "renstra_tabel_strategi",
-    refCandidates: ["strategi_id", "id"],
-    codeCandidates: ["kode_strategi", "kode"],
-    nameCandidates: ["nama_strategi", "strategi", "uraian_strategi", "deskripsi_strategi"],
+    stage: 'strategi',
+    table: 'renstra_tabel_strategi',
+    refCandidates: ['strategi_id', 'id'],
+    codeCandidates: ['kode_strategi', 'kode'],
+    nameCandidates: ['nama_strategi', 'strategi', 'uraian_strategi', 'deskripsi_strategi'],
   },
   {
-    stage: "kebijakan",
-    table: "renstra_tabel_arah_kebijakan",
-    refCandidates: ["kebijakan_id", "arah_kebijakan_id", "id"],
-    codeCandidates: ["kode_kebijakan", "kode_arah_kebijakan", "kode"],
+    stage: 'kebijakan',
+    table: 'renstra_tabel_arah_kebijakan',
+    refCandidates: ['kebijakan_id', 'arah_kebijakan_id', 'id'],
+    codeCandidates: ['kode_kebijakan', 'kode_arah_kebijakan', 'kode'],
     nameCandidates: [
-      "nama_kebijakan",
-      "nama_arah_kebijakan",
-      "arah_kebijakan",
-      "kebijakan",
-      "uraian_kebijakan",
-      "deskripsi_kebijakan",
+      'nama_kebijakan',
+      'nama_arah_kebijakan',
+      'arah_kebijakan',
+      'kebijakan',
+      'uraian_kebijakan',
+      'deskripsi_kebijakan',
     ],
   },
   {
-    stage: "program",
-    table: "renstra_tabel_program",
-    refCandidates: ["program_id", "id"],
-    codeCandidates: ["kode_program", "kode"],
-    nameCandidates: ["nama_program", "program", "uraian_program", "deskripsi_program"],
+    stage: 'program',
+    table: 'renstra_tabel_program',
+    refCandidates: ['program_id', 'id'],
+    codeCandidates: ['kode_program', 'kode'],
+    nameCandidates: ['nama_program', 'program', 'uraian_program', 'deskripsi_program'],
   },
   {
-    stage: "kegiatan",
-    table: "renstra_tabel_kegiatan",
-    refCandidates: ["kegiatan_id", "id"],
-    codeCandidates: ["kode_kegiatan", "kode"],
-    nameCandidates: ["nama_kegiatan", "kegiatan", "uraian_kegiatan", "deskripsi_kegiatan"],
+    stage: 'kegiatan',
+    table: 'renstra_tabel_kegiatan',
+    refCandidates: ['kegiatan_id', 'id'],
+    codeCandidates: ['kode_kegiatan', 'kode'],
+    nameCandidates: ['nama_kegiatan', 'kegiatan', 'uraian_kegiatan', 'deskripsi_kegiatan'],
   },
   {
-    stage: "sub_kegiatan",
-    table: "renstra_tabel_subkegiatan",
-    refCandidates: ["sub_kegiatan_id", "subkegiatan_id", "id"],
-    codeCandidates: ["kode_sub_kegiatan", "kode_subkegiatan", "kode"],
+    stage: 'sub_kegiatan',
+    table: 'renstra_tabel_subkegiatan',
+    refCandidates: ['sub_kegiatan_id', 'subkegiatan_id', 'id'],
+    codeCandidates: ['kode_sub_kegiatan', 'kode_subkegiatan', 'kode'],
     nameCandidates: [
-      "nama_sub_kegiatan",
-      "nama_subkegiatan",
-      "sub_kegiatan",
-      "subkegiatan",
-      "uraian_sub_kegiatan",
-      "deskripsi_sub_kegiatan",
+      'nama_sub_kegiatan',
+      'nama_subkegiatan',
+      'sub_kegiatan',
+      'subkegiatan',
+      'uraian_sub_kegiatan',
+      'deskripsi_sub_kegiatan',
     ],
   },
 ];
@@ -426,7 +425,7 @@ const getTableColumns = async (tableName, transaction = null) => {
       type: QueryTypes.SELECT,
       replacements: { tableName },
       transaction,
-    }
+    },
   );
 
   const columns = rows.map((row) => row.COLUMN_NAME);
@@ -440,7 +439,7 @@ const firstExistingColumn = (columns, candidates = []) => {
   return candidates.find((columnName) => hasColumn(columns, columnName)) || null;
 };
 
-const sqlValue = (alias, columnName, outputAlias, fallback = "NULL") => {
+const sqlValue = (alias, columnName, outputAlias, fallback = 'NULL') => {
   if (!columnName) {
     return `${fallback} AS ${outputAlias}`;
   }
@@ -453,15 +452,15 @@ const hasModelAttr = (model, attrName) => {
 };
 
 const getContextItemContextField = () => {
-  if (hasModelAttr(MrPlanningContextItem, "mr_planning_context_id")) {
-    return "mr_planning_context_id";
+  if (hasModelAttr(MrPlanningContextItem, 'mr_planning_context_id')) {
+    return 'mr_planning_context_id';
   }
 
-  if (hasModelAttr(MrPlanningContextItem, "context_id")) {
-    return "context_id";
+  if (hasModelAttr(MrPlanningContextItem, 'context_id')) {
+    return 'context_id';
   }
 
-  return "mr_planning_context_id";
+  return 'mr_planning_context_id';
 };
 
 const pickModelPayload = (model, payload) => {
@@ -479,7 +478,7 @@ const normalizePlain = (instanceOrPlain) => {
     return null;
   }
 
-  if (typeof instanceOrPlain.get === "function") {
+  if (typeof instanceOrPlain.get === 'function') {
     return instanceOrPlain.get({ plain: true });
   }
 
@@ -490,15 +489,15 @@ const getContextOrThrow = async (id, options = {}) => {
   const contextId = parsePositiveInt(id);
 
   if (!contextId) {
-    throw createValidationError("ID context tidak valid.", {
-      field: "id",
+    throw createValidationError('ID context tidak valid.', {
+      field: 'id',
     });
   }
 
   const context = await MrPlanningContext.findByPk(contextId, options);
 
   if (!context) {
-    throw createNotFoundError("MR planning context tidak ditemukan.", {
+    throw createNotFoundError('MR planning context tidak ditemukan.', {
       id: contextId,
     });
   }
@@ -538,17 +537,17 @@ const getContexts = async (query = {}) => {
     where,
     limit,
     offset,
-    order: [["id", "DESC"]],
+    order: [['id', 'DESC']],
     include: [
       {
         model: MrPlanningContextItem,
-        as: "items",
+        as: 'items',
         required: false,
         limit: 5,
       },
       {
         model: MrPlanningRisk,
-        as: "risks",
+        as: 'risks',
         required: false,
         limit: 5,
       },
@@ -570,30 +569,30 @@ const getContexts = async (query = {}) => {
 const createReportPeriodContext = async ({ payload = {}, userId = null } = {}) => {
   const tahun = parsePositiveInt(payload.tahun);
   const opdId = parsePositiveInt(payload.opd_id);
-  const periodeType = normalizePeriodeType(payload.periode_type || "tahunan");
+  const periodeType = normalizePeriodeType(payload.periode_type || 'tahunan');
 
   if (!tahun) {
-    throw createValidationError("Tahun laporan wajib diisi dan harus valid.", {
-      field: "tahun",
+    throw createValidationError('Tahun laporan wajib diisi dan harus valid.', {
+      field: 'tahun',
     });
   }
 
   if (!opdId) {
-    throw createValidationError("OPD laporan wajib diisi dan harus valid.", {
-      field: "opd_id",
+    throw createValidationError('OPD laporan wajib diisi dan harus valid.', {
+      field: 'opd_id',
     });
   }
 
   if (!Object.values(REPORT_PERIOD_TYPES).includes(periodeType)) {
-    throw createValidationError("Tipe periode laporan tidak valid.", {
-      field: "periode_type",
+    throw createValidationError('Tipe periode laporan tidak valid.', {
+      field: 'periode_type',
       allowed_values: Object.values(REPORT_PERIOD_TYPES),
     });
   }
 
   return sequelize.transaction(async (transaction) => {
     const resolvedOpdName =
-      String(payload.nama_opd || "").trim() ||
+      String(payload.nama_opd || '').trim() ||
       (await getResolvedOpdNameFromExistingContext({
         opdId,
         tahun,
@@ -602,17 +601,17 @@ const createReportPeriodContext = async ({ payload = {}, userId = null } = {}) =
 
     if (!resolvedOpdName || isFallbackOpdName(resolvedOpdName)) {
       throw createValidationError(
-        "Nama OPD laporan belum valid. Context laporan resmi tidak boleh memakai nama fallback seperti OPD 1.",
+        'Nama OPD laporan belum valid. Context laporan resmi tidak boleh memakai nama fallback seperti OPD 1.',
         {
-          field: "nama_opd",
+          field: 'nama_opd',
           opd_id: opdId,
           nama_opd: resolvedOpdName || null,
-        }
+        },
       );
     }
 
     const periodeLabel =
-      String(payload.periode_label || "").trim() ||
+      String(payload.periode_label || '').trim() ||
       buildPeriodeLabel({
         periodeType,
         tahun,
@@ -629,7 +628,7 @@ const createReportPeriodContext = async ({ payload = {}, userId = null } = {}) =
         periode_label: periodeLabel,
         is_active: true,
       },
-      order: [["id", "DESC"]],
+      order: [['id', 'DESC']],
       transaction,
     });
 
@@ -643,14 +642,14 @@ const createReportPeriodContext = async ({ payload = {}, userId = null } = {}) =
     }
 
     const metadataJson = {
-      ...(payload.metadata_json && typeof payload.metadata_json === "object"
+      ...(payload.metadata_json && typeof payload.metadata_json === 'object'
         ? payload.metadata_json
         : {}),
-      generated_by: "report_period_context_builder",
-      report_context_builder_step: "R17C-3B",
-      report_context_type: "laporan_periodik_resmi",
-      report_scope_mode: "unified",
-      created_from: "mr_planning_context_report_period_endpoint",
+      generated_by: 'report_period_context_builder',
+      report_context_builder_step: 'R17C-3B',
+      report_context_type: 'laporan_periodik_resmi',
+      report_scope_mode: 'unified',
+      created_from: 'mr_planning_context_report_period_endpoint',
     };
 
     const createPayload = pickModelPayload(MrPlanningContext, {
@@ -662,7 +661,7 @@ const createReportPeriodContext = async ({ payload = {}, userId = null } = {}) =
       periode_akhir: payload.periode_akhir || null,
       periode_penerapan: payload.periode_penerapan || null,
 
-      jenis_dokumen: payload.jenis_dokumen || "laporan_terpadu",
+      jenis_dokumen: payload.jenis_dokumen || 'laporan_terpadu',
       renstra_id: payload.renstra_id || null,
       opd_id: opdId,
       nama_opd: resolvedOpdName,
@@ -726,8 +725,8 @@ const getContextItems = async (contextId) => {
       [contextField]: parsedContextId,
     },
     order: [
-      ["stage", "ASC"],
-      ["id", "ASC"],
+      ['stage', 'ASC'],
+      ['id', 'ASC'],
     ],
   });
 
@@ -745,51 +744,51 @@ const buildStageRowsQuery = async ({ context, source, transaction }) => {
     return null;
   }
 
-  const indikatorColumns = await getTableColumns("indikator_renstra", transaction);
+  const indikatorColumns = await getTableColumns('indikator_renstra', transaction);
 
   const refColumn = firstExistingColumn(sourceColumns, source.refCandidates);
   const codeColumn = firstExistingColumn(sourceColumns, source.codeCandidates);
   const nameColumn = firstExistingColumn(sourceColumns, source.nameCandidates);
 
-  const indikatorColumn = hasColumn(sourceColumns, "indikator_id") ? "indikator_id" : null;
-  const sourceRenstraColumn = hasColumn(sourceColumns, "renstra_id") ? "renstra_id" : null;
-  const sourceOpdColumn = hasColumn(sourceColumns, "opd_id") ? "opd_id" : null;
-  const statusColumn = hasColumn(sourceColumns, "status_revisi") ? "status_revisi" : null;
+  const indikatorColumn = hasColumn(sourceColumns, 'indikator_id') ? 'indikator_id' : null;
+  const sourceRenstraColumn = hasColumn(sourceColumns, 'renstra_id') ? 'renstra_id' : null;
+  const sourceOpdColumn = hasColumn(sourceColumns, 'opd_id') ? 'opd_id' : null;
+  const statusColumn = hasColumn(sourceColumns, 'status_revisi') ? 'status_revisi' : null;
 
   if (!refColumn || !indikatorColumn) {
     return null;
   }
 
   const indikatorKodeColumn = firstExistingColumn(indikatorColumns, [
-    "kode_indikator",
-    "kode",
-    "kode_ref",
+    'kode_indikator',
+    'kode',
+    'kode_ref',
   ]);
 
   const indikatorNamaColumn = firstExistingColumn(indikatorColumns, [
-    "nama_indikator",
-    "indikator",
-    "uraian_indikator",
-    "deskripsi_indikator",
-    "nama",
+    'nama_indikator',
+    'indikator',
+    'uraian_indikator',
+    'deskripsi_indikator',
+    'nama',
   ]);
 
   const indikatorSatuanColumn = firstExistingColumn(indikatorColumns, [
-    "satuan",
-    "satuan_target",
-    "unit",
+    'satuan',
+    'satuan_target',
+    'unit',
   ]);
 
   const baselineColumn = firstExistingColumn(sourceColumns, [
-    "baseline",
-    "baseline_target",
-    "target_awal",
+    'baseline',
+    'baseline_target',
+    'target_awal',
   ]);
 
   const satuanTargetColumn = firstExistingColumn(sourceColumns, [
-    "satuan_target",
-    "satuan",
-    "unit",
+    'satuan_target',
+    'satuan',
+    'unit',
   ]);
 
   const targetColumns = [1, 2, 3, 4, 5, 6].reduce((acc, tahunKe) => {
@@ -820,45 +819,45 @@ const buildStageRowsQuery = async ({ context, source, transaction }) => {
     whereParts.push(`LOWER(COALESCE(r.\`${statusColumn}\`, '')) IN ('approved', 'disetujui')`);
   }
 
-  if (hasColumn(indikatorColumns, "stage")) {
+  if (hasColumn(indikatorColumns, 'stage')) {
     whereParts.push(`LOWER(COALESCE(i.\`stage\`, '')) = :stage`);
   }
 
-  if (hasColumn(indikatorColumns, "ref_id")) {
+  if (hasColumn(indikatorColumns, 'ref_id')) {
     whereParts.push(`i.\`ref_id\` = r.\`${refColumn}\``);
   }
 
-  if (hasColumn(indikatorColumns, "renstra_id") && renstraId) {
+  if (hasColumn(indikatorColumns, 'renstra_id') && renstraId) {
     whereParts.push(`i.\`renstra_id\` = :renstraId`);
   }
 
-  const whereSql = whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : "";
+  const whereSql = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
 
   const selectFields = [
     `'${source.stage}' AS stage`,
     `r.\`${refColumn}\` AS ref_id`,
     `r.\`${indikatorColumn}\` AS indikator_id`,
-    sqlValue("r", sourceRenstraColumn, "renstra_id"),
-    sqlValue("r", sourceOpdColumn, "opd_id"),
-    sqlValue("r", codeColumn, "kode_konteks"),
-    sqlValue("r", nameColumn, "nama_konteks"),
-    sqlValue("i", indikatorKodeColumn, "kode_indikator"),
-    sqlValue("i", indikatorNamaColumn, "nama_indikator"),
-    sqlValue("i", indikatorSatuanColumn, "satuan_indikator"),
-    sqlValue("r", satuanTargetColumn, "satuan_target"),
-    sqlValue("r", baselineColumn, "baseline"),
-    sqlValue("r", targetColumns.target_tahun_1, "target_tahun_1"),
-    sqlValue("r", targetColumns.target_tahun_2, "target_tahun_2"),
-    sqlValue("r", targetColumns.target_tahun_3, "target_tahun_3"),
-    sqlValue("r", targetColumns.target_tahun_4, "target_tahun_4"),
-    sqlValue("r", targetColumns.target_tahun_5, "target_tahun_5"),
-    sqlValue("r", targetColumns.target_tahun_6, "target_tahun_6"),
+    sqlValue('r', sourceRenstraColumn, 'renstra_id'),
+    sqlValue('r', sourceOpdColumn, 'opd_id'),
+    sqlValue('r', codeColumn, 'kode_konteks'),
+    sqlValue('r', nameColumn, 'nama_konteks'),
+    sqlValue('i', indikatorKodeColumn, 'kode_indikator'),
+    sqlValue('i', indikatorNamaColumn, 'nama_indikator'),
+    sqlValue('i', indikatorSatuanColumn, 'satuan_indikator'),
+    sqlValue('r', satuanTargetColumn, 'satuan_target'),
+    sqlValue('r', baselineColumn, 'baseline'),
+    sqlValue('r', targetColumns.target_tahun_1, 'target_tahun_1'),
+    sqlValue('r', targetColumns.target_tahun_2, 'target_tahun_2'),
+    sqlValue('r', targetColumns.target_tahun_3, 'target_tahun_3'),
+    sqlValue('r', targetColumns.target_tahun_4, 'target_tahun_4'),
+    sqlValue('r', targetColumns.target_tahun_5, 'target_tahun_5'),
+    sqlValue('r', targetColumns.target_tahun_6, 'target_tahun_6'),
   ];
 
   return {
     sql: `
       SELECT
-        ${selectFields.join(",\n        ")}
+        ${selectFields.join(',\n        ')}
       FROM \`${source.table}\` r
       LEFT JOIN \`indikator_renstra\` i
         ON i.\`id\` = r.\`${indikatorColumn}\`
@@ -886,7 +885,7 @@ const buildContextItemPayload = ({ context, row, userId }) => {
     ref_id: row.ref_id,
     indikator_id: row.indikator_id,
 
-    source_table: "indikator_renstra",
+    source_table: 'indikator_renstra',
     source_id: row.indikator_id,
 
     kode_konteks: row.kode_konteks,
@@ -934,8 +933,8 @@ const submitContext = async (contextId, options = {}) => {
   const parsedContextId = parsePositiveInt(contextId);
 
   if (!parsedContextId) {
-    throw createValidationError("ID context tidak valid.", {
-      field: "contextId",
+    throw createValidationError('ID context tidak valid.', {
+      field: 'contextId',
     });
   }
 
@@ -951,7 +950,7 @@ const submitContext = async (contextId, options = {}) => {
     assertContextWorkflowStatus({
       context,
       allowedStatuses: [CONTEXT_STATUS.DRAFT, CONTEXT_STATUS.DITOLAK],
-      action: "submit",
+      action: 'submit',
     });
 
     const now = new Date();
@@ -969,12 +968,12 @@ const submitContext = async (contextId, options = {}) => {
         is_locked: false,
         metadata_json: buildWorkflowAuditMetadata({
           currentMetadata: contextPlain.metadata_json,
-          action: "submit",
+          action: 'submit',
           userId,
           note,
         }),
       }),
-      { transaction }
+      { transaction },
     );
 
     return getContextOrThrow(parsedContextId, {
@@ -987,8 +986,8 @@ const verifyContext = async (contextId, options = {}) => {
   const parsedContextId = parsePositiveInt(contextId);
 
   if (!parsedContextId) {
-    throw createValidationError("ID context tidak valid.", {
-      field: "contextId",
+    throw createValidationError('ID context tidak valid.', {
+      field: 'contextId',
     });
   }
 
@@ -1004,7 +1003,7 @@ const verifyContext = async (contextId, options = {}) => {
     assertContextWorkflowStatus({
       context,
       allowedStatuses: [CONTEXT_STATUS.VERIFIKASI],
-      action: "verify",
+      action: 'verify',
     });
 
     const now = new Date();
@@ -1020,12 +1019,12 @@ const verifyContext = async (contextId, options = {}) => {
         updated_by: userId || contextPlain.updated_by || null,
         metadata_json: buildWorkflowAuditMetadata({
           currentMetadata: contextPlain.metadata_json,
-          action: "verify",
+          action: 'verify',
           userId,
           note,
         }),
       }),
-      { transaction }
+      { transaction },
     );
 
     return getContextOrThrow(parsedContextId, {
@@ -1038,8 +1037,8 @@ const approveContext = async (contextId, options = {}) => {
   const parsedContextId = parsePositiveInt(contextId);
 
   if (!parsedContextId) {
-    throw createValidationError("ID context tidak valid.", {
-      field: "contextId",
+    throw createValidationError('ID context tidak valid.', {
+      field: 'contextId',
     });
   }
 
@@ -1055,7 +1054,7 @@ const approveContext = async (contextId, options = {}) => {
     assertContextWorkflowStatus({
       context,
       allowedStatuses: [CONTEXT_STATUS.VERIFIKASI],
-      action: "approve",
+      action: 'approve',
     });
 
     const contextPlain = normalizePlain(context);
@@ -1065,15 +1064,12 @@ const approveContext = async (contextId, options = {}) => {
     });
 
     if (!contextPlain.diverifikasi_oleh || !contextPlain.diverifikasi_pada) {
-      throw createWorkflowError(
-        "Context belum diverifikasi sehingga belum dapat disetujui.",
-        {
-          context_id: parsedContextId,
-          current_status: contextPlain.status_revisi,
-          diverifikasi_oleh: contextPlain.diverifikasi_oleh,
-          diverifikasi_pada: contextPlain.diverifikasi_pada,
-        }
-      );
+      throw createWorkflowError('Context belum diverifikasi sehingga belum dapat disetujui.', {
+        context_id: parsedContextId,
+        current_status: contextPlain.status_revisi,
+        diverifikasi_oleh: contextPlain.diverifikasi_oleh,
+        diverifikasi_pada: contextPlain.diverifikasi_pada,
+      });
     }
 
     const now = new Date();
@@ -1091,12 +1087,12 @@ const approveContext = async (contextId, options = {}) => {
         locked_at: now,
         metadata_json: buildWorkflowAuditMetadata({
           currentMetadata: contextPlain.metadata_json,
-          action: "approve",
+          action: 'approve',
           userId,
           note,
         }),
       }),
-      { transaction }
+      { transaction },
     );
 
     return getContextOrThrow(parsedContextId, {
@@ -1109,8 +1105,8 @@ const rejectContext = async (contextId, options = {}) => {
   const parsedContextId = parsePositiveInt(contextId);
 
   if (!parsedContextId) {
-    throw createValidationError("ID context tidak valid.", {
-      field: "contextId",
+    throw createValidationError('ID context tidak valid.', {
+      field: 'contextId',
     });
   }
 
@@ -1118,8 +1114,8 @@ const rejectContext = async (contextId, options = {}) => {
   const reason = options.reason || options.alasan_penolakan || options.note || null;
 
   if (!reason || !String(reason).trim()) {
-    throw createValidationError("Alasan penolakan context wajib diisi.", {
-      field: "reason",
+    throw createValidationError('Alasan penolakan context wajib diisi.', {
+      field: 'reason',
     });
   }
 
@@ -1132,7 +1128,7 @@ const rejectContext = async (contextId, options = {}) => {
     assertContextWorkflowStatus({
       context,
       allowedStatuses: [CONTEXT_STATUS.VERIFIKASI],
-      action: "reject",
+      action: 'reject',
     });
 
     const now = new Date();
@@ -1150,12 +1146,12 @@ const rejectContext = async (contextId, options = {}) => {
         is_locked: false,
         metadata_json: buildWorkflowAuditMetadata({
           currentMetadata: contextPlain.metadata_json,
-          action: "reject",
+          action: 'reject',
           userId,
           note: reason,
         }),
       }),
-      { transaction }
+      { transaction },
     );
 
     return getContextOrThrow(parsedContextId, {
@@ -1168,13 +1164,13 @@ const generateContextItems = async (contextId, options = {}) => {
   const parsedContextId = parsePositiveInt(contextId);
 
   if (!parsedContextId) {
-    throw createValidationError("ID context tidak valid.", {
-      field: "contextId",
+    throw createValidationError('ID context tidak valid.', {
+      field: 'contextId',
     });
   }
 
   const userId = parsePositiveInt(options.userId);
-
+  console.log('[generateContextItems] called with contextId:', parsedContextId);
   return sequelize.transaction(async (transaction) => {
     const context = await getContextOrThrow(parsedContextId, {
       transaction,
@@ -1184,12 +1180,12 @@ const generateContextItems = async (contextId, options = {}) => {
 
     if (!parsePositiveInt(contextPlain.renstra_id) && !parsePositiveInt(contextPlain.opd_id)) {
       throw createValidationError(
-        "Context belum memiliki renstra_id atau opd_id sehingga context item tidak dapat digenerate.",
+        'Context belum memiliki renstra_id atau opd_id sehingga context item tidak dapat digenerate.',
         {
           context_id: parsedContextId,
           renstra_id: contextPlain.renstra_id,
           opd_id: contextPlain.opd_id,
-        }
+        },
       );
     }
 
@@ -1208,16 +1204,19 @@ const generateContextItems = async (contextId, options = {}) => {
         unavailableStages.push({
           stage: source.stage,
           table: source.table,
-          reason: "Tabel/kolom sumber Renstra tidak lengkap atau tidak tersedia.",
+          reason: 'Tabel/kolom sumber Renstra tidak lengkap atau tidak tersedia.',
         });
         continue;
       }
 
+      console.log('[generateContextItems] SQL:', queryConfig.sql);
+      console.log('[generateContextItems] replacements:', queryConfig.replacements);
       const rows = await sequelize.query(queryConfig.sql, {
         type: QueryTypes.SELECT,
         replacements: queryConfig.replacements,
         transaction,
       });
+      console.log('[generateContextItems] rows count:', rows.length, 'stage:', source.stage);
 
       for (const row of rows) {
         const normalizedRow = {
@@ -1231,7 +1230,7 @@ const generateContextItems = async (contextId, options = {}) => {
             stage: source.stage,
             ref_id: row.ref_id,
             indikator_id: row.indikator_id,
-            reason: "ref_id atau indikator_id tidak valid.",
+            reason: 'ref_id atau indikator_id tidak valid.',
           });
           continue;
         }
@@ -1247,7 +1246,7 @@ const generateContextItems = async (contextId, options = {}) => {
             stage: normalizedRow.stage,
             ref_id: normalizedRow.ref_id,
             indikator_id: normalizedRow.indikator_id,
-            reason: "Context item sudah ada.",
+            reason: 'Context item sudah ada.',
           });
           continue;
         }
@@ -1271,8 +1270,8 @@ const generateContextItems = async (contextId, options = {}) => {
         [getContextItemContextField()]: parsedContextId,
       },
       order: [
-        ["stage", "ASC"],
-        ["id", "ASC"],
+        ['stage', 'ASC'],
+        ['id', 'ASC'],
       ],
       transaction,
     });
@@ -1288,13 +1287,47 @@ const generateContextItems = async (contextId, options = {}) => {
   });
 };
 
+const syncRenstraToContext = async (contextId, options = {}) => {
+  const parsedContextId = parsePositiveInt(contextId);
+  if (!parsedContextId) throw createValidationError('ID context tidak valid.');
+  const userId = parsePositiveInt(options.userId);
+
+  // Cek apakah renstra_id sudah ada
+  const context = await getContextOrThrow(parsedContextId, {});
+  const contextPlain = normalizePlain(context);
+
+  // Jika renstra_id sudah ada, langsung generate items
+  if (!parsePositiveInt(contextPlain.renstra_id)) {
+    const opd_id = parsePositiveInt(contextPlain.opd_id);
+    if (!opd_id) throw createValidationError('Context tidak memiliki opd_id.');
+
+    const [renstraRow] = await sequelize.query(
+      'SELECT id FROM renstra_opd WHERE is_aktif = 1 LIMIT 1',
+      { type: QueryTypes.SELECT },
+    );
+
+    if (!renstraRow?.id) throw createValidationError('Tidak ada Renstra aktif ditemukan.');
+
+    await MrPlanningContext.update(
+      { renstra_id: renstraRow.id, updated_by: userId },
+      { where: { id: parsedContextId } },
+    );
+  }
+
+  // Generate items
+  console.log('[syncRenstraToContext] Calling generateContextItems for context:', parsedContextId);
+  const result = await generateContextItems(parsedContextId, { userId });
+  console.log('[syncRenstraToContext] result:', JSON.stringify(result));
+  return { ...result };
+};
+
 module.exports = {
   getContextDetail,
   getContexts,
   getContextItems,
   generateContextItems,
+  syncRenstraToContext,
   createReportPeriodContext,
-
   submitContext,
   verifyContext,
   approveContext,

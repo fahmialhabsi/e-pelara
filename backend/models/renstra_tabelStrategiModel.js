@@ -1,22 +1,22 @@
-"use strict";
-const { Model } = require("sequelize");
+'use strict';
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class RenstraTabelStrategi extends Model {
     static associate(models) {
       RenstraTabelStrategi.belongsTo(models.IndikatorRenstra, {
-        foreignKey: "indikator_id",
-        as: "indikator_detail",
+        foreignKey: 'indikator_id',
+        as: 'indikator_detail',
       });
 
       RenstraTabelStrategi.belongsTo(models.RenstraStrategi, {
-        foreignKey: "strategi_id",
-        as: "strategi",
+        foreignKey: 'strategi_id',
+        as: 'strategi',
       });
 
       RenstraTabelStrategi.belongsTo(models.RenstraOPD, {
-        foreignKey: "renstra_id",
-        as: "renstra",
+        foreignKey: 'renstra_id',
+        as: 'renstra',
       });
     }
   }
@@ -38,6 +38,8 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: false,
       },
+
+      sasaran_id: DataTypes.INTEGER,
 
       indikator_id: {
         type: DataTypes.INTEGER,
@@ -77,8 +79,8 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: 1,
       },
       status_revisi: {
-        type: DataTypes.ENUM("draft", "verifikasi", "approved", "ditolak"),
-        defaultValue: "draft",
+        type: DataTypes.ENUM('draft', 'verifikasi', 'approved', 'ditolak'),
+        defaultValue: 'draft',
       },
       last_revised_at: {
         type: DataTypes.DATE,
@@ -92,24 +94,24 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       sequelize,
-      modelName: "RenstraTabelStrategi",
-      tableName: "renstra_tabel_strategi",
+      modelName: 'RenstraTabelStrategi',
+      tableName: 'renstra_tabel_strategi',
       underscored: false,
       timestamps: true,
-      createdAt: "createdAt",
-      updatedAt: "updatedAt",
+      createdAt: 'createdAt',
+      updatedAt: 'updatedAt',
       indexes: [
         {
           unique: true,
-          fields: ["renstra_id", "strategi_id", "indikator_id"],
-          name: "uniq_renstra_tabel_strategi",
+          fields: ['renstra_id', 'strategi_id', 'indikator_id'],
+          name: 'uniq_renstra_tabel_strategi',
         },
         {
-          fields: ["status_revisi"],
-          name: "idx_status_revisi_strategi",
+          fields: ['status_revisi'],
+          name: 'idx_status_revisi_strategi',
         },
       ],
-    }
+    },
   );
 
   return RenstraTabelStrategi;

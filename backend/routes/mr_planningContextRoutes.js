@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 /**
  * MR Planning Context Routes
@@ -13,27 +13,22 @@
  * - Route spesifik wajib diletakkan sebelum /:id.
  */
 
-const express = require("express");
-const controller = require("../controllers/mr_planningContextController");
-const verifyToken = require("../middlewares/verifyToken");
-const allowRoles = require("../middlewares/allowRoles");
+const express = require('express');
+const controller = require('../controllers/mr_planningContextController');
+const verifyToken = require('../middlewares/verifyToken');
+const allowRoles = require('../middlewares/allowRoles');
 
 const router = express.Router();
 
-const READ = ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"];
-const WRITE = ["SUPER_ADMIN", "ADMINISTRATOR"];
+const READ = ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA'];
+const WRITE = ['SUPER_ADMIN', 'ADMINISTRATOR'];
 
 /**
  * READ ROUTES
  * ---------------------------------------------------------------------------
  */
 
-router.get(
-  "/",
-  verifyToken,
-  allowRoles(READ),
-  controller.getContexts
-);
+router.get('/', verifyToken, allowRoles(READ), controller.getContexts);
 
 /**
  * PHASE REPORT 2026 — STEP R17C-3B
@@ -52,12 +47,7 @@ router.get(
  *
  * Route ini wajib diletakkan sebelum /:id agar tidak tertangkap sebagai dynamic id.
  */
-router.post(
-  "/report-period",
-  verifyToken,
-  allowRoles(WRITE),
-  controller.createReportPeriodContext
-);
+router.post('/report-period', verifyToken, allowRoles(WRITE), controller.createReportPeriodContext);
 
 /**
  * PHASE REPORT 2026 — STEP R16H-0H
@@ -66,12 +56,7 @@ router.post(
  * Contoh:
  * POST /api/mr-planning-context/2/submit
  */
-router.post(
-  "/:id/submit",
-  verifyToken,
-  allowRoles(WRITE),
-  controller.submitContext
-);
+router.post('/:id/submit', verifyToken, allowRoles(WRITE), controller.submitContext);
 
 /**
  * PHASE REPORT 2026 — STEP R16H-0H
@@ -80,12 +65,7 @@ router.post(
  * Contoh:
  * POST /api/mr-planning-context/2/verify
  */
-router.post(
-  "/:id/verify",
-  verifyToken,
-  allowRoles(WRITE),
-  controller.verifyContext
-);
+router.post('/:id/verify', verifyToken, allowRoles(WRITE), controller.verifyContext);
 
 /**
  * PHASE REPORT 2026 — STEP R16H-0H
@@ -94,12 +74,7 @@ router.post(
  * Contoh:
  * POST /api/mr-planning-context/2/approve
  */
-router.post(
-  "/:id/approve",
-  verifyToken,
-  allowRoles(WRITE),
-  controller.approveContext
-);
+router.post('/:id/approve', verifyToken, allowRoles(WRITE), controller.approveContext);
 
 /**
  * PHASE REPORT 2026 — STEP R16H-0H
@@ -108,12 +83,7 @@ router.post(
  * Contoh:
  * POST /api/mr-planning-context/2/reject
  */
-router.post(
-  "/:id/reject",
-  verifyToken,
-  allowRoles(WRITE),
-  controller.rejectContext
-);
+router.post('/:id/reject', verifyToken, allowRoles(WRITE), controller.rejectContext);
 
 /**
  * STEP R13A
@@ -122,12 +92,7 @@ router.post(
  * Contoh:
  * GET /api/mr-planning-context/2/items
  */
-router.get(
-  "/:contextId/items",
-  verifyToken,
-  allowRoles(READ),
-  controller.getContextItems
-);
+router.get('/:contextId/items', verifyToken, allowRoles(READ), controller.getContextItems);
 
 /**
  * STEP R13A
@@ -137,21 +102,18 @@ router.get(
  * POST /api/mr-planning-context/2/generate-items
  */
 router.post(
-  "/:contextId/generate-items",
+  '/:contextId/generate-items',
   verifyToken,
   allowRoles(WRITE),
-  controller.generateContextItems
+  controller.generateContextItems,
 );
+
+router.patch('/:id/sync-renstra', verifyToken, allowRoles(WRITE), controller.syncRenstraToContext);
 
 /**
  * Detail context.
  * Route /:id wajib diletakkan setelah route spesifik seperti /:contextId/items.
  */
-router.get(
-  "/:id",
-  verifyToken,
-  allowRoles(READ),
-  controller.getContextDetail
-);
+router.get('/:id', verifyToken, allowRoles(READ), controller.getContextDetail);
 
 module.exports = router;

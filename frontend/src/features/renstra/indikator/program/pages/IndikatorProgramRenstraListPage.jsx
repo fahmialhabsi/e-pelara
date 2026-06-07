@@ -1,17 +1,21 @@
-import React from "react";
-import { Table, Button, Popconfirm, message, Spin, Alert, Empty } from "antd";
-import { useNavigate } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import api from "@/services/api";
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import React from 'react';
+import { Table, Button, Popconfirm, message, Spin, Alert, Empty } from 'antd';
+import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '@/services/api';
 
 const IndikatorProgramRenstraListPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const activeArahKebijakanId =
+    searchParams.get('kebijakan_id') || searchParams.get('arah_kebijakan_id') || '';
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["indikator-program-renstra"],
+    queryKey: ['indikator-program-renstra'],
     queryFn: async () => {
-      const res = await api.get("/indikator-program-renstra");
+      const res = await api.get('/indikator-program-renstra');
       return res.data;
     },
   });
@@ -21,31 +25,29 @@ const IndikatorProgramRenstraListPage = () => {
       await api.delete(`/indikator-program-renstra/${id}`);
     },
     onSuccess: () => {
-      message.success("Data berhasil dihapus");
-      queryClient.invalidateQueries(["indikator-program-renstra"]);
+      message.success('Data berhasil dihapus');
+      queryClient.invalidateQueries(['indikator-program-renstra']);
     },
     onError: () => {
-      message.error("Gagal menghapus data");
+      message.error('Gagal menghapus data');
     },
   });
 
   const handleDelete = (id) => deleteMutation.mutate(id);
 
   const columns = [
-    { title: "No", dataIndex: "kode_indikator", key: "no" },
-    { title: "Nama Indikator", dataIndex: "nama_indikator", key: "nama" },
-    { title: "Satuan", dataIndex: "satuan", key: "satuan" },
-    { title: "Target (th. ke-1)", dataIndex: "target_tahun_1", key: "target" },
+    { title: 'No', dataIndex: 'kode_indikator', key: 'no' },
+    { title: 'Nama Indikator', dataIndex: 'nama_indikator', key: 'nama' },
+    { title: 'Satuan', dataIndex: 'satuan', key: 'satuan' },
+    { title: 'Target (th. ke-1)', dataIndex: 'target_tahun_1', key: 'target' },
     {
-      title: "Aksi",
-      key: "aksi",
+      title: 'Aksi',
+      key: 'aksi',
       render: (_, record) => (
         <>
           <Button
             type="link"
-            onClick={() =>
-              navigate(`/renstra/indikator-program/edit/${record.id}`)
-            }
+            onClick={() => navigate(`/renstra/indikator-program/edit/${record.id}`)}
           >
             ✏️ Edit
           </Button>
@@ -79,7 +81,9 @@ const IndikatorProgramRenstraListPage = () => {
         <Empty description="Belum ada data Indikator Program" />
         <Button
           type="primary"
-          onClick={() => navigate("/renstra/indikator-program/add")}
+          onClick={() =>
+            navigate(`/renstra/indikator-program/add?kebijakan_id=${activeArahKebijakanId}`)
+          }
           style={{ marginTop: 16 }}
         >
           ➕ Tambah Indikator Program
@@ -91,17 +95,19 @@ const IndikatorProgramRenstraListPage = () => {
     <div>
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
+          display: 'flex',
+          justifyContent: 'space-between',
           marginBottom: 16,
         }}
       >
-        <Button onClick={() => navigate("/dashboard-renstra")}>
+        <Button onClick={() => navigate('/dashboard-renstra')}>
           🔙 Kembali ke Dashboard Renstra
         </Button>
         <Button
           type="primary"
-          onClick={() => navigate("/renstra/indikator-program/add")}
+          onClick={() =>
+            navigate(`/renstra/indikator-program/add?kebijakan_id=${activeArahKebijakanId}`)
+          }
         >
           ➕ Tambah Indikator Program
         </Button>

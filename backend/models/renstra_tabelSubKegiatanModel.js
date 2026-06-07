@@ -1,32 +1,32 @@
-"use strict";
-const { Model } = require("sequelize");
+'use strict';
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class RenstraTabelSubkegiatan extends Model {
     static associate(models) {
       this.belongsTo(models.RenstraProgram, {
-        foreignKey: "program_id",
-        as: "program",
+        foreignKey: 'program_id',
+        as: 'program',
       });
 
       this.belongsTo(models.RenstraKegiatan, {
-        foreignKey: "kegiatan_id",
-        as: "kegiatan",
+        foreignKey: 'kegiatan_id',
+        as: 'kegiatan',
       });
 
       this.belongsTo(models.RenstraOPD, {
-        foreignKey: "renstra_id",
-        as: "renstra",
+        foreignKey: 'renstra_id',
+        as: 'renstra',
       });
 
       this.belongsTo(models.RenstraSubkegiatan, {
-        foreignKey: "sub_kegiatan_id",
-        as: "sub_kegiatan",
+        foreignKey: 'sub_kegiatan_id',
+        as: 'sub_kegiatan',
       });
 
       this.belongsTo(models.IndikatorRenstra, {
-        foreignKey: "indikator_id",
-        as: "indikator_detail",
+        foreignKey: 'indikator_id',
+        as: 'indikator_detail',
       });
     }
   }
@@ -45,6 +45,8 @@ module.exports = (sequelize, DataTypes) => {
 
       program_id: { type: DataTypes.INTEGER, allowNull: false },
       kegiatan_id: { type: DataTypes.INTEGER, allowNull: false },
+      kebijakan_id: { type: DataTypes.INTEGER, allowNull: true },
+      strategi_id: { type: DataTypes.INTEGER, allowNull: true },
       subkegiatan_id: { type: DataTypes.INTEGER, allowNull: false },
       indikator_manual: { type: DataTypes.STRING(255), allowNull: true },
       baseline: { type: DataTypes.FLOAT, allowNull: true },
@@ -85,9 +87,9 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: 1,
       },
       status_revisi: {
-        type: DataTypes.ENUM("draft", "verifikasi", "approved", "ditolak"),
+        type: DataTypes.ENUM('draft', 'verifikasi', 'approved', 'ditolak'),
         allowNull: false,
-        defaultValue: "draft",
+        defaultValue: 'draft',
       },
       last_revised_at: {
         type: DataTypes.DATE,
@@ -100,20 +102,20 @@ module.exports = (sequelize, DataTypes) => {
       renstra_opd_id: {
         type: DataTypes.INTEGER,
         allowNull: true,
-        references: { model: "RenstraOPD", key: "id" },
-        onUpdate: "CASCADE",
-        onDelete: "SET NULL",
+        references: { model: 'RenstraOPD', key: 'id' },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL',
       },
     },
     {
       sequelize,
-      modelName: "RenstraTabelSubkegiatan",
-      tableName: "renstra_tabel_subkegiatan",
+      modelName: 'RenstraTabelSubkegiatan',
+      tableName: 'renstra_tabel_subkegiatan',
       timestamps: true,
-      createdAt: "created_at",
-      updatedAt: "updated_at",
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
       underscored: false,
-    }
+    },
   );
 
   return RenstraTabelSubkegiatan;

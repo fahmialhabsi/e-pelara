@@ -6,9 +6,9 @@ import { useDokumen } from '../../../hooks/useDokumen';
 import { usePeriodeAktif } from '../../rpjmd/hooks/usePeriodeAktif';
 import { canManagePlanningWorkflow } from '../../../utils/roleUtils';
 import { useAuth } from '../../../hooks/useAuth';
-import { createRkpdDokumenV2 } from '../services/planningRkpdV2Api';
+import { createRkpdDokumenV2, createRkpdItemV2 } from '../services/planningRkpdV2Api';
 import RkpdDashboardLayout from './RkpdDashboardLayout';
-import MasterBelanjaCascading from '@/shared/components/MasterBelanjaCascading';
+import usePrioritasTahun from '../hooks/usePrioritasTahun';
 
 const STEPS = [
   'Metadata dokumen',
@@ -27,6 +27,7 @@ const RkpdV2BuatDokumenPage = () => {
   const [step, setStep] = useState(0);
   const [periodeList, setPeriodeList] = useState([]);
   const [periodeId, setPeriodeId] = useState('');
+  const { resolvedTahun } = usePrioritasTahun(periodeList, periodeId, 'rkpd');
   const [tahunVal, setTahunVal] = useState(String(tahun || ''));
   const [judul, setJudul] = useState('');
   const [createReasonText, setCreateReasonText] = useState('');
@@ -59,6 +60,7 @@ const RkpdV2BuatDokumenPage = () => {
 
   // MASTER RKPD
 
+  const [namaOpd, setNamaOpd] = useState('');
   const [masterProgramList, setMasterProgramList] = useState([]);
   const [masterKegiatanList, setMasterKegiatanList] = useState([]);
   const [masterSubKegiatanList, setMasterSubKegiatanList] = useState([]);
@@ -90,9 +92,10 @@ const RkpdV2BuatDokumenPage = () => {
   useEffect(() => {
     if (!tahunVal) return;
 
+    // SESUDAH
     const query = new URLSearchParams({
       jenis_dokumen: 'rpjmd',
-      tahun: tahunVal,
+      visi_id: visiId,
       limit: 1000,
     });
 
@@ -108,7 +111,6 @@ const RkpdV2BuatDokumenPage = () => {
 
     const query = new URLSearchParams({
       jenis_dokumen: 'rpjmd',
-      tahun: tahunVal,
       visi_id: visiId,
       limit: 1000,
     });
@@ -142,16 +144,15 @@ const RkpdV2BuatDokumenPage = () => {
     if (!misiId) return;
 
     const query = new URLSearchParams({
-      jenis_dokumen: 'rpjmd',
-      tahun: tahunVal,
-      misi_id: misiId,
+      jenis_dokumen: 'rkpd',
+      tahun: resolvedTahun,
       limit: 1000,
     });
 
     fetchWithLog(`/prioritas-nasional?${query.toString()}`, {}, (res) => {
       setPrioritasNasionalList(Array.isArray(res) ? res : []);
     });
-  }, [misiId, tahunVal]);
+  }, [misiId, resolvedTahun]);
 
   useEffect(() => {
     if (!prioritasNasionalId) return;
@@ -173,7 +174,7 @@ const RkpdV2BuatDokumenPage = () => {
 
     const query = new URLSearchParams({
       jenis_dokumen: 'rpjmd',
-      tahun: tahunVal,
+      tahun: resolvedTahun,
       prioritas_nasional_id: prioritasNasionalId,
       limit: 1000,
     });
@@ -181,7 +182,7 @@ const RkpdV2BuatDokumenPage = () => {
     fetchWithLog(`/prioritas-daerah?${query.toString()}`, {}, (res) => {
       setPrioritasDaerahList(Array.isArray(res) ? res : []);
     });
-  }, [prioritasNasionalId, tahunVal]);
+  }, [prioritasNasionalId, resolvedTahun]);
 
   useEffect(() => {
     if (!prioritasDaerahId) return;
@@ -201,7 +202,7 @@ const RkpdV2BuatDokumenPage = () => {
 
     const query = new URLSearchParams({
       jenis_dokumen: 'rpjmd',
-      tahun: tahunVal,
+      tahun: resolvedTahun,
       prioritas_daerah_id: prioritasDaerahId,
       limit: 1000,
     });
@@ -209,7 +210,7 @@ const RkpdV2BuatDokumenPage = () => {
     fetchWithLog(`/prioritas-gubernur?${query.toString()}`, {}, (res) => {
       setPrioritasGubernurList(Array.isArray(res) ? res : []);
     });
-  }, [prioritasDaerahId, tahunVal]);
+  }, [prioritasDaerahId, resolvedTahun]);
 
   useEffect(() => {
     if (!prioritasGubernurId) return;
@@ -227,7 +228,7 @@ const RkpdV2BuatDokumenPage = () => {
 
     const query = new URLSearchParams({
       jenis_dokumen: 'rpjmd',
-      tahun: tahunVal,
+      tahun: resolvedTahun || tahunVal,
       prioritas_gubernur_id: prioritasGubernurId,
       limit: 1000,
     });
@@ -251,7 +252,7 @@ const RkpdV2BuatDokumenPage = () => {
 
     const query = new URLSearchParams({
       jenis_dokumen: 'rpjmd',
-      tahun: tahunVal,
+      tahun: resolvedTahun || tahunVal,
       tujuan_id: tujuanId,
       limit: 1000,
     });
@@ -273,7 +274,7 @@ const RkpdV2BuatDokumenPage = () => {
 
     const query = new URLSearchParams({
       jenis_dokumen: 'rpjmd',
-      tahun: tahunVal,
+      tahun: resolvedTahun || tahunVal,
       sasaran_id: sasaranId,
       limit: 1000,
     });
@@ -293,15 +294,12 @@ const RkpdV2BuatDokumenPage = () => {
   useEffect(() => {
     if (!strategiId) return;
 
-    console.log('STRATEGI ID DIPILIH =', strategiId);
-    console.log('TAHUN =', tahunVal);
-
     setArahKebijakanId('');
     setArahKebijakanList([]);
 
     const query = new URLSearchParams({
       jenis_dokumen: 'rpjmd',
-      tahun: tahunVal,
+      tahun: resolvedTahun || tahunVal,
       strategi_id: strategiId,
       limit: 1000,
     });
@@ -323,10 +321,16 @@ const RkpdV2BuatDokumenPage = () => {
   }, [strategiId, tahunVal]);
 
   useEffect(() => {
-    if (!arahKebijakanId) return;
-
+    if (!arahKebijakanId || !arahKebijakanList.length) return;
+    console.log(
+      'ARAH ID =',
+      arahKebijakanId,
+      'LIST =',
+      arahKebijakanList.map((i) => i.id),
+    );
     const selected = arahKebijakanList.find((item) => String(item.id) === String(arahKebijakanId));
-
+    console.log('SELECTED =', selected);
+    if (!selected) return;
     const kodeArah = selected?.kode_arah || selected?.kode_indikator || '';
 
     setSelectedArahKode(kodeArah);
@@ -362,8 +366,8 @@ const RkpdV2BuatDokumenPage = () => {
   };
 
   const validateStep1 = () => {
-    if (!periodeId || !tahunVal.trim() || !judul.trim()) {
-      setErr('Periode, tahun, dan judul wajib diisi.');
+    if (!periodeId || !tahunVal.trim() || !judul.trim() || !namaOpd.trim()) {
+      setErr('Periode, tahun, judul, dan nama OPD wajib diisi.');
       return false;
     }
     if (!createReasonText.trim() && !createReasonFile.trim()) {
@@ -452,6 +456,7 @@ const RkpdV2BuatDokumenPage = () => {
       nama_indikator_program: indikator?.nama_indikator || '',
     }));
 
+    if (!indikator?.kode_indikator) return;
     fetchWithLog(
       `/indikator-renstra?stage=kegiatan&kode_parent=${indikator?.kode_indikator}`,
       {},
@@ -469,7 +474,21 @@ const RkpdV2BuatDokumenPage = () => {
     );
   };
 
-  const addProgram = () => setPrograms((prev) => [...prev, createProgram()]);
+  const addProgram = () => {
+    const newProgram = createProgram();
+    if (selectedArahKode) {
+      fetchWithLog(
+        `/indikator-renstra?stage=program&kode_parent=${selectedArahKode}`,
+        {},
+        (res) => {
+          const options = Array.isArray(res) ? res : [];
+          setPrograms((prev) => [...prev, { ...newProgram, indikatorProgramOptions: options }]);
+        },
+      );
+    } else {
+      setPrograms((prev) => [...prev, newProgram]);
+    }
+  };
 
   const updateProgramById = (programId, updater) => {
     setPrograms((prev) =>
@@ -507,12 +526,16 @@ const RkpdV2BuatDokumenPage = () => {
       nama_indikator_kegiatan: indikator?.nama_indikator || '',
     }));
 
+    if (!indikator?.kode_indikator) return;
     fetchWithLog(
       `/indikator-renstra?stage=sub_kegiatan&kode_parent=${indikator?.kode_indikator}`,
       {},
       (res) => {
-        const options = Array.isArray(res) ? res : [];
-
+        const allOptions = Array.isArray(res) ? res : [];
+        const prefix = indikator?.kode_indikator?.replace(/^IK/, 'ISK') || '';
+        const options = prefix
+          ? allOptions.filter((o) => String(o.kode_indikator || '').startsWith(prefix))
+          : allOptions;
         updateKegiatanById(programId, kegiatanId, (kegiatan) => ({
           ...kegiatan,
           indikatorSubOptions: options,
@@ -566,7 +589,12 @@ const RkpdV2BuatDokumenPage = () => {
 
       target: indikator?.target_tahun_1 || indikator?.target || '',
 
-      pagu: indikator?.pagu_tahun_1 || indikator?.pagu || '',
+      pagu:
+        indikator?.pagu_tahun_1 ||
+        indikator?.pagu_cached ||
+        indikator?.total_pagu_rpjmd ||
+        indikator?.pagu ||
+        '',
     }));
   };
 
@@ -703,6 +731,13 @@ const RkpdV2BuatDokumenPage = () => {
     setStep((prev) => Math.min(prev + 1, STEPS.length - 1));
   };
 
+  console.log('SUBMIT PAYLOAD =', {
+    visi_id: visiId,
+    misi_id: misiId,
+    prioritas_nasional_id: prioritasNasionalId,
+    arah_kebijakan_id: arahKebijakanId,
+  });
+
   const submit = async () => {
     setErr('');
     setBusy(true);
@@ -711,6 +746,7 @@ const RkpdV2BuatDokumenPage = () => {
         periode_id: Number(periodeId),
         tahun: Number(tahunVal),
         judul: judul.trim(),
+        nama_opd: namaOpd.trim(),
 
         visi_id: Number(visiId),
         misi_id: Number(misiId),
@@ -730,6 +766,28 @@ const RkpdV2BuatDokumenPage = () => {
       });
       const id = row?.id;
       if (!id) throw new Error('Respons tidak berisi id dokumen.');
+
+      // Simpan program/kegiatan/sub kegiatan sebagai rkpd_item
+      let urutan = 1;
+      for (const program of programs) {
+        for (const kegiatan of program.kegiatan || []) {
+          for (const sub of kegiatan.sub_kegiatan || []) {
+            await createRkpdItemV2({
+              rkpd_dokumen_id: id,
+              urutan: urutan++,
+              program: program.nama || '',
+              kegiatan: kegiatan.nama || '',
+              sub_kegiatan: sub.nama || '',
+              indikator: sub.indikator || null,
+              satuan: sub.satuan || null,
+              target: sub.target !== '' ? Number(sub.target) : null,
+              pagu: sub.pagu !== '' ? Number(sub.pagu) : null,
+              change_reason_text: createReasonText.trim() || 'Pembuatan dokumen baru',
+            });
+          }
+        }
+      }
+
       navigate(`/dashboard-rkpd/v2/dokumen/${id}`);
     } catch (ex) {
       setErr(ex?.response?.data?.message || ex.message || 'Gagal membuat dokumen.');
@@ -850,6 +908,20 @@ const RkpdV2BuatDokumenPage = () => {
                       value={judul}
                       onChange={(e) => setJudul(e.target.value)}
                       placeholder="RKPD Provinsi …"
+                    />
+                  </Form.Group>
+                </div>
+                <div className="col-12">
+                  <Form.Group controlId="nama-opd">
+                    <Form.Label className="small fw-medium">
+                      Nama OPD <span className="text-danger">*</span>
+                    </Form.Label>
+                    <Form.Control
+                      type="text"
+                      size="sm"
+                      value={namaOpd}
+                      onChange={(e) => setNamaOpd(e.target.value)}
+                      placeholder="Dinas Pangan …"
                     />
                   </Form.Group>
                 </div>
@@ -1377,24 +1449,6 @@ const RkpdV2BuatDokumenPage = () => {
                                             )}
                                           />
                                         </Form.Group>
-                                        <div className="col-12">
-                                          <Form.Group className="mb-0">
-                                            <Form.Label className="small fw-medium">
-                                              Rincian Kode Rekening Belanja (Permendagri 90)
-                                            </Form.Label>
-                                            <MasterBelanjaCascading
-                                              onChange={(selected) =>
-                                                updateSubKegiatanField(
-                                                  program.id,
-                                                  kegiatan.id,
-                                                  sub.id,
-                                                  'rincian_belanja',
-                                                  selected,
-                                                )
-                                              }
-                                            />
-                                          </Form.Group>
-                                        </div>
                                       </div>
                                       <div className="col-md-4">
                                         <Form.Group
@@ -1498,7 +1552,11 @@ const RkpdV2BuatDokumenPage = () => {
 
                 <tr>
                   <td className="text-muted">Misi</td>
-                  <td>{misiList.find((v) => v.id == misiId)?.nama_misi || '-'}</td>
+                  <td>
+                    {misiList.find((v) => v.id == misiId)?.isi_misi ||
+                      misiList.find((v) => v.id == misiId)?.nama_misi ||
+                      '-'}
+                  </td>
                 </tr>
 
                 <tr>

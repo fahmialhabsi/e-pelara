@@ -1,20 +1,13 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { Card, CardBody, Button, Table, Form, Modal, Spinner, Badge, Alert } from 'react-bootstrap';
+import { toast } from 'react-toastify';
 import {
-  Card,
-  CardBody,
-  Button,
-  Table,
-  Form,
-  Modal,
-  Spinner,
-  Badge,
-  Alert,
-} from "react-bootstrap";
-import { toast } from "react-toastify";
-import { canManagePlanningWorkflow, canRestorePlanningDocumentVersion } from "../../../utils/roleUtils";
-import { useAuth } from "../../../hooks/useAuth";
-import PlanningAuditSection from "../../planning-audit/components/PlanningAuditSection";
+  canManagePlanningWorkflow,
+  canRestorePlanningDocumentVersion,
+} from '../../../utils/roleUtils';
+import { useAuth } from '../../../hooks/useAuth';
+import PlanningAuditSection from '../../planning-audit/components/PlanningAuditSection';
 import {
   fetchRkpdDokumenById,
   fetchRkpdDokumenAudit,
@@ -27,17 +20,19 @@ import {
   saveRkpdOfficialDocxToFile,
   saveRkpdOfficialPdfToFile,
   fetchRkpdValidateOfficial,
-} from "../services/planningRkpdV2Api";
-import RkpdDashboardLayout from "./RkpdDashboardLayout";
+} from '../services/planningRkpdV2Api';
+import RkpdDashboardLayout from './RkpdDashboardLayout';
+import RkpdItemModal from '../components/RkpdItemModal';
+import api from '../../../services/api';
 
 const emptyItem = {
-  program: "",
-  kegiatan: "",
-  sub_kegiatan: "",
-  indikator: "",
-  target: "",
-  satuan: "",
-  pagu: "",
+  program: '',
+  kegiatan: '',
+  sub_kegiatan: '',
+  indikator: '',
+  target: '',
+  satuan: '',
+  pagu: '',
   urutan: 0,
 };
 
@@ -47,24 +42,27 @@ const RkpdV2DokumenDetailPage = () => {
   const can = canManagePlanningWorkflow(user?.role);
 
   const [doc, setDoc] = useState(null);
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [err, setErr] = useState('');
   const [officialValidate, setOfficialValidate] = useState(null);
   const [busyValidate, setBusyValidate] = useState(false);
 
-  const [judul, setJudul] = useState("");
-  const [status, setStatus] = useState("draft");
+  const [judul, setJudul] = useState('');
+  const [namaOpd, setNamaOpd] = useState('');
+  const [textBab2, setTextBab2] = useState('');
+  const [status, setStatus] = useState('draft');
   const [savingMeta, setSavingMeta] = useState(false);
-  const [metaReasonText, setMetaReasonText] = useState("");
-  const [metaReasonFile, setMetaReasonFile] = useState("");
+  const [metaReasonText, setMetaReasonText] = useState('');
+  const [metaReasonFile, setMetaReasonFile] = useState('');
   const [auditRows, setAuditRows] = useState([]);
 
   const [itemModal, setItemModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [itemForm, setItemForm] = useState(emptyItem);
   const [savingItem, setSavingItem] = useState(false);
-  const [itemReasonText, setItemReasonText] = useState("");
-  const [itemReasonFile, setItemReasonFile] = useState("");
+  const [itemReasonText, setItemReasonText] = useState('');
+  const [itemReasonFile, setItemReasonFile] = useState('');
 
   const [logModal, setLogModal] = useState(false);
   const [logs, setLogs] = useState([]);
@@ -72,14 +70,17 @@ const RkpdV2DokumenDetailPage = () => {
 
   const load = useCallback(async () => {
     setLoading(true);
-    setErr("");
+    setErr('');
     try {
       const d = await fetchRkpdDokumenById(id);
       setDoc(d);
-      setJudul(d?.judul || "");
-      setStatus(d?.status || "draft");
+      setItems(d?.items || []);
+      setJudul(d?.judul || '');
+      setNamaOpd(d?.nama_opd || '');
+      setTextBab2(d?.text_bab2 || '');
+      setStatus(d?.status || 'draft');
     } catch (e) {
-      setErr(e?.response?.data?.message || e.message || "Gagal memuat dokumen.");
+      setErr(e?.response?.data?.message || e.message || 'Gagal memuat dokumen.');
     } finally {
       setLoading(false);
     }
@@ -107,22 +108,25 @@ const RkpdV2DokumenDetailPage = () => {
     const rt = metaReasonText.trim();
     const rf = metaReasonFile.trim();
     if (!rt && !rf) {
-      toast.error("Isi alasan perubahan (teks) atau referensi berkas dasar perubahan.");
+      toast.error('Isi alasan perubahan (teks) atau referensi berkas dasar perubahan.');
       return;
     }
     setSavingMeta(true);
     try {
+      console.log('TEXT_BAB2 =', textBab2);
       const d = await updateRkpdDokumenV2(id, {
         judul: judul.trim(),
+        nama_opd: namaOpd.trim(),
+        text_bab2: textBab2.trim() || null,
         status,
         change_reason_text: rt || undefined,
         change_reason_file: rf || undefined,
       });
       setDoc(d);
-      toast.success("Dokumen diperbarui.");
+      toast.success('Dokumen diperbarui.');
       await loadAudit();
     } catch (e) {
-      toast.error(e?.response?.data?.message || e.message || "Gagal simpan.");
+      toast.error(e?.response?.data?.message || e.message || 'Gagal simpan.');
     } finally {
       setSavingMeta(false);
     }
@@ -130,27 +134,45 @@ const RkpdV2DokumenDetailPage = () => {
 
   const openAddItem = () => {
     setEditingItem(null);
-    setItemForm({ ...emptyItem, urutan: (doc?.items?.length || 0) + 1 });
-    setItemReasonText("");
-    setItemReasonFile("");
+    setItemForm({ ...emptyItem, urutan: items.length + 1 });
+    setItemReasonText('');
+    setItemReasonFile('');
     setItemModal(true);
   };
 
   const openEditItem = (row) => {
     setEditingItem(row);
+    console.log('PRIORITAS DAERAH ROW =', row.prioritas_daerah);
     setItemForm({
-      program: row.program || "",
-      kegiatan: row.kegiatan || "",
-      sub_kegiatan: row.sub_kegiatan || "",
-      indikator: row.indikator || "",
-      target: row.target != null ? String(row.target) : "",
-      satuan: row.satuan || "",
-      pagu: row.pagu != null ? String(row.pagu) : "",
+      prioritas_daerah: row.prioritas_daerah || '',
+      program: row.program || '',
+      kegiatan: row.kegiatan || '',
+      sub_kegiatan: row.sub_kegiatan || '',
+      indikator: row.indikator || '',
+      target: row.target != null ? String(row.target) : '',
+      satuan: row.satuan || '',
+      pagu: row.pagu != null ? String(row.pagu) : '',
       urutan: row.urutan ?? 0,
     });
-    setItemReasonText("");
-    setItemReasonFile("");
+    setItemReasonText('');
+    setItemReasonFile('');
     setItemModal(true);
+  };
+
+  const handleDeleteItem = async (row) => {
+    if (!window.confirm(`Hapus item "${row.sub_kegiatan || row.id}"?`)) return;
+    const reason = window.prompt('Alasan penghapusan (wajib):');
+    if (!reason?.trim()) {
+      toast.error('Alasan wajib diisi.');
+      return;
+    }
+    try {
+      await api.delete(`/rkpd/item/${row.id}`, { data: { change_reason_text: reason.trim() } });
+      toast.success('Item dihapus.');
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'Gagal hapus item.');
+    }
   };
 
   const saveItem = async () => {
@@ -158,7 +180,7 @@ const RkpdV2DokumenDetailPage = () => {
     const rt = itemReasonText.trim();
     const rf = itemReasonFile.trim();
     if (!rt && !rf) {
-      toast.error("Isi alasan perubahan item (teks) atau referensi berkas.");
+      toast.error('Isi alasan perubahan item (teks) atau referensi berkas.');
       return;
     }
     setSavingItem(true);
@@ -169,27 +191,29 @@ const RkpdV2DokumenDetailPage = () => {
         kegiatan: itemForm.kegiatan || null,
         sub_kegiatan: itemForm.sub_kegiatan || null,
         indikator: itemForm.indikator || null,
-        target: itemForm.target === "" ? null : Number(itemForm.target),
+        target: itemForm.target === '' ? null : Number(itemForm.target),
         satuan: itemForm.satuan || null,
-        pagu: itemForm.pagu === "" ? null : Number(itemForm.pagu),
-        status_baris: "draft",
+        pagu: itemForm.pagu === '' ? null : Number(itemForm.pagu),
+        status_baris: 'draft',
         change_reason_text: rt || undefined,
         change_reason_file: rf || undefined,
       };
       if (editingItem) {
         await updateRkpdItemV2(editingItem.id, base);
-        toast.success("Item diperbarui — perubahan tercatat & cascade ke Renja (jika ada mapping).");
+        toast.success(
+          'Item diperbarui — perubahan tercatat & cascade ke Renja (jika ada mapping).',
+        );
       } else {
         await createRkpdItemV2({
           ...base,
           rkpd_dokumen_id: Number(id),
         });
-        toast.success("Item ditambahkan.");
+        toast.success('Item ditambahkan.');
       }
       setItemModal(false);
       load();
     } catch (e) {
-      toast.error(e?.response?.data?.message || e.message || "Gagal simpan item.");
+      toast.error(e?.response?.data?.message || e.message || 'Gagal simpan item.');
     } finally {
       setSavingItem(false);
     }
@@ -202,7 +226,7 @@ const RkpdV2DokumenDetailPage = () => {
       const rows = await fetchRkpdDokumenChangeLog(id);
       setLogs(Array.isArray(rows) ? rows : []);
     } catch (e) {
-      toast.error(e?.response?.data?.message || "Gagal memuat log.");
+      toast.error(e?.response?.data?.message || 'Gagal memuat log.');
       setLogs([]);
     } finally {
       setLogLoading(false);
@@ -216,16 +240,14 @@ const RkpdV2DokumenDetailPage = () => {
     try {
       const r = await fetchRkpdValidateOfficial(doc.id);
       setOfficialValidate(r);
-      if (r.ok) toast.success("Prasyarat ekspor resmi terpenuhi.");
-      else toast.warning("Prasyarat ekspor resmi belum terpenuhi — lihat daftar di bawah.");
+      if (r.ok) toast.success('Prasyarat ekspor resmi terpenuhi.');
+      else toast.warning('Prasyarat ekspor resmi belum terpenuhi — lihat daftar di bawah.');
     } catch (e) {
-      toast.error(e?.response?.data?.message || e.message || "Gagal memvalidasi.");
+      toast.error(e?.response?.data?.message || e.message || 'Gagal memvalidasi.');
     } finally {
       setBusyValidate(false);
     }
   };
-
-  const items = doc?.items || [];
 
   if (loading) {
     return (
@@ -238,7 +260,7 @@ const RkpdV2DokumenDetailPage = () => {
   if (err || !doc) {
     return (
       <RkpdDashboardLayout>
-        <Alert variant="danger">{err || "Tidak ditemukan."}</Alert>
+        <Alert variant="danger">{err || 'Tidak ditemukan.'}</Alert>
         <Link to="/dashboard-rkpd">← Dashboard</Link>
       </RkpdDashboardLayout>
     );
@@ -247,14 +269,14 @@ const RkpdV2DokumenDetailPage = () => {
   return (
     <RkpdDashboardLayout>
       <Alert variant="info" className="small mb-3">
-        <strong>Preview</strong> Word/PDF = ringkasan baris <code>rkpd_item</code> (data internal).{" "}
-        <strong>Dokumen resmi</strong> = struktur BAB (Document Engine). Isi <code>text_bab2</code>{" "}
+        <strong>Preview</strong> Word/PDF = ringkasan baris <code>rkpd_item</code> (data internal).{' '}
+        <strong>Dokumen resmi</strong> = struktur BAB (Document Engine). Isi <code>text_bab2</code>{' '}
         (BAB II) dan <code>prioritas_daerah</code> per baris wajib untuk ekspor resmi — generate
         diblokir jika tidak lengkap.
       </Alert>
       {officialValidate && (
-        <Alert variant={officialValidate.ok ? "success" : "warning"} className="small mb-3">
-          <strong>{officialValidate.ok ? "Siap ekspor resmi." : "Belum siap ekspor resmi."}</strong>
+        <Alert variant={officialValidate.ok ? 'success' : 'warning'} className="small mb-3">
+          <strong>{officialValidate.ok ? 'Siap ekspor resmi.' : 'Belum siap ekspor resmi.'}</strong>
           <ul className="mb-0 mt-2">
             {(officialValidate.errors || []).map((e) => (
               <li key={e.code}>{e.message}</li>
@@ -280,7 +302,7 @@ const RkpdV2DokumenDetailPage = () => {
               size="sm"
               onClick={() =>
                 saveRkpdDokumenDocxToFile(doc.id, doc.judul).catch((e) =>
-                  toast.error(e?.message || "Gagal preview Word"),
+                  toast.error(e?.message || 'Gagal preview Word'),
                 )
               }
             >
@@ -291,7 +313,7 @@ const RkpdV2DokumenDetailPage = () => {
               size="sm"
               onClick={() =>
                 saveRkpdDokumenPdfToFile(doc.id, doc.judul).catch((e) =>
-                  toast.error(e?.message || "Gagal preview PDF"),
+                  toast.error(e?.message || 'Gagal preview PDF'),
                 )
               }
             >
@@ -306,14 +328,14 @@ const RkpdV2DokumenDetailPage = () => {
               disabled={busyValidate}
               onClick={runOfficialValidate}
             >
-              {busyValidate ? "Memeriksa…" : "Cek prasyarat ekspor"}
+              {busyValidate ? 'Memeriksa…' : 'Cek prasyarat ekspor'}
             </Button>
             <Button
               variant="success"
               size="sm"
               onClick={() =>
                 saveRkpdOfficialDocxToFile(doc.id, doc.judul).catch((e) =>
-                  toast.error(e?.message || "Gagal dokumen resmi Word"),
+                  toast.error(e?.message || 'Gagal dokumen resmi Word'),
                 )
               }
             >
@@ -324,7 +346,7 @@ const RkpdV2DokumenDetailPage = () => {
               size="sm"
               onClick={() =>
                 saveRkpdOfficialPdfToFile(doc.id, doc.judul).catch((e) =>
-                  toast.error(e?.message || "Gagal dokumen resmi PDF"),
+                  toast.error(e?.message || 'Gagal dokumen resmi PDF'),
                 )
               }
             >
@@ -349,12 +371,30 @@ const RkpdV2DokumenDetailPage = () => {
             />
           </Form.Group>
           <Form.Group className="mb-2">
-            <Form.Label className="small">Status</Form.Label>
-            <Form.Select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
+            <Form.Label className="small">Nama OPD</Form.Label>
+            <Form.Control
+              value={namaOpd}
+              onChange={(e) => setNamaOpd(e.target.value)}
               disabled={!can}
-            >
+              placeholder="Dinas Pangan …"
+            />
+          </Form.Group>
+          <Form.Group className="mb-2">
+            <Form.Label className="small">
+              BAB II — Analisis Kondisi <span className="text-danger">*</span>
+            </Form.Label>
+            <Form.Control
+              as="textarea"
+              rows={4}
+              value={textBab2}
+              onChange={(e) => setTextBab2(e.target.value)}
+              disabled={!can}
+              placeholder="Narasi analisis kondisi daerah minimal 20 karakter..."
+            />
+          </Form.Group>
+          <Form.Group className="mb-2">
+            <Form.Label className="small">Status</Form.Label>
+            <Form.Select value={status} onChange={(e) => setStatus(e.target.value)} disabled={!can}>
               <option value="draft">draft</option>
               <option value="review">review</option>
               <option value="final">final</option>
@@ -382,7 +422,7 @@ const RkpdV2DokumenDetailPage = () => {
           </Form.Group>
           {can && (
             <Button size="sm" onClick={saveMeta} disabled={savingMeta}>
-              {savingMeta ? <Spinner size="sm" /> : "Simpan metadata"}
+              {savingMeta ? <Spinner size="sm" /> : 'Simpan metadata'}
             </Button>
           )}
         </CardBody>
@@ -441,8 +481,22 @@ const RkpdV2DokumenDetailPage = () => {
                       <td>{row.pagu}</td>
                       <td>
                         {can && (
-                          <Button size="sm" variant="outline-primary" onClick={() => openEditItem(row)}>
+                          <Button
+                            size="sm"
+                            variant="outline-primary"
+                            onClick={() => openEditItem(row)}
+                          >
                             Edit
+                          </Button>
+                        )}
+                        {can && (
+                          <Button
+                            size="sm"
+                            variant="outline-danger"
+                            className="ms-1"
+                            onClick={() => handleDeleteItem(row)}
+                          >
+                            Hapus
                           </Button>
                         )}
                       </td>
@@ -455,69 +509,52 @@ const RkpdV2DokumenDetailPage = () => {
         </CardBody>
       </Card>
 
-      <Modal show={itemModal} onHide={() => setItemModal(false)} size="lg">
-        <Modal.Header closeButton>
-          <Modal.Title>{editingItem ? "Edit item" : "Item baru"}</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <Form.Group className="mb-2">
-            <Form.Label>Urutan</Form.Label>
-            <Form.Control
-              type="number"
-              value={itemForm.urutan}
-              onChange={(e) => setItemForm({ ...itemForm, urutan: e.target.value })}
-            />
-          </Form.Group>
-          {["program", "kegiatan", "sub_kegiatan", "indikator", "satuan"].map((k) => (
-            <Form.Group className="mb-2" key={k}>
-              <Form.Label>{k}</Form.Label>
-              <Form.Control
-                value={itemForm[k]}
-                onChange={(e) => setItemForm({ ...itemForm, [k]: e.target.value })}
-              />
-            </Form.Group>
-          ))}
-          <Form.Group className="mb-2">
-            <Form.Label>target</Form.Label>
-            <Form.Control
-              value={itemForm.target}
-              onChange={(e) => setItemForm({ ...itemForm, target: e.target.value })}
-            />
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label>pagu</Form.Label>
-            <Form.Control
-              value={itemForm.pagu}
-              onChange={(e) => setItemForm({ ...itemForm, pagu: e.target.value })}
-            />
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label className="small">Alasan perubahan item (wajib salah satu)</Form.Label>
-            <Form.Control
-              as="textarea"
-              rows={2}
-              value={itemReasonText}
-              onChange={(e) => setItemReasonText(e.target.value)}
-            />
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label className="small">Referensi berkas</Form.Label>
-            <Form.Control
-              value={itemReasonFile}
-              onChange={(e) => setItemReasonFile(e.target.value)}
-              placeholder="path / URL / nama berkas"
-            />
-          </Form.Group>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setItemModal(false)}>
-            Batal
-          </Button>
-          <Button onClick={saveItem} disabled={savingItem || !can}>
-            {savingItem ? <Spinner size="sm" /> : "Simpan"}
-          </Button>
-        </Modal.Footer>
-      </Modal>
+      <RkpdItemModal
+        show={itemModal}
+        onHide={() => setItemModal(false)}
+        doc={doc}
+        editingItem={editingItem}
+        onSaved={async (form, reasonText, reasonFile) => {
+          if (!reasonText?.trim() && !reasonFile?.trim()) {
+            toast.error('Isi alasan perubahan item (teks) atau referensi berkas.');
+            return;
+          }
+          setSavingItem(true);
+          try {
+            const base = {
+              urutan: Number(form.urutan) || 0,
+              prioritas_daerah: form.prioritas_daerah || null,
+              program: form.program || null,
+              kegiatan: form.kegiatan || null,
+              sub_kegiatan: form.sub_kegiatan || null,
+              indikator: form.indikator || null,
+              target:
+                !form.target || String(form.target).trim() === ''
+                  ? null
+                  : Number(String(form.target).trim().replace(',', '.')),
+              satuan: form.satuan || null,
+              pagu: form.pagu === '' ? null : Number(form.pagu),
+              status_baris: 'draft',
+              change_reason_text: reasonText?.trim() || undefined,
+              change_reason_file: reasonFile?.trim() || undefined,
+            };
+            if (editingItem) {
+              await updateRkpdItemV2(editingItem.id, base);
+              toast.success('Item diperbarui.');
+            } else {
+              await createRkpdItemV2({ ...base, rkpd_dokumen_id: Number(id) });
+              toast.success('Item ditambahkan.');
+            }
+            setItemModal(false);
+            load();
+          } catch (e) {
+            toast.error(e?.response?.data?.message || e.message || 'Gagal simpan item.');
+          } finally {
+            setSavingItem(false);
+          }
+        }}
+        saving={savingItem}
+      />
 
       <Modal show={logModal} onHide={() => setLogModal(false)} size="lg">
         <Modal.Header closeButton>
@@ -543,11 +580,11 @@ const RkpdV2DokumenDetailPage = () => {
               <tbody>
                 {logs.map((L) => (
                   <tr key={L.id}>
-                    <td className="text-nowrap small">{L.created_at || "—"}</td>
+                    <td className="text-nowrap small">{L.created_at || '—'}</td>
                     <td>{L.entity_id}</td>
                     <td>{L.field_key}</td>
-                    <td className="small">{String(L.old_value ?? "").slice(0, 80)}</td>
-                    <td className="small">{String(L.new_value ?? "").slice(0, 80)}</td>
+                    <td className="small">{String(L.old_value ?? '').slice(0, 80)}</td>
+                    <td className="small">{String(L.new_value ?? '').slice(0, 80)}</td>
                     <td>
                       <Badge bg="secondary">{L.change_type || L.source}</Badge>
                     </td>

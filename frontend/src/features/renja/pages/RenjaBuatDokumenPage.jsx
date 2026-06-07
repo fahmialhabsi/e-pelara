@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import Select from 'react-select';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Button, Form, Spinner, Alert } from 'react-bootstrap';
+import Select from 'react-select';
 import { useDokumen } from '../../../hooks/useDokumen';
 import { usePeriodeAktif } from '../../rpjmd/hooks/usePeriodeAktif';
 import { useAuth } from '../../../hooks/useAuth';
 import { canManagePlanningWorkflow } from '../../../utils/roleUtils';
 import { fetchReferensiBuatDokumenRenja, createRenjaDokumenV2 } from '../services/planningRenjaApi';
-import RenjaPlanningDashboardLayout from './RenjaPlanningDashboardLayout';
+import DashboardLayout from './DashboardLayout';
 
 const RenjaBuatDokumenPage = () => {
   const navigate = useNavigate();
@@ -18,31 +18,28 @@ const RenjaBuatDokumenPage = () => {
 
   const [ref, setRef] = useState(null);
   const [loadingRef, setLoadingRef] = useState(true);
-  const [periodeId, setPeriodeId] = useState('');
-  const [tahunVal, setTahunVal] = useState(String(tahun || ''));
-  const [pdId, setPdId] = useState('');
-  const [renstraId, setRenstraId] = useState('');
-  const [rkpdId, setRkpdId] = useState('');
-  const [judul, setJudul] = useState('');
-  const [createReasonText, setCreateReasonText] = useState('');
-  const [createReasonFile, setCreateReasonFile] = useState('');
-  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const [opdList, setOpdList] = useState([]);
-  const [opdId, setOpdId] = useState('');
+  const [busy, setBusy] = useState(false);
 
+  // Pilihan user
+  const [rkpdId, setRkpdId] = useState('');
+  const [renstraId, setRenstraId] = useState('');
+  const [judul, setJudul] = useState('');
+  const [alasan, setAlasan] = useState('');
+
+  // Load referensi sekali
   useEffect(() => {
     let ok = true;
     (async () => {
       setLoadingRef(true);
       try {
         const data = await fetchReferensiBuatDokumenRenja({
-          tahun: tahunVal || undefined,
-          periode_id: periodeId || periodeAktif || undefined,
+          periode_id: periodeAktif || undefined,
+          include_test: 1,
         });
         if (ok) setRef(data);
       } catch (e) {
-        if (ok) setErr(e?.response?.data?.message || e.message || 'Gagal referensi.');
+        if (ok) setErr(e?.response?.data?.message || e.message || 'Gagal memuat referensi.');
       } finally {
         if (ok) setLoadingRef(false);
       }
@@ -50,77 +47,47 @@ const RenjaBuatDokumenPage = () => {
     return () => {
       ok = false;
     };
-  }, [tahunVal, periodeId, periodeAktif]);
+  }, [periodeAktif]);
 
+  const rkpdDipilih = useMemo(
+    () => (ref?.rkpdDokumen || []).find((r) => String(r.id) === String(rkpdId)),
+    [ref, rkpdId],
+  );
+  const tahunVal = rkpdDipilih?.tahun || tahun || '';
+  const periodeVal = rkpdDipilih?.periode_id || periodeAktif || '';
+  const namaOpd = rkpdDipilih?.nama_opd || '';
+  const renstraFiltered = ref?.renstraPdDokumen || [];
   useEffect(() => {
-    if (periodeAktif && !periodeId) setPeriodeId(String(periodeAktif));
-  }, [periodeAktif, periodeId]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const loadOpd = async () => {
-      try {
-        const response = await fetch('/api/opd-penanggung-jawab/dropdown');
-        const result = await response.json();
-
-        if (mounted) {
-          setOpdList(result?.data || result || []);
-        }
-      } catch (err) {
-        console.error('Gagal memuat OPD:', err);
-      }
-    };
-
-    loadOpd();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const renstraFiltered = useMemo(() => {
-    const list = ref?.renstraPdDokumen || [];
-    if (!opdId) return list;
-    return list.filter((r) => String(r.perangkat_daerah_id) === String(opdId));
-  }, [ref, opdId]);
-
-  const rkpdFiltered = useMemo(() => {
-    const list = ref?.rkpdDokumen || [];
-    if (!tahunVal) return list;
-    return list.filter((k) => String(k.tahun) === String(tahunVal));
-  }, [ref, tahunVal]);
+    if (namaOpd && tahunVal) setJudul(`Renja ${namaOpd} Tahun ${tahunVal}`);
+  }, [namaOpd, tahunVal]);
 
   const submit = async (e) => {
     e.preventDefault();
     setErr('');
-    if (!periodeId || !tahunVal || !opdId || !renstraId || !judul.trim()) {
-      setErr('Periode, tahun, OPD, Renstra PD, dan judul wajib.');
-      return;
-    }
-    const rt = createReasonText.trim();
-    const rf = createReasonFile.trim();
-    if (!rt && !rf) {
-      setErr('Isi alasan pembuatan dokumen (teks) atau referensi berkas.');
+    if (!periodeVal || !tahunVal || !renstraId || !judul.trim() || !alasan.trim()) {
+      setErr('RKPD, Renstra PD, judul, dan alasan wajib diisi.');
       return;
     }
     setBusy(true);
     try {
+      const renstraDipilih = (ref?.renstraPdDokumen || []).find(
+        (r) => String(r.id) === String(renstraId),
+      );
       const body = {
-        periode_id: Number(periodeId),
+        periode_id: Number(periodeVal),
         tahun: Number(tahunVal),
-        opd_id: opdId ? Number(opdId) : null,
+        perangkat_daerah_id: renstraDipilih?.perangkat_daerah_id
+          ? Number(renstraDipilih.perangkat_daerah_id)
+          : null,
         renstra_pd_dokumen_id: Number(renstraId),
         rkpd_dokumen_id: rkpdId ? Number(rkpdId) : null,
         judul: judul.trim(),
         status: 'draft',
-        change_reason_text: rt || undefined,
-        change_reason_file: rf || undefined,
+        change_reason_text: alasan.trim(),
       };
       const row = await createRenjaDokumenV2(body);
-      const id = row?.id;
-      if (!id) throw new Error('Tidak ada id dokumen.');
-      navigate(`/dashboard-renja/v2/dokumen/${id}`);
+      if (!row?.id) throw new Error('Tidak ada id dokumen.');
+      navigate(`/dashboard-renja/v2/dokumen/${row.id}`);
     } catch (ex) {
       setErr(ex?.response?.data?.message || ex.message || 'Gagal membuat dokumen.');
     } finally {
@@ -128,148 +95,129 @@ const RenjaBuatDokumenPage = () => {
     }
   };
 
-  if (!can) {
+  if (!can)
     return (
-      <RenjaPlanningDashboardLayout>
+      <DashboardLayout>
         <Alert variant="danger">Tidak ada akses menulis dokumen Renja.</Alert>
-      </RenjaPlanningDashboardLayout>
+      </DashboardLayout>
     );
-  }
 
   return (
-    <RenjaPlanningDashboardLayout>
-      <h4 className="fw-bold text-success mb-2">Buat dokumen Renja (v2)</h4>
-      <p className="small text-muted">
-        POST <code>/api/renja/dokumen</code> — pilih PD, Renstra PD, dan (opsional) RKPD acuan.
-      </p>
-      <Alert variant="info" className="small">
-        <strong>Data yang Anda lihat di sini adalah data operasional dari basis data</strong> ({' '}
-        <code>perangkat_daerah</code>, <code>renstra_pd_dokumen</code>, <code>rkpd_dokumen</code>
-        ). Baris yang terdeteksi sebagai uji/smoke (mis. kode <code>SMOKE</code>, judul berisi{' '}
-        <code>(api test)</code>) <strong>disembunyikan</strong> dari dropdown agar tidak tercampur
-        dengan data resmi. Pengembangan dapat memakai query param <code>include_test=1</code> pada
-        API referensi.
-      </Alert>
-      <Alert variant="secondary" className="small">
-        <strong>Output yang dihasilkan modul ini</strong> adalah{' '}
-        <em>preview data perencanaan internal</em> (metadata + tabel item), <strong>bukan</strong>{' '}
-        dokumen Renja OPD resmi sesuai pedoman/bab. Ekspor Word/PDF dari halaman dokumen juga
-        berlabel preview internal.
-      </Alert>
+    <DashboardLayout>
+      <div className="mb-3">
+        <h4 className="fw-bold text-success mb-1">📝 Buat Dokumen Renja</h4>
+        <p className="text-muted small">
+          Pilih RKPD acuan → Perangkat Daerah → Renstra PD → isi judul.
+        </p>
+      </div>
+
       {err && <Alert variant="warning">{err}</Alert>}
-      <Card>
+
+      <Card className="shadow-sm">
         <CardBody>
           {loadingRef ? (
-            <Spinner />
+            <div className="text-center py-4">
+              <Spinner animation="border" />
+            </div>
           ) : (
             <Form onSubmit={submit}>
-              <div className="row">
-                <div className="col-md-4">
-                  <Form.Group className="mb-2">
-                    <Form.Label>Periode ID</Form.Label>
-                    <Form.Control
-                      value={periodeId}
-                      onChange={(e) => setPeriodeId(e.target.value)}
-                      placeholder="ID periode RPJMD"
-                      required
-                    />
-                  </Form.Group>
-                </div>
+              {/* Step 1: RKPD */}
+              <Form.Group className="mb-3">
+                <Form.Label className="fw-semibold">
+                  1. RKPD Acuan <span className="text-muted fw-normal">(opsional)</span>
+                </Form.Label>
+                <Form.Select
+                  value={rkpdId}
+                  onChange={(e) => {
+                    setRkpdId(e.target.value);
+                  }}
+                >
+                  <option value="">— tidak ada —</option>
+                  {(ref?.rkpdDokumen || []).map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.tahun} — {r.judul} [{r.status}]
+                    </option>
+                  ))}
+                </Form.Select>
+                {rkpdDipilih && (
+                  <Form.Text className="text-success">
+                    Tahun: {rkpdDipilih.tahun} · Periode: {rkpdDipilih.periode_id}
+                  </Form.Text>
+                )}
+              </Form.Group>
 
-                <div className="col-md-4">
-                  <Form.Group className="mb-2">
-                    <Form.Label>Tahun</Form.Label>
-                    <Form.Control
-                      value={tahunVal}
-                      onChange={(e) => setTahunVal(e.target.value)}
-                      required
-                    />
-                  </Form.Group>
+              {/* Step 2: Perangkat Daerah */}
+              {rkpdDipilih?.nama_opd && (
+                <div className="mb-3 p-2 bg-light rounded border">
+                  <small className="text-muted">OPD:</small> <strong>{rkpdDipilih.nama_opd}</strong>
                 </div>
+              )}
 
-                <div className="col-md-4">
-                  <Form.Group className="mb-2">
-                    <Form.Label>OPD Penanggung Jawab</Form.Label>
-                    <Select
-                      options={opdList.map((opd) => ({
-                        value: opd.id,
-                        label: opd.nama_opd || opd.nama,
-                      }))}
-                      value={
-                        opdId
-                          ? {
-                              value: opdId,
-                              label: opdList.find((o) => String(o.id) === String(opdId))?.nama_opd,
-                            }
-                          : null
-                      }
-                      onChange={(opt) => setOpdId(opt ? String(opt.value) : '')}
-                      placeholder="— cari dan pilih OPD —"
-                      isClearable
-                      isSearchable
-                      noOptionsMessage={() => 'OPD tidak ditemukan'}
-                    />
-                  </Form.Group>
-                </div>
-              </div>
-
-              <Form.Group className="mb-2">
-                <Form.Label>Renstra PD</Form.Label>
+              {/* Step 3: Renstra PD */}
+              <Form.Group className="mb-3">
+                <Form.Label className="fw-semibold">
+                  3. Renstra PD <span className="text-danger">*</span>
+                </Form.Label>
                 <Form.Select
                   value={renstraId}
                   onChange={(e) => setRenstraId(e.target.value)}
-                  required
+                  disabled={!rkpdId}
                 >
-                  <option value="">— pilih —</option>
+                  <option value="">— pilih Renstra PD —</option>
                   {renstraFiltered.map((r) => (
                     <option key={r.id} value={r.id}>
-                      #{r.id} {r.judul}
+                      {r.judul} [{r.status}]
                     </option>
                   ))}
                 </Form.Select>
+                {rkpdId && renstraFiltered.length === 0 && (
+                  <Form.Text className="text-danger">Tidak ada Renstra PD untuk OPD ini.</Form.Text>
+                )}
               </Form.Group>
-              <Form.Group className="mb-2">
-                <Form.Label>RKPD dokumen (opsional)</Form.Label>
-                <Form.Select value={rkpdId} onChange={(e) => setRkpdId(e.target.value)}>
-                  <option value="">— tidak ada —</option>
-                  {rkpdFiltered.map((k) => (
-                    <option key={k.id} value={k.id}>
-                      #{k.id} · th {k.tahun} · {k.judul}
-                    </option>
-                  ))}
-                </Form.Select>
-              </Form.Group>
+
+              {/* Judul */}
               <Form.Group className="mb-3">
-                <Form.Label>Judul</Form.Label>
-                <Form.Control value={judul} onChange={(e) => setJudul(e.target.value)} required />
-              </Form.Group>
-              <Form.Group className="mb-2">
-                <Form.Label className="small">
-                  Alasan pembuatan dokumen (wajib salah satu)
+                <Form.Label className="fw-semibold">
+                  Judul Dokumen <span className="text-danger">*</span>
                 </Form.Label>
                 <Form.Control
-                  as="textarea"
-                  rows={2}
-                  value={createReasonText}
-                  onChange={(e) => setCreateReasonText(e.target.value)}
+                  value={judul}
+                  onChange={(e) => setJudul(e.target.value)}
+                  placeholder="Judul dokumen Renja"
+                  required
                 />
               </Form.Group>
-              <Form.Group className="mb-3">
-                <Form.Label className="small">Referensi berkas</Form.Label>
+
+              {/* Dasar Penyusunan Dan Perubahan Renja */}
+              <Form.Group className="mb-4">
+                <Form.Label className="fw-semibold">
+                  Upload Dasar <span className="text-danger">*</span>
+                </Form.Label>
                 <Form.Control
-                  value={createReasonFile}
-                  onChange={(e) => setCreateReasonFile(e.target.value)}
-                  placeholder="path / URL / nama berkas"
+                  type="file"
+                  accept=".pdf,.doc,.docx"
+                  onChange={(e) => setAlasan(e.target.files?.[0]?.name || '')}
                 />
+                {alasan && <Form.Text className="text-success">File: {alasan}</Form.Text>}
               </Form.Group>
-              <Button type="submit" disabled={busy}>
-                {busy ? <Spinner size="sm" /> : 'Simpan & kelola item'}
-              </Button>
+
+              <div className="d-flex gap-2">
+                <Button type="submit" variant="success" disabled={busy}>
+                  {busy ? <Spinner size="sm" /> : '💾 Simpan & Kelola Item'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline-secondary"
+                  onClick={() => navigate('/dashboard-renja')}
+                >
+                  Batal
+                </Button>
+              </div>
             </Form>
           )}
         </CardBody>
       </Card>
-    </RenjaPlanningDashboardLayout>
+    </DashboardLayout>
   );
 };
 

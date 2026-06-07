@@ -1,120 +1,97 @@
-import React, { Suspense } from "react";
-import {
-  Routes,
-  Route,
-  Navigate,
-  useLocation,
-  useSearchParams,
-} from "react-router-dom";
-import { Spinner } from "react-bootstrap";
-import { ConfigProvider, App as AntdApp } from "antd";
-import AuthProvider from "./contexts/AuthProvider";
-import { NotificationProvider } from "./contexts/NotificationProvider";
-import { FilterProvider } from "./contexts/FilterContext";
-import { MonevProvider } from "./features/monev/context/MonevContext";
-import { DokumenProvider } from "./contexts/DokumenProvider";
-import { useDokumen } from "./hooks/useDokumen";
-import { PeriodeProvider } from "./contexts/PeriodeContext";
-import {
-  PeriodeAktifProvider,
-  usePeriodeAktif,
-} from "./features/rpjmd/hooks/usePeriodeAktif";
-import { RpjmdExcelPreviewProvider } from "./contexts/RpjmdExcelPreviewContext";
-import { useAuth } from "./hooks/useAuth";
-import { isDokumenLevelPeriode } from "./utils/planningDokumenUtils";
+import React, { Suspense } from 'react';
+import { Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom';
+import { Spinner } from 'react-bootstrap';
+import { ConfigProvider, App as AntdApp } from 'antd';
+import AuthProvider from './contexts/AuthProvider';
+import { NotificationProvider } from './contexts/NotificationProvider';
+import { FilterProvider } from './contexts/FilterContext';
+import { MonevProvider } from './features/monev/context/MonevContext';
+import { DokumenProvider } from './contexts/DokumenProvider';
+import { useDokumen } from './hooks/useDokumen';
+import { PeriodeProvider } from './contexts/PeriodeContext';
+import { PeriodeAktifProvider, usePeriodeAktif } from './features/rpjmd/hooks/usePeriodeAktif';
+import { RpjmdExcelPreviewProvider } from './contexts/RpjmdExcelPreviewContext';
+import { useAuth } from './hooks/useAuth';
+import { isDokumenLevelPeriode } from './utils/planningDokumenUtils';
 
-import GlobalDokumenTahunPickerModal from "./shared/components/GlobalDokumenTahunPickerModal";
-import ProtectedRoute from "./features/auth/components/ProtectedRoute";
-import GuestRoute from "./features/auth/components/GuestRoute";
+import GlobalDokumenTahunPickerModal from './shared/components/GlobalDokumenTahunPickerModal';
+import ProtectedRoute from './features/auth/components/ProtectedRoute';
+import GuestRoute from './features/auth/components/GuestRoute';
 
-import { ToastContainer } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
-import KegiatanNestedView from "./shared/components/KegiatanNestedView";
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import KegiatanNestedView from './shared/components/KegiatanNestedView';
 
-import rpjmdRoutes from "./config/routes";
-import renstraRoutes from "./routes/renstraRoutes";
-import RkpdSidebarLayout from "@/features/rkpd/components/RkpdSidebarLayout";
-import RkpdDashboard from "./features/rkpd/pages/RkpdDashboard";
-import RkpdDashboardLayout from "./features/rkpd/pages/RkpdDashboardLayout";
-import RkpdForm from "@/features/rkpd/pages/RkpdFormPage";
-import RkpdV2BuatDokumenPage from "./features/rkpd/pages/RkpdV2BuatDokumenPage";
-import RkpdV2DokumenDetailPage from "./features/rkpd/pages/RkpdV2DokumenDetailPage";
-import RenjaBuatDokumenPage from "./features/renja/pages/RenjaBuatDokumenPage";
-import RenjaDokumenDetailPage from "./features/renja/pages/RenjaDokumenDetailPage";
-import RenjaDashboardV3Page from "./features/renja/pages/RenjaDashboardV3Page";
-import RenjaSectionEditorPage from "./features/renja/pages/RenjaSectionEditorPage";
-import RenjaRencanaKerjaPage from "./features/renja/pages/RenjaRencanaKerjaPage";
-import RenjaVersionsPage from "./features/renja/pages/RenjaVersionsPage";
-import RenjaComparePage from "./features/renja/pages/RenjaComparePage";
-import RenjaValidationPage from "./features/renja/pages/RenjaValidationPage";
-import RenjaSinkronisasiPage from "./features/renja/pages/RenjaSinkronisasiPage";
-import RenjaDataFixDashboardPage from "./features/renja/pages/RenjaDataFixDashboardPage";
-import RenjaExportPage from "./features/renja/pages/RenjaExportPage";
-import RenjaReadonlyDetailPage from "./features/renja/pages/RenjaReadonlyDetailPage";
-import RkaDashboard from "./features/rka/pages/RkaDashboard";
-import RkaFormPage from "./features/rka/pages/RkaFormPage";
-import DpaDashboard from "./features/dpa/pages/DpaDashboard";
-import DpaFormPage from "./features/dpa/pages/DpaFormPage";
-import PengkegDashboard from "./features/pengkeg/pages/PengkegDashboard";
-import MonevDashboard from "./features/monev/pages/MonevDashboard";
-import LpkDispangDashboard from "./features/lpk-dispang/pages/LpkDispangDashboard";
-import LkDashboard from "./features/lk-dispang/pages/LkDashboard";
-import LakipDashboard from "./features/lakip/pages/LAKIPDashboard";
-import CloningData from "./admin/ClonePeriodePage";
-import ClonedDataTable from "./admin/ClonedDataTable";
-import mrRoutes from "./routes/mrRoutes";
-const TenantManagementPage = React.lazy(() => import("./admin/TenantManagementPage"));
-const SubscriptionAdminPage = React.lazy(() =>
-  import("./admin/SubscriptionAdminPage"),
-);
-const PricingPage = React.lazy(() => import("./pages/PricingPage"));
+import rpjmdRoutes from './config/routes';
+import renstraRoutes from './routes/renstraRoutes';
+import RkpdSidebarLayout from '@/features/rkpd/components/RkpdSidebarLayout';
+import RkpdDashboard from './features/rkpd/pages/RkpdDashboard';
+import RkpdDashboardLayout from './features/rkpd/pages/RkpdDashboardLayout';
+import RkpdForm from '@/features/rkpd/pages/RkpdFormPage';
+import RkpdV2BuatDokumenPage from './features/rkpd/pages/RkpdV2BuatDokumenPage';
+import RkpdV2DokumenDetailPage from './features/rkpd/pages/RkpdV2DokumenDetailPage';
+import RenjaBuatDokumenPage from './features/renja/pages/RenjaBuatDokumenPage';
+import RenjaDokumenDetailPage from './features/renja/pages/RenjaDokumenDetailPage';
+import RenjaDashboardV3Page from './features/renja/pages/RenjaDashboardV3Page';
+import RenjaDashboard from './features/renja/pages/RenjaDashboard';
+import PerangkatDaerahPage from './features/renja/pages/PerangkatDaerahPage';
+import RenjaSectionEditorPage from './features/renja/pages/RenjaSectionEditorPage';
+import RenjaRencanaKerjaPage from './features/renja/pages/RenjaRencanaKerjaPage';
+import RenjaVersionsPage from './features/renja/pages/RenjaVersionsPage';
+import RenjaComparePage from './features/renja/pages/RenjaComparePage';
+import RenjaValidationPage from './features/renja/pages/RenjaValidationPage';
+import RenjaSinkronisasiPage from './features/renja/pages/RenjaSinkronisasiPage';
+import RenjaDataFixDashboardPage from './features/renja/pages/RenjaDataFixDashboardPage';
+import RenjaExportPage from './features/renja/pages/RenjaExportPage';
+import RenjaReadonlyDetailPage from './features/renja/pages/RenjaReadonlyDetailPage';
+import RkaDashboard from './features/rka/pages/RkaDashboard';
+import RkaFormPage from './features/rka/pages/RkaFormPage';
+import DpaDashboard from './features/dpa/pages/DpaDashboard';
+import DpaFormPage from './features/dpa/pages/DpaFormPage';
+import PengkegDashboard from './features/pengkeg/pages/PengkegDashboard';
+import MonevDashboard from './features/monev/pages/MonevDashboard';
+import LpkDispangDashboard from './features/lpk-dispang/pages/LpkDispangDashboard';
+import LkDashboard from './features/lk-dispang/pages/LkDashboard';
+import LakipDashboard from './features/lakip/pages/LAKIPDashboard';
+import CloningData from './admin/ClonePeriodePage';
+import ClonedDataTable from './admin/ClonedDataTable';
+import mrRoutes from './routes/mrRoutes';
+const TenantManagementPage = React.lazy(() => import('./admin/TenantManagementPage'));
+const SubscriptionAdminPage = React.lazy(() => import('./admin/SubscriptionAdminPage'));
+const PricingPage = React.lazy(() => import('./pages/PricingPage'));
 
-const Login = React.lazy(() => import("./features/auth/pages/Login"));
-const Register = React.lazy(() => import("./features/auth/pages/Register"));
-const ForgotPassword = React.lazy(() =>
-  import("./features/auth/pages/ForgotPassword"),
-);
-const ResetPassword = React.lazy(() =>
-  import("./features/auth/pages/ResetPassword"),
-);
-const DashboardLayoutGlobal = React.lazy(
-  () => import("./layouts/DashboardLayoutGolbal"),
-);
-const DashboardHome = React.lazy(
-  () => import("./features/rpjmd/pages/DashboardHome"),
-);
-const DashboardUtamaRpjmd = React.lazy(
-  () => import("./features/rpjmd/pages/DashboardUtamaRpjmd"),
-);
-const DashboardLayout = React.lazy(
-  () => import("./features/renstra/pages/DashboardLayout"),
-);
-const RenstraDashboard = React.lazy(
-  () => import("./features/renstra/pages/RenstraDashboard"),
-);
+const Login = React.lazy(() => import('./features/auth/pages/Login'));
+const Register = React.lazy(() => import('./features/auth/pages/Register'));
+const ForgotPassword = React.lazy(() => import('./features/auth/pages/ForgotPassword'));
+const ResetPassword = React.lazy(() => import('./features/auth/pages/ResetPassword'));
+const DashboardLayoutGlobal = React.lazy(() => import('./layouts/DashboardLayoutGolbal'));
+const DashboardHome = React.lazy(() => import('./features/rpjmd/pages/DashboardHome'));
+const DashboardUtamaRpjmd = React.lazy(() => import('./features/rpjmd/pages/DashboardUtamaRpjmd'));
+const DashboardLayout = React.lazy(() => import('./features/renstra/pages/DashboardLayout'));
+const RenstraDashboard = React.lazy(() => import('./features/renstra/pages/RenstraDashboard'));
 
-const NotFoundPage = React.lazy(() => import("./pages/NotFoundPage"));
+const NotFoundPage = React.lazy(() => import('./pages/NotFoundPage'));
 
-const KodeAkunPage = React.lazy(() => import("./features/lk/pages/KodeAkunPage"));
-const LkJurnalPage = React.lazy(() => import("./features/lk/pages/JurnalPage"));
-const LkJurnalFormPage = React.lazy(() => import("./features/lk/pages/JurnalFormPage"));
-const SaldoAkunPage = React.lazy(() => import("./features/lk/pages/SaldoAkunPage"));
-const BkuPage = React.lazy(() => import("./features/lk/pages/BkuPage"));
-const BkuFormPage = React.lazy(() => import("./features/lk/pages/BkuFormPage"));
-const BkuCetakPage = React.lazy(() => import("./features/lk/pages/BkuCetakPage"));
-const BkuUpPage = React.lazy(() => import("./features/lk/pages/BkuUpPage"));
-const LraPage = React.lazy(() => import("./features/lk/pages/LraPage"));
-const NeracaPage = React.lazy(() => import("./features/lk/pages/NeracaPage"));
-const AsetTetapPage = React.lazy(() => import("./features/lk/pages/AsetTetapPage"));
-const KewajibanPage = React.lazy(() => import("./features/lk/pages/KewajibanPage"));
-const PersediaanPage = React.lazy(() => import("./features/lk/pages/PersediaanPage"));
-const LoPage = React.lazy(() => import("./features/lk/pages/LoPage"));
-const LpePage = React.lazy(() => import("./features/lk/pages/LpePage"));
-const PenyusutanPage = React.lazy(() => import("./features/lk/pages/PenyusutanPage"));
-const LkDashboardPage = React.lazy(() => import("./features/lk/pages/LkDashboardPage"));
-const LakPage = React.lazy(() => import("./features/lk/pages/LakPage"));
-const CalkPage = React.lazy(() => import("./features/lk/pages/CalkPage"));
-const LkGeneratorPage = React.lazy(() => import("./features/lk/pages/LkGeneratorPage"));
+const KodeAkunPage = React.lazy(() => import('./features/lk/pages/KodeAkunPage'));
+const LkJurnalPage = React.lazy(() => import('./features/lk/pages/JurnalPage'));
+const LkJurnalFormPage = React.lazy(() => import('./features/lk/pages/JurnalFormPage'));
+const SaldoAkunPage = React.lazy(() => import('./features/lk/pages/SaldoAkunPage'));
+const BkuPage = React.lazy(() => import('./features/lk/pages/BkuPage'));
+const BkuFormPage = React.lazy(() => import('./features/lk/pages/BkuFormPage'));
+const BkuCetakPage = React.lazy(() => import('./features/lk/pages/BkuCetakPage'));
+const BkuUpPage = React.lazy(() => import('./features/lk/pages/BkuUpPage'));
+const LraPage = React.lazy(() => import('./features/lk/pages/LraPage'));
+const NeracaPage = React.lazy(() => import('./features/lk/pages/NeracaPage'));
+const AsetTetapPage = React.lazy(() => import('./features/lk/pages/AsetTetapPage'));
+const KewajibanPage = React.lazy(() => import('./features/lk/pages/KewajibanPage'));
+const PersediaanPage = React.lazy(() => import('./features/lk/pages/PersediaanPage'));
+const LoPage = React.lazy(() => import('./features/lk/pages/LoPage'));
+const LpePage = React.lazy(() => import('./features/lk/pages/LpePage'));
+const PenyusutanPage = React.lazy(() => import('./features/lk/pages/PenyusutanPage'));
+const LkDashboardPage = React.lazy(() => import('./features/lk/pages/LkDashboardPage'));
+const LakPage = React.lazy(() => import('./features/lk/pages/LakPage'));
+const CalkPage = React.lazy(() => import('./features/lk/pages/CalkPage'));
+const LkGeneratorPage = React.lazy(() => import('./features/lk/pages/LkGeneratorPage'));
 
 function RequireDokumenType({ dokType, children }) {
   const { dokumen } = useDokumen();
@@ -157,7 +134,7 @@ function RpjmdWizardDeepLinkRedirect() {
   const [searchParams] = useSearchParams();
   const merged = new URLSearchParams();
   searchParams.forEach((v, k) => merged.set(k, v));
-  merged.set("menu", "indikator_rpjmd");
+  merged.set('menu', 'indikator_rpjmd');
   return <Navigate to={`/dashboard-rpjmd?${merged.toString()}`} replace />;
 }
 
@@ -171,12 +148,7 @@ const Providers = ({ children }) => (
 
 function InnerApp() {
   const location = useLocation();
-  const {
-    dokumen,
-    tahun,
-    periode_id,
-    loading: periodeLoading,
-  } = usePeriodeAktif();
+  const { dokumen, tahun, periode_id, loading: periodeLoading } = usePeriodeAktif();
 
   if (periodeLoading) {
     return (
@@ -345,7 +317,7 @@ function InnerApp() {
               element={
                 <DokumenTahunGuard>
                   <RequireDokumenType dokType="renja">
-                    <RenjaDashboardV3Page />
+                    <RenjaDashboard />
                   </RequireDokumenType>
                 </DokumenTahunGuard>
               }
@@ -356,6 +328,16 @@ function InnerApp() {
                 <DokumenTahunGuard>
                   <RequireDokumenType dokType="renja">
                     <RenjaBuatDokumenPage />
+                  </RequireDokumenType>
+                </DokumenTahunGuard>
+              }
+            />
+            <Route
+              path="dashboard-renja/perangkat-daerah"
+              element={
+                <DokumenTahunGuard>
+                  <RequireDokumenType dokType="renja">
+                    <PerangkatDaerahPage />
                   </RequireDokumenType>
                 </DokumenTahunGuard>
               }
@@ -462,7 +444,10 @@ function InnerApp() {
             />
             <Route path="renja/dashboard" element={<Navigate to="/dashboard-renja" replace />} />
             <Route path="renja" element={<Navigate to="/dashboard-renja" replace />} />
-            <Route path="renja/create" element={<Navigate to="/dashboard-renja/v2/buat" replace />} />
+            <Route
+              path="renja/create"
+              element={<Navigate to="/dashboard-renja/v2/buat" replace />}
+            />
             <Route
               path="dashboard-rka"
               element={
@@ -634,7 +619,7 @@ function InnerApp() {
                     </DokumenTahunGuard>
                   }
                 />
-              )
+              ),
             )}
             <Route path="*" element={<NotFoundPage />} />
           </Route>
@@ -649,12 +634,9 @@ const AppContent = () => {
   const location = useLocation();
   const { dokumen, tahun } = useDokumen();
 
-  const isLoginOrRegister = [
-    "/login",
-    "/register",
-    "/forgot-password",
-    "/reset-password",
-  ].includes(location.pathname);
+  const isLoginOrRegister = ['/login', '/register', '/forgot-password', '/reset-password'].includes(
+    location.pathname,
+  );
 
   if (authLoading) {
     return (
@@ -669,12 +651,11 @@ const AppContent = () => {
     return <Navigate to="/login" replace />;
   }
 
-  const needsTahunForApp =
-    !dokumen || (!isDokumenLevelPeriode(dokumen) && !tahun);
+  const needsTahunForApp = !dokumen || (!isDokumenLevelPeriode(dokumen) && !tahun);
 
-  const p = (location.pathname || "/").replace(/\/+$/, "") || "/";
+  const p = (location.pathname || '/').replace(/\/+$/, '') || '/';
   const skipDokumenPicker =
-    p === "/pricing" || p === "/admin/tenants" || p === "/admin/subscriptions";
+    p === '/pricing' || p === '/admin/tenants' || p === '/admin/subscriptions';
 
   if (user && needsTahunForApp && !skipDokumenPicker) {
     return <GlobalDokumenTahunPickerModal forceOpen />;
@@ -709,8 +690,8 @@ const AppWithAuth = () => {
   return (
     <AuthProvider
       onLoginResetDokumen={() => {
-        const dok = sessionStorage.getItem("dokumenTujuan");
-        const thn = sessionStorage.getItem("tahun");
+        const dok = sessionStorage.getItem('dokumenTujuan');
+        const thn = sessionStorage.getItem('tahun');
         if (dok) setDokumen(dok);
         if (thn) setTahun(thn);
       }}
@@ -722,9 +703,7 @@ const AppWithAuth = () => {
 
 const AppRoot = () => {
   return (
-    <ConfigProvider
-      theme={{ token: { colorPrimary: "#10b981", borderRadius: 6 } }}
-    >
+    <ConfigProvider theme={{ token: { colorPrimary: '#10b981', borderRadius: 6 } }}>
       <AntdApp>
         <DokumenProvider>
           <RpjmdExcelPreviewProvider>

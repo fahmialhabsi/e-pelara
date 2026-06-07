@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 /**
  * MR Planning Context Controller
@@ -12,7 +12,7 @@
  * - Semua logic context item/generate diserahkan ke service.
  */
 
-const mrPlanningContextService = require("../services/mr/mrPlanningContextService");
+const mrPlanningContextService = require('../services/mr/mrPlanningContextService');
 
 const getStatusCode = (error) => {
   return error?.statusCode || error?.status || 500;
@@ -32,23 +32,17 @@ const errorResponse = ({ res, error }) => {
 
   return res.status(statusCode).json({
     success: false,
-    message: error?.message || "Terjadi kesalahan pada MR planning context.",
+    message: error?.message || 'Terjadi kesalahan pada MR planning context.',
     blocked: Boolean(error?.blocked),
     audit_mode: Boolean(error?.audit_mode),
-    code: error?.code || error?.name || "MR_CONTEXT_ERROR",
+    code: error?.code || error?.name || 'MR_CONTEXT_ERROR',
     details: error?.details || {},
     meta: {},
   });
 };
 
 const getUserId = (req) => {
-  return (
-    req?.user?.id ||
-    req?.user?.user_id ||
-    req?.user?.userId ||
-    req?.auth?.id ||
-    null
-  );
+  return req?.user?.id || req?.user?.user_id || req?.user?.userId || req?.auth?.id || null;
 };
 
 const getContextDetail = async (req, res) => {
@@ -57,7 +51,7 @@ const getContextDetail = async (req, res) => {
 
     return successResponse({
       res,
-      message: "Detail MR planning context berhasil dimuat.",
+      message: 'Detail MR planning context berhasil dimuat.',
       data: result,
     });
   } catch (error) {
@@ -71,7 +65,7 @@ const getContexts = async (req, res) => {
 
     return successResponse({
       res,
-      message: "Daftar MR planning context berhasil dimuat.",
+      message: 'Daftar MR planning context berhasil dimuat.',
       data: result.rows,
       meta: result.meta,
     });
@@ -91,8 +85,8 @@ const createReportPeriodContext = async (req, res) => {
       res,
       statusCode: result?.created ? 201 : 200,
       message: result?.created
-        ? "Context laporan periodik MR berhasil dibuat."
-        : "Context laporan periodik MR sudah tersedia.",
+        ? 'Context laporan periodik MR berhasil dibuat.'
+        : 'Context laporan periodik MR sudah tersedia.',
       data: result,
     });
   } catch (error) {
@@ -102,13 +96,11 @@ const createReportPeriodContext = async (req, res) => {
 
 const getContextItems = async (req, res) => {
   try {
-    const result = await mrPlanningContextService.getContextItems(
-      req.params.contextId
-    );
+    const result = await mrPlanningContextService.getContextItems(req.params.contextId);
 
     return successResponse({
       res,
-      message: "Daftar sumber perencanaan MR planning context berhasil dimuat.",
+      message: 'Daftar sumber perencanaan MR planning context berhasil dimuat.',
       data: result,
     });
   } catch (error) {
@@ -125,7 +117,7 @@ const submitContext = async (req, res) => {
 
     return successResponse({
       res,
-      message: "MR planning context berhasil diajukan untuk verifikasi.",
+      message: 'MR planning context berhasil diajukan untuk verifikasi.',
       data: result,
     });
   } catch (error) {
@@ -142,7 +134,7 @@ const verifyContext = async (req, res) => {
 
     return successResponse({
       res,
-      message: "MR planning context berhasil diverifikasi.",
+      message: 'MR planning context berhasil diverifikasi.',
       data: result,
     });
   } catch (error) {
@@ -159,7 +151,7 @@ const approveContext = async (req, res) => {
 
     return successResponse({
       res,
-      message: "MR planning context berhasil disetujui.",
+      message: 'MR planning context berhasil disetujui.',
       data: result,
     });
   } catch (error) {
@@ -171,16 +163,12 @@ const rejectContext = async (req, res) => {
   try {
     const result = await mrPlanningContextService.rejectContext(req.params.id, {
       userId: getUserId(req),
-      reason:
-        req.body?.reason ||
-        req.body?.alasan_penolakan ||
-        req.body?.note ||
-        null,
+      reason: req.body?.reason || req.body?.alasan_penolakan || req.body?.note || null,
     });
 
     return successResponse({
       res,
-      message: "MR planning context berhasil ditolak.",
+      message: 'MR planning context berhasil ditolak.',
       data: result,
     });
   } catch (error) {
@@ -190,17 +178,31 @@ const rejectContext = async (req, res) => {
 
 const generateContextItems = async (req, res) => {
   try {
-    const result = await mrPlanningContextService.generateContextItems(
-      req.params.contextId,
-      {
-        userId: getUserId(req),
-      }
-    );
+    const result = await mrPlanningContextService.generateContextItems(req.params.contextId, {
+      userId: getUserId(req),
+    });
 
     return successResponse({
       res,
       statusCode: 201,
-      message: "Context item MR berhasil digenerate dari sumber Renstra.",
+      message: 'Context item MR berhasil digenerate dari sumber Renstra.',
+      data: result,
+    });
+  } catch (error) {
+    return errorResponse({ res, error });
+  }
+};
+
+const syncRenstraToContext = async (req, res) => {
+  console.log('[syncRenstraToContext controller] id:', req.params.id);
+  try {
+    const result = await mrPlanningContextService.syncRenstraToContext(req.params.id, {
+      userId: getUserId(req),
+    });
+    return successResponse({
+      res,
+      statusCode: 200,
+      message: 'Renstra ID berhasil disinkronkan ke context.',
       data: result,
     });
   } catch (error) {
@@ -213,6 +215,7 @@ module.exports = {
   getContextDetail,
   getContextItems,
   generateContextItems,
+  syncRenstraToContext,
   createReportPeriodContext,
 
   submitContext,

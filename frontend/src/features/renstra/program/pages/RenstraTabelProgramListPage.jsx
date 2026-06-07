@@ -1,38 +1,29 @@
-import React from "react";
-import {
-  Table,
-  Button,
-  Empty,
-  Popconfirm,
-  Typography,
-  Card,
-  Tag,
-  message,
-} from "antd";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation, useNavigate } from "react-router-dom";
-import api from "@/services/api";
+import React, { useState } from 'react';
+import { Table, Button, Empty, Popconfirm, Typography, Card, Tag, message, Select } from 'antd';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useLocation, useNavigate } from 'react-router-dom';
+import api from '@/services/api';
 import {
   formatNumber,
   formatNumberShort,
   StandardRenstraExpandedRow,
-} from "@/features/renstra/shared/components/RenstraTabelListCommon";
+} from '@/features/renstra/shared/components/RenstraTabelListCommon';
 
 const { Text } = Typography;
 
-const ENDPOINT = "/renstra-tabel-program";
-const QUERY_KEY = "renstra-tabel-program";
+const ENDPOINT = '/renstra-tabel-program';
+const QUERY_KEY = 'renstra-tabel-program';
 
 const statusColor = {
-  draft: "orange",
-  verifikasi: "blue",
-  approved: "green",
-  ditolak: "red",
+  draft: 'orange',
+  verifikasi: 'blue',
+  approved: 'green',
+  ditolak: 'red',
 };
 
 const wrapTextStyle = {
-  whiteSpace: "normal",
-  wordBreak: "break-word",
+  whiteSpace: 'normal',
+  wordBreak: 'break-word',
   lineHeight: 1.5,
 };
 
@@ -40,11 +31,12 @@ export default function RenstraTabelProgramListPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
-  const withSearch = (path) => `${path}${location.search || ""}`;
+  const withSearch = (path) => `${path}${location.search || ''}`;
+  const [selectedKebijakanId, setSelectedKebijakanId] = useState(null);
 
   const { data: renstraAktif } = useQuery({
-    queryKey: ["renstra-opd-aktif"],
-    queryFn: async () => (await api.get("/renstra-opd/aktif")).data.data,
+    queryKey: ['renstra-opd-aktif'],
+    queryFn: async () => (await api.get('/renstra-opd/aktif')).data.data,
   });
 
   const { data = [], isLoading } = useQuery({
@@ -54,7 +46,18 @@ export default function RenstraTabelProgramListPage() {
         params: { renstra_id: renstraAktif?.id },
       });
 
-      return Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+      return Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
+    },
+    enabled: !!renstraAktif?.id,
+  });
+
+  const { data: arahKebijakanList = [] } = useQuery({
+    queryKey: ['renstra-tabel-arah-kebijakan', renstraAktif?.id],
+    queryFn: async () => {
+      const res = await api.get('/renstra-tabel-arah-kebijakan', {
+        params: { renstra_id: renstraAktif?.id },
+      });
+      return Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
     },
     enabled: !!renstraAktif?.id,
   });
@@ -62,172 +65,159 @@ export default function RenstraTabelProgramListPage() {
   const deleteMutation = useMutation({
     mutationFn: async (id) => api.delete(`${ENDPOINT}/${id}`),
     onSuccess: () => {
-      message.success("Data program berhasil dihapus");
+      message.success('Data program berhasil dihapus');
       queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
     },
     onError: (error) => {
-      message.error(
-        error?.response?.data?.message || "Gagal menghapus data program"
-      );
+      message.error(error?.response?.data?.message || 'Gagal menghapus data program');
     },
   });
 
   const columns = [
     {
-      title: "Kode",
-      key: "kode_program",
+      title: 'Kode',
+      key: 'kode_program',
       width: 140,
-      fixed: "left",
+      fixed: 'left',
       ellipsis: true,
-      render: (_, record) =>
-        record.kode_program || record.program?.kode_program || "-",
+      render: (_, record) => record.kode_program || record.program?.kode_program || '-',
     },
     {
-      title: "Program",
-      key: "program",
+      title: 'Program',
+      key: 'program',
       width: 360,
       render: (_, record) => (
         <div style={wrapTextStyle}>
-          {record.nama_program || record.program?.nama_program || "-"}
+          {record.nama_program || record.program?.nama_program || '-'}
         </div>
       ),
     },
     {
-      title: "Indikator",
-      key: "indikator",
+      title: 'Indikator',
+      key: 'indikator',
       width: 280,
       render: (_, record) => (
         <div style={wrapTextStyle}>
-          {record.indikator_detail?.nama_indikator ||
-            record.indikator ||
-            "-"}
+          {record.indikator_detail?.nama_indikator || record.indikator || '-'}
         </div>
       ),
     },
     {
-      title: "Lokasi",
-      key: "lokasi",
+      title: 'Lokasi',
+      key: 'lokasi',
       width: 220,
       render: (_, record) => (
-        <div style={wrapTextStyle}>
-          {record.lokasi || record.renstra?.bidang_opd || "-"}
-        </div>
+        <div style={wrapTextStyle}>{record.lokasi || record.renstra?.bidang_opd || '-'}</div>
       ),
     },
     {
-      title: "Target Akhir",
-      dataIndex: "target_akhir_renstra",
-      key: "target_akhir_renstra",
+      title: 'Target Akhir',
+      dataIndex: 'target_akhir_renstra',
+      key: 'target_akhir_renstra',
       width: 130,
-      align: "right",
+      align: 'right',
       render: (value) => (
-        <span style={{ fontVariantNumeric: "tabular-nums" }}>
-          {formatNumber(value)}
-        </span>
+        <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatNumber(value)}</span>
       ),
     },
     {
-      title: "Pagu RPJMD",
-      dataIndex: "pagu_rpjmd_acuan",
-      key: "pagu_rpjmd_acuan",
+      title: 'Pagu RPJMD',
+      dataIndex: 'pagu_rpjmd_acuan',
+      key: 'pagu_rpjmd_acuan',
       width: 140,
-      align: "right",
+      align: 'right',
       render: (value) => (
-        <span style={{ fontVariantNumeric: "tabular-nums" }}>
-          {formatNumberShort(value)}
-        </span>
+        <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatNumberShort(value)}</span>
       ),
     },
     {
-      title: "Pagu Akhir",
-      dataIndex: "pagu_akhir_renstra",
-      key: "pagu_akhir_renstra",
+      title: 'Pagu Akhir',
+      dataIndex: 'pagu_akhir_renstra',
+      key: 'pagu_akhir_renstra',
       width: 140,
-      align: "right",
+      align: 'right',
       render: (value) => (
-        <span style={{ fontVariantNumeric: "tabular-nums" }}>
-          {formatNumberShort(value)}
-        </span>
+        <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatNumberShort(value)}</span>
       ),
     },
     {
-      title: "Status",
-      dataIndex: "status_revisi",
-      key: "status_revisi",
+      title: 'Status',
+      dataIndex: 'status_revisi',
+      key: 'status_revisi',
       width: 120,
       render: (value) => (
-        <Tag color={statusColor[value] || "orange"}>
-          {String(value || "draft").toUpperCase()}
-        </Tag>
+        <Tag color={statusColor[value] || 'orange'}>{String(value || 'draft').toUpperCase()}</Tag>
       ),
     },
     {
-      title: "Versi",
-      dataIndex: "versi",
-      key: "versi",
+      title: 'Versi',
+      dataIndex: 'versi',
+      key: 'versi',
       width: 90,
-      align: "center",
+      align: 'center',
       render: (value) => value || 1,
     },
     {
-      title: "Aksi",
-      key: "aksi",
+      title: 'Aksi',
+      key: 'aksi',
       width: 230,
-      fixed: "right",
+      fixed: 'right',
       render: (_, record) => {
-      const isApproved = record.status_revisi === "approved";
+        const isApproved = record.status_revisi === 'approved';
 
-      return (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {!isApproved && (
-            <Button
-              size="small"
-              type="primary"
-              onClick={() =>
-                navigate(withSearch(`/renstra/tabel/program/edit/${record.id}`))
-              }
-            >
-              Edit Draft
-            </Button>
-          )}
-
-          {isApproved && (
-            <Button
-              size="small"
-              type="dashed"
-              style={{ borderColor: "#fa8c16", color: "#fa8c16" }}
-              onClick={() =>
-                navigate(withSearch(`/renstra/tabel/program/edit/${record.id}`))
-              }
-            >
-              Buat Revisi
-            </Button>
-          )}
-
-          <Button
-            size="small"
-            onClick={() =>
-              navigate(withSearch(`/renstra/tabel/program/history/${record.id}`))
-            }
-          >
-            History
-          </Button>
-
-          {!isApproved && (
-            <Popconfirm
-              title="Hapus data program ini?"
-              onConfirm={() => deleteMutation.mutate(record.id)}
-              okText="Ya"
-              cancelText="Batal"
-            >
-              <Button size="small" danger>
-                Hapus
+        return (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {!isApproved && (
+              <Button
+                size="small"
+                type="primary"
+                onClick={() =>
+                  navigate(
+                    `/renstra/tabel/program/edit/${record.id}?arah_kebijakan_id=${record.kebijakan_id || selectedKebijakanId}`,
+                  )
+                }
+              >
+                Edit Draft
               </Button>
-            </Popconfirm>
-          )}
-        </div>
-      );
-    },
+            )}
+
+            {isApproved && (
+              <Button
+                size="small"
+                type="dashed"
+                style={{ borderColor: '#fa8c16', color: '#fa8c16' }}
+                onClick={() =>
+                  navigate(
+                    `/renstra/tabel/program/edit/${record.id}?arah_kebijakan_id=${record.kebijakan_id || selectedKebijakanId}`,
+                  )
+                }
+              >
+                Buat Revisi
+              </Button>
+            )}
+
+            <Button
+              size="small"
+              onClick={() => navigate(withSearch(`/renstra/tabel/program/history/${record.id}`))}
+            >
+              History
+            </Button>
+
+            {!isApproved && (
+              <Popconfirm
+                title="Hapus data program ini?"
+                onConfirm={() => deleteMutation.mutate(record.id)}
+                okText="Ya"
+                cancelText="Batal"
+              >
+                <Button size="small" danger>
+                  Hapus
+                </Button>
+              </Popconfirm>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -235,23 +225,36 @@ export default function RenstraTabelProgramListPage() {
     <Card title="Renstra Tabel Program">
       <div
         style={{
-          display: "flex",
-          flexWrap: "wrap",
+          display: 'flex',
+          flexWrap: 'wrap',
           gap: 8,
           marginBottom: 16,
-          alignItems: "center",
+          alignItems: 'center',
         }}
       >
-        <Button onClick={() => navigate("/dashboard-renstra")}>Kembali</Button>
+        <Button onClick={() => navigate('/dashboard-renstra')}>Kembali</Button>
 
+        <Select
+          placeholder="Pilih Arah Kebijakan"
+          style={{ width: 280 }}
+          onChange={setSelectedKebijakanId}
+          value={selectedKebijakanId}
+          options={arahKebijakanList.map((k) => ({
+            value: k.id,
+            label: k.deskripsi_kebijakan || k.kode_kebijakan,
+          }))}
+        />
         <Button
           type="primary"
-          onClick={() => navigate(withSearch("/renstra/tabel/program/add"))}
+          disabled={!selectedKebijakanId}
+          onClick={() =>
+            navigate(`/renstra/tabel/program/add?arah_kebijakan_id=${selectedKebijakanId}`)
+          }
         >
           Tambah
         </Button>
 
-        <Button onClick={() => navigate("/renstra/tabel/arah-kebijakan")}>
+        <Button onClick={() => navigate('/renstra/tabel/arah-kebijakan')}>
           Lihat Arah Kebijakan
         </Button>
 
@@ -279,9 +282,9 @@ export default function RenstraTabelProgramListPage() {
               <StandardRenstraExpandedRow
                 record={record}
                 extraMeta={[
-                  { label: "Lokasi", value: record.lokasi },
+                  { label: 'Lokasi', value: record.lokasi },
                   {
-                    label: "OPD penanggung jawab",
+                    label: 'OPD penanggung jawab',
                     value: record.opd_penanggung_jawab,
                   },
                 ]}

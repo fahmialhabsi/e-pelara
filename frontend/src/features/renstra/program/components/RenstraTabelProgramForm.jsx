@@ -18,11 +18,14 @@ import SelectWithLabelValue from '@/shared/components/form/SelectWithLabelValue'
 import InputField from '@/shared/components/form/InputField';
 import CurrencyInputField from '@/shared/components/form/CurrencyInputField';
 import SpinnerFullscreen from './RenstraTableSpinnerFullscreen';
+import RenstraBreadcrumb, {
+  useRenstraBreadcrumb,
+} from '@/features/renstra/shared/components/RenstraBreadcrumb';
 
 const YEARS = [1, 2, 3, 4, 5];
 const ALL_YEARS = [1, 2, 3, 4, 5, 6];
 const ENDPOINT = '/renstra-tabel-program';
-const REDIRECT = '/renstra/tabel/program';
+const REDIRECT = '/dashboard-renstra';
 const GOVERNANCE_SOURCE_STAGE = 'program';
 const GOVERNANCE_BLOCKING_CODES = new Set([
   'missing_target',
@@ -136,9 +139,16 @@ const RenstraTabelProgramForm = ({ initialData = null, renstraAktif }) => {
   }, [searchParams]);
   const hasActiveArahKebijakan = Boolean(activeArahKebijakanId);
 
+  // console.log('activeArahKebijakanId:', activeArahKebijakanId);
+  // console.log('hasActiveArahKebijakan:', hasActiveArahKebijakan);
+
   const [alasanRevisi, setAlasanRevisi] = React.useState('');
   const [submitRevisiLoading, setSubmitRevisiLoading] = React.useState(false);
   const [serverMessage, setServerMessage] = React.useState('');
+  const breadcrumbChain = useRenstraBreadcrumb({
+    kebijakanId: activeArahKebijakanId,
+    currentLabel: initialData ? 'Edit Program' : 'Tambah Program',
+  });
 
   const { data: programOptions = [], isLoading: loadingProgram } = useQuery({
     queryKey: ['renstra-program', renstraId, activeArahKebijakanId],
@@ -213,6 +223,7 @@ const RenstraTabelProgramForm = ({ initialData = null, renstraAktif }) => {
     return {
       renstra_id: Number(renstraId),
       program_id: selectedProgram ? Number(selectedProgram.id) : Number(data.program_id),
+      kebijakan_id: activeArahKebijakanId ?? null,
       indikator_id: Number(data.indikator_id),
       indikator: selectedIndikator?.nama_indikator || data.indikator || '',
       baseline: normalizeDecimalValue(data.baseline),
@@ -458,9 +469,7 @@ const RenstraTabelProgramForm = ({ initialData = null, renstraAktif }) => {
     preparedProgramGovernanceRow,
   ]);
 
-  const selectedProgramTargetRefId = governanceGuard.blocked
-    ? null
-    : governanceGuard.targetRefId;
+  const selectedProgramTargetRefId = governanceGuard.blocked ? null : governanceGuard.targetRefId;
   const indicatorTargetRefId = selectedProgramTargetRefId || selectedProgramRefId;
 
   useEffect(() => {
@@ -740,7 +749,6 @@ const RenstraTabelProgramForm = ({ initialData = null, renstraAktif }) => {
       shouldValidate: false,
       shouldDirty: false,
     });
-
   }, [initialData, paguCache, setValue]);
 
   const targetValues = watch(YEARS.map((i) => `target_tahun_${i}`));
@@ -764,9 +772,7 @@ const RenstraTabelProgramForm = ({ initialData = null, renstraAktif }) => {
       YEARS.some((i) => Number(initialData?.[`pagu_tahun_${i}`] || 0) > 0) ||
       Number(initialData?.pagu_rpjmd_acuan || 0) > 0;
 
-    return hasExistingPagu
-      ? 'Pagu RPJMD readonly. Pagu Renstra tahun 1–5 dapat direvisi.'
-      : '';
+    return hasExistingPagu ? 'Pagu RPJMD readonly. Pagu Renstra tahun 1–5 dapat direvisi.' : '';
   }, [initialData]);
 
   useEffect(() => {
@@ -990,6 +996,7 @@ const RenstraTabelProgramForm = ({ initialData = null, renstraAktif }) => {
       }
 
       setServerMessage('✅ Revisi berhasil disimpan sebagai draft.');
+      navigate('/dashboard-renstra');
     } catch (err) {
       setServerMessage(
         err?.response?.data?.message || err?.response?.data?.error || 'Gagal menyimpan revisi.',
@@ -1030,6 +1037,7 @@ const RenstraTabelProgramForm = ({ initialData = null, renstraAktif }) => {
         <SpinnerFullscreen tip="Memuat data Renstra..." />
       ) : (
         <>
+          <RenstraBreadcrumb chain={breadcrumbChain} />
           <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
             <Button onClick={() => navigate('/dashboard-renstra')}>🔙 Kembali</Button>
           </div>

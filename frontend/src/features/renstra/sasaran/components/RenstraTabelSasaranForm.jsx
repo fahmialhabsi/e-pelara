@@ -1,44 +1,47 @@
 // src/features/renstra/sasaran/components/RenstraTabelSasaranForm.jsx
-import React, { useEffect, useMemo, useRef } from "react";
-import { Card, Button, Alert, Input } from "antd";
-import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import * as Yup from "yup";
+import React, { useEffect, useMemo, useRef } from 'react';
+import { Card, Button, Alert, Input } from 'antd';
+import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import * as Yup from 'yup';
 
-import api from "@/services/api";
-import { useRenstraFormTemplate } from "@/hooks/templatesUseRenstra/useRenstraFormTemplate";
-import SelectWithLabelValue from "@/shared/components/form/SelectWithLabelValue";
-import InputField from "@/shared/components/form/InputField";
-import SpinnerFullscreen from "./SpinnerSasaranFullscreen";
-import CurrencyInputField from "@/shared/components/form/CurrencyInputField";
+import api from '@/services/api';
+import { useRenstraFormTemplate } from '@/hooks/templatesUseRenstra/useRenstraFormTemplate';
+import SelectWithLabelValue from '@/shared/components/form/SelectWithLabelValue';
+import InputField from '@/shared/components/form/InputField';
+import SpinnerFullscreen from './SpinnerSasaranFullscreen';
+import CurrencyInputField from '@/shared/components/form/CurrencyInputField';
+import RenstraBreadcrumb, {
+  useRenstraBreadcrumb,
+} from '@/features/renstra/shared/components/RenstraBreadcrumb';
 
 const YEARS = [1, 2, 3, 4, 5];
 
 const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
   const navigate = useNavigate();
-  const [paguInfoMessage, setPaguInfoMessage] = React.useState("");
-  const [alasanRevisi, setAlasanRevisi] = React.useState("");
+  const [paguInfoMessage, setPaguInfoMessage] = React.useState('');
+  const [alasanRevisi, setAlasanRevisi] = React.useState('');
   const [submitRevisiLoading, setSubmitRevisiLoading] = React.useState(false);
-  const [serverMessage, setServerMessage] = React.useState("");
+  const [serverMessage, setServerMessage] = React.useState('');
   const prevSasaranIdRef = useRef(undefined);
 
   const defaultValues = {
-    renstra_id: initialData?.renstra_id ?? renstraAktif?.id ?? "",
-    tujuan_id: initialData?.tujuan_id ? String(initialData.tujuan_id) : "",
-    sasaran_id: initialData?.sasaran_id ? String(initialData.sasaran_id) : "",
-    kode_sasaran: initialData?.kode_sasaran ?? "",
-    nama_sasaran: initialData?.nama_sasaran ?? "",
-    indikator_id: initialData?.indikator_id ? String(initialData.indikator_id) : "",
+    renstra_id: initialData?.renstra_id ?? renstraAktif?.id ?? '',
+    tujuan_id: initialData?.tujuan_id ? String(initialData.tujuan_id) : '',
+    sasaran_id: initialData?.sasaran_id ? String(initialData.sasaran_id) : '',
+    kode_sasaran: initialData?.kode_sasaran ?? '',
+    nama_sasaran: initialData?.nama_sasaran ?? '',
+    indikator_id: initialData?.indikator_id ? String(initialData.indikator_id) : '',
 
-    baseline: initialData?.baseline ?? "",
-    satuan_target: initialData?.satuan_target ?? "",
-    lokasi: initialData?.lokasi ?? "",
+    baseline: initialData?.baseline ?? '',
+    satuan_target: initialData?.satuan_target ?? '',
+    lokasi: initialData?.lokasi ?? '',
 
-    target_tahun_1: initialData?.target_tahun_1 ?? "",
-    target_tahun_2: initialData?.target_tahun_2 ?? "",
-    target_tahun_3: initialData?.target_tahun_3 ?? "",
-    target_tahun_4: initialData?.target_tahun_4 ?? "",
-    target_tahun_5: initialData?.target_tahun_5 ?? "",
+    target_tahun_1: initialData?.target_tahun_1 ?? '',
+    target_tahun_2: initialData?.target_tahun_2 ?? '',
+    target_tahun_3: initialData?.target_tahun_3 ?? '',
+    target_tahun_4: initialData?.target_tahun_4 ?? '',
+    target_tahun_5: initialData?.target_tahun_5 ?? '',
     target_tahun_6: 0,
 
     pagu_rpjmd_acuan: initialData?.pagu_rpjmd_acuan ?? 0,
@@ -50,24 +53,24 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
     pagu_tahun_6: 0,
     pagu_akhir_renstra: initialData?.pagu_akhir_renstra ?? 0,
 
-    target_akhir_renstra: initialData?.target_akhir_renstra ?? "",
+    target_akhir_renstra: initialData?.target_akhir_renstra ?? '',
     versi: initialData?.versi ?? 1,
-    status_revisi: initialData?.status_revisi ?? "draft",
+    status_revisi: initialData?.status_revisi ?? 'draft',
   };
 
   const schema = () =>
     Yup.object({
-      tujuan_id: Yup.string().required("Tujuan wajib dipilih"),
-      sasaran_id: Yup.string().required("Sasaran wajib dipilih"),
-      indikator_id: Yup.string().required("Indikator wajib dipilih"),
-      baseline: Yup.number().typeError("Baseline harus angka").nullable(),
-      satuan_target: Yup.string().required("Satuan target wajib diisi"),
+      tujuan_id: Yup.string().required('Tujuan wajib dipilih'),
+      sasaran_id: Yup.string().required('Sasaran wajib dipilih'),
+      indikator_id: Yup.string().required('Indikator wajib dipilih'),
+      baseline: Yup.number().typeError('Baseline harus angka').nullable(),
+      satuan_target: Yup.string().required('Satuan target wajib diisi'),
       lokasi: Yup.string().nullable(),
-      target_tahun_1: Yup.number().typeError("Harus angka").required(),
-      target_tahun_2: Yup.number().typeError("Harus angka").required(),
-      target_tahun_3: Yup.number().typeError("Harus angka").required(),
-      target_tahun_4: Yup.number().typeError("Harus angka").required(),
-      target_tahun_5: Yup.number().typeError("Harus angka").required(),
+      target_tahun_1: Yup.number().typeError('Harus angka').required(),
+      target_tahun_2: Yup.number().typeError('Harus angka').required(),
+      target_tahun_3: Yup.number().typeError('Harus angka').required(),
+      target_tahun_4: Yup.number().typeError('Harus angka').required(),
+      target_tahun_5: Yup.number().typeError('Harus angka').required(),
       pagu_tahun_1: Yup.number().nullable(),
       pagu_tahun_2: Yup.number().nullable(),
       pagu_tahun_3: Yup.number().nullable(),
@@ -105,8 +108,7 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
       pagu_tahun_5: data.pagu_tahun_5,
       pagu_tahun_6: 0,
 
-      target_akhir_renstra:
-        targetValues.reduce((a, b) => a + b, 0) / targetValues.length || 0,
+      target_akhir_renstra: targetValues.reduce((a, b) => a + b, 0) / targetValues.length || 0,
 
       pagu_akhir_renstra: paguValues.reduce((a, b) => a + b, 0),
     };
@@ -115,12 +117,12 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
   const { form, onSubmit, isSubmitting } = useRenstraFormTemplate({
     initialData,
     renstraAktif,
-    endpoint: "/renstra-tabel-sasaran",
+    endpoint: '/renstra-tabel-sasaran',
     schema,
     defaultValues,
     generatePayload,
-    queryKeys: ["renstra-tabel-sasaran"],
-    redirectPath: "/renstra/tabel/sasaran",
+    queryKeys: ['renstra-tabel-sasaran'],
+    redirectPath: '/dashboard-renstra',
   });
 
   const {
@@ -131,28 +133,28 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
     formState: { errors },
   } = form;
 
-  const selectedTujuanId = watch("tujuan_id");
-  const selectedSasaranId = watch("sasaran_id");
-  const selectedIndikatorId = watch("indikator_id");
+  const selectedTujuanId = watch('tujuan_id');
+  const selectedSasaranId = watch('sasaran_id');
+  const selectedIndikatorId = watch('indikator_id');
 
   const { data: tujuanOptions = [], isLoading: loadingTujuan } = useQuery({
-    queryKey: ["renstra-tujuan", renstraAktif?.id],
+    queryKey: ['renstra-tujuan', renstraAktif?.id],
     queryFn: async () => {
-      const res = await api.get("/renstra-tujuan", {
+      const res = await api.get('/renstra-tujuan', {
         params: { renstra_id: renstraAktif?.id },
       });
-      return Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+      return Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
     },
     enabled: !!renstraAktif?.id,
   });
 
   const { data: sasaranOptions = [], isLoading: loadingSasaran } = useQuery({
-    queryKey: ["renstra-sasaran", selectedTujuanId],
+    queryKey: ['renstra-sasaran', selectedTujuanId],
     queryFn: async () => {
-      const res = await api.get("/renstra-sasaran/sasaran-rpjmd", {
+      const res = await api.get('/renstra-sasaran/sasaran-rpjmd', {
         params: { tujuan_id: selectedTujuanId },
       });
-      return Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+      return Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
     },
     enabled: !!renstraAktif?.id && !!selectedTujuanId,
   });
@@ -160,39 +162,36 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
   const sasaranSelectOptions = useMemo(() => {
     const options = sasaranOptions.map((item) => ({
       value: String(item.id),
-      label: `${item.nomor ?? item.kode_sasaran ?? ""} - ${item.isi_sasaran || item.nama_sasaran || "-"
-        }`,
+      label: `${item.nomor ?? item.kode_sasaran ?? ''} - ${
+        item.isi_sasaran || item.nama_sasaran || '-'
+      }`,
     }));
 
-  if (initialData?.sasaran_id) {
-    const exists = options.some(
-      (opt) => String(opt.value) === String(initialData.sasaran_id)
-    );
+    if (initialData?.sasaran_id) {
+      const exists = options.some((opt) => String(opt.value) === String(initialData.sasaran_id));
 
-    if (!exists) {
-      options.unshift({
-        value: String(initialData.sasaran_id),
-        label: `${initialData.kode_sasaran ?? ""} - ${
-          initialData.nama_sasaran ?? "-"
-        }`,
-      });
+      if (!exists) {
+        options.unshift({
+          value: String(initialData.sasaran_id),
+          label: `${initialData.kode_sasaran ?? ''} - ${initialData.nama_sasaran ?? '-'}`,
+        });
+      }
     }
-  }
 
-  return options;
-}, [sasaranOptions, initialData]);
+    return options;
+  }, [sasaranOptions, initialData]);
 
   const { data: indikatorOptions = [], isLoading: loadingIndikator } = useQuery({
-    queryKey: ["indikator-renstra", renstraAktif?.id, "sasaran", selectedSasaranId],
+    queryKey: ['indikator-renstra', renstraAktif?.id, 'sasaran', selectedSasaranId],
     queryFn: async () => {
-      const res = await api.get("/indikator-renstra", {
+      const res = await api.get('/indikator-renstra', {
         params: {
           renstra_id: renstraAktif?.id,
-          stage: "sasaran",
+          stage: 'sasaran',
           sasaran_id: selectedSasaranId,
         },
       });
-      return Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+      return Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
     },
     enabled: !!renstraAktif?.id && !!selectedSasaranId,
   });
@@ -203,18 +202,16 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
     const selectedOption = indikatorOptions.find(
       (item) =>
         String(item.id) === String(initialData.indikator_id) ||
-        String(item.source_indikator_id) === String(initialData.indikator_id)
+        String(item.source_indikator_id) === String(initialData.indikator_id),
     );
 
     return (
-      selectedOption?.source_indikator_id ||
-      initialData?.indikator?.source_indikator_id ||
-      null
+      selectedOption?.source_indikator_id || initialData?.indikator?.source_indikator_id || null
     );
   }, [indikatorOptions, initialData]);
 
   const { data: sourceIndikatorDetail } = useQuery({
-    queryKey: ["indikator-sasaran-source-detail-form", sourceIndikatorId],
+    queryKey: ['indikator-sasaran-source-detail-form', sourceIndikatorId],
     queryFn: async () => {
       const res = await api.get(`/indikator-sasaran/${sourceIndikatorId}`);
       return res.data?.data ?? res.data ?? null;
@@ -223,35 +220,33 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
   });
 
   const indikatorSelectOptions = useMemo(() => {
-  const options = indikatorOptions.map((item) => ({
-    label: item.nama_indikator || item.kode_indikator || "-",
-    value: String(item.id),
-  }));
+    const options = indikatorOptions.map((item) => ({
+      label: item.nama_indikator || item.kode_indikator || '-',
+      value: String(item.id),
+    }));
 
-  if (initialData?.indikator_id) {
-    const exists = options.some(
-      (opt) => String(opt.value) === String(initialData.indikator_id)
-    );
+    if (initialData?.indikator_id) {
+      const exists = options.some((opt) => String(opt.value) === String(initialData.indikator_id));
 
-    if (!exists) {
-      options.unshift({
-        value: String(initialData.indikator_id),
-        label:
-          initialData.indikator?.nama_indikator ||
-          initialData.nama_indikator ||
-          `Indikator ${initialData.indikator_id}`,
-      });
+      if (!exists) {
+        options.unshift({
+          value: String(initialData.indikator_id),
+          label:
+            initialData.indikator?.nama_indikator ||
+            initialData.nama_indikator ||
+            `Indikator ${initialData.indikator_id}`,
+        });
+      }
     }
-  }
 
-  return options;
-}, [indikatorOptions, initialData]);
+    return options;
+  }, [indikatorOptions, initialData]);
 
   const { data: historyRows = [], refetch: refetchHistory } = useQuery({
-    queryKey: ["renstra-tabel-sasaran-history", initialData?.id],
+    queryKey: ['renstra-tabel-sasaran-history', initialData?.id],
     queryFn: async () => {
       const res = await api.get(`/renstra-tabel-sasaran/${initialData.id}/history`);
-      return Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+      return Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
     },
     enabled: !!initialData?.id,
   });
@@ -259,7 +254,7 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
   useEffect(() => {
     if (!initialData || !tujuanOptions.length) return;
 
-    setValue("tujuan_id", String(initialData.tujuan_id), {
+    setValue('tujuan_id', String(initialData.tujuan_id), {
       shouldValidate: true,
       shouldDirty: false,
     });
@@ -269,12 +264,12 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
     if (!initialData || !sasaranSelectOptions.length) return;
 
     const selected = sasaranSelectOptions.find(
-      (opt) => String(opt.value) === String(initialData.sasaran_id)
+      (opt) => String(opt.value) === String(initialData.sasaran_id),
     );
 
     if (!selected) return;
 
-    setValue("sasaran_id", String(selected.value), {
+    setValue('sasaran_id', String(selected.value), {
       shouldValidate: true,
       shouldDirty: false,
     });
@@ -287,12 +282,12 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
     const selectedOption = indikatorOptions.find(
       (item) =>
         String(item.id) === String(initialData.indikator_id) ||
-        String(item.source_indikator_id) === String(initialData.indikator_id)
+        String(item.source_indikator_id) === String(initialData.indikator_id),
     );
 
     if (!selectedOption) return;
 
-    setValue("indikator_id", String(selectedOption.id), {
+    setValue('indikator_id', String(selectedOption.id), {
       shouldValidate: true,
       shouldDirty: false,
     });
@@ -302,13 +297,13 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
       sourceIndikatorDetail?.baseline ??
       sourceIndikatorDetail?.capaian_tahun_5 ??
       initialData?.baseline ??
-      "";
+      '';
 
     if (
-      fallbackBaseline !== "" &&
-      (initialData?.baseline == null || String(initialData.baseline).trim() === "")
+      fallbackBaseline !== '' &&
+      (initialData?.baseline == null || String(initialData.baseline).trim() === '')
     ) {
-      setValue("baseline", fallbackBaseline, {
+      setValue('baseline', fallbackBaseline, {
         shouldValidate: true,
         shouldDirty: false,
       });
@@ -319,9 +314,9 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
     if (!selectedTujuanId) return;
 
     if (!initialData) {
-      setValue("sasaran_id", "");
-      setValue("indikator_id", "");
-      setPaguInfoMessage("");
+      setValue('sasaran_id', '');
+      setValue('indikator_id', '');
+      setPaguInfoMessage('');
       prevSasaranIdRef.current = undefined;
     }
   }, [selectedTujuanId, initialData, setValue]);
@@ -331,34 +326,28 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
     const prev = prevSasaranIdRef.current;
 
     if (prev !== undefined && prev !== cur) {
-      setValue("indikator_id", "");
-      setPaguInfoMessage("");
+      setValue('indikator_id', '');
+      setPaguInfoMessage('');
     }
 
     prevSasaranIdRef.current = cur;
-    }, [selectedSasaranId, setValue]);
-
-    
+  }, [selectedSasaranId, setValue]);
 
   useEffect(() => {
     if (!selectedSasaranId) return;
 
-    const selected = sasaranOptions.find(
-      (s) => String(s.id) === String(selectedSasaranId)
-    );
+    const selected = sasaranOptions.find((s) => String(s.id) === String(selectedSasaranId));
 
     if (selected) {
-      setValue("kode_sasaran", selected.nomor ?? "");
-      setValue("nama_sasaran", selected.isi_sasaran ?? "");
+      setValue('kode_sasaran', selected.nomor ?? '');
+      setValue('nama_sasaran', selected.isi_sasaran ?? '');
     }
   }, [selectedSasaranId, sasaranOptions, setValue]);
 
   useEffect(() => {
     if (!selectedIndikatorId) return;
 
-    const selected = indikatorOptions.find(
-      (i) => String(i.id) === String(selectedIndikatorId)
-    );
+    const selected = indikatorOptions.find((i) => String(i.id) === String(selectedIndikatorId));
 
     if (!selected) return;
 
@@ -367,26 +356,26 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
       sourceIndikatorDetail?.baseline ??
       sourceIndikatorDetail?.capaian_tahun_5 ??
       initialData?.baseline ??
-      "";
+      '';
 
-    setValue("baseline", baselineValue, {
+    setValue('baseline', baselineValue, {
       shouldValidate: true,
       shouldDirty: true,
     });
 
-    setValue("satuan_target", selected.satuan ?? "", {
+    setValue('satuan_target', selected.satuan ?? '', {
       shouldValidate: true,
       shouldDirty: true,
     });
 
     const lokasi =
-      selected.lokasi?.trim?.() ||
-      selected.sumber_data?.trim?.() ||
-      selected.renstra?.bidang_opd?.trim?.() ||
       initialData?.lokasi ||
-      "";
+      selected.lokasi?.trim?.() ||
+      selected.renstra?.bidang_opd?.trim?.() ||
+      selected.sumber_data?.trim?.() ||
+      '';
 
-    setValue("lokasi", lokasi, {
+    setValue('lokasi', lokasi, {
       shouldValidate: true,
       shouldDirty: true,
     });
@@ -397,7 +386,7 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
 
       if (i === 6) value = 0;
 
-      setValue(key, value ?? "", {
+      setValue(key, value ?? '', {
         shouldValidate: true,
         shouldDirty: true,
       });
@@ -408,13 +397,13 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
         selected.total_pagu_rpjmd ||
         selected.pagu_rpjmd_acuan ||
         initialData?.pagu_rpjmd_acuan ||
-        0
+        0,
     );
 
     const paguDasar = Math.floor(paguAcuan / 5);
     const sisaPagu = paguAcuan - paguDasar * 5;
 
-    setValue("pagu_rpjmd_acuan", paguAcuan, {
+    setValue('pagu_rpjmd_acuan', paguAcuan, {
       shouldValidate: true,
       shouldDirty: true,
     });
@@ -426,48 +415,42 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
       });
     }
 
-    setValue("pagu_tahun_5", paguDasar + sisaPagu, {
+    setValue('pagu_tahun_5', paguDasar + sisaPagu, {
       shouldValidate: true,
       shouldDirty: true,
     });
 
-    setValue("pagu_tahun_6", 0, {
+    setValue('pagu_tahun_6', 0, {
       shouldValidate: true,
       shouldDirty: true,
     });
 
-    setValue("pagu_akhir_renstra", paguAcuan, {
+    setValue('pagu_akhir_renstra', paguAcuan, {
       shouldValidate: true,
       shouldDirty: true,
     });
 
     setPaguInfoMessage(
       `Pagu RPJMD Rp ${paguAcuan.toLocaleString(
-        "id-ID"
-      )} dibagi ke tahun 1–5. Jika ada sisa, dimasukkan ke tahun ke-5.`
+        'id-ID',
+      )} dibagi ke tahun 1–5. Jika ada sisa, dimasukkan ke tahun ke-5.`,
     );
-  }, [
-    selectedIndikatorId,
-    indikatorOptions,
-    setValue,
-    initialData,
-    sourceIndikatorDetail,
-  ]);
+  }, [selectedIndikatorId, indikatorOptions, setValue, initialData, sourceIndikatorDetail]);
 
   const targetValues = watch([
-    "target_tahun_1",
-    "target_tahun_2",
-    "target_tahun_3",
-    "target_tahun_4",
-    "target_tahun_5",
+    'target_tahun_1',
+    'target_tahun_2',
+    'target_tahun_3',
+    'target_tahun_4',
+    'target_tahun_5',
   ]);
 
   const paguValues = watch([
-    "pagu_tahun_1",
-    "pagu_tahun_2",
-    "pagu_tahun_3",
-    "pagu_tahun_4",
-    "pagu_tahun_5",
+    'pagu_tahun_1',
+    'pagu_tahun_2',
+    'pagu_tahun_3',
+    'pagu_tahun_4',
+    'pagu_tahun_5',
   ]);
 
   const targetAkhirRenstra = useMemo(() => {
@@ -481,16 +464,23 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
   }, [paguValues]);
 
   useEffect(() => {
-    setValue("target_akhir_renstra", targetAkhirRenstra, {
+    setValue('target_akhir_renstra', targetAkhirRenstra, {
       shouldDirty: false,
     });
   }, [targetAkhirRenstra, setValue]);
 
   useEffect(() => {
-    setValue("pagu_akhir_renstra", paguAkhirRenstra, {
+    setValue('pagu_akhir_renstra', paguAkhirRenstra, {
       shouldDirty: false,
     });
   }, [paguAkhirRenstra, setValue]);
+
+  const breadcrumbChain = useRenstraBreadcrumb({
+    tujuanId: initialData?.tujuan_id || null,
+    currentLabel: initialData ? 'Edit Sasaran' : 'Tambah Sasaran',
+  });
+
+  console.log('initialData tujuan_id:', initialData?.tujuan_id, 'id:', initialData?.id);
 
   const handleSubmitRevisi = async (data) => {
     if (!initialData?.id) {
@@ -498,13 +488,13 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
     }
 
     if (!alasanRevisi.trim()) {
-      setServerMessage("Alasan revisi wajib diisi.");
+      setServerMessage('Alasan revisi wajib diisi.');
       return;
     }
 
     try {
       setSubmitRevisiLoading(true);
-      setServerMessage("");
+      setServerMessage('');
 
       const payload = {
         ...generatePayload(data),
@@ -513,13 +503,12 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
 
       await api.put(`/renstra-tabel-sasaran/${initialData.id}/revisi`, payload);
 
-      setServerMessage("✅ Revisi berhasil disimpan sebagai draft.");
       await refetchHistory();
+      setServerMessage('✅ Revisi berhasil disimpan sebagai draft.');
+      navigate('/dashboard-renstra');
     } catch (err) {
       setServerMessage(
-        err?.response?.data?.message ||
-          err?.response?.data?.error ||
-          "Gagal menyimpan revisi."
+        err?.response?.data?.message || err?.response?.data?.error || 'Gagal menyimpan revisi.',
       );
     } finally {
       setSubmitRevisiLoading(false);
@@ -536,19 +525,11 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
   }
 
   return (
-    <Card
-      title={
-        initialData
-          ? "Edit Renstra Tabel Sasaran"
-          : "Tambah Renstra Tabel Sasaran"
-      }
-    >
-      <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
-        <Button onClick={() => navigate("/dashboard-renstra")}>
-          🔙 Kembali
-        </Button>
+    <Card title={initialData ? 'Edit Renstra Tabel Sasaran' : 'Tambah Renstra Tabel Sasaran'}>
+      <RenstraBreadcrumb chain={breadcrumbChain} />
+      <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+        <Button onClick={() => navigate('/dashboard-renstra')}>🔙 Kembali</Button>
       </div>
-
       <form onSubmit={handleSubmit(initialData ? handleSubmitRevisi : onSubmit)}>
         <SelectWithLabelValue
           name="tujuan_id"
@@ -557,7 +538,7 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
           errors={errors}
           required
           options={tujuanOptions.map((item) => ({
-            label: `${item.no_tujuan ?? ""} - ${item.isi_tujuan}`,
+            label: `${item.no_tujuan ?? ''} - ${item.isi_tujuan}`,
             value: String(item.id),
           }))}
         />
@@ -600,12 +581,7 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
 
         <InputField name="baseline" label="Baseline" control={control} errors={errors} />
 
-        <InputField
-          name="satuan_target"
-          label="Satuan Target"
-          control={control}
-          errors={errors}
-        />
+        <InputField name="satuan_target" label="Satuan Target" control={control} errors={errors} />
 
         <InputField name="lokasi" label="Lokasi" control={control} errors={errors} />
 
@@ -640,7 +616,7 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
           message="Informasi Pagu"
           description={
             paguInfoMessage ||
-            "Pagu RPJMD Acuan bersifat read-only. Pagu Renstra dapat direvisi dan seluruh perubahan tersimpan di history."
+            'Pagu RPJMD Acuan bersifat read-only. Pagu Renstra dapat direvisi dan seluruh perubahan tersimpan di history.'
           }
         />
 
@@ -688,7 +664,7 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
         {serverMessage && (
           <Alert
             style={{ marginTop: 16 }}
-            type={serverMessage.startsWith("✅") ? "success" : "warning"}
+            type={serverMessage.startsWith('✅') ? 'success' : 'warning'}
             showIcon
             message={serverMessage}
           />
@@ -699,7 +675,7 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
           htmlType="submit"
           loading={initialData ? submitRevisiLoading : isSubmitting}
         >
-          {initialData ? "Simpan Revisi" : "Simpan"}
+          {initialData ? 'Simpan Revisi' : 'Simpan'}
         </Button>
 
         {initialData && historyRows.length > 0 && (
@@ -713,21 +689,29 @@ const RenstraTabelSasaranForm = ({ initialData = null, renstraAktif }) => {
                 style={{ marginBottom: 16 }}
                 title={`Versi ${row.versi_sebelum} → ${row.versi_sesudah} | ${row.status_revisi}`}
               >
-                <p><strong>Alasan:</strong> {row.alasan_revisi || "-"}</p>
-
                 <p>
-                  <strong>Pagu Sebelum:</strong>{" "}
-                  {Number(row.before_json?.pagu_akhir_renstra || 0).toLocaleString("id-ID")}
+                  <strong>Alasan:</strong> {row.alasan_revisi || '-'}
                 </p>
 
                 <p>
-                  <strong>Pagu Setelah:</strong>{" "}
-                  {Number(row.after_json?.pagu_akhir_renstra || 0).toLocaleString("id-ID")}
+                  <strong>Pagu Sebelum:</strong>{' '}
+                  {Number(row.before_json?.pagu_akhir_renstra || 0).toLocaleString('id-ID')}
                 </p>
 
-                <p><strong>Dibuat:</strong> {row.dibuat_pada || "-"}</p>
-                <p><strong>Diverifikasi:</strong> {row.diverifikasi_pada || "-"}</p>
-                <p><strong>Disetujui:</strong> {row.disetujui_pada || "-"}</p>
+                <p>
+                  <strong>Pagu Setelah:</strong>{' '}
+                  {Number(row.after_json?.pagu_akhir_renstra || 0).toLocaleString('id-ID')}
+                </p>
+
+                <p>
+                  <strong>Dibuat:</strong> {row.dibuat_pada || '-'}
+                </p>
+                <p>
+                  <strong>Diverifikasi:</strong> {row.diverifikasi_pada || '-'}
+                </p>
+                <p>
+                  <strong>Disetujui:</strong> {row.disetujui_pada || '-'}
+                </p>
               </Card>
             ))}
           </div>

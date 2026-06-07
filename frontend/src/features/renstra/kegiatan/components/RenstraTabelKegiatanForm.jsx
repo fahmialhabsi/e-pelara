@@ -12,6 +12,9 @@ import { useRenstraFormTemplate } from '@/hooks/templatesUseRenstra/useRenstraFo
 import * as Yup from 'yup';
 import generatePayloadRenstraTabelKegiatan from '@/shared/components/utils/generatePayloadRenstraTabelKegiatan';
 import api from '@/services/api';
+import RenstraBreadcrumb, {
+  useRenstraBreadcrumb,
+} from '@/features/renstra/shared/components/RenstraBreadcrumb';
 
 const YEARS = [1, 2, 3, 4, 5];
 const ALL_YEARS = [1, 2, 3, 4, 5, 6];
@@ -89,6 +92,17 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
   const [submitRevisiLoading, setSubmitRevisiLoading] = useState(false);
   const [serverMessage, setServerMessage] = useState('');
 
+  const activeArahKebijakanId =
+    searchParams.get('arah_kebijakan_id') ||
+    searchParams.get('kebijakan_id') ||
+    initialData?.kebijakan_id ||
+    null;
+
+  const breadcrumbChain = useRenstraBreadcrumb({
+    kebijakanId: activeArahKebijakanId,
+    currentLabel: initialData ? 'Edit Kegiatan' : 'Tambah Kegiatan',
+  });
+
   const defaultValues = useMemo(() => {
     const values = {
       id: initialData?.id,
@@ -113,6 +127,7 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
       pagu_rpjmd_acuan: Number(initialData?.pagu_rpjmd_acuan || 0),
       pagu_akhir_renstra: Number(initialData?.pagu_akhir_renstra || 0),
       alasan_revisi: '',
+      kebijakan_id: activeArahKebijakanId,
     };
 
     ALL_YEARS.forEach((i) => {
@@ -562,6 +577,7 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
         ...data,
         renstra_id: renstraId,
         alasan_revisi: alasanRevisi,
+        kebijakan_id: activeArahKebijakanId,
       });
 
       if (initialData?.status_revisi === 'approved') {
@@ -591,12 +607,18 @@ const RenstraTabelKegiatanForm = ({ initialData = null, renstraAktif }) => {
         <div>Memuat data Renstra...</div>
       ) : (
         <>
+          <RenstraBreadcrumb chain={breadcrumbChain} />
           <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
             <Button onClick={() => navigate('/dashboard-renstra')}>ðŸ”™ Kembali</Button>
           </div>
 
           <FormProvider {...form}>
             <form onSubmit={form.handleSubmit(initialData ? handleSubmitRevisi : onSubmit)}>
+              <input
+                type="hidden"
+                {...form.register('kebijakan_id')}
+                value={activeArahKebijakanId ?? ''}
+              />
               {isAuditMode && (
                 <Alert
                   type="success"

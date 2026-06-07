@@ -10,10 +10,13 @@ import { useRenstraFormTemplate } from '@/hooks/templatesUseRenstra/useRenstraFo
 import SelectWithLabelValue from '@/shared/components/form/SelectWithLabelValue';
 import InputField from '@/shared/components/form/InputField';
 import CurrencyInputField from '@/shared/components/form/CurrencyInputField';
+import RenstraBreadcrumb, {
+  useRenstraBreadcrumb,
+} from '@/features/renstra/shared/components/RenstraBreadcrumb';
 
 const YEARS = [1, 2, 3, 4, 5];
 const ENDPOINT = '/renstra-tabel-strategi';
-const REDIRECT = '/renstra/tabel/strategi';
+const REDIRECT = '/dashboard-renstra';
 
 const toPositiveNumber = (value) => {
   const number = Number(value);
@@ -135,11 +138,15 @@ export default function RenstraTabelStrategiForm({ initialData = null, renstraAk
         String(x.source_indikator_id) === String(data.indikator_id),
     );
 
+    const selectedStrategi = strategiOptions.find(
+      // ← tambah
+      (s) => String(s.id) === String(data.strategi_id),
+    );
+
     return {
       renstra_id: Number(data.renstra_id || renstraId),
-      strategi_id: Number(
-        strategiOptions.find((s) => String(s.id) === String(data.strategi_id))?.id,
-      ),
+      strategi_id: Number(selectedStrategi?.id),
+      sasaran_id: selectedStrategi?.sasaran_id ?? null,
 
       kode_strategi: data.kode_strategi,
       deskripsi_strategi: data.deskripsi_strategi,
@@ -467,11 +474,9 @@ export default function RenstraTabelStrategiForm({ initialData = null, renstraAk
     });
 
     if (
-      (
-        selectedOption.baseline === null ||
+      (selectedOption.baseline === null ||
         selectedOption.baseline === undefined ||
-        String(selectedOption.baseline).trim() === ''
-      ) &&
+        String(selectedOption.baseline).trim() === '') &&
       (sourceIndikatorDetail?.baseline !== null ||
         sourceIndikatorDetail?.baseline !== undefined ||
         sourceIndikatorDetail?.capaian_tahun_5 !== null ||
@@ -525,7 +530,7 @@ export default function RenstraTabelStrategiForm({ initialData = null, renstraAk
 
     setValue(
       'lokasi',
-      [selected.lokasi, selected.sumber_data, selected.renstra?.bidang_opd, initialData?.lokasi]
+      [initialData?.lokasi, selected.lokasi, selected.sumber_data, selected.renstra?.bidang_opd]
         .map((x) => (x !== null && x !== undefined ? String(x).trim() : ''))
         .find(Boolean) ?? '',
     );
@@ -607,11 +612,13 @@ export default function RenstraTabelStrategiForm({ initialData = null, renstraAk
       if (statusRevisi === 'approved') {
         await api.post(`/renstra-tabel-strategi/${initialData.id}/revisi`, payload);
         setServerMessage('✅ Revisi berhasil dibuat dari data approved sebagai draft.');
+        navigate('/dashboard-renstra');
         return;
       }
 
       await api.put(`/renstra-tabel-strategi/${initialData.id}`, payload);
       setServerMessage('✅ Draft revisi berhasil diperbarui.');
+      navigate('/dashboard-renstra');
     } catch (err) {
       setServerMessage(
         err?.response?.data?.message || err?.response?.data?.error || 'Gagal menyimpan revisi.',
@@ -623,6 +630,11 @@ export default function RenstraTabelStrategiForm({ initialData = null, renstraAk
 
   const isLoading = !renstraAktif || loadingStrategi || (!!selectedStrategiId && loadingIndikator);
 
+  const breadcrumbChain = useRenstraBreadcrumb({
+    sasaranId: initialData?.sasaran_id || null,
+    currentLabel: initialData ? 'Edit Strategi' : 'Tambah Strategi',
+  });
+
   return (
     <Card title={initialData ? 'Edit Tabel Strategi' : 'Tambah Tabel Strategi'}>
       <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
@@ -633,153 +645,156 @@ export default function RenstraTabelStrategiForm({ initialData = null, renstraAk
       {isLoading ? (
         <div>Memuat data...</div>
       ) : (
-        <form onSubmit={handleSubmit(initialData ? handleSubmitRevisi : onSubmit)}>
-          <SelectWithLabelValue
-            name="strategi_id"
-            label="Strategi"
-            control={control}
-            errors={errors}
-            required
-            options={strategiSelectOptions}
-          />
-          <InputField
-            name="kode_strategi"
-            label="Kode Strategi"
-            control={control}
-            errors={errors}
-            disabled
-          />
-          <InputField
-            name="deskripsi_strategi"
-            label="Deskripsi Strategi"
-            control={control}
-            errors={errors}
-            disabled
-          />
-          <SelectWithLabelValue
-            name="indikator_id"
-            label="Indikator"
-            control={control}
-            errors={errors}
-            required
-            disabled={!selectedStrategiId}
-            options={indikatorSelectOptions}
-          />
-          <InputField name="baseline" label="Baseline" control={control} errors={errors} />
-          <InputField
-            name="satuan_target"
-            label="Satuan Target"
-            control={control}
-            errors={errors}
-            required
-          />
-          <InputField name="lokasi" label="Lokasi" control={control} errors={errors} required />
-          <InputField
-            name="opd_penanggung_jawab"
-            label="OPD Penanggung Jawab"
-            control={control}
-            errors={errors}
-            disabled
-          />
-
-          <h4 style={{ marginTop: 24 }}>Target periode (th. ke-1 s/d ke-5)</h4>
-          {YEARS.map((i) => (
+        <>
+          <RenstraBreadcrumb chain={breadcrumbChain} />
+          <form onSubmit={handleSubmit(initialData ? handleSubmitRevisi : onSubmit)}>
+            <SelectWithLabelValue
+              name="strategi_id"
+              label="Strategi"
+              control={control}
+              errors={errors}
+              required
+              options={strategiSelectOptions}
+            />
             <InputField
-              key={`t${i}`}
-              name={`target_tahun_${i}`}
-              label={`Target (th. ke-${i})`}
+              name="kode_strategi"
+              label="Kode Strategi"
               control={control}
               errors={errors}
+              disabled
             />
-          ))}
-
-          <h4 style={{ marginTop: 24 }}>Pagu RPJMD Acuan</h4>
-
-          <CurrencyInputField
-            name="pagu_rpjmd_acuan"
-            label="Pagu RPJMD Acuan"
-            control={control}
-            errors={errors}
-            disabled
-          />
-
-          <h4 style={{ marginTop: 24 }}>Pagu Renstra periode (th. ke-1 s/d ke-5)</h4>
-
-          {paguInfoMessage && (
-            <Alert
-              type={paguInfoMessage.includes('Belum') ? 'warning' : 'success'}
-              showIcon
-              style={{ marginBottom: 16 }}
-              message="Informasi Pagu"
-              description={paguInfoMessage}
-            />
-          )}
-
-          {YEARS.map((i) => (
-            <CurrencyInputField
-              key={`p${i}`}
-              name={`pagu_tahun_${i}`}
-              label={`Pagu (th. ke-${i})`}
+            <InputField
+              name="deskripsi_strategi"
+              label="Deskripsi Strategi"
               control={control}
               errors={errors}
-              disabled={!initialData}
+              disabled
             />
-          ))}
+            <SelectWithLabelValue
+              name="indikator_id"
+              label="Indikator"
+              control={control}
+              errors={errors}
+              required
+              disabled={!selectedStrategiId}
+              options={indikatorSelectOptions}
+            />
+            <InputField name="baseline" label="Baseline" control={control} errors={errors} />
+            <InputField
+              name="satuan_target"
+              label="Satuan Target"
+              control={control}
+              errors={errors}
+              required
+            />
+            <InputField name="lokasi" label="Lokasi" control={control} errors={errors} required />
+            <InputField
+              name="opd_penanggung_jawab"
+              label="OPD Penanggung Jawab"
+              control={control}
+              errors={errors}
+              disabled
+            />
 
-          <h4 style={{ marginTop: 24 }}>Kondisi Akhir Renstra</h4>
-          <InputField
-            name="target_akhir_renstra"
-            label="Target Akhir Renstra"
-            control={control}
-            errors={errors}
-            disabled
-          />
-          <CurrencyInputField
-            name="pagu_akhir_renstra"
-            label="Pagu Akhir Renstra"
-            control={control}
-            errors={errors}
-            disabled
-          />
-
-          {initialData && (
-            <div style={{ marginTop: 24 }}>
-              <h4>Alasan Revisi</h4>
-              <Input.TextArea
-                rows={4}
-                value={alasanRevisi}
-                onChange={(e) => setAlasanRevisi(e.target.value)}
-                placeholder="Tuliskan alasan revisi target/pagu Renstra..."
+            <h4 style={{ marginTop: 24 }}>Target periode (th. ke-1 s/d ke-5)</h4>
+            {YEARS.map((i) => (
+              <InputField
+                key={`t${i}`}
+                name={`target_tahun_${i}`}
+                label={`Target (th. ke-${i})`}
+                control={control}
+                errors={errors}
               />
-            </div>
-          )}
+            ))}
 
-          {serverMessage && (
-            <Alert
-              style={{ marginTop: 16 }}
-              type={serverMessage.startsWith('✅') ? 'success' : 'warning'}
-              showIcon
-              message={serverMessage}
-            />
-          )}
+            <h4 style={{ marginTop: 24 }}>Pagu RPJMD Acuan</h4>
 
-          {!existingDataInfo || initialData ? (
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={initialData ? submitRevisiLoading : isSubmitting}
-            >
-              {initialData ? 'Simpan Revisi' : 'Simpan'}
-            </Button>
-          ) : (
-            <Alert
-              type="warning"
-              showIcon
-              message="Data sudah ada"
-              description="Gunakan Edit jika ingin mengubah."
+            <CurrencyInputField
+              name="pagu_rpjmd_acuan"
+              label="Pagu RPJMD Acuan"
+              control={control}
+              errors={errors}
+              disabled
             />
-          )}
-        </form>
+
+            <h4 style={{ marginTop: 24 }}>Pagu Renstra periode (th. ke-1 s/d ke-5)</h4>
+
+            {paguInfoMessage && (
+              <Alert
+                type={paguInfoMessage.includes('Belum') ? 'warning' : 'success'}
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="Informasi Pagu"
+                description={paguInfoMessage}
+              />
+            )}
+
+            {YEARS.map((i) => (
+              <CurrencyInputField
+                key={`p${i}`}
+                name={`pagu_tahun_${i}`}
+                label={`Pagu (th. ke-${i})`}
+                control={control}
+                errors={errors}
+                disabled={!initialData}
+              />
+            ))}
+
+            <h4 style={{ marginTop: 24 }}>Kondisi Akhir Renstra</h4>
+            <InputField
+              name="target_akhir_renstra"
+              label="Target Akhir Renstra"
+              control={control}
+              errors={errors}
+              disabled
+            />
+            <CurrencyInputField
+              name="pagu_akhir_renstra"
+              label="Pagu Akhir Renstra"
+              control={control}
+              errors={errors}
+              disabled
+            />
+
+            {initialData && (
+              <div style={{ marginTop: 24 }}>
+                <h4>Alasan Revisi</h4>
+                <Input.TextArea
+                  rows={4}
+                  value={alasanRevisi}
+                  onChange={(e) => setAlasanRevisi(e.target.value)}
+                  placeholder="Tuliskan alasan revisi target/pagu Renstra..."
+                />
+              </div>
+            )}
+
+            {serverMessage && (
+              <Alert
+                style={{ marginTop: 16 }}
+                type={serverMessage.startsWith('✅') ? 'success' : 'warning'}
+                showIcon
+                message={serverMessage}
+              />
+            )}
+
+            {!existingDataInfo || initialData ? (
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={initialData ? submitRevisiLoading : isSubmitting}
+              >
+                {initialData ? 'Simpan Revisi' : 'Simpan'}
+              </Button>
+            ) : (
+              <Alert
+                type="warning"
+                showIcon
+                message="Data sudah ada"
+                description="Gunakan Edit jika ingin mengubah."
+              />
+            )}
+          </form>
+        </>
       )}
     </Card>
   );

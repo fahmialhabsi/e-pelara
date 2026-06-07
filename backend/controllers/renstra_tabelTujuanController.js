@@ -1,5 +1,5 @@
 // controllers/renstra_tabelTujuanController.js
-const { Op } = require("sequelize");
+const { Op } = require('sequelize');
 
 const {
   sequelize,
@@ -7,39 +7,34 @@ const {
   IndikatorRenstra,
   RenstraTujuan,
   RenstraOPD,
-} = require("../models");
+} = require('../models');
 
-const {
-  attachCacheToRows,
-  applyPaguFromCache,
-} = require("../services/renstraPaguCacheHelper");
+const { attachCacheToRows, applyPaguFromCache } = require('../services/renstraPaguCacheHelper');
 
 const TARGET_FIELDS = [
-  "target_tahun_1",
-  "target_tahun_2",
-  "target_tahun_3",
-  "target_tahun_4",
-  "target_tahun_5",
+  'target_tahun_1',
+  'target_tahun_2',
+  'target_tahun_3',
+  'target_tahun_4',
+  'target_tahun_5',
 ];
 
 const PAGU_FIELDS = [
-  "pagu_tahun_1",
-  "pagu_tahun_2",
-  "pagu_tahun_3",
-  "pagu_tahun_4",
-  "pagu_tahun_5",
+  'pagu_tahun_1',
+  'pagu_tahun_2',
+  'pagu_tahun_3',
+  'pagu_tahun_4',
+  'pagu_tahun_5',
 ];
 
-const getActorId = (req) =>
-  req.user?.id || req.body.user_id || req.body.changed_by || null;
+const getActorId = (req) => req.user?.id || req.body.user_id || req.body.changed_by || null;
 
 const computeFinal5Years = (data) => {
   const targetValues = TARGET_FIELDS.map((field) => Number(data[field]) || 0);
   const paguValues = PAGU_FIELDS.map((field) => Number(data[field]) || 0);
 
   return {
-    target_akhir_renstra:
-      targetValues.reduce((a, b) => a + b, 0) / TARGET_FIELDS.length || 0,
+    target_akhir_renstra: targetValues.reduce((a, b) => a + b, 0) / TARGET_FIELDS.length || 0,
     pagu_akhir_renstra: paguValues.reduce((a, b) => a + b, 0),
   };
 };
@@ -126,7 +121,7 @@ const insertTujuanHistory = async ({
         dibuat_oleh: actorId,
       },
       transaction,
-    }
+    },
   );
 
   return versiSesudah;
@@ -142,9 +137,7 @@ const roundUp2 = (value) => {
 // 🔴 HANYA HITUNG TARGET.
 // 🔴 PAGU TUJUAN TIDAK DIHITUNG DI CONTROLLER, TAPI DIBACA DARI CACHE.
 const computeFinal = (data) => {
-  const targets = [1, 2, 3, 4, 5, 6].map(
-    (i) => Number(data[`target_tahun_${i}`]) || 0
-  );
+  const targets = [1, 2, 3, 4, 5, 6].map((i) => Number(data[`target_tahun_${i}`]) || 0);
 
   const avg = targets.reduce((a, b) => a + b, 0) / targets.length || 0;
 
@@ -170,7 +163,7 @@ const applyTargetFinalIfMissing = (item) => {
   if (
     json.target_akhir_renstra === null ||
     json.target_akhir_renstra === undefined ||
-    json.target_akhir_renstra === ""
+    json.target_akhir_renstra === ''
   ) {
     json.target_akhir_renstra = computeFinal(json).target_akhir_renstra;
   }
@@ -193,12 +186,12 @@ const attachTujuanCacheToRows = async ({ rows, transaction }) => {
 
   return attachCacheToRows({
     rows: rowsWithTarget,
-    stage: "tujuan",
+    stage: 'tujuan',
 
     // Standar final:
     // cache.ref_id = id baris RenstraTabelTujuan
-    renstraIdField: "renstra_id",
-    refIdField: "id",
+    renstraIdField: 'renstra_id',
+    refIdField: 'id',
 
     transaction,
   });
@@ -209,18 +202,18 @@ const attachTujuanCacheToRows = async ({ rows, transaction }) => {
 const tujuanInclude = [
   {
     model: IndikatorRenstra,
-    as: "indikator",
-    attributes: ["id", "kode_indikator", "nama_indikator"],
+    as: 'indikator',
+    attributes: ['id', 'kode_indikator', 'nama_indikator'],
   },
   {
     model: RenstraTujuan,
-    as: "tujuan",
-    attributes: ["id", "no_tujuan", "isi_tujuan"],
+    as: 'tujuan',
+    attributes: ['id', 'no_tujuan', 'isi_tujuan'],
   },
   {
     model: RenstraOPD,
-    as: "opd",
-    attributes: ["id", "nama_opd"],
+    as: 'opd',
+    attributes: ['id', 'nama_opd'],
   },
 ];
 
@@ -236,25 +229,18 @@ exports.create = async (req, res) => {
       ...computeFinal(req.body),
     };
 
-    if (
-      !payloadBase.renstra_id ||
-      !payloadBase.tujuan_id ||
-      !payloadBase.indikator_id
-    ) {
+    if (!payloadBase.renstra_id || !payloadBase.tujuan_id || !payloadBase.indikator_id) {
       await t.rollback();
       return res.status(400).json({
-        message: "renstra_id, tujuan_id, dan indikator_id wajib diisi",
+        message: 'renstra_id, tujuan_id, dan indikator_id wajib diisi',
       });
     }
 
-    const indikator = await IndikatorRenstra.findByPk(
-      payloadBase.indikator_id,
-      { transaction: t }
-    );
+    const indikator = await IndikatorRenstra.findByPk(payloadBase.indikator_id, { transaction: t });
 
     if (!indikator) {
       await t.rollback();
-      return res.status(404).json({ error: "Indikator tidak ditemukan" });
+      return res.status(404).json({ error: 'Indikator tidak ditemukan' });
     }
 
     const masterTujuan = await RenstraTujuan.findByPk(payloadBase.tujuan_id, {
@@ -263,7 +249,7 @@ exports.create = async (req, res) => {
 
     if (!masterTujuan) {
       await t.rollback();
-      return res.status(404).json({ error: "Tujuan tidak ditemukan" });
+      return res.status(404).json({ error: 'Tujuan tidak ditemukan' });
     }
 
     if (
@@ -272,7 +258,7 @@ exports.create = async (req, res) => {
     ) {
       await t.rollback();
       return res.status(400).json({
-        message: "tujuan_id tidak sesuai dengan renstra_id yang dipilih",
+        message: 'tujuan_id tidak sesuai dengan renstra_id yang dipilih',
       });
     }
 
@@ -287,7 +273,7 @@ exports.create = async (req, res) => {
     if (exists) {
       await t.rollback();
       return res.status(409).json({
-        message: "Data tujuan dengan indikator ini sudah ada. Gunakan Edit.",
+        message: 'Data tujuan dengan indikator ini sudah ada. Gunakan Edit.',
         existing_id: exists.id,
         blocked: true,
       });
@@ -296,13 +282,13 @@ exports.create = async (req, res) => {
     const payload = {
       ...payloadBase,
 
+      misi_id: req.body.misi_id ?? null,
+
       satuan_target: indikator.satuan || payloadBase.satuan_target,
 
-      kode_tujuan:
-        payloadBase.kode_tujuan || masterTujuan.no_tujuan || null,
+      kode_tujuan: payloadBase.kode_tujuan || masterTujuan.no_tujuan || null,
 
-      nama_tujuan:
-        payloadBase.nama_tujuan || masterTujuan.isi_tujuan || null,
+      nama_tujuan: payloadBase.nama_tujuan || masterTujuan.isi_tujuan || null,
 
       // 🔴 Parent tidak boleh menerima pagu dari form.
       ...buildLockedPaguPayload(),
@@ -320,7 +306,7 @@ exports.create = async (req, res) => {
     await t.commit();
 
     res.status(201).json({
-      message: "Data tujuan berhasil ditambahkan",
+      message: 'Data tujuan berhasil ditambahkan',
       data: applyPaguFromCache(applyTargetFinalIfMissing(createdFull), null),
       blocked: false,
     });
@@ -338,13 +324,13 @@ exports.findAll = async (req, res) => {
 
     const where = {};
     let tujuanIds = null;
-    if (renstra_id != null && renstra_id !== "") {
+    if (renstra_id != null && renstra_id !== '') {
       const renstraNum = Number(renstra_id);
       if (!Number.isFinite(renstraNum)) {
-        return res.status(400).json({ error: "renstra_id harus berupa angka" });
+        return res.status(400).json({ error: 'renstra_id harus berupa angka' });
       }
       const tujuanRowsForRenstra = await RenstraTujuan.findAll({
-        attributes: ["id"],
+        attributes: ['id'],
         where: { renstra_id: renstraNum },
       });
       tujuanIds = tujuanRowsForRenstra
@@ -354,24 +340,24 @@ exports.findAll = async (req, res) => {
         return res.json([]);
       }
     }
-    if (tujuan_id != null && tujuan_id !== "") {
+    if (tujuan_id != null && tujuan_id !== '') {
       const tujuanNum = Number(tujuan_id);
       if (!Number.isFinite(tujuanNum)) {
-        return res.status(400).json({ error: "tujuan_id harus berupa angka" });
+        return res.status(400).json({ error: 'tujuan_id harus berupa angka' });
       }
       where.tujuan_id = tujuanNum;
     }
-    if (indikator_id != null && indikator_id !== "") {
+    if (indikator_id != null && indikator_id !== '') {
       const indikatorNum = Number(indikator_id);
       if (!Number.isFinite(indikatorNum)) {
-        return res.status(400).json({ error: "indikator_id harus berupa angka" });
+        return res.status(400).json({ error: 'indikator_id harus berupa angka' });
       }
       where.indikator_id = indikatorNum;
     }
-    if (opd_id != null && opd_id !== "") {
+    if (opd_id != null && opd_id !== '') {
       const opdNum = Number(opd_id);
       if (!Number.isFinite(opdNum)) {
-        return res.status(400).json({ error: "opd_id harus berupa angka" });
+        return res.status(400).json({ error: 'opd_id harus berupa angka' });
       }
       where.opd_id = opdNum;
     }
@@ -382,25 +368,23 @@ exports.findAll = async (req, res) => {
           ...where,
           ...(tujuanIds ? { tujuan_id: tujuanIds } : {}),
         },
-        order: [["id", "DESC"]],
+        order: [['id', 'DESC']],
         attributes: [
-          "id",
-          "tujuan_id",
-          "opd_id",
-          "indikator_id",
-          "kode_tujuan",
-          "nama_tujuan",
-          "pagu_akhir_renstra",
+          'id',
+          'tujuan_id',
+          'opd_id',
+          'indikator_id',
+          'kode_tujuan',
+          'nama_tujuan',
+          'pagu_akhir_renstra',
         ],
       }),
       RenstraTujuan.findAll({
-        attributes: ["id", "renstra_id", "no_tujuan", "isi_tujuan"],
+        attributes: ['id', 'renstra_id', 'no_tujuan', 'isi_tujuan'],
       }),
     ]);
 
-    const tujuanMap = new Map(
-      tujuanRows.map((t) => [Number(t.id), t.toJSON ? t.toJSON() : t])
-    );
+    const tujuanMap = new Map(tujuanRows.map((t) => [Number(t.id), t.toJSON ? t.toJSON() : t]));
 
     const rowsWithTarget = rows.map((row) => {
       const json = applyTargetFinalIfMissing(row);
@@ -429,12 +413,12 @@ exports.findAll = async (req, res) => {
         isi_tujuan: item.isi_tujuan ?? null,
         pagu_tujuan: item.pagu_tujuan ?? item.total_pagu ?? 0,
         total_pagu: item.total_pagu ?? item.pagu_tujuan ?? 0,
-      }))
+      })),
     );
 
     res.json(result);
   } catch (err) {
-    console.error("[renstra_tabelTujuanController.findAll]", err);
+    console.error('[renstra_tabelTujuanController.findAll]', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -450,14 +434,14 @@ exports.findByTujuan = async (req, res) => {
       tujuan_id: Number(tujuan_id),
     };
 
-    if (renstra_id != null && renstra_id !== "") {
+    if (renstra_id != null && renstra_id !== '') {
       const renstraNum = Number(renstra_id);
       if (!Number.isFinite(renstraNum)) {
-        return res.status(400).json({ error: "renstra_id harus berupa angka" });
+        return res.status(400).json({ error: 'renstra_id harus berupa angka' });
       }
 
       const tujuanRowsForRenstra = await RenstraTujuan.findAll({
-        attributes: ["id"],
+        attributes: ['id'],
         where: { renstra_id: renstraNum },
       });
       const tujuanIds = tujuanRowsForRenstra
@@ -471,20 +455,20 @@ exports.findByTujuan = async (req, res) => {
 
     const rows = await RenstraTabelTujuan.findAll({
       where,
-      order: [["id", "ASC"]],
+      order: [['id', 'ASC']],
       attributes: [
-        "id",
-        "tujuan_id",
-        "opd_id",
-        "indikator_id",
-        "kode_tujuan",
-        "nama_tujuan",
-        "pagu_akhir_renstra",
+        'id',
+        'tujuan_id',
+        'opd_id',
+        'indikator_id',
+        'kode_tujuan',
+        'nama_tujuan',
+        'pagu_akhir_renstra',
       ],
     });
 
     const tujuan = await RenstraTujuan.findByPk(Number(tujuan_id), {
-      attributes: ["id", "renstra_id", "no_tujuan", "isi_tujuan"],
+      attributes: ['id', 'renstra_id', 'no_tujuan', 'isi_tujuan'],
     });
 
     const result = await attachTujuanCacheToRows({
@@ -505,7 +489,7 @@ exports.findByTujuan = async (req, res) => {
         isi_tujuan: item.isi_tujuan ?? null,
         pagu_tujuan: item.pagu_tujuan ?? item.total_pagu ?? 0,
         total_pagu: item.total_pagu ?? item.pagu_tujuan ?? 0,
-      }))
+      })),
     );
 
     res.json(result);
@@ -523,43 +507,43 @@ exports.findOne = async (req, res) => {
     const row = await RenstraTabelTujuan.findByPk(id, {
       include: tujuanInclude,
       attributes: [
-        "id",
-        "tujuan_id",
-        "opd_id",
-        "indikator_id",
-        "kode_tujuan",
-        "nama_tujuan",
-        "target_tahun_1",
-        "target_tahun_2",
-        "target_tahun_3",
-        "target_tahun_4",
-        "target_tahun_5",
-        "target_tahun_6",
-        "pagu_rpjmd_acuan",
-        "pagu_tahun_1",
-        "pagu_tahun_2",
-        "pagu_tahun_3",
-        "pagu_tahun_4",
-        "pagu_tahun_5",
-        "pagu_tahun_6",
-        "pagu_akhir_renstra",
-        "target_akhir_renstra",
-        "baseline",
-        "satuan_target",
-        "lokasi",
-        "versi",
-        "status_revisi",
-        "last_revised_at",
-        "last_revised_by",
+        'id',
+        'tujuan_id',
+        'opd_id',
+        'indikator_id',
+        'kode_tujuan',
+        'nama_tujuan',
+        'target_tahun_1',
+        'target_tahun_2',
+        'target_tahun_3',
+        'target_tahun_4',
+        'target_tahun_5',
+        'target_tahun_6',
+        'pagu_rpjmd_acuan',
+        'pagu_tahun_1',
+        'pagu_tahun_2',
+        'pagu_tahun_3',
+        'pagu_tahun_4',
+        'pagu_tahun_5',
+        'pagu_tahun_6',
+        'pagu_akhir_renstra',
+        'target_akhir_renstra',
+        'baseline',
+        'satuan_target',
+        'lokasi',
+        'versi',
+        'status_revisi',
+        'last_revised_at',
+        'last_revised_by',
       ],
     });
 
     if (!row) {
-      return res.status(404).json({ message: "Data tidak ditemukan" });
+      return res.status(404).json({ message: 'Data tidak ditemukan' });
     }
 
     const tujuan = await RenstraTujuan.findByPk(Number(row.tujuan_id), {
-      attributes: ["id", "renstra_id", "no_tujuan", "isi_tujuan"],
+      attributes: ['id', 'renstra_id', 'no_tujuan', 'isi_tujuan'],
     });
 
     const [result] = await attachTujuanCacheToRows({
@@ -576,7 +560,7 @@ exports.findOne = async (req, res) => {
       items.map((item) => ({
         ...item,
         renstra_id: tujuan?.renstra_id ?? null,
-      }))
+      })),
     );
 
     res.json(result);
@@ -599,7 +583,7 @@ exports.update = async (req, res) => {
 
     if (!current) {
       await t.rollback();
-      return res.status(404).json({ message: "Data not found" });
+      return res.status(404).json({ message: 'Data not found' });
     }
 
     const payloadBase = {
@@ -608,25 +592,18 @@ exports.update = async (req, res) => {
       ...computeFinal(req.body),
     };
 
-    if (
-      !payloadBase.renstra_id ||
-      !payloadBase.tujuan_id ||
-      !payloadBase.indikator_id
-    ) {
+    if (!payloadBase.renstra_id || !payloadBase.tujuan_id || !payloadBase.indikator_id) {
       await t.rollback();
       return res.status(400).json({
-        message: "renstra_id, tujuan_id, dan indikator_id wajib diisi",
+        message: 'renstra_id, tujuan_id, dan indikator_id wajib diisi',
       });
     }
 
-    const indikator = await IndikatorRenstra.findByPk(
-      payloadBase.indikator_id,
-      { transaction: t }
-    );
+    const indikator = await IndikatorRenstra.findByPk(payloadBase.indikator_id, { transaction: t });
 
     if (!indikator) {
       await t.rollback();
-      return res.status(404).json({ error: "Indikator tidak ditemukan" });
+      return res.status(404).json({ error: 'Indikator tidak ditemukan' });
     }
 
     const masterTujuan = await RenstraTujuan.findByPk(payloadBase.tujuan_id, {
@@ -635,7 +612,7 @@ exports.update = async (req, res) => {
 
     if (!masterTujuan) {
       await t.rollback();
-      return res.status(404).json({ error: "Tujuan tidak ditemukan" });
+      return res.status(404).json({ error: 'Tujuan tidak ditemukan' });
     }
 
     if (
@@ -644,7 +621,7 @@ exports.update = async (req, res) => {
     ) {
       await t.rollback();
       return res.status(400).json({
-        message: "tujuan_id tidak sesuai dengan renstra_id yang dipilih",
+        message: 'tujuan_id tidak sesuai dengan renstra_id yang dipilih',
       });
     }
 
@@ -660,7 +637,7 @@ exports.update = async (req, res) => {
     if (duplicate) {
       await t.rollback();
       return res.status(409).json({
-        message: "Data tujuan dengan indikator ini sudah ada. Gunakan Edit.",
+        message: 'Data tujuan dengan indikator ini sudah ada. Gunakan Edit.',
         existing_id: duplicate.id,
         blocked: true,
       });
@@ -669,13 +646,13 @@ exports.update = async (req, res) => {
     const payload = {
       ...payloadBase,
 
+      misi_id: req.body.misi_id ?? null,
+
       satuan_target: indikator.satuan || payloadBase.satuan_target,
 
-      kode_tujuan:
-        payloadBase.kode_tujuan || masterTujuan.no_tujuan || null,
+      kode_tujuan: payloadBase.kode_tujuan || masterTujuan.no_tujuan || null,
 
-      nama_tujuan:
-        payloadBase.nama_tujuan || masterTujuan.isi_tujuan || null,
+      nama_tujuan: payloadBase.nama_tujuan || masterTujuan.isi_tujuan || null,
 
       // 🔴 Parent tidak boleh update pagu dari form.
       ...buildLockedPaguPayload(),
@@ -699,7 +676,7 @@ exports.update = async (req, res) => {
     await t.commit();
 
     res.json({
-      message: "Data tujuan berhasil diperbarui",
+      message: 'Data tujuan berhasil diperbarui',
       data: result,
       blocked: false,
     });
@@ -718,10 +695,10 @@ exports.revisi = async (req, res) => {
     const actorId = getActorId(req);
     const alasanRevisi = req.body.alasan_revisi;
 
-    if (!alasanRevisi || String(alasanRevisi).trim() === "") {
+    if (!alasanRevisi || String(alasanRevisi).trim() === '') {
       await t.rollback();
       return res.status(400).json({
-        message: "Alasan revisi wajib diisi",
+        message: 'Alasan revisi wajib diisi',
         blocked: true,
       });
     }
@@ -734,7 +711,7 @@ exports.revisi = async (req, res) => {
     if (!row) {
       await t.rollback();
       return res.status(404).json({
-        message: "Data tujuan Renstra tidak ditemukan",
+        message: 'Data tujuan Renstra tidak ditemukan',
         blocked: true,
       });
     }
@@ -747,7 +724,7 @@ exports.revisi = async (req, res) => {
       ...beforeJson,
       ...payload,
       versi: Number(beforeJson.versi || 1) + 1,
-      status_revisi: "draft",
+      status_revisi: 'draft',
       last_revised_at: new Date(),
       last_revised_by: actorId,
     };
@@ -765,18 +742,18 @@ exports.revisi = async (req, res) => {
       {
         ...payload,
         versi: versiSesudah,
-        status_revisi: "draft",
+        status_revisi: 'draft',
         last_revised_at: new Date(),
         last_revised_by: actorId,
       },
-      { transaction: t }
+      { transaction: t },
     );
 
     const updated = await RenstraTabelTujuan.findByPk(id, {
       include: [
-        { model: IndikatorRenstra, as: "indikator" },
-        { model: RenstraTujuan, as: "tujuan" },
-        { model: RenstraOPD, as: "opd" },
+        { model: IndikatorRenstra, as: 'indikator' },
+        { model: RenstraTujuan, as: 'tujuan' },
+        { model: RenstraOPD, as: 'opd' },
       ],
       transaction: t,
     });
@@ -784,7 +761,7 @@ exports.revisi = async (req, res) => {
     await t.commit();
 
     res.json({
-      message: "✅ Revisi tujuan berhasil disimpan sebagai draft",
+      message: '✅ Revisi tujuan berhasil disimpan sebagai draft',
       data: updated,
       before: beforeJson,
       after: afterJson,
@@ -810,7 +787,7 @@ exports.history = async (req, res) => {
       `,
       {
         replacements: { id },
-      }
+      },
     );
 
     res.json(rows);
@@ -841,13 +818,13 @@ exports.verifikasiHistory = async (req, res) => {
       {
         replacements: { history_id, actorId },
         transaction: t,
-      }
+      },
     );
 
     await t.commit();
 
     res.json({
-      message: "✅ Revisi tujuan berhasil diverifikasi",
+      message: '✅ Revisi tujuan berhasil diverifikasi',
       blocked: false,
     });
   } catch (err) {
@@ -874,7 +851,7 @@ exports.approveHistory = async (req, res) => {
       {
         replacements: { history_id },
         transaction: t,
-      }
+      },
     );
 
     const history = rows[0];
@@ -882,15 +859,15 @@ exports.approveHistory = async (req, res) => {
     if (!history) {
       await t.rollback();
       return res.status(404).json({
-        message: "History revisi tidak ditemukan",
+        message: 'History revisi tidak ditemukan',
         blocked: true,
       });
     }
 
-    if (history.status_revisi !== "verifikasi") {
+    if (history.status_revisi !== 'verifikasi') {
       await t.rollback();
       return res.status(400).json({
-        message: "Revisi harus diverifikasi sebelum approve",
+        message: 'Revisi harus diverifikasi sebelum approve',
         blocked: true,
       });
     }
@@ -908,23 +885,23 @@ exports.approveHistory = async (req, res) => {
       {
         replacements: { history_id, actorId },
         transaction: t,
-      }
+      },
     );
 
     await RenstraTabelTujuan.update(
       {
-        status_revisi: "approved",
+        status_revisi: 'approved',
       },
       {
         where: { id: history.renstra_tabel_tujuan_id },
         transaction: t,
-      }
+      },
     );
 
     await t.commit();
 
     res.json({
-      message: "✅ Revisi tujuan berhasil disetujui",
+      message: '✅ Revisi tujuan berhasil disetujui',
       blocked: false,
     });
   } catch (err) {
@@ -955,13 +932,13 @@ exports.tolakHistory = async (req, res) => {
       {
         replacements: { history_id, actorId },
         transaction: t,
-      }
+      },
     );
 
     await t.commit();
 
     res.json({
-      message: "✅ Revisi tujuan berhasil ditolak",
+      message: '✅ Revisi tujuan berhasil ditolak',
       blocked: false,
     });
   } catch (err) {
@@ -985,12 +962,12 @@ exports.delete = async (req, res) => {
 
     if (!deleted) {
       await t.rollback();
-      return res.status(404).json({ message: "Data not found" });
+      return res.status(404).json({ message: 'Data not found' });
     }
 
     await t.commit();
 
-    res.json({ message: "Deleted successfully" });
+    res.json({ message: 'Deleted successfully' });
   } catch (err) {
     await t.rollback();
     res.status(500).json({ error: err.message });

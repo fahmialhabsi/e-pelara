@@ -1,4 +1,4 @@
-const { QueryTypes } = require("sequelize");
+const { QueryTypes } = require('sequelize');
 const {
   sequelize,
   RenstraTabelSubkegiatan,
@@ -8,16 +8,16 @@ const {
   IndikatorRenstra,
   IndikatorSubKegiatan,
   RenstraAuditLogGlobal,
-} = require("../models");
+} = require('../models');
 
-const renstraPaguSync = require("../services/renstraPaguCachedIncrementalSyncService");
+const renstraPaguSync = require('../services/renstraPaguCachedIncrementalSyncService');
 
-const isApproved = (row) => row?.status_revisi === "approved";
+const isApproved = (row) => row?.status_revisi === 'approved';
 
 const parsePositiveIntQuery = (value, fieldName) => {
   const raw = Array.isArray(value) ? value[0] : value;
 
-  if (raw === undefined || raw === null || raw === "") {
+  if (raw === undefined || raw === null || raw === '') {
     return null;
   }
 
@@ -33,17 +33,11 @@ const parsePositiveIntQuery = (value, fieldName) => {
 };
 
 const allowApprovedSubkegiatanUpdate = async (transaction) => {
-  await sequelize.query(
-    "SET @allow_approved_subkegiatan_update = 1",
-    { transaction }
-  );
+  await sequelize.query('SET @allow_approved_subkegiatan_update = 1', { transaction });
 };
 
 const lockApprovedSubkegiatanUpdate = async (transaction) => {
-  await sequelize.query(
-    "SET @allow_approved_subkegiatan_update = 0",
-    { transaction }
-  );
+  await sequelize.query('SET @allow_approved_subkegiatan_update = 0', { transaction });
 };
 
 const getUserId = (req) => {
@@ -51,7 +45,7 @@ const getUserId = (req) => {
 };
 
 const writeGlobalAudit = async ({
-  module = "sub_kegiatan",
+  module = 'sub_kegiatan',
   entity_id,
   action,
   before_json = null,
@@ -68,7 +62,7 @@ const writeGlobalAudit = async ({
       after_json,
       user_id,
     },
-    { transaction }
+    { transaction },
   );
 };
 
@@ -78,14 +72,12 @@ const roundUp2 = (value) => {
 };
 
 const computeTargetOnly = (data) => {
-  const targetValues = [1, 2, 3, 4, 5].map(
-    (i) => Number(data[`target_tahun_${i}`]) || 0
-  );
+  const targetValues = [1, 2, 3, 4, 5].map((i) => Number(data[`target_tahun_${i}`]) || 0);
 
   return {
     target_tahun_6: 0,
     target_akhir_renstra: roundUp2(
-      targetValues.reduce((a, b) => a + b, 0) / targetValues.length || 0
+      targetValues.reduce((a, b) => a + b, 0) / targetValues.length || 0,
     ),
   };
 };
@@ -101,7 +93,7 @@ const normalizeSubKegiatanPaguPayload = ({ body, current }) => {
   let paguValues = [1, 2, 3, 4, 5].map((i) => {
     const key = `pagu_tahun_${i}`;
 
-    if (body?.[key] !== undefined && body?.[key] !== null && body?.[key] !== "") {
+    if (body?.[key] !== undefined && body?.[key] !== null && body?.[key] !== '') {
       return Number(body[key]) || 0;
     }
 
@@ -112,13 +104,7 @@ const normalizeSubKegiatanPaguPayload = ({ body, current }) => {
     const paguDasar = Math.floor(paguRpjmdAcuan / 5);
     const sisaPagu = paguRpjmdAcuan - paguDasar * 5;
 
-    paguValues = [
-      paguDasar,
-      paguDasar,
-      paguDasar,
-      paguDasar,
-      paguDasar + sisaPagu,
-    ];
+    paguValues = [paguDasar, paguDasar, paguDasar, paguDasar, paguDasar + sisaPagu];
   }
 
   return {
@@ -135,7 +121,7 @@ const normalizeSubKegiatanPaguPayload = ({ body, current }) => {
 
 const parseJsonField = (value) => {
   if (!value) return {};
-  if (typeof value === "object") return value;
+  if (typeof value === 'object') return value;
 
   try {
     return JSON.parse(value);
@@ -193,25 +179,18 @@ const applyPaguReadonly = (item) => {
   json.target_tahun_6 = 0;
 
   json.target_akhir_renstra = roundUp2(
-    (
-      json.target_tahun_1 +
+    (json.target_tahun_1 +
       json.target_tahun_2 +
       json.target_tahun_3 +
       json.target_tahun_4 +
-      json.target_tahun_5
-    ) / 5
+      json.target_tahun_5) /
+      5,
   );
 
   return json;
 };
 
-const insertHistory = async ({
-  current,
-  afterData,
-  alasanRevisi,
-  userId,
-  transaction,
-}) => {
+const insertHistory = async ({ current, afterData, alasanRevisi, userId, transaction }) => {
   const beforeJson = current.toJSON ? current.toJSON() : current;
   const versiSebelum = Number(beforeJson.versi || 1);
   const versiSesudah = versiSebelum + 1;
@@ -263,11 +242,11 @@ const insertHistory = async ({
         versi_sesudah: versiSesudah,
         before_json: JSON.stringify(beforeJson),
         after_json: JSON.stringify(afterData),
-        alasan_revisi: alasanRevisi || "Revisi data sub kegiatan",
+        alasan_revisi: alasanRevisi || 'Revisi data sub kegiatan',
         dibuat_oleh: userId,
       },
       transaction,
-    }
+    },
   );
 
   return versiSesudah;
@@ -279,11 +258,11 @@ const getJsonPaguAkhir = (json) => {
 };
 
 const getValidHistoryPayload = ({ history, approvedHistory, validPaguHistory }) => {
-  if (history.status_revisi === "ditolak") {
+  if (history.status_revisi === 'ditolak') {
     if (approvedHistory && getJsonPaguAkhir(approvedHistory.after_json) > 0) {
       return {
         json: parseJsonField(approvedHistory.after_json),
-        source: "approved_after_json",
+        source: 'approved_after_json',
         source_history_id: approvedHistory.id,
       };
     }
@@ -291,21 +270,21 @@ const getValidHistoryPayload = ({ history, approvedHistory, validPaguHistory }) 
     if (validPaguHistory) {
       return {
         json: parseJsonField(validPaguHistory.after_json),
-        source: "valid_pagu_after_json",
+        source: 'valid_pagu_after_json',
         source_history_id: validPaguHistory.id,
       };
     }
 
     return {
       json: parseJsonField(history.before_json),
-      source: "rejected_before_json",
+      source: 'rejected_before_json',
       source_history_id: history.id,
     };
   }
 
   return {
     json: parseJsonField(history.after_json),
-    source: "latest_after_json",
+    source: 'latest_after_json',
     source_history_id: history.id,
   };
 };
@@ -349,53 +328,48 @@ const rebuildSubKegiatanPayloadFromHistory = ({
 const getSourcePagu = async (indikator, transaction) => {
   if (!indikator?.source_indikator_id) return 0;
 
-  const source = await IndikatorSubKegiatan.findByPk(
-    indikator.source_indikator_id,
-    {
-      attributes: ["id", "pagu_cached"],
-      transaction,
-    }
-  );
+  const source = await IndikatorSubKegiatan.findByPk(indikator.source_indikator_id, {
+    attributes: ['id', 'pagu_cached'],
+    transaction,
+  });
 
   return Number(source?.pagu_cached || 0);
 };
 
 const SUB_KEGIATAN_ALLOWED_BODY_FIELDS = [
-  "renstra_id",
-  "program_id",
-  "kegiatan_id",
-  "sub_kegiatan_id",
-  "subkegiatan_id",
-  "indikator_id",
-  "indikator_manual",
-  "kode_subkegiatan",
-  "nama_subkegiatan",
-  "sub_bidang_penanggung_jawab",
-  "baseline",
-  "satuan_target",
-  "lokasi",
-  "target_tahun_1",
-  "target_tahun_2",
-  "target_tahun_3",
-  "target_tahun_4",
-  "target_tahun_5",
-  "pagu_tahun_1",
-  "pagu_tahun_2",
-  "pagu_tahun_3",
-  "pagu_tahun_4",
-  "pagu_tahun_5",
-  "alasan_revisi",
+  'renstra_id',
+  'program_id',
+  'kegiatan_id',
+  'kebijakan_id',
+  'strategi_id',
+  'sub_kegiatan_id',
+  'subkegiatan_id',
+  'indikator_id',
+  'indikator_manual',
+  'kode_subkegiatan',
+  'nama_subkegiatan',
+  'sub_bidang_penanggung_jawab',
+  'baseline',
+  'satuan_target',
+  'lokasi',
+  'target_tahun_1',
+  'target_tahun_2',
+  'target_tahun_3',
+  'target_tahun_4',
+  'target_tahun_5',
+  'pagu_tahun_1',
+  'pagu_tahun_2',
+  'pagu_tahun_3',
+  'pagu_tahun_4',
+  'pagu_tahun_5',
+  'alasan_revisi',
 ];
 
 const assertAllowedBodyFields = (body, allowedFields) => {
-  const unknownFields = Object.keys(body || {}).filter(
-    (key) => !allowedFields.includes(key)
-  );
+  const unknownFields = Object.keys(body || {}).filter((key) => !allowedFields.includes(key));
 
   if (unknownFields.length) {
-    const error = new Error(
-      `Field tidak diperbolehkan: ${unknownFields.join(", ")}`
-    );
+    const error = new Error(`Field tidak diperbolehkan: ${unknownFields.join(', ')}`);
     error.statusCode = 400;
     error.blocked = true;
     throw error;
@@ -418,31 +392,19 @@ const buildSubKegiatanPayload = async ({
   const base = {
     ...body,
 
-    renstra_id: Number(
-      body.renstra_id || current?.renstra_id || subKegiatan.program?.renstra_id
-    ),
-    program_id: Number(
-      body.program_id || current?.program_id || subKegiatan.renstra_program_id
-    ),
-    kegiatan_id: Number(
-      body.kegiatan_id || current?.kegiatan_id || subKegiatan.kegiatan_id
-    ),
-    sub_kegiatan_id: Number(
-      body.sub_kegiatan_id || current?.sub_kegiatan_id || subKegiatan.id
-    ),
+    renstra_id: Number(body.renstra_id || current?.renstra_id || subKegiatan.program?.renstra_id),
+    program_id: Number(body.program_id || current?.program_id || subKegiatan.renstra_program_id),
+    kegiatan_id: Number(body.kegiatan_id || current?.kegiatan_id || subKegiatan.kegiatan_id),
+    sub_kegiatan_id: Number(body.sub_kegiatan_id || current?.sub_kegiatan_id || subKegiatan.id),
     subkegiatan_id: Number(
-      body.subkegiatan_id || current?.subkegiatan_id || subKegiatan.sub_kegiatan_id
+      body.subkegiatan_id || current?.subkegiatan_id || subKegiatan.sub_kegiatan_id,
     ),
     indikator_id: Number(body.indikator_id || current?.indikator_id || indikator.id),
 
     kode_subkegiatan:
-      body.kode_subkegiatan ||
-      current?.kode_subkegiatan ||
-      subKegiatan.kode_sub_kegiatan,
+      body.kode_subkegiatan || current?.kode_subkegiatan || subKegiatan.kode_sub_kegiatan,
     nama_subkegiatan:
-      body.nama_subkegiatan ||
-      current?.nama_subkegiatan ||
-      subKegiatan.nama_sub_kegiatan,
+      body.nama_subkegiatan || current?.nama_subkegiatan || subKegiatan.nama_sub_kegiatan,
     sub_bidang_penanggung_jawab:
       body.sub_bidang_penanggung_jawab ||
       current?.sub_bidang_penanggung_jawab ||
@@ -457,11 +419,26 @@ const buildSubKegiatanPayload = async ({
       subKegiatan.sub_bidang_opd ??
       subKegiatan.nama_bidang_opd,
 
-    target_tahun_1: body.target_tahun_1 !== undefined ? Number(body.target_tahun_1) || 0 : Number(current?.target_tahun_1 || 0),
-    target_tahun_2: body.target_tahun_2 !== undefined ? Number(body.target_tahun_2) || 0 : Number(current?.target_tahun_2 || 0),
-    target_tahun_3: body.target_tahun_3 !== undefined ? Number(body.target_tahun_3) || 0 : Number(current?.target_tahun_3 || 0),
-    target_tahun_4: body.target_tahun_4 !== undefined ? Number(body.target_tahun_4) || 0 : Number(current?.target_tahun_4 || 0),
-    target_tahun_5: body.target_tahun_5 !== undefined ? Number(body.target_tahun_5) || 0 : Number(current?.target_tahun_5 || 0),
+    target_tahun_1:
+      body.target_tahun_1 !== undefined
+        ? Number(body.target_tahun_1) || 0
+        : Number(current?.target_tahun_1 || 0),
+    target_tahun_2:
+      body.target_tahun_2 !== undefined
+        ? Number(body.target_tahun_2) || 0
+        : Number(current?.target_tahun_2 || 0),
+    target_tahun_3:
+      body.target_tahun_3 !== undefined
+        ? Number(body.target_tahun_3) || 0
+        : Number(current?.target_tahun_3 || 0),
+    target_tahun_4:
+      body.target_tahun_4 !== undefined
+        ? Number(body.target_tahun_4) || 0
+        : Number(current?.target_tahun_4 || 0),
+    target_tahun_5:
+      body.target_tahun_5 !== undefined
+        ? Number(body.target_tahun_5) || 0
+        : Number(current?.target_tahun_5 || 0),
     target_tahun_6: 0,
 
     pagu_rpjmd_acuan: paguRpjmdAcuan,
@@ -489,46 +466,46 @@ const buildSubKegiatanPayload = async ({
 const tabelSubKegiatanListIncludes = [
   {
     model: RenstraProgram,
-    as: "program",
-    attributes: ["id", "kode_program", "nama_program", "opd_penanggung_jawab"],
+    as: 'program',
+    attributes: ['id', 'kode_program', 'nama_program', 'opd_penanggung_jawab'],
   },
   {
     model: RenstraKegiatan,
-    as: "kegiatan",
-    attributes: ["id", "kode_kegiatan", "nama_kegiatan", "bidang_opd"],
+    as: 'kegiatan',
+    attributes: ['id', 'kode_kegiatan', 'nama_kegiatan', 'bidang_opd'],
   },
   {
     model: RenstraSubkegiatan,
-    as: "sub_kegiatan",
+    as: 'sub_kegiatan',
     attributes: [
-      "id",
-      "kode_sub_kegiatan",
-      "nama_sub_kegiatan",
-      "sub_bidang_opd",
-      "nama_opd",
-      "nama_bidang_opd",
-      "renstra_program_id",
-      "kegiatan_id",
-      "sub_kegiatan_id",
+      'id',
+      'kode_sub_kegiatan',
+      'nama_sub_kegiatan',
+      'sub_bidang_opd',
+      'nama_opd',
+      'nama_bidang_opd',
+      'renstra_program_id',
+      'kegiatan_id',
+      'sub_kegiatan_id',
     ],
   },
   {
     model: IndikatorRenstra,
-    as: "indikator_detail",
+    as: 'indikator_detail',
     attributes: [
-      "id",
-      "kode_indikator",
-      "nama_indikator",
-      "satuan",
-      "baseline",
-      "target_tahun_1",
-      "target_tahun_2",
-      "target_tahun_3",
-      "target_tahun_4",
-      "target_tahun_5",
-      "target_tahun_6",
-      "lokasi",
-      "source_indikator_id",
+      'id',
+      'kode_indikator',
+      'nama_indikator',
+      'satuan',
+      'baseline',
+      'target_tahun_1',
+      'target_tahun_2',
+      'target_tahun_3',
+      'target_tahun_4',
+      'target_tahun_5',
+      'target_tahun_6',
+      'lokasi',
+      'source_indikator_id',
     ],
   },
 ];
@@ -548,8 +525,8 @@ exports.create = async (req, res) => {
       include: [
         {
           model: RenstraProgram,
-          as: "program",
-          attributes: ["id", "renstra_id"],
+          as: 'program',
+          attributes: ['id', 'renstra_id'],
         },
       ],
       transaction: t,
@@ -558,7 +535,7 @@ exports.create = async (req, res) => {
     if (!subKegiatan) {
       await t.rollback();
       return res.status(400).json({
-        message: "sub_kegiatan_id tidak valid. Harus ID RenstraSubkegiatan.",
+        message: 'sub_kegiatan_id tidak valid. Harus ID RenstraSubkegiatan.',
         blocked: true,
       });
     }
@@ -569,7 +546,7 @@ exports.create = async (req, res) => {
       where: {
         id: Number(indikator_id),
         renstra_id: finalRenstraId,
-        stage: "sub_kegiatan",
+        stage: 'sub_kegiatan',
         ref_id: subKegiatan.id,
       },
       transaction: t,
@@ -578,8 +555,7 @@ exports.create = async (req, res) => {
     if (!indikator) {
       await t.rollback();
       return res.status(400).json({
-        message:
-          "indikator_id tidak valid. Harus ID indikator_renstra stage sub_kegiatan.",
+        message: 'indikator_id tidak valid. Harus ID indikator_renstra stage sub_kegiatan.',
         blocked: true,
       });
     }
@@ -596,7 +572,7 @@ exports.create = async (req, res) => {
     if (existing) {
       await t.rollback();
       return res.status(409).json({
-        message: "Data sub kegiatan dengan indikator ini sudah ada. Gunakan Edit.",
+        message: 'Data sub kegiatan dengan indikator ini sudah ada. Gunakan Edit.',
         existing_id: existing.id,
         blocked: true,
       });
@@ -606,6 +582,8 @@ exports.create = async (req, res) => {
       body: {
         ...req.body,
         renstra_id: finalRenstraId,
+        kebijakan_id: req.body.kebijakan_id ?? null,
+        strategi_id: req.body.strategi_id ?? null,
         sub_kegiatan_id: subKegiatan.id,
         indikator_id: indikator.id,
       },
@@ -619,25 +597,25 @@ exports.create = async (req, res) => {
     const created = await RenstraTabelSubkegiatan.create(
       {
         ...payload,
-        status_revisi: "draft",
+        status_revisi: 'draft',
         versi: 1,
       },
-      { transaction: t }
+      { transaction: t },
     );
 
     await writeGlobalAudit({
       entity_id: created.id,
-      action: "create",
+      action: 'create',
       before_json: null,
       after_json: created.toJSON(),
       user_id: userId,
       transaction: t,
     });
 
-    if (typeof renstraPaguSync.syncFromSubKegiatan === "function") {
+    if (typeof renstraPaguSync.syncFromSubKegiatan === 'function') {
       await renstraPaguSync.syncFromSubKegiatan({
         subkegiatan: created,
-        type: "create",
+        type: 'create',
         transaction: t,
       });
     }
@@ -645,7 +623,7 @@ exports.create = async (req, res) => {
     await t.commit();
 
     return res.status(201).json({
-      message: "Sub kegiatan berhasil ditambahkan",
+      message: 'Sub kegiatan berhasil ditambahkan',
       data: applyPaguReadonly(created),
       blocked: false,
     });
@@ -671,7 +649,7 @@ exports.createRevisi = async (req, res) => {
     if (!req.body.alasan_revisi || !String(req.body.alasan_revisi).trim()) {
       await t.rollback();
       return res.status(400).json({
-        message: "alasan_revisi wajib diisi saat membuat revisi",
+        message: 'alasan_revisi wajib diisi saat membuat revisi',
       });
     }
 
@@ -682,13 +660,13 @@ exports.createRevisi = async (req, res) => {
 
     if (!current) {
       await t.rollback();
-      return res.status(404).json({ message: "Data tidak ditemukan" });
+      return res.status(404).json({ message: 'Data tidak ditemukan' });
     }
 
-    if (current.status_revisi !== "approved") {
+    if (current.status_revisi !== 'approved') {
       await t.rollback();
       return res.status(409).json({
-        message: "Endpoint revisi hanya untuk data yang sudah approved",
+        message: 'Endpoint revisi hanya untuk data yang sudah approved',
       });
     }
 
@@ -699,8 +677,8 @@ exports.createRevisi = async (req, res) => {
       include: [
         {
           model: RenstraProgram,
-          as: "program",
-          attributes: ["id", "renstra_id"],
+          as: 'program',
+          attributes: ['id', 'renstra_id'],
         },
       ],
       transaction: t,
@@ -709,19 +687,19 @@ exports.createRevisi = async (req, res) => {
     if (!subKegiatan) {
       await t.rollback();
       return res.status(400).json({
-        message: "sub_kegiatan_id tidak valid. Harus ID RenstraSubkegiatan.",
+        message: 'sub_kegiatan_id tidak valid. Harus ID RenstraSubkegiatan.',
       });
     }
 
     const finalRenstraId = Number(
-      req.body.renstra_id || current.renstra_id || subKegiatan.program?.renstra_id
+      req.body.renstra_id || current.renstra_id || subKegiatan.program?.renstra_id,
     );
 
     const indikator = await IndikatorRenstra.findOne({
       where: {
         id: Number(req.body.indikator_id || current.indikator_id),
         renstra_id: finalRenstraId,
-        stage: "sub_kegiatan",
+        stage: 'sub_kegiatan',
         ref_id: subKegiatan.id,
       },
       transaction: t,
@@ -730,8 +708,7 @@ exports.createRevisi = async (req, res) => {
     if (!indikator) {
       await t.rollback();
       return res.status(400).json({
-        message:
-          "indikator_id tidak valid. Harus ID indikator_renstra stage sub_kegiatan.",
+        message: 'indikator_id tidak valid. Harus ID indikator_renstra stage sub_kegiatan.',
       });
     }
 
@@ -744,7 +721,9 @@ exports.createRevisi = async (req, res) => {
         userId,
         transaction: t,
       })),
-      status_revisi: "draft",
+      kebijakan_id: req.body.kebijakan_id ?? null,
+      strategi_id: req.body.strategi_id ?? null,
+      status_revisi: 'draft',
       versi: Number(current.versi || 1) + 1,
     };
 
@@ -767,7 +746,7 @@ exports.createRevisi = async (req, res) => {
         {
           where: { id },
           transaction: t,
-        }
+        },
       );
     } finally {
       await lockApprovedSubkegiatanUpdate(t);
@@ -775,7 +754,7 @@ exports.createRevisi = async (req, res) => {
 
     await writeGlobalAudit({
       entity_id: Number(id),
-      action: "revisi",
+      action: 'revisi',
       before_json: current.toJSON(),
       after_json: {
         ...payload,
@@ -792,15 +771,15 @@ exports.createRevisi = async (req, res) => {
     });
 
     return res.json({
-      message: "Revisi sub kegiatan berhasil dibuat sebagai draft",
+      message: 'Revisi sub kegiatan berhasil dibuat sebagai draft',
       data: applyPaguReadonly(result),
       blocked: false,
       audit_mode: true,
-      workflow_state: "draft",
+      workflow_state: 'draft',
     });
   } catch (err) {
     await t.rollback();
-    console.error("CREATE REVISI SUB KEGIATAN ERROR:", err);
+    console.error('CREATE REVISI SUB KEGIATAN ERROR:', err);
     return res.status(err.statusCode || 400).json({
       error: err.message,
       blocked: err.blocked || false,
@@ -826,7 +805,7 @@ exports.update = async (req, res) => {
     if (!existing) {
       await t.rollback();
       return res.status(404).json({
-        message: "Data tidak ditemukan",
+        message: 'Data tidak ditemukan',
         blocked: true,
       });
     }
@@ -834,7 +813,7 @@ exports.update = async (req, res) => {
     if (isApproved(existing)) {
       await t.rollback();
       return res.status(409).json({
-        message: "Data sudah approved. Gunakan endpoint revisi.",
+        message: 'Data sudah approved. Gunakan endpoint revisi.',
         blocked: true,
         audit_mode: true,
       });
@@ -843,7 +822,7 @@ exports.update = async (req, res) => {
     if (!req.body.alasan_revisi || !String(req.body.alasan_revisi).trim()) {
       await t.rollback();
       return res.status(400).json({
-        message: "alasan_revisi wajib diisi saat revisi",
+        message: 'alasan_revisi wajib diisi saat revisi',
         blocked: true,
       });
     }
@@ -855,8 +834,8 @@ exports.update = async (req, res) => {
       include: [
         {
           model: RenstraProgram,
-          as: "program",
-          attributes: ["id", "renstra_id"],
+          as: 'program',
+          attributes: ['id', 'renstra_id'],
         },
       ],
       transaction: t,
@@ -865,19 +844,19 @@ exports.update = async (req, res) => {
     if (!subKegiatan) {
       await t.rollback();
       return res.status(400).json({
-        message: "sub_kegiatan_id tidak valid. Harus ID RenstraSubkegiatan.",
+        message: 'sub_kegiatan_id tidak valid. Harus ID RenstraSubkegiatan.',
       });
     }
 
     const finalRenstraId = Number(
-      req.body.renstra_id || existing.renstra_id || subKegiatan.program?.renstra_id
+      req.body.renstra_id || existing.renstra_id || subKegiatan.program?.renstra_id,
     );
 
     const indikator = await IndikatorRenstra.findOne({
       where: {
         id: Number(req.body.indikator_id || existing.indikator_id),
         renstra_id: finalRenstraId,
-        stage: "sub_kegiatan",
+        stage: 'sub_kegiatan',
         ref_id: subKegiatan.id,
       },
       transaction: t,
@@ -886,8 +865,7 @@ exports.update = async (req, res) => {
     if (!indikator) {
       await t.rollback();
       return res.status(400).json({
-        message:
-          "indikator_id tidak valid. Harus ID indikator_renstra stage sub_kegiatan.",
+        message: 'indikator_id tidak valid. Harus ID indikator_renstra stage sub_kegiatan.',
       });
     }
 
@@ -900,7 +878,9 @@ exports.update = async (req, res) => {
         userId,
         transaction: t,
       })),
-      status_revisi: "draft",
+      kebijakan_id: req.body.kebijakan_id ?? null,
+      strategi_id: req.body.strategi_id ?? null,
+      status_revisi: 'draft',
       versi: Number(existing.versi || 1) + 1,
     };
 
@@ -919,22 +899,22 @@ exports.update = async (req, res) => {
         ...payload,
         versi: versiSesudah,
       },
-      { transaction: t }
+      { transaction: t },
     );
 
     await writeGlobalAudit({
       entity_id: existing.id,
-      action: "update",
+      action: 'update',
       before_json: beforeUpdateJson,
       after_json: existing.toJSON(),
       user_id: userId,
       transaction: t,
     });
 
-    if (typeof renstraPaguSync.syncFromSubKegiatan === "function") {
+    if (typeof renstraPaguSync.syncFromSubKegiatan === 'function') {
       await renstraPaguSync.syncFromSubKegiatan({
         subkegiatan: existing,
-        type: "update",
+        type: 'update',
         transaction: t,
       });
     }
@@ -942,11 +922,11 @@ exports.update = async (req, res) => {
     await t.commit();
 
     return res.status(200).json({
-      message: "Sub kegiatan berhasil diperbarui",
+      message: 'Sub kegiatan berhasil diperbarui',
       data: applyPaguReadonly(existing),
       blocked: false,
       audit_mode: true,
-      workflow_state: "draft",
+      workflow_state: 'draft',
     });
   } catch (err) {
     await t.rollback();
@@ -971,15 +951,15 @@ exports.delete = async (req, res) => {
     if (!sub) {
       await t.rollback();
       return res.status(404).json({
-        message: "Data tidak ditemukan",
+        message: 'Data tidak ditemukan',
         blocked: true,
       });
     }
 
-    if (sub.status_revisi === "approved") {
+    if (sub.status_revisi === 'approved') {
       await t.rollback();
       return res.status(409).json({
-        message: "Data approved tidak boleh dihapus",
+        message: 'Data approved tidak boleh dihapus',
         blocked: true,
         audit_mode: true,
       });
@@ -991,17 +971,17 @@ exports.delete = async (req, res) => {
 
     await writeGlobalAudit({
       entity_id: Number(id),
-      action: "delete",
+      action: 'delete',
       before_json: deletedData,
       after_json: null,
       user_id: getUserId(req),
       transaction: t,
     });
 
-    if (typeof renstraPaguSync.syncFromSubKegiatan === "function") {
+    if (typeof renstraPaguSync.syncFromSubKegiatan === 'function') {
       await renstraPaguSync.syncFromSubKegiatan({
         subkegiatan: deletedData,
-        type: "delete",
+        type: 'delete',
         transaction: t,
       });
     }
@@ -1009,7 +989,7 @@ exports.delete = async (req, res) => {
     await t.commit();
 
     return res.json({
-      message: "Sub kegiatan berhasil dihapus",
+      message: 'Sub kegiatan berhasil dihapus',
       data: applyPaguReadonly(deletedData),
       blocked: false,
     });
@@ -1030,33 +1010,33 @@ exports.findAll = async (req, res) => {
       String(req.query.sub_kegiatan_id) !== String(req.query.subkegiatan_id)
     ) {
       return res.status(400).json({
-        message: "sub_kegiatan_id dan subkegiatan_id tidak boleh berbeda.",
+        message: 'sub_kegiatan_id dan subkegiatan_id tidak boleh berbeda.',
       });
     }
 
     const where = {};
 
-    const renstraId = parsePositiveIntQuery(req.query.renstra_id, "renstra_id");
+    const renstraId = parsePositiveIntQuery(req.query.renstra_id, 'renstra_id');
     if (renstraId !== null) {
       where.renstra_id = renstraId;
     }
 
-    const programId = parsePositiveIntQuery(req.query.program_id, "program_id");
+    const programId = parsePositiveIntQuery(req.query.program_id, 'program_id');
     if (programId !== null) {
       where.program_id = programId;
     }
 
-    const kegiatanId = parsePositiveIntQuery(req.query.kegiatan_id, "kegiatan_id");
+    const kegiatanId = parsePositiveIntQuery(req.query.kegiatan_id, 'kegiatan_id');
     if (kegiatanId !== null) {
       where.kegiatan_id = kegiatanId;
     }
 
-    const subKegiatanId = parsePositiveIntQuery(subKegiatanQuery, "sub_kegiatan_id");
+    const subKegiatanId = parsePositiveIntQuery(subKegiatanQuery, 'sub_kegiatan_id');
     if (subKegiatanId !== null) {
       where.sub_kegiatan_id = subKegiatanId;
     }
 
-    const indikatorId = parsePositiveIntQuery(req.query.indikator_id, "indikator_id");
+    const indikatorId = parsePositiveIntQuery(req.query.indikator_id, 'indikator_id');
     if (indikatorId !== null) {
       where.indikator_id = indikatorId;
     }
@@ -1064,7 +1044,7 @@ exports.findAll = async (req, res) => {
     const rows = await RenstraTabelSubkegiatan.findAll({
       where,
       include: tabelSubKegiatanListIncludes,
-      order: [["id", "ASC"]],
+      order: [['id', 'ASC']],
     });
 
     return res.status(200).json(rows.map((row) => applyPaguReadonly(row)));
@@ -1084,7 +1064,7 @@ exports.findOne = async (req, res) => {
     });
 
     if (!data) {
-      return res.status(404).json({ message: "Data tidak ditemukan" });
+      return res.status(404).json({ message: 'Data tidak ditemukan' });
     }
 
     return res.status(200).json(applyPaguReadonly(data));
@@ -1108,7 +1088,7 @@ exports.history = async (req, res) => {
       {
         replacements: { id },
         type: QueryTypes.SELECT,
-      }
+      },
     );
 
     return res.json(rows);
@@ -1136,18 +1116,18 @@ exports.verifikasiHistory = async (req, res) => {
         replacements: { history_id },
         type: QueryTypes.SELECT,
         transaction: t,
-      }
+      },
     );
 
     if (!history) {
       await t.rollback();
-      return res.status(404).json({ message: "History tidak ditemukan" });
+      return res.status(404).json({ message: 'History tidak ditemukan' });
     }
 
-    if (history.status_revisi !== "draft") {
+    if (history.status_revisi !== 'draft') {
       await t.rollback();
       return res.status(409).json({
-        message: "Hanya revisi berstatus draft yang bisa diverifikasi",
+        message: 'Hanya revisi berstatus draft yang bisa diverifikasi',
       });
     }
 
@@ -1164,28 +1144,28 @@ exports.verifikasiHistory = async (req, res) => {
       {
         replacements: { history_id, userId },
         transaction: t,
-      }
+      },
     );
 
     await RenstraTabelSubkegiatan.update(
       {
-        status_revisi: "verifikasi",
+        status_revisi: 'verifikasi',
         last_revised_at: new Date(),
         last_revised_by: userId,
       },
       {
         where: { id: history.renstra_tabel_subkegiatan_id },
         transaction: t,
-      }
+      },
     );
 
     await writeGlobalAudit({
       entity_id: history.renstra_tabel_subkegiatan_id,
-      action: "verifikasi",
+      action: 'verifikasi',
       before_json: history,
       after_json: {
         ...history,
-        status_revisi: "verifikasi",
+        status_revisi: 'verifikasi',
         diverifikasi_oleh: userId,
       },
       user_id: userId,
@@ -1195,10 +1175,10 @@ exports.verifikasiHistory = async (req, res) => {
     await t.commit();
 
     return res.json({
-      message: "Revisi sub kegiatan berhasil diverifikasi",
+      message: 'Revisi sub kegiatan berhasil diverifikasi',
       blocked: false,
       audit_mode: true,
-      workflow_state: "verifikasi",
+      workflow_state: 'verifikasi',
     });
   } catch (err) {
     await t.rollback();
@@ -1224,25 +1204,25 @@ exports.approveHistory = async (req, res) => {
         replacements: { history_id },
         type: QueryTypes.SELECT,
         transaction: t,
-      }
+      },
     );
 
     if (!history) {
       await t.rollback();
-      return res.status(404).json({ message: "History tidak ditemukan" });
+      return res.status(404).json({ message: 'History tidak ditemukan' });
     }
 
-    if (history.status_revisi === "approved") {
+    if (history.status_revisi === 'approved') {
       await t.rollback();
       return res.status(409).json({
-        message: "Revisi ini sudah disetujui sebelumnya.",
+        message: 'Revisi ini sudah disetujui sebelumnya.',
       });
     }
 
-    if (history.status_revisi !== "verifikasi") {
+    if (history.status_revisi !== 'verifikasi') {
       await t.rollback();
       return res.status(409).json({
-        message: "Revisi harus diverifikasi sebelum disetujui",
+        message: 'Revisi harus diverifikasi sebelum disetujui',
       });
     }
 
@@ -1259,7 +1239,7 @@ exports.approveHistory = async (req, res) => {
       {
         replacements: { history_id, userId },
         transaction: t,
-      }
+      },
     );
 
     const afterJson = sanitizeHistoryPayload(parseJsonField(history.after_json));
@@ -1267,7 +1247,7 @@ exports.approveHistory = async (req, res) => {
     await RenstraTabelSubkegiatan.update(
       {
         ...afterJson,
-        status_revisi: "approved",
+        status_revisi: 'approved',
         versi: history.versi_sesudah,
         last_revised_at: new Date(),
         last_revised_by: userId,
@@ -1275,16 +1255,16 @@ exports.approveHistory = async (req, res) => {
       {
         where: { id: history.renstra_tabel_subkegiatan_id },
         transaction: t,
-      }
+      },
     );
 
     await writeGlobalAudit({
       entity_id: history.renstra_tabel_subkegiatan_id,
-      action: "approve",
+      action: 'approve',
       before_json: parseJsonField(history.before_json),
       after_json: {
         ...afterJson,
-        status_revisi: "approved",
+        status_revisi: 'approved',
         versi: history.versi_sesudah,
       },
       user_id: userId,
@@ -1294,10 +1274,10 @@ exports.approveHistory = async (req, res) => {
     await t.commit();
 
     return res.json({
-      message: "Revisi sub kegiatan berhasil disetujui",
+      message: 'Revisi sub kegiatan berhasil disetujui',
       blocked: false,
       audit_mode: true,
-      workflow_state: "approved",
+      workflow_state: 'approved',
     });
   } catch (err) {
     await t.rollback();
@@ -1323,25 +1303,25 @@ exports.tolakHistory = async (req, res) => {
         replacements: { history_id },
         type: QueryTypes.SELECT,
         transaction: t,
-      }
+      },
     );
 
     if (!history) {
       await t.rollback();
-      return res.status(404).json({ message: "History tidak ditemukan" });
+      return res.status(404).json({ message: 'History tidak ditemukan' });
     }
 
-    if (history.status_revisi === "approved") {
+    if (history.status_revisi === 'approved') {
       await t.rollback();
       return res.status(409).json({
-        message: "Revisi yang sudah approved tidak bisa ditolak",
+        message: 'Revisi yang sudah approved tidak bisa ditolak',
       });
     }
 
-    if (!["draft", "verifikasi"].includes(history.status_revisi)) {
+    if (!['draft', 'verifikasi'].includes(history.status_revisi)) {
       await t.rollback();
       return res.status(409).json({
-        message: "Hanya revisi draft atau verifikasi yang bisa ditolak.",
+        message: 'Hanya revisi draft atau verifikasi yang bisa ditolak.',
         blocked: true,
       });
     }
@@ -1359,7 +1339,7 @@ exports.tolakHistory = async (req, res) => {
       {
         replacements: { history_id, userId },
         transaction: t,
-      }
+      },
     );
 
     const beforeJson = sanitizeHistoryPayload(parseJsonField(history.before_json));
@@ -1367,7 +1347,7 @@ exports.tolakHistory = async (req, res) => {
     await RenstraTabelSubkegiatan.update(
       {
         ...beforeJson,
-        status_revisi: "ditolak",
+        status_revisi: 'ditolak',
         versi: history.versi_sesudah,
         last_revised_at: new Date(),
         last_revised_by: userId,
@@ -1375,16 +1355,16 @@ exports.tolakHistory = async (req, res) => {
       {
         where: { id: history.renstra_tabel_subkegiatan_id },
         transaction: t,
-      }
+      },
     );
 
     await writeGlobalAudit({
       entity_id: history.renstra_tabel_subkegiatan_id,
-      action: "tolak",
+      action: 'tolak',
       before_json: parseJsonField(history.after_json),
       after_json: {
         ...beforeJson,
-        status_revisi: "ditolak",
+        status_revisi: 'ditolak',
         versi: history.versi_sesudah,
       },
       user_id: userId,
@@ -1394,10 +1374,10 @@ exports.tolakHistory = async (req, res) => {
     await t.commit();
 
     return res.json({
-      message: "Revisi sub kegiatan berhasil ditolak",
+      message: 'Revisi sub kegiatan berhasil ditolak',
       blocked: false,
       audit_mode: true,
-      workflow_state: "ditolak",
+      workflow_state: 'ditolak',
     });
   } catch (err) {
     await t.rollback();
@@ -1421,14 +1401,14 @@ exports.rebuildActiveFromHistory = async (req, res) => {
     if (!current) {
       await t.rollback();
       return res.status(404).json({
-        message: "Data sub kegiatan tidak ditemukan",
+        message: 'Data sub kegiatan tidak ditemukan',
       });
     }
 
-    if (current.status_revisi === "approved") {
+    if (current.status_revisi === 'approved') {
       await t.rollback();
       return res.status(409).json({
-        message: "Data approved tidak boleh rebuild langsung.",
+        message: 'Data approved tidak boleh rebuild langsung.',
         blocked: true,
         audit_mode: true,
       });
@@ -1446,19 +1426,19 @@ exports.rebuildActiveFromHistory = async (req, res) => {
         replacements: { id },
         type: QueryTypes.SELECT,
         transaction: t,
-      }
+      },
     );
 
     if (!history) {
       await t.rollback();
       return res.status(404).json({
-        message: "History revisi tidak ditemukan",
+        message: 'History revisi tidak ditemukan',
       });
     }
 
     let latestApprovedHistory = null;
 
-    if (history.status_revisi === "ditolak") {
+    if (history.status_revisi === 'ditolak') {
       const [approvedRow] = await sequelize.query(
         `
         SELECT *
@@ -1476,7 +1456,7 @@ exports.rebuildActiveFromHistory = async (req, res) => {
           },
           type: QueryTypes.SELECT,
           transaction: t,
-        }
+        },
       );
 
       latestApprovedHistory = approvedRow || null;
@@ -1495,7 +1475,7 @@ exports.rebuildActiveFromHistory = async (req, res) => {
         replacements: { id },
         type: QueryTypes.SELECT,
         transaction: t,
-      }
+      },
     );
 
     const { payload, rebuild_source } = rebuildSubKegiatanPayloadFromHistory({
@@ -1516,12 +1496,12 @@ exports.rebuildActiveFromHistory = async (req, res) => {
       {
         where: { id },
         transaction: t,
-      }
+      },
     );
 
     await writeGlobalAudit({
       entity_id: Number(id),
-      action: "rebuild",
+      action: 'rebuild',
       before_json: beforeRebuildJson,
       after_json: {
         ...payload,
@@ -1541,7 +1521,7 @@ exports.rebuildActiveFromHistory = async (req, res) => {
     await t.commit();
 
     return res.json({
-      message: "Data aktif sub kegiatan berhasil dibangun ulang dari history",
+      message: 'Data aktif sub kegiatan berhasil dibangun ulang dari history',
       source: {
         history_id: history.id,
         status_revisi: history.status_revisi,
@@ -1553,7 +1533,7 @@ exports.rebuildActiveFromHistory = async (req, res) => {
     });
   } catch (err) {
     await t.rollback();
-    console.error("REBUILD ACTIVE SUB KEGIATAN ERROR:", err);
+    console.error('REBUILD ACTIVE SUB KEGIATAN ERROR:', err);
     return res.status(400).json({
       error: err.message,
     });
@@ -1563,13 +1543,13 @@ exports.rebuildActiveFromHistory = async (req, res) => {
 // ========================= EXPORT EXCEL =========================
 exports.exportExcel = async (req, res) => {
   return res.status(501).json({
-    message: "Export Excel Sub Kegiatan belum diimplementasikan",
+    message: 'Export Excel Sub Kegiatan belum diimplementasikan',
   });
 };
 
 // ========================= EXPORT PDF =========================
 exports.exportPdf = async (req, res) => {
   return res.status(501).json({
-    message: "Export PDF Sub Kegiatan belum diimplementasikan",
+    message: 'Export PDF Sub Kegiatan belum diimplementasikan',
   });
 };

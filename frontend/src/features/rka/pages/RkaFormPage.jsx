@@ -1,3 +1,4 @@
+// File: frontend/src/features/rka/pages/RkaFormPage.jsx
 /**
  * Form tambah / ubah RKA (MVP audit + alasan perubahan).
  * Rute: /rka/form/new | /rka/form/:id
@@ -30,9 +31,14 @@ function buildPayload(form) {
   const p = {
     tahun: String(form.tahun || '').trim(),
     periode_id: Number(form.periode_id),
-    program: String(form.program || '').trim(),
-    kegiatan: String(form.kegiatan || '').trim(),
-    sub_kegiatan: String(form.sub_kegiatan || '').trim(),
+    program: form.program?.nama_program || '',
+    kode_program: form.program?.kode_program || '',
+
+    kegiatan: form.kegiatan?.nama_kegiatan || '',
+    kode_kegiatan: form.kegiatan?.kode_kegiatan || '',
+
+    sub_kegiatan: form.sub_kegiatan?.nama_sub_kegiatan || '',
+    kode_sub_kegiatan: form.sub_kegiatan?.kode_sub_kegiatan || '',
     indikator: form.indikator != null ? String(form.indikator) : '',
     target: form.target != null ? String(form.target) : '',
     rincian_belanja: form.rincian_belanja || null,
@@ -72,9 +78,12 @@ const RkaFormPage = () => {
     opd_id: '',
     renja_id: '',
     rpjmd_id: '',
-    program: '',
-    kegiatan: '',
-    sub_kegiatan: '',
+
+    // SIPD STRUCTURE (NEW)
+    program: null,
+    kegiatan: null,
+    sub_kegiatan: null,
+
     indikator: '',
     target: '',
     anggaran: '',
@@ -136,9 +145,9 @@ const RkaFormPage = () => {
         tahun: String(row.tahun ?? ''),
         periode_id: row.periode_id != null ? String(row.periode_id) : '',
         opd_id: row.opd_id != null ? String(row.opd_id) : '',
-        program: row.program ?? '',
-        kegiatan: row.kegiatan ?? '',
-        sub_kegiatan: row.sub_kegiatan ?? '',
+        program: row.program || null,
+        kegiatan: row.kegiatan || null,
+        sub_kegiatan: row.sub_kegiatan || null,
         indikator: row.indikator ?? '',
         target: row.target ?? '',
         anggaran: row.anggaran != null ? row.anggaran : '',
@@ -225,55 +234,106 @@ const RkaFormPage = () => {
   const handleMasterBelanja = useCallback((selected) => {
     if (!selected?.sub_rincian) return;
 
+    setForm((prev) => {
+      const currentBelanja = Array.isArray(prev.rincian_belanja) ? prev.rincian_belanja : [];
+
+      // Validasi agar kode rekening yang sama tidak duplikat di tabel
+      const isExist = currentBelanja.some(
+        (item) => item.kode_rekening === selected.sub_rincian.kode_rekening,
+      );
+      if (isExist) {
+        toast.warning('Kode rekening belanja ini sudah ditambahkan.');
+        return prev;
+      }
+
+      return {
+        ...prev,
+        rincian_belanja: [
+          ...currentBelanja,
+          {
+            id_temp: Date.now(), // Unique key untuk render list
+            kode_rekening: selected.sub_rincian.kode_rekening,
+            uraian: selected.sub_rincian.uraian,
+            volume: 1,
+            satuan: 'Pilih Satuan...',
+            harga_satuan: 0,
+            jumlah: 0,
+            sumber_dana: 'PAD',
+            lokasi: '',
+          },
+        ],
+      };
+    });
+  }, []);
+
+  const updateBelanjaRow = (index, field, value) => {
+    setForm((prev) => {
+      const updated = [...(prev.rincian_belanja || [])];
+      updated[index][field] = value;
+
+      // Rumus SIPD: Otomatis hitung perkalian kuantitas x harga satuan
+      if (field === 'volume' || field === 'harga_satuan') {
+        const vol = Number(updated[index].volume) || 0;
+        const harga = Number(updated[index].harga_satuan) || 0;
+        updated[index].jumlah = vol * harga;
+      }
+
+      return { ...prev, rincian_belanja: updated };
+    });
+  };
+
+  const removeBelanjaRow = (index) => {
     setForm((prev) => ({
       ...prev,
-      rincian_belanja: [
-        {
-          kode_rekening: selected.sub_rincian.kode_rekening,
-          uraian: selected.sub_rincian.uraian,
-          volume: 1,
-          satuan: 'unit',
-          harga_satuan: 0,
-          jumlah: 0,
-          sumber_dana: '',
-          lokasi: '',
-        },
-      ],
+      rincian_belanja: (prev.rincian_belanja || []).filter((_, i) => i !== index),
     }));
-  }, []);
+  };
+
+  // Sinkronisasi otomatis: Total rincian langsung meng-update nilai Anggaran (Pagu)
+  useEffect(() => {
+    if (Array.isArray(form.rincian_belanja) && form.rincian_belanja.length > 0) {
+      const totalPaguRincian = form.rincian_belanja.reduce(
+        (sum, item) => sum + (item.jumlah || 0),
+        0,
+      );
+      setForm((prev) => ({
+        ...prev,
+        anggaran: String(totalPaguRincian),
+      }));
+    } else {
+      setForm((prev) => ({ ...prev, anggaran: '0' }));
+    }
+  }, [form.rincian_belanja]);
 
   const handleMasterRekening = useCallback(
     ({ program, kegiatan, subKegiatan }) => {
-      // Tambahkan sementara di handleMasterRekening setelah baris subKegiatan
       console.log('renjaOptions:', renjaOptions);
       console.log('subKegiatan:', subKegiatan?.nama_sub_kegiatan);
-      console.log(
-        'matched:',
-        renjaOptions.find((r) => r.sub_kegiatan === subKegiatan?.nama_sub_kegiatan),
-      );
-      setForm((prev) => {
-        const updated = {
-          ...prev,
-          program: program?.nama_program ?? prev.program,
-          kegiatan: kegiatan?.nama_kegiatan ?? prev.kegiatan,
-          sub_kegiatan: subKegiatan?.nama_sub_kegiatan ?? prev.sub_kegiatan,
-        };
 
-        return updated;
-      });
+      setForm((prev) => ({
+        ...prev,
+        program: program || null,
+        kegiatan: kegiatan || null,
+        sub_kegiatan: subKegiatan || null,
+      }));
 
-      // Auto-fill dari Renja jika sub kegiatan dipilih
-      if (subKegiatan?.nama_sub_kegiatan) {
-        const matched = renjaOptions.find((r) => r.sub_kegiatan === subKegiatan.nama_sub_kegiatan);
+      // AUTO MATCH RENJA (SIPD LOGIC)
+      if (subKegiatan?.id) {
+        const matched = renjaOptions.find(
+          (r) => String(r.sub_kegiatan_id) === String(subKegiatan.id),
+        );
+
         if (matched) {
           setForm((prev) => ({
             ...prev,
+            renja_id: String(matched.id),
             indikator: matched.indikator || prev.indikator,
             target: matched.target != null ? String(matched.target) : prev.target,
             anggaran: matched.anggaran != null ? String(matched.anggaran) : prev.anggaran,
           }));
         }
-        if (matched) console.log('matched full:', JSON.stringify(matched));
+
+        console.log('matched:', matched || null);
       }
     },
     [renjaOptions],
@@ -283,20 +343,31 @@ const RkaFormPage = () => {
     setField('renja_id', renjaId);
 
     const renja = renjaOptions.find((r) => String(r.id) === String(renjaId));
-
     if (!renja) return;
 
     setForm((prev) => ({
       ...prev,
       renja_id: String(renja.id),
 
-      program: renja.program || '',
-      kegiatan: renja.kegiatan || '',
-      sub_kegiatan: renja.sub_kegiatan || '',
+      // ✨ Ubah menjadi struktur object agar kompatibel dengan buildPayload
+      program:
+        typeof renja.program === 'object'
+          ? renja.program
+          : { nama_program: renja.program, kode_program: renja.kode_program || '' },
+      kegiatan:
+        typeof renja.kegiatan === 'object'
+          ? renja.kegiatan
+          : { nama_kegiatan: renja.kegiatan, kode_kegiatan: renja.kode_kegiatan || '' },
+      sub_kegiatan:
+        typeof renja.sub_kegiatan === 'object'
+          ? renja.sub_kegiatan
+          : {
+              nama_sub_kegiatan: renja.sub_kegiatan,
+              kode_sub_kegiatan: renja.kode_sub_kegiatan || '',
+            },
 
       indikator: renja.indikator || '',
       target: renja.target || '',
-
       anggaran: renja.anggaran != null ? String(renja.anggaran) : '',
     }));
   };
@@ -315,6 +386,15 @@ const RkaFormPage = () => {
           ? 'Isi alasan pencatatan (teks) atau referensi berkas (wajib untuk audit CREATE).'
           : 'Isi alasan perubahan (teks) atau referensi berkas dasar perubahan.',
       );
+      return;
+    }
+
+    if (
+      !form.program?.kode_program ||
+      !form.kegiatan?.kode_kegiatan ||
+      !form.sub_kegiatan?.kode_sub_kegiatan
+    ) {
+      toast.error('Program, Kegiatan, dan Sub Kegiatan wajib dipilih (SIPD).');
       return;
     }
 
@@ -465,15 +545,24 @@ const RkaFormPage = () => {
             }}
           >
             <div>
-              <strong>Program :</strong> {form.program || '-'}
+              <strong>Program :</strong>{' '}
+              {form.program?.kode_program
+                ? `${form.program.kode_program} - ${form.program.nama_program}`
+                : '-'}
             </div>
 
             <div>
-              <strong>Kegiatan :</strong> {form.kegiatan || '-'}
+              <strong>Kegiatan :</strong>{' '}
+              {form.kegiatan?.kode_kegiatan
+                ? `${form.kegiatan.kode_kegiatan} - ${form.kegiatan.nama_kegiatan}`
+                : '-'}
             </div>
 
             <div>
-              <strong>Sub Kegiatan :</strong> {form.sub_kegiatan || '-'}
+              <strong>Sub Kegiatan :</strong>{' '}
+              {form.sub_kegiatan?.kode_sub_kegiatan
+                ? `${form.sub_kegiatan.kode_sub_kegiatan} - ${form.sub_kegiatan.nama_sub_kegiatan}`
+                : '-'}
             </div>
           </div>
           <label>
@@ -485,16 +574,123 @@ const RkaFormPage = () => {
             <Input value={form.target} onChange={(e) => setField('target', e.target.value)} />
           </label>
           <label>
-            <Text type="secondary">Anggaran (pagu)</Text>
-            <Input value={form.anggaran} onChange={(e) => setField('anggaran', e.target.value)} />
+            <Text type="secondary">Anggaran (pagu otomatis dari rincian)</Text>
+            <Input
+              value={new Intl.NumberFormat('id-ID', {
+                style: 'currency',
+                currency: 'IDR',
+                maximumFractionDigits: 0,
+              }).format(Number(form.anggaran) || 0)}
+              disabled
+              style={{ fontWeight: 'bold', backgroundColor: '#f5f5f5', color: '#000' }}
+            />
           </label>
           <div>
-            <Text type="secondary">Rincian Kode Rekening Belanja (Permendagri 90)</Text>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 6 }}>
+              Rincian Kode Rekening Belanja (Permendagri 90)
+            </Text>
             <MasterBelanjaCascading
               key="master-belanja-rka"
-              value={form.rincian_belanja}
+              value={null}
               onChange={handleMasterBelanja}
             />
+
+            {/* Render Tabel Interaktif RKA-SKPD Berbasis SIPD */}
+            {Array.isArray(form.rincian_belanja) && form.rincian_belanja.length > 0 && (
+              <div
+                style={{
+                  marginTop: 16,
+                  overflowX: 'auto',
+                  border: '1px solid #e8e8e8',
+                  borderRadius: 6,
+                }}
+              >
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr
+                      style={{
+                        background: '#fafafa',
+                        borderBottom: '2px solid #e8e8e8',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <th style={{ padding: '10px 8px' }}>Kode Rekening / Uraian</th>
+                      <th style={{ padding: '10px 8px', width: 90 }}>Volume</th>
+                      <th style={{ padding: '10px 8px', width: 110 }}>Satuan</th>
+                      <th style={{ padding: '10px 8px', width: 150 }}>Harga Satuan</th>
+                      <th style={{ padding: '10px 8px', width: 150 }}>Total</th>
+                      <th style={{ padding: '10px 8px', width: 130 }}>Sumber Dana</th>
+                      <th style={{ padding: '10px 8px', width: 70, textAlign: 'center' }}>Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {form.rincian_belanja.map((item, index) => (
+                      <tr key={item.id_temp || index} style={{ borderBottom: '1px solid #e8e8e8' }}>
+                        <td style={{ padding: 8 }}>
+                          <div style={{ fontWeight: 'bold', color: '#1890ff' }}>
+                            {item.kode_rekening}
+                          </div>
+                          <div style={{ color: '#262626', fontSize: '12px' }}>{item.uraian}</div>
+                        </td>
+                        <td style={{ padding: 4 }}>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={item.volume}
+                            onChange={(e) =>
+                              updateBelanjaRow(index, 'volume', Number(e.target.value))
+                            }
+                          />
+                        </td>
+                        <td style={{ padding: 4 }}>
+                          <Input
+                            value={item.satuan}
+                            placeholder="ex: Rim/Bulan"
+                            onChange={(e) => updateBelanjaRow(index, 'satuan', e.target.value)}
+                          />
+                        </td>
+                        <td style={{ padding: 4 }}>
+                          <Input
+                            type="number"
+                            value={item.harga_satuan}
+                            onChange={(e) =>
+                              updateBelanjaRow(index, 'harga_satuan', Number(e.target.value))
+                            }
+                            addonBefore="Rp"
+                          />
+                        </td>
+                        <td style={{ padding: 8, textAlign: 'right', fontWeight: '600' }}>
+                          {new Intl.NumberFormat('id-ID', {
+                            style: 'currency',
+                            currency: 'IDR',
+                            maximumFractionDigits: 0,
+                          }).format(item.jumlah || 0)}
+                        </td>
+                        <td style={{ padding: 4 }}>
+                          <Select
+                            style={{ width: '100%' }}
+                            value={item.sumber_dana}
+                            onChange={(v) => updateBelanjaRow(index, 'sumber_dana', v)}
+                            options={[
+                              { value: 'PAD', label: 'PAD' },
+                              { value: 'DAU', label: 'DAU' },
+                              { value: 'DAK Fisik', label: 'DAK Fisik' },
+                              { value: 'DAK Non Fisik', label: 'DAK Non Fisik' },
+                              { value: 'DBH', label: 'DBH' },
+                            ]}
+                          />
+                        </td>
+                        <td style={{ padding: 4, textAlign: 'center' }}>
+                          <Button type="link" danger onClick={() => removeBelanjaRow(index)}>
+                            Hapus
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
           <label>
             <Text type="secondary">Jenis dokumen</Text>

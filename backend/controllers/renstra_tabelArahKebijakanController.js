@@ -148,6 +148,7 @@ const buildLockedPaguPayload = () => ({
 const ARAH_KEBIJAKAN_ALLOWED_BODY_FIELDS = [
   'renstra_id',
   'kebijakan_id',
+  'strategi_id',
   'indikator_id',
 
   'kode_kebijakan',

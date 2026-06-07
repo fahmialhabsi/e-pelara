@@ -1,20 +1,24 @@
-"use strict";
-const { Model } = require("sequelize");
+'use strict';
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class RkpdDokumen extends Model {
     static associate(models) {
       RkpdDokumen.belongsTo(models.PeriodeRpjmd, {
-        foreignKey: "periode_id",
-        as: "periode",
+        foreignKey: 'periode_id',
+        as: 'periode',
       });
       RkpdDokumen.hasMany(models.RkpdItem, {
-        foreignKey: "rkpd_dokumen_id",
-        as: "items",
+        foreignKey: 'rkpd_dokumen_id',
+        as: 'items',
       });
       RkpdDokumen.hasMany(models.RenjaDokumen, {
-        foreignKey: "rkpd_dokumen_id",
-        as: "renjaDokumens",
+        foreignKey: 'rkpd_dokumen_id',
+        as: 'renjaDokumens',
+      });
+      RkpdDokumen.belongsTo(models.PerangkatDaerah, {
+        foreignKey: 'perangkat_daerah_id',
+        as: 'perangkatDaerah',
       });
     }
   }
@@ -27,9 +31,9 @@ module.exports = (sequelize, DataTypes) => {
       judul: { type: DataTypes.STRING(512), allowNull: false },
       versi: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
       status: {
-        type: DataTypes.ENUM("draft", "review", "final"),
+        type: DataTypes.ENUM('draft', 'review', 'final'),
         allowNull: false,
-        defaultValue: "draft",
+        defaultValue: 'draft',
       },
       is_final_active: {
         type: DataTypes.BOOLEAN,
@@ -41,15 +45,26 @@ module.exports = (sequelize, DataTypes) => {
       is_test: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
       /** Narasi BAB II (analisis) untuk dokumen resmi — wajib diisi sebelum ekspor */
       text_bab2: { type: DataTypes.TEXT, allowNull: true },
+      visi_id: { type: DataTypes.INTEGER, allowNull: true },
+      misi_id: { type: DataTypes.INTEGER, allowNull: true },
+      tujuan_id: { type: DataTypes.INTEGER, allowNull: true },
+      sasaran_id: { type: DataTypes.INTEGER, allowNull: true },
+      strategi_id: { type: DataTypes.INTEGER, allowNull: true },
+      arah_kebijakan_id: { type: DataTypes.INTEGER, allowNull: true },
+      prioritas_nasional_id: { type: DataTypes.INTEGER, allowNull: true },
+      prioritas_daerah_id: { type: DataTypes.INTEGER, allowNull: true },
+      prioritas_gubernur_id: { type: DataTypes.INTEGER, allowNull: true },
+      perangkat_daerah_id: { type: DataTypes.INTEGER, allowNull: true },
+      nama_opd: { type: DataTypes.STRING(255), allowNull: true },
     },
     {
       sequelize,
-      modelName: "RkpdDokumen",
-      tableName: "rkpd_dokumen",
+      modelName: 'RkpdDokumen',
+      tableName: 'rkpd_dokumen',
       underscored: true,
       timestamps: true,
-      createdAt: "created_at",
-      updatedAt: "updated_at",
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
     },
   );
 

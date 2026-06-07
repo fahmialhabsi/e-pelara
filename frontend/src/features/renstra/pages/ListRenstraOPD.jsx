@@ -1,10 +1,13 @@
-import React, { useMemo, useState } from "react";
-import { toast } from "react-toastify";
-import api from "../../../services/api";
-import { useDokumen } from "../../../hooks/useDokumen";
-import { useAuth } from "../../../hooks/useAuth";
-import { canManagePlanningWorkflow, canRestorePlanningDocumentVersion } from "../../../utils/roleUtils";
-import { normalizeListItems } from "../../../utils/apiResponse";
+import React, { useMemo, useState } from 'react';
+import { toast } from 'react-toastify';
+import api from '../../../services/api';
+import { useDokumen } from '../../../hooks/useDokumen';
+import { useAuth } from '../../../hooks/useAuth';
+import {
+  canManagePlanningWorkflow,
+  canRestorePlanningDocumentVersion,
+} from '../../../utils/roleUtils';
+import { normalizeListItems } from '../../../utils/apiResponse';
 import {
   createRenstraDoc,
   deleteRenstraDoc,
@@ -13,41 +16,41 @@ import {
   syncRenstraDocs,
   updateRenstraDoc,
   updateRenstraDocStatus,
-} from "../services/renstraApi";
-import AuditTimeline from "../../planning-audit/components/AuditTimeline";
-import BeforeAfterDiffCard from "../../planning-audit/components/BeforeAfterDiffCard";
-import DocumentTracePanel from "../../planning-audit/components/DocumentTracePanel";
-import VersionHistoryPanel from "../../planning-audit/components/VersionHistoryPanel";
+} from '../services/renstraApi';
+import AuditTimeline from '../../planning-audit/components/AuditTimeline';
+import BeforeAfterDiffCard from '../../planning-audit/components/BeforeAfterDiffCard';
+import DocumentTracePanel from '../../planning-audit/components/DocumentTracePanel';
+import VersionHistoryPanel from '../../planning-audit/components/VersionHistoryPanel';
 
 const defaultForm = {
-  periode_awal: "",
-  periode_akhir: "",
-  judul: "",
-  dokumen_url: "",
-  status: "draft",
-  rpjmd_id: "",
-  pagu_tahun_1: "",
-  pagu_tahun_2: "",
-  pagu_tahun_3: "",
-  pagu_tahun_4: "",
-  pagu_tahun_5: "",
-  total_pagu: "",
-  change_reason_text: "",
+  periode_awal: '',
+  periode_akhir: '',
+  judul: '',
+  dokumen_url: '',
+  status: 'draft',
+  rpjmd_id: '',
+  pagu_tahun_1: '',
+  pagu_tahun_2: '',
+  pagu_tahun_3: '',
+  pagu_tahun_4: '',
+  pagu_tahun_5: '',
+  total_pagu: '',
+  change_reason_text: '',
 };
 
 const statusBadgeClass = (status) => {
-  const value = String(status || "draft").toLowerCase();
-  if (value === "approved") return "bg-green-100 text-green-700";
-  if (value === "submitted") return "bg-blue-100 text-blue-700";
-  if (value === "rejected") return "bg-red-100 text-red-700";
-  return "bg-gray-100 text-gray-700";
+  const value = String(status || 'draft').toLowerCase();
+  if (value === 'approved') return 'bg-green-100 text-green-700';
+  if (value === 'submitted') return 'bg-blue-100 text-blue-700';
+  if (value === 'rejected') return 'bg-red-100 text-red-700';
+  return 'bg-gray-100 text-gray-700';
 };
 
 const syncBadgeClass = (status) => {
-  const value = String(status || "belum_sinkron").toLowerCase();
-  if (value === "sinkron") return "bg-green-50 text-green-700";
-  if (value === "gagal_sinkron") return "bg-red-50 text-red-700";
-  return "bg-yellow-50 text-yellow-800";
+  const value = String(status || 'belum_sinkron').toLowerCase();
+  if (value === 'sinkron') return 'bg-green-50 text-green-700';
+  if (value === 'gagal_sinkron') return 'bg-red-50 text-red-700';
+  return 'bg-yellow-50 text-yellow-800';
 };
 
 const ListRenstraOPD = () => {
@@ -57,13 +60,13 @@ const ListRenstraOPD = () => {
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState([]);
   const [rpjmdOptions, setRpjmdOptions] = useState([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState('');
   const [formOpen, setFormOpen] = useState(false);
   const [editingRow, setEditingRow] = useState(null);
   const [form, setForm] = useState({
     ...defaultForm,
-    periode_awal: tahunAktif || "",
-    periode_akhir: tahunAktif || "",
+    periode_awal: tahunAktif || '',
+    periode_akhir: tahunAktif || '',
   });
 
   const [auditOpen, setAuditOpen] = useState(false);
@@ -73,7 +76,7 @@ const ListRenstraOPD = () => {
 
   const loadRpjmdOptions = async () => {
     try {
-      const res = await api.get("/rpjmd");
+      const res = await api.get('/rpjmd');
       setRpjmdOptions(normalizeListItems(res.data));
     } catch {
       setRpjmdOptions([]);
@@ -89,7 +92,7 @@ const ListRenstraOPD = () => {
       });
       setRows(Array.isArray(data) ? data : []);
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Gagal memuat data Renstra");
+      toast.error(err?.response?.data?.message || 'Gagal memuat data Renstra');
     } finally {
       setLoading(false);
     }
@@ -102,7 +105,9 @@ const ListRenstraOPD = () => {
   }, [tahunAktif]);
 
   const filteredRows = useMemo(() => {
-    const key = String(search || "").trim().toLowerCase();
+    const key = String(search || '')
+      .trim()
+      .toLowerCase();
     if (!key) return rows;
     return rows.filter((row) =>
       [
@@ -113,13 +118,13 @@ const ListRenstraOPD = () => {
         row.sinkronisasi_status,
         row.total_pagu,
       ]
-        .map((value) => String(value || "").toLowerCase())
+        .map((value) => String(value || '').toLowerCase())
         .some((value) => value.includes(key)),
     );
   }, [rows, search]);
 
   const rpjmdLabel = (id) => {
-    if (id == null || id === "") return "";
+    if (id == null || id === '') return '';
     const hit = rpjmdOptions.find((r) => String(r.id) === String(id));
     return hit?.nama_rpjmd ? `${hit.nama_rpjmd} (#${id})` : `#${id}`;
   };
@@ -128,8 +133,8 @@ const ListRenstraOPD = () => {
     setEditingRow(null);
     setForm({
       ...defaultForm,
-      periode_awal: tahunAktif || "",
-      periode_akhir: tahunAktif || "",
+      periode_awal: tahunAktif || '',
+      periode_akhir: tahunAktif || '',
     });
     setFormOpen(true);
   };
@@ -137,19 +142,19 @@ const ListRenstraOPD = () => {
   const openEdit = (row) => {
     setEditingRow(row);
     setForm({
-      periode_awal: row.periode_awal || "",
-      periode_akhir: row.periode_akhir || "",
-      judul: row.judul || "",
-      dokumen_url: row.dokumen_url || "",
-      status: row.status || "draft",
-      rpjmd_id: row.rpjmd_id != null ? String(row.rpjmd_id) : "",
-      pagu_tahun_1: row.pagu_tahun_1 ?? "",
-      pagu_tahun_2: row.pagu_tahun_2 ?? "",
-      pagu_tahun_3: row.pagu_tahun_3 ?? "",
-      pagu_tahun_4: row.pagu_tahun_4 ?? "",
-      pagu_tahun_5: row.pagu_tahun_5 ?? "",
-      total_pagu: row.total_pagu ?? "",
-      change_reason_text: "",
+      periode_awal: row.periode_awal || '',
+      periode_akhir: row.periode_akhir || '',
+      judul: row.judul || '',
+      dokumen_url: row.dokumen_url || '',
+      status: row.status || 'draft',
+      rpjmd_id: row.rpjmd_id != null ? String(row.rpjmd_id) : '',
+      pagu_tahun_1: row.pagu_tahun_1 ?? '',
+      pagu_tahun_2: row.pagu_tahun_2 ?? '',
+      pagu_tahun_3: row.pagu_tahun_3 ?? '',
+      pagu_tahun_4: row.pagu_tahun_4 ?? '',
+      pagu_tahun_5: row.pagu_tahun_5 ?? '',
+      total_pagu: row.total_pagu ?? '',
+      change_reason_text: '',
     });
     setFormOpen(true);
   };
@@ -167,17 +172,17 @@ const ListRenstraOPD = () => {
   const onSubmitForm = async (event) => {
     event.preventDefault();
     if (!form.periode_awal || !form.periode_akhir) {
-      toast.error("Periode awal dan akhir wajib diisi");
+      toast.error('Periode awal dan akhir wajib diisi');
       return;
     }
-    const reasonCreate = String(form.change_reason_text || "").trim();
+    const reasonCreate = String(form.change_reason_text || '').trim();
     if (editingRow?.id) {
       if (!reasonCreate) {
-        toast.error("Alasan perubahan wajib diisi untuk penyimpanan audit");
+        toast.error('Alasan perubahan wajib diisi untuk penyimpanan audit');
         return;
       }
     } else if (!reasonCreate) {
-      toast.error("Alasan pencatatan wajib untuk pembuatan dokumen (audit)");
+      toast.error('Alasan pencatatan wajib untuk pembuatan dokumen (audit)');
       return;
     }
 
@@ -186,8 +191,8 @@ const ListRenstraOPD = () => {
       periode_akhir: form.periode_akhir,
       judul: form.judul,
       dokumen_url: form.dokumen_url,
-      status: form.status || "draft",
-      rpjmd_id: form.rpjmd_id === "" ? null : form.rpjmd_id,
+      status: form.status || 'draft',
+      rpjmd_id: form.rpjmd_id === '' ? null : form.rpjmd_id,
       pagu_tahun_1: form.pagu_tahun_1,
       pagu_tahun_2: form.pagu_tahun_2,
       pagu_tahun_3: form.pagu_tahun_3,
@@ -200,32 +205,32 @@ const ListRenstraOPD = () => {
     try {
       if (editingRow?.id) {
         await updateRenstraDoc(editingRow.id, payload);
-        toast.success("Renstra berhasil diperbarui");
+        toast.success('Renstra berhasil diperbarui');
       } else {
         await createRenstraDoc(payload);
-        toast.success("Renstra berhasil ditambahkan");
+        toast.success('Renstra berhasil ditambahkan');
       }
       closeForm();
       loadData();
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Gagal menyimpan Renstra");
+      toast.error(err?.response?.data?.message || 'Gagal menyimpan Renstra');
     }
   };
 
   const onDelete = async (row) => {
     const ok = window.confirm(`Hapus Renstra "${row?.judul || row?.id}"?`);
     if (!ok) return;
-    const reason = window.prompt("Alasan penghapusan (wajib untuk audit):", "");
+    const reason = window.prompt('Alasan penghapusan (wajib untuk audit):', '');
     if (!reason || !String(reason).trim()) {
-      toast.error("Alasan penghapusan wajib diisi");
+      toast.error('Alasan penghapusan wajib diisi');
       return;
     }
     try {
       await deleteRenstraDoc(row.id, { change_reason_text: String(reason).trim() });
-      toast.success("Renstra dihapus");
+      toast.success('Renstra dihapus');
       loadData();
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Gagal menghapus Renstra");
+      toast.error(err?.response?.data?.message || 'Gagal menghapus Renstra');
     }
   };
 
@@ -238,7 +243,7 @@ const ListRenstraOPD = () => {
       const list = await getRenstraAudit(row.id);
       setAuditEvents(Array.isArray(list) ? list : []);
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Gagal memuat audit");
+      toast.error(err?.response?.data?.message || 'Gagal memuat audit');
     } finally {
       setAuditLoading(false);
     }
@@ -246,13 +251,13 @@ const ListRenstraOPD = () => {
 
   const latestDiffNormalized =
     auditEvents.find((e) => e.normalized?.changed_fields?.length)?.normalized ||
-    auditEvents.find((e) => e.action_type === "UPDATE" && e.normalized)?.normalized ||
+    auditEvents.find((e) => e.action_type === 'UPDATE' && e.normalized)?.normalized ||
     null;
 
   const onStatus = async (row, action) => {
-    const reason = window.prompt(`Alasan transisi workflow "${action}" (wajib):`, "");
+    const reason = window.prompt(`Alasan transisi workflow "${action}" (wajib):`, '');
     if (!reason || !String(reason).trim()) {
-      toast.error("Alasan wajib untuk audit workflow");
+      toast.error('Alasan wajib untuk audit workflow');
       return;
     }
     try {
@@ -263,7 +268,7 @@ const ListRenstraOPD = () => {
       toast.success(`Status Renstra diperbarui (${action})`);
       loadData();
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Gagal mengubah status Renstra");
+      toast.error(err?.response?.data?.message || 'Gagal mengubah status Renstra');
     }
   };
 
@@ -275,7 +280,7 @@ const ListRenstraOPD = () => {
       );
       loadData();
     } catch (err) {
-      toast.error(err?.response?.data?.message || "Gagal sinkronisasi Renstra");
+      toast.error(err?.response?.data?.message || 'Gagal sinkronisasi Renstra');
     }
   };
 
@@ -285,20 +290,21 @@ const ListRenstraOPD = () => {
         <div>
           <h3 className="text-lg font-semibold">M027 - Daftar Renstra</h3>
           <p className="text-sm text-gray-600">
-            Periode, judul, pagu per slot periode, referensi RPJMD, audit mutasi, dan status workflow.
+            Periode, judul, pagu per slot periode, referensi RPJMD, audit mutasi, dan status
+            workflow.
           </p>
         </div>
         <div className="flex gap-2">
           <button
             type="button"
-            className="rounded bg-emerald-600 px-4 py-2 text-white hover:bg-emerald-700"
+            className="rounded bg-emerald-600 px-4 py-2 text-green hover:bg-emerald-700"
             onClick={onSync}
           >
             Sync Renstra
           </button>
           <button
             type="button"
-            className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+            className="rounded bg-blue-600 px-4 py-2 text-green hover:bg-blue-700"
             onClick={openCreate}
             disabled={!canManageWorkflow}
           >
@@ -320,7 +326,7 @@ const ListRenstraOPD = () => {
         <table className="w-full border text-sm">
           <thead>
             <tr>
-              {["Periode", "Judul", "Pagu", "RPJMD", "Workflow", "Sinkronisasi", "Aksi"].map(
+              {['Periode', 'Judul', 'Pagu', 'RPJMD', 'Workflow', 'Sinkronisasi', 'Aksi'].map(
                 (head) => (
                   <th key={head} className="border p-2 text-left">
                     {head}
@@ -338,24 +344,25 @@ const ListRenstraOPD = () => {
               </tr>
             ) : (
               filteredRows.map((row) => {
-                const status = String(row.status || "draft").toLowerCase();
+                const status = String(row.status || 'draft').toLowerCase();
                 return (
                   <tr key={row.id}>
                     <td className="border p-2">
-                      {row.periode_awal || "-"} - {row.periode_akhir || "-"}
+                      {row.periode_awal || '-'} - {row.periode_akhir || '-'}
                     </td>
                     <td className="border p-2">
-                      <div className="font-medium">{row.judul || "-"}</div>
-                      <div className="text-xs text-gray-600">{row.dokumen_url || "-"}</div>
+                      <div className="font-medium">{row.judul || '-'}</div>
+                      <div className="text-xs text-gray-600">{row.dokumen_url || '-'}</div>
                     </td>
                     <td className="border p-2 text-xs">
-                      <div>Total: {row.total_pagu ?? "—"}</div>
+                      <div>Total: {row.total_pagu ?? '—'}</div>
                       <div className="text-gray-600">
-                        Th. ke-1 s/d 5: {[1, 2, 3, 4, 5].map((i) => row[`pagu_tahun_${i}`] ?? "—").join(" / ")}
+                        Th. ke-1 s/d 5:{' '}
+                        {[1, 2, 3, 4, 5].map((i) => row[`pagu_tahun_${i}`] ?? '—').join(' / ')}
                       </div>
                     </td>
                     <td className="border p-2 text-xs">
-                      {row.rpjmd_id != null ? rpjmdLabel(row.rpjmd_id) : "—"}
+                      {row.rpjmd_id != null ? rpjmdLabel(row.rpjmd_id) : '—'}
                     </td>
                     <td className="border p-2">
                       <span
@@ -368,14 +375,14 @@ const ListRenstraOPD = () => {
                       <span
                         className={`rounded px-2 py-1 text-xs font-semibold ${syncBadgeClass(row.sinkronisasi_status)}`}
                       >
-                        {row.sinkronisasi_status || "belum_sinkron"}
+                        {row.sinkronisasi_status || 'belum_sinkron'}
                       </span>
                     </td>
                     <td className="border p-2">
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          className="text-gray-700 hover:underline"
+                          className="text-blue-600 hover:underline"
                           onClick={() => openAudit(row)}
                         >
                           Audit
@@ -398,38 +405,38 @@ const ListRenstraOPD = () => {
                             Hapus
                           </button>
                         )}
-                        {canManageWorkflow && status === "draft" && (
+                        {canManageWorkflow && status === 'draft' && (
                           <button
                             type="button"
                             className="text-indigo-600 hover:underline"
-                            onClick={() => onStatus(row, "submit")}
+                            onClick={() => onStatus(row, 'submit')}
                           >
                             Submit
                           </button>
                         )}
-                        {canManageWorkflow && status === "submitted" && (
+                        {canManageWorkflow && status === 'submitted' && (
                           <>
                             <button
                               type="button"
                               className="text-green-700 hover:underline"
-                              onClick={() => onStatus(row, "approve")}
+                              onClick={() => onStatus(row, 'approve')}
                             >
                               Approve
                             </button>
                             <button
                               type="button"
                               className="text-red-700 hover:underline"
-                              onClick={() => onStatus(row, "reject")}
+                              onClick={() => onStatus(row, 'reject')}
                             >
                               Reject
                             </button>
                           </>
                         )}
-                        {canManageWorkflow && ["approved", "rejected"].includes(status) && (
+                        {canManageWorkflow && ['approved', 'rejected'].includes(status) && (
                           <button
                             type="button"
                             className="text-amber-700 hover:underline"
-                            onClick={() => onStatus(row, "revise")}
+                            onClick={() => onStatus(row, 'revise')}
                           >
                             Revisi
                           </button>
@@ -473,7 +480,9 @@ const ListRenstraOPD = () => {
             <>
               {latestDiffNormalized ? (
                 <div className="mb-4">
-                  <div className="mb-1 text-xs font-medium text-gray-600">Ringkasan perubahan (update)</div>
+                  <div className="mb-1 text-xs font-medium text-gray-600">
+                    Ringkasan perubahan (update)
+                  </div>
                   <BeforeAfterDiffCard normalized={latestDiffNormalized} />
                 </div>
               ) : null}
@@ -486,7 +495,7 @@ const ListRenstraOPD = () => {
       {canManageWorkflow && formOpen && (
         <div className="rounded border bg-white p-4 shadow-sm">
           <h4 className="mb-3 text-base font-semibold">
-            {editingRow ? "Edit Renstra" : "Tambah Renstra"}
+            {editingRow ? 'Edit Renstra' : 'Tambah Renstra'}
           </h4>
           <form onSubmit={onSubmitForm} className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <input
@@ -572,8 +581,8 @@ const ListRenstraOPD = () => {
               rows={2}
               placeholder={
                 editingRow
-                  ? "Alasan perubahan (wajib untuk audit)"
-                  : "Alasan pencatatan dokumen (wajib untuk audit)"
+                  ? 'Alasan perubahan (wajib untuk audit)'
+                  : 'Alasan pencatatan dokumen (wajib untuk audit)'
               }
               required
             />

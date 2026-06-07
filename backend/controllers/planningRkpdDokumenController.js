@@ -1,22 +1,23 @@
-"use strict";
+'use strict';
 
-const crypto = require("crypto");
-const { Op } = require("sequelize");
-const db = require("../models");
-const planningDomain = require("../services/planningDomainService");
-const rkpdRenjaCascade = require("../services/rkpdRenjaCascadeService");
-const { splitPlanningBody } = require("../helpers/planningDocumentMutation");
+const crypto = require('crypto');
+const { Op } = require('sequelize');
+const db = require('../models');
+const planningDomain = require('../services/planningDomainService');
+const rkpdRenjaCascade = require('../services/rkpdRenjaCascadeService');
+const { splitPlanningBody } = require('../helpers/planningDocumentMutation');
 const {
   writePlanningAudit,
   captureRow,
   enrichPlanningAuditRows,
   auditValuesFromRows,
-} = require("../services/planningDocumentAuditService");
+} = require('../services/planningDocumentAuditService');
 
 const {
   RkpdDokumen,
   RkpdItem,
   PeriodeRpjmd,
+  PerangkatDaerah,
   PlanningLineItemChangeLog,
   PlanningAuditEvent,
   RPJMD,
@@ -26,15 +27,15 @@ const {
 async function assertRpjmdId(rpjmd_id) {
   if (rpjmd_id == null || !Number.isFinite(Number(rpjmd_id))) return { ok: true };
   const r = await RPJMD.findByPk(Number(rpjmd_id));
-  if (!r) return { ok: false, message: "rpjmd_id tidak valid" };
+  if (!r) return { ok: false, message: 'rpjmd_id tidak valid' };
   return { ok: true };
 }
 
 async function listDokumen(req, res) {
   try {
     const includeTest =
-      req.query.include_test === "1" ||
-      String(req.query.include_test ?? "").toLowerCase() === "true";
+      req.query.include_test === '1' ||
+      String(req.query.include_test ?? '').toLowerCase() === 'true';
     const where = {};
     if (req.query.tahun) where.tahun = Number(req.query.tahun);
     if (req.query.periode_id) where.periode_id = Number(req.query.periode_id);
@@ -44,10 +45,13 @@ async function listDokumen(req, res) {
     const rows = await RkpdDokumen.findAll({
       where,
       order: [
-        ["tahun", "DESC"],
-        ["id", "DESC"],
+        ['tahun', 'DESC'],
+        ['id', 'DESC'],
       ],
-      include: [{ model: PeriodeRpjmd, as: "periode", required: false }],
+      include: [
+        { model: PeriodeRpjmd, as: 'periode', required: false },
+        { model: PerangkatDaerah, as: 'perangkatDaerah', required: false },
+      ],
     });
     return res.json({ success: true, data: rows });
   } catch (e) {
@@ -60,11 +64,11 @@ async function getDokumenById(req, res) {
   try {
     const row = await RkpdDokumen.findByPk(req.params.id, {
       include: [
-        { model: PeriodeRpjmd, as: "periode", required: false },
-        { model: RkpdItem, as: "items", required: false },
+        { model: PeriodeRpjmd, as: 'periode', required: false },
+        { model: RkpdItem, as: 'items', required: false },
       ],
     });
-    if (!row) return res.status(404).json({ success: false, message: "Tidak ditemukan" });
+    if (!row) return res.status(404).json({ success: false, message: 'Tidak ditemukan' });
     return res.json({ success: true, data: row });
   } catch (e) {
     console.error(e);
@@ -77,11 +81,11 @@ async function getDokumenChangeLog(req, res) {
   try {
     const dokId = Number(req.params.id);
     if (!Number.isFinite(dokId)) {
-      return res.status(400).json({ success: false, message: "id dokumen tidak valid." });
+      return res.status(400).json({ success: false, message: 'id dokumen tidak valid.' });
     }
     const items = await RkpdItem.findAll({
       where: { rkpd_dokumen_id: dokId },
-      attributes: ["id"],
+      attributes: ['id'],
     });
     const ids = items.map((i) => i.id);
     if (!ids.length) {
@@ -89,10 +93,10 @@ async function getDokumenChangeLog(req, res) {
     }
     const rows = await PlanningLineItemChangeLog.findAll({
       where: {
-        entity_type: "rkpd_item",
+        entity_type: 'rkpd_item',
         entity_id: { [Op.in]: ids },
       },
-      order: [["created_at", "DESC"]],
+      order: [['created_at', 'DESC']],
       limit: 800,
     });
     return res.json({ success: true, data: rows });
@@ -105,8 +109,9 @@ async function getDokumenChangeLog(req, res) {
 async function createDokumen(req, res) {
   const t = await sequelize.transaction();
   try {
-    const { payload, change_reason_text, change_reason_file, rpjmd_id } =
-      splitPlanningBody(req.body);
+    const { payload, change_reason_text, change_reason_file, rpjmd_id } = splitPlanningBody(
+      req.body,
+    );
     const rpj = await assertRpjmdId(rpjmd_id);
     if (!rpj.ok) {
       await t.rollback();
@@ -116,13 +121,13 @@ async function createDokumen(req, res) {
     const periode = await planningDomain.loadPeriode(db, payload.periode_id);
     if (!periode) {
       await t.rollback();
-      return res.status(400).json({ success: false, message: "periode_id tidak valid." });
+      return res.status(400).json({ success: false, message: 'periode_id tidak valid.' });
     }
     if (!planningDomain.tahunDalamPeriode(payload.tahun, periode)) {
       await t.rollback();
       return res.status(400).json({
         success: false,
-        message: "tahun harus berada dalam rentang periode RPJMD.",
+        message: 'tahun harus berada dalam rentang periode RPJMD.',
       });
     }
 
@@ -132,8 +137,19 @@ async function createDokumen(req, res) {
         tahun: payload.tahun,
         judul: payload.judul,
         versi: payload.versi ?? 1,
-        status: payload.status || "draft",
+        status: payload.status || 'draft',
         tanggal_pengesahan: payload.tanggal_pengesahan || null,
+        visi_id: payload.visi_id || null,
+        misi_id: payload.misi_id || null,
+        tujuan_id: payload.tujuan_id || null,
+        sasaran_id: payload.sasaran_id || null,
+        strategi_id: payload.strategi_id || null,
+        arah_kebijakan_id: payload.arah_kebijakan_id || null,
+        prioritas_nasional_id: payload.prioritas_nasional_id || null,
+        prioritas_daerah_id: payload.prioritas_daerah_id || null,
+        prioritas_gubernur_id: payload.prioritas_gubernur_id || null,
+        perangkat_daerah_id: payload.perangkat_daerah_id || null,
+        nama_opd: payload.nama_opd || null,
       },
       { transaction: t },
     );
@@ -142,10 +158,10 @@ async function createDokumen(req, res) {
     const uid = req.user?.id ?? req.user?.userId ?? null;
     const { old_value, new_value } = auditValuesFromRows(null, row);
     await writePlanningAudit({
-      module_name: "rkpd_dokumen",
-      table_name: "rkpd_dokumen",
+      module_name: 'rkpd_dokumen',
+      table_name: 'rkpd_dokumen',
       record_id: row.id,
-      action_type: "CREATE",
+      action_type: 'CREATE',
       old_value,
       new_value,
       change_reason_text,
@@ -169,11 +185,14 @@ async function updateDokumen(req, res) {
     const row = await RkpdDokumen.findByPk(req.params.id, { transaction: t });
     if (!row) {
       await t.rollback();
-      return res.status(404).json({ success: false, message: "Tidak ditemukan" });
+      return res.status(404).json({ success: false, message: 'Tidak ditemukan' });
     }
 
-    const { payload, change_reason_text, change_reason_file, rpjmd_id } =
-      splitPlanningBody(req.body);
+    const { payload, change_reason_text, change_reason_file, rpjmd_id } = splitPlanningBody(
+      req.body,
+    );
+
+    console.log('PAYLOAD RKPD CREATE =', JSON.stringify(payload, null, 2));
 
     const rpj = await assertRpjmdId(rpjmd_id);
     if (!rpj.ok) {
@@ -186,28 +205,24 @@ async function updateDokumen(req, res) {
       const periode = await planningDomain.loadPeriode(db, payload.periode_id);
       if (!periode) {
         await t.rollback();
-        return res.status(400).json({ success: false, message: "periode_id tidak valid." });
+        return res.status(400).json({ success: false, message: 'periode_id tidak valid.' });
       }
       if (!planningDomain.tahunDalamPeriode(next.tahun ?? row.tahun, periode)) {
         await t.rollback();
         return res.status(400).json({
           success: false,
-          message: "tahun harus dalam rentang periode.",
+          message: 'tahun harus dalam rentang periode.',
         });
       }
     }
 
     const newStatus = payload.status !== undefined ? payload.status : row.status;
 
-    if (newStatus === "final") {
-      const { errors } = await planningDomain.validateRkpdItemsForFinal(
-        db,
-        row.id,
-        t,
-      );
+    if (newStatus === 'final') {
+      const { errors } = await planningDomain.validateRkpdItemsForFinal(db, row.id, t);
       if (errors.length) {
         await t.rollback();
-        return res.status(400).json({ success: false, message: errors.join(" ") });
+        return res.status(400).json({ success: false, message: errors.join(' ') });
       }
       await planningDomain.deactivateOtherRkpdFinalActive(
         sequelize,
@@ -218,7 +233,7 @@ async function updateDokumen(req, res) {
       payload.is_final_active = true;
     }
 
-    if (newStatus === "draft" && payload.is_final_active === undefined) {
+    if (newStatus === 'draft' && payload.is_final_active === undefined) {
       /* noop */
     }
 
@@ -228,18 +243,18 @@ async function updateDokumen(req, res) {
 
     const fresh = await RkpdDokumen.findByPk(req.params.id, {
       include: [
-        { model: PeriodeRpjmd, as: "periode", required: false },
-        { model: RkpdItem, as: "items", required: false },
+        { model: PeriodeRpjmd, as: 'periode', required: false },
+        { model: RkpdItem, as: 'items', required: false },
       ],
     });
 
     const uid = req.user?.id ?? req.user?.userId ?? null;
     const { old_value, new_value } = auditValuesFromRows(oldSnap, fresh);
     await writePlanningAudit({
-      module_name: "rkpd_dokumen",
-      table_name: "rkpd_dokumen",
+      module_name: 'rkpd_dokumen',
+      table_name: 'rkpd_dokumen',
       record_id: row.id,
-      action_type: "UPDATE",
+      action_type: 'UPDATE',
       old_value,
       new_value,
       change_reason_text,
@@ -261,21 +276,21 @@ async function getDokumenAudit(req, res) {
   try {
     const dokId = Number(req.params.id);
     if (!Number.isFinite(dokId)) {
-      return res.status(400).json({ success: false, message: "id dokumen tidak valid." });
+      return res.status(400).json({ success: false, message: 'id dokumen tidak valid.' });
     }
     const itemRows = await RkpdItem.findAll({
       where: { rkpd_dokumen_id: dokId },
-      attributes: ["id"],
+      attributes: ['id'],
       raw: true,
     });
     const itemIds = itemRows.map((r) => r.id);
-    const or = [{ table_name: "rkpd_dokumen", record_id: dokId }];
+    const or = [{ table_name: 'rkpd_dokumen', record_id: dokId }];
     if (itemIds.length) {
-      or.push({ table_name: "rkpd_item", record_id: { [Op.in]: itemIds } });
+      or.push({ table_name: 'rkpd_item', record_id: { [Op.in]: itemIds } });
     }
     const rows = await PlanningAuditEvent.findAll({
       where: { [Op.or]: or },
-      order: [["changed_at", "DESC"]],
+      order: [['changed_at', 'DESC']],
       limit: 200,
     });
     return res.json({ success: true, data: enrichPlanningAuditRows(rows) });
@@ -294,11 +309,11 @@ async function listItem(req, res) {
     const rows = await RkpdItem.findAll({
       where,
       order: [
-        ["rkpd_dokumen_id", "ASC"],
-        ["urutan", "ASC"],
-        ["id", "ASC"],
+        ['rkpd_dokumen_id', 'ASC'],
+        ['urutan', 'ASC'],
+        ['id', 'ASC'],
       ],
-      include: [{ model: RkpdDokumen, as: "rkpdDokumen", required: false }],
+      include: [{ model: RkpdDokumen, as: 'rkpdDokumen', required: false }],
     });
     return res.json({ success: true, data: rows });
   } catch (e) {
@@ -314,20 +329,27 @@ async function createItem(req, res) {
     const dok = await RkpdDokumen.findByPk(payload.rkpd_dokumen_id, { transaction: t });
     if (!dok) {
       await t.rollback();
-      return res.status(400).json({ success: false, message: "rkpd_dokumen_id tidak valid." });
+      return res.status(400).json({ success: false, message: 'rkpd_dokumen_id tidak valid.' });
+    }
+    if (!payload.urutan || payload.urutan === 0) {
+      const maxUrutan = await RkpdItem.max('urutan', {
+        where: { rkpd_dokumen_id: payload.rkpd_dokumen_id },
+        transaction: t,
+      });
+      payload.urutan = (maxUrutan || 0) + 1;
     }
     const row = await RkpdItem.create(payload, { transaction: t });
     await row.reload({
       transaction: t,
-      include: [{ model: RkpdDokumen, as: "rkpdDokumen", required: false }],
+      include: [{ model: RkpdDokumen, as: 'rkpdDokumen', required: false }],
     });
     const uid = req.user?.id ?? req.user?.userId ?? null;
     const { old_value, new_value } = auditValuesFromRows(null, row);
     await writePlanningAudit({
-      module_name: "rkpd_item",
-      table_name: "rkpd_item",
+      module_name: 'rkpd_item',
+      table_name: 'rkpd_item',
       record_id: row.id,
-      action_type: "CREATE",
+      action_type: 'CREATE',
       old_value,
       new_value,
       change_reason_text,
@@ -340,7 +362,7 @@ async function createItem(req, res) {
     });
     await t.commit();
     const fresh = await RkpdItem.findByPk(row.id, {
-      include: [{ model: RkpdDokumen, as: "rkpdDokumen", required: false }],
+      include: [{ model: RkpdDokumen, as: 'rkpdDokumen', required: false }],
     });
     return res.status(201).json({ success: true, data: fresh });
   } catch (e) {
@@ -357,7 +379,7 @@ async function updateItem(req, res) {
     const row = await RkpdItem.findByPk(req.params.id, { transaction: t });
     if (!row) {
       await t.rollback();
-      return res.status(404).json({ success: false, message: "Tidak ditemukan" });
+      return res.status(404).json({ success: false, message: 'Tidak ditemukan' });
     }
     const before = row.get({ plain: true });
     const batchId = crypto.randomUUID();
@@ -370,23 +392,22 @@ async function updateItem(req, res) {
       transaction: t,
     });
 
-    const cascadeMeta = await rkpdRenjaCascade.cascadeRkpdItemToLinkedRenja(
-      db,
-      row,
-      { transaction: t, userId: req.user?.id ?? null },
-    );
+    const cascadeMeta = await rkpdRenjaCascade.cascadeRkpdItemToLinkedRenja(db, row, {
+      transaction: t,
+      userId: req.user?.id ?? null,
+    });
 
     await row.reload({
       transaction: t,
-      include: [{ model: RkpdDokumen, as: "rkpdDokumen", required: false }],
+      include: [{ model: RkpdDokumen, as: 'rkpdDokumen', required: false }],
     });
     const uid = req.user?.id ?? req.user?.userId ?? null;
     const { old_value, new_value } = auditValuesFromRows(before, row);
     await writePlanningAudit({
-      module_name: "rkpd_item",
-      table_name: "rkpd_item",
+      module_name: 'rkpd_item',
+      table_name: 'rkpd_item',
       record_id: row.id,
-      action_type: "UPDATE",
+      action_type: 'UPDATE',
       old_value,
       new_value,
       change_reason_text,
@@ -400,7 +421,7 @@ async function updateItem(req, res) {
 
     await t.commit();
     const fresh = await RkpdItem.findByPk(req.params.id, {
-      include: [{ model: RkpdDokumen, as: "rkpdDokumen", required: false }],
+      include: [{ model: RkpdDokumen, as: 'rkpdDokumen', required: false }],
     });
     return res.json({
       success: true,
@@ -417,6 +438,38 @@ async function updateItem(req, res) {
   }
 }
 
+async function deleteItem(req, res) {
+  const t = await sequelize.transaction();
+  try {
+    const row = await RkpdItem.findByPk(req.params.id, { transaction: t });
+    if (!row) {
+      await t.rollback();
+      return res.status(404).json({ success: false, message: 'Item tidak ditemukan.' });
+    }
+    const { change_reason_text, change_reason_file } = splitPlanningBody(req.body);
+    const oldSnap = captureRow(row);
+    await row.destroy({ transaction: t });
+    await t.commit();
+    const uid = req.user?.id ?? req.user?.userId ?? null;
+    const { old_value } = auditValuesFromRows(oldSnap, null);
+    await writePlanningAudit({
+      module_name: 'rkpd_item',
+      table_name: 'rkpd_item',
+      record_id: Number(req.params.id),
+      action_type: 'DELETE',
+      old_value,
+      new_value: null,
+      change_reason_text,
+      change_reason_file,
+      changed_by: uid,
+    });
+    return res.json({ success: true, message: 'Item dihapus.' });
+  } catch (e) {
+    await t.rollback();
+    return res.status(500).json({ success: false, message: e.message });
+  }
+}
+
 module.exports = {
   listDokumen,
   getDokumenById,
@@ -427,4 +480,5 @@ module.exports = {
   listItem,
   createItem,
   updateItem,
+  deleteItem,
 };

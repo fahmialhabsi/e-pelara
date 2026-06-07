@@ -1,5 +1,5 @@
 // src/shared/components/utils/generatePayloadRenstraTabelKegiatan.js
-import Decimal from "decimal.js";
+import Decimal from 'decimal.js';
 
 // Payload generator final, auto-filter 0/null/empty
 const generatePayloadRenstraTabelKegiatan = (formData) => {
@@ -7,12 +7,21 @@ const generatePayloadRenstraTabelKegiatan = (formData) => {
 
   // Helper untuk convert string ribuan jadi number
   const parseNumber = (value) => {
-    if (value === null || value === undefined || value === "")
-      return new Decimal(0);
-    if (typeof value === "number") return new Decimal(value);
-    // Hapus titik ribuan dan ubah koma desimal ke titik
-    const clean = value.toString().replace(/\./g, "").replace(/,/g, ".");
-    return new Decimal(clean || 0);
+    if (value === '' || value === null || value === undefined) return new Decimal(0);
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? new Decimal(Math.round(value)) : new Decimal(0);
+    }
+    let raw = String(value).trim();
+    // Hapus prefix Rp dan spasi
+    raw = raw.replace(/[Rp\s]/g, '');
+    // Format desimal backend: 280000000.00
+    if (/^\d+\.\d{1,2}$/.test(raw)) {
+      return new Decimal(Math.round(Number(raw)));
+    }
+    // Format Indonesia: 280.000.000
+    raw = raw.replace(/\./g, '').replace(',', '.');
+    const n = Number(raw);
+    return Number.isFinite(n) ? new Decimal(Math.round(n)) : new Decimal(0);
   };
 
   // Konversi target & pagu per tahun
@@ -33,8 +42,7 @@ const generatePayloadRenstraTabelKegiatan = (formData) => {
   else delete payload.baseline;
 
   const targetAkhir = parseNumber(payload.target_akhir_renstra);
-  if (!targetAkhir.equals(0))
-    payload.target_akhir_renstra = targetAkhir.toNumber();
+  if (!targetAkhir.equals(0)) payload.target_akhir_renstra = targetAkhir.toNumber();
   else delete payload.target_akhir_renstra;
 
   const paguAkhir = parseNumber(payload.pagu_akhir_renstra);
@@ -45,9 +53,11 @@ const generatePayloadRenstraTabelKegiatan = (formData) => {
   payload.program_id = Number(payload.program_id);
   payload.kegiatan_id = Number(payload.kegiatan_id);
   payload.indikator_id = Number(payload.indikator_id);
+  payload.kebijakan_id = payload.kebijakan_id ? Number(payload.kebijakan_id) : null;
 
   delete payload.tabel_program_id;
 
+  console.log('kebijakan_id sebelum return:', payload.kebijakan_id);
   return payload;
 };
 

@@ -1,3 +1,4 @@
+// File: routes/rkaRoutes.js
 const express = require('express');
 const router = express.Router();
 const RkaController = require('../controllers/rkaController');
@@ -7,6 +8,7 @@ const guardApproved = require('../middlewares/guardApproved');
 const requireChangeReason = require('../middlewares/requireChangeReason');
 const { exportExcel, exportWord, exportPdf } = require('../controllers/rkaExportController');
 
+// 1. Ambil semua dokumen RKA (Mendukung filter query ?tahapan=...)
 router.get(
   '/',
   verifyToken,
@@ -14,6 +16,7 @@ router.get(
   RkaController.getAll,
 );
 
+// 2. Log Audit Trail Perubahan Dokumen RKA
 router.get(
   '/:id/audit',
   verifyToken,
@@ -21,6 +24,7 @@ router.get(
   RkaController.getAudit,
 );
 
+// 3. Ambil Detail RKA Berdasarkan ID (Mata Anggaran & Koefisien Terurai)
 router.get(
   '/:id',
   verifyToken,
@@ -28,6 +32,7 @@ router.get(
   RkaController.getById,
 );
 
+// 4. Inisiasi Dokumen RKA Baru (Tahapan APBD Induk)
 router.post(
   '/',
   verifyToken,
@@ -36,6 +41,7 @@ router.post(
   RkaController.create,
 );
 
+// 5. Update Rincian Belanja pada Tahapan Berjalan
 router.put(
   '/:id',
   verifyToken,
@@ -45,6 +51,20 @@ router.put(
   RkaController.update,
 );
 
+/**
+ * 🌟 FITUR UNGGULAN: Pemicu Pergeseran / Perubahan Anggaran (Snap-Clone)
+ * Endpoint ini memanggil rkaRevisiService untuk menduplikasi RKA aktif ke tahapan berikutnya.
+ * Hanya bisa dieksekusi oleh SUPER_ADMIN dan ADMINISTRATOR.
+ */
+router.post(
+  '/:id/revisi',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
+  requireChangeReason, // Menuntut alasan mengapa anggaran ini digeser/diubah
+  RkaController.pemicuRevisi,
+);
+
+// 6. Hapus Dokumen RKA Permanen (Cascading ke Rincian Belanja)
 router.delete(
   '/:id',
   verifyToken,
@@ -54,7 +74,7 @@ router.delete(
   RkaController.destroy,
 );
 
-// DAFTAR ENDPOINT UNTUK EXPORT DOKUMEN RKA MULTI-FORMULIR
+// --- DAFTAR ENDPOINT UNTUK EXPORT DOKUMEN RKA MULTI-FORMULIR ---
 router.get(
   '/:id/export-excel',
   verifyToken,

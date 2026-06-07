@@ -1,4 +1,4 @@
-import api from "../../../services/api";
+import api from '../../../services/api';
 
 function unwrap(res) {
   return res.data?.data ?? res.data;
@@ -6,7 +6,7 @@ function unwrap(res) {
 
 function throwOfficialValidationFromResponse(res) {
   if (!(res.data instanceof ArrayBuffer)) {
-    const err = new Error(res.data?.message || "Ekspor dokumen gagal.");
+    const err = new Error(res.data?.message || 'Ekspor dokumen gagal.');
     throw err;
   }
   const text = new TextDecoder().decode(res.data);
@@ -14,12 +14,12 @@ function throwOfficialValidationFromResponse(res) {
   try {
     j = JSON.parse(text);
   } catch {
-    throw new Error("Ekspor dokumen gagal.");
+    throw new Error('Ekspor dokumen gagal.');
   }
   const msg =
-    (j.errors || []).map((e) => e.message).join(" · ") ||
+    (j.errors || []).map((e) => e.message).join(' · ') ||
     j.message ||
-    "Validasi dokumen resmi gagal.";
+    'Validasi dokumen resmi gagal.';
   const err = new Error(msg);
   err.validationErrors = j.errors || [];
   throw err;
@@ -30,11 +30,11 @@ function throwOfficialValidationFromResponse(res) {
  * Backend: POST .../generate-docx | generate-pdf
  */
 export async function downloadRenjaDokumenDocx(dokumenId) {
-  return api.post(`/renja/dokumen/${dokumenId}/generate-docx`, {}, { responseType: "arraybuffer" });
+  return api.post(`/renja/dokumen/${dokumenId}/generate-docx`, {}, { responseType: 'arraybuffer' });
 }
 
 export async function downloadRenjaDokumenPdf(dokumenId) {
-  return api.post(`/renja/dokumen/${dokumenId}/generate-pdf`, {}, { responseType: "arraybuffer" });
+  return api.post(`/renja/dokumen/${dokumenId}/generate-pdf`, {}, { responseType: 'arraybuffer' });
 }
 
 /** Dokumen Renja OPD resmi (BAB I–V, OOXML / PDF terstruktur). */
@@ -42,7 +42,7 @@ export async function downloadRenjaOfficialDocx(dokumenId) {
   return api.post(
     `/renja/dokumen/${dokumenId}/generate-official-docx`,
     {},
-    { responseType: "arraybuffer", validateStatus: (s) => s === 200 || s === 400 },
+    { responseType: 'arraybuffer', validateStatus: (s) => s === 200 || s === 400 },
   );
 }
 
@@ -50,7 +50,7 @@ export async function downloadRenjaOfficialPdf(dokumenId) {
   return api.post(
     `/renja/dokumen/${dokumenId}/generate-official-pdf`,
     {},
-    { responseType: "arraybuffer", validateStatus: (s) => s === 200 || s === 400 },
+    { responseType: 'arraybuffer', validateStatus: (s) => s === 200 || s === 400 },
   );
 }
 
@@ -63,7 +63,7 @@ export async function fetchRenjaValidateOfficial(dokumenId) {
 function triggerBlobDownload(response, filename, mime) {
   const blob = new Blob([response.data], { type: mime });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
+  const a = document.createElement('a');
   a.href = url;
   a.download = filename;
   document.body.appendChild(a);
@@ -72,53 +72,53 @@ function triggerBlobDownload(response, filename, mime) {
   URL.revokeObjectURL(url);
 }
 
-export async function saveRenjaDokumenDocxToFile(dokumenId, label = "Renja") {
+export async function saveRenjaDokumenDocxToFile(dokumenId, label = 'Renja') {
   const res = await downloadRenjaDokumenDocx(dokumenId);
-  const safe = String(label).replace(/\s+/g, "_").slice(0, 80);
+  const safe = String(label).replace(/\s+/g, '_').slice(0, 80);
   triggerBlobDownload(
     res,
     `renja-preview-${dokumenId}-${safe}.docx`,
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   );
 }
 
-export async function saveRenjaDokumenPdfToFile(dokumenId, label = "Renja") {
+export async function saveRenjaDokumenPdfToFile(dokumenId, label = 'Renja') {
   const res = await downloadRenjaDokumenPdf(dokumenId);
-  const safe = String(label).replace(/\s+/g, "_").slice(0, 80);
-  triggerBlobDownload(res, `renja-preview-${dokumenId}-${safe}.pdf`, "application/pdf");
+  const safe = String(label).replace(/\s+/g, '_').slice(0, 80);
+  triggerBlobDownload(res, `renja-preview-${dokumenId}-${safe}.pdf`, 'application/pdf');
 }
 
-export async function saveRenjaOfficialDocxToFile(dokumenId, label = "Renja-OPD-resmi") {
+export async function saveRenjaOfficialDocxToFile(dokumenId, label = 'Renja-OPD-resmi') {
   const res = await downloadRenjaOfficialDocx(dokumenId);
   if (res.status === 400) throwOfficialValidationFromResponse(res);
-  if (res.status !== 200) throw new Error("Gagal mengunduh dokumen resmi Word.");
-  const ver = res.headers?.["x-document-version"] || "";
-  const safe = String(label).replace(/\s+/g, "_").slice(0, 80);
-  const suffix = ver ? `-v${ver}` : "";
+  if (res.status !== 200) throw new Error('Gagal mengunduh dokumen resmi Word.');
+  const ver = res.headers?.['x-document-version'] || '';
+  const safe = String(label).replace(/\s+/g, '_').slice(0, 80);
+  const suffix = ver ? `-v${ver}` : '';
   triggerBlobDownload(
     res,
     `renja-opd-resmi-${dokumenId}${suffix}-${safe}.docx`,
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   );
 }
 
-export async function saveRenjaOfficialPdfToFile(dokumenId, label = "Renja-OPD-resmi") {
+export async function saveRenjaOfficialPdfToFile(dokumenId, label = 'Renja-OPD-resmi') {
   const res = await downloadRenjaOfficialPdf(dokumenId);
   if (res.status === 400) throwOfficialValidationFromResponse(res);
-  if (res.status !== 200) throw new Error("Gagal mengunduh dokumen resmi PDF.");
-  const ver = res.headers?.["x-document-version"] || "";
-  const safe = String(label).replace(/\s+/g, "_").slice(0, 80);
-  const suffix = ver ? `-v${ver}` : "";
-  triggerBlobDownload(res, `renja-opd-resmi-${dokumenId}${suffix}-${safe}.pdf`, "application/pdf");
+  if (res.status !== 200) throw new Error('Gagal mengunduh dokumen resmi PDF.');
+  const ver = res.headers?.['x-document-version'] || '';
+  const safe = String(label).replace(/\s+/g, '_').slice(0, 80);
+  const suffix = ver ? `-v${ver}` : '';
+  triggerBlobDownload(res, `renja-opd-resmi-${dokumenId}${suffix}-${safe}.pdf`, 'application/pdf');
 }
 
 export async function fetchReferensiBuatDokumenRenja(params = {}) {
-  const res = await api.get("/renja/referensi/buat-dokumen", { params });
+  const res = await api.get('/renja/referensi/buat-dokumen', { params });
   return unwrap(res);
 }
 
 export async function createRenjaDokumenV2(body) {
-  const res = await api.post("/renja/dokumen", body);
+  const res = await api.post('/renja/dokumen', body);
   return unwrap(res);
 }
 
@@ -143,7 +143,7 @@ export async function fetchRenjaDokumenChangeLog(dokumenId) {
 }
 
 export async function createRenjaItemV2(body) {
-  const res = await api.post("/renja/item", body);
+  const res = await api.post('/renja/item', body);
   return unwrap(res);
 }
 
@@ -158,4 +158,14 @@ export async function linkRenjaItemToRkpd(renjaItemId, rkpdItemId, meta = {}) {
     ...meta,
   });
   return res.data?.data ?? res.data;
+}
+
+export async function getAllRenjaDokumen(params = {}) {
+  const res = await api.get('/renja/dokumen', { params });
+  return unwrap(res);
+}
+
+export async function deleteRenjaItemV2(id, body = {}) {
+  const res = await api.delete(`/renja/v2/${body.renja_dokumen_id}/items/${id}`, { data: body });
+  return unwrap(res);
 }

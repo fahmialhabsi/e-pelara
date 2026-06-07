@@ -12,6 +12,7 @@ const { randomUUID } = require('crypto');
 const logger = require('./utils/logger');
 const connectRedis = require('./utils/redisClient'); // versi retry otomatis
 const masterReferensiRoutes = require('./routes/masterReferensiRoutes');
+const perangkatDaerahRoutes = require('./routes/perangkatDaerahRoutes');
 const dashboardAgregatPaguRoutes = require('./routes/dashboardAgregatPaguRoutes');
 
 // === HUBUNGKAN REDIS CLIENT ===
@@ -559,6 +560,7 @@ app.use('/api/v1/app-policy', appPolicyRoutes);
 app.use('/api/regulasi', regulasiRoutes);
 app.use('/api', lkAccountingRoutes);
 app.use('/api', masterReferensiRoutes);
+app.use('/api/perangkat-daerah', perangkatDaerahRoutes);
 
 app.use((err, req, res, _next) => {
   console.error('🔥 ERROR CAUGHT:', err.stack);

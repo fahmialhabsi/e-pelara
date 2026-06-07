@@ -114,6 +114,8 @@ module.exports = (sequelize, DataTypes) => {
       /** Narasi opsional bab dokumen resmi (override boilerplate generator) */
       text_bab1: { type: DataTypes.TEXT, allowNull: true },
       text_bab2: { type: DataTypes.TEXT, allowNull: true },
+      text_bab3: { type: DataTypes.TEXT, allowNull: true },
+      text_bab4: { type: DataTypes.TEXT, allowNull: true },
       text_bab5: { type: DataTypes.TEXT, allowNull: true },
       is_test: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
       created_by: { type: DataTypes.INTEGER, allowNull: true },

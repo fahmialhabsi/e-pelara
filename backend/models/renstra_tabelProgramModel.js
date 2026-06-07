@@ -1,22 +1,22 @@
-"use strict";
-const { Model } = require("sequelize");
+'use strict';
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class RenstraTabelProgram extends Model {
     static associate(models) {
       RenstraTabelProgram.belongsTo(models.RenstraOPD, {
-        foreignKey: "renstra_id",
-        as: "renstra",
+        foreignKey: 'renstra_id',
+        as: 'renstra',
       });
 
       RenstraTabelProgram.belongsTo(models.RenstraProgram, {
-        foreignKey: "program_id",
-        as: "program",
+        foreignKey: 'program_id',
+        as: 'program',
       });
 
       RenstraTabelProgram.belongsTo(models.IndikatorRenstra, {
-        foreignKey: "indikator_id",
-        as: "indikator_detail",
+        foreignKey: 'indikator_id',
+        as: 'indikator_detail',
       });
     }
   }
@@ -25,6 +25,7 @@ module.exports = (sequelize, DataTypes) => {
     {
       renstra_id: DataTypes.INTEGER,
       program_id: DataTypes.INTEGER,
+      kebijakan_id: DataTypes.INTEGER,
       indikator_id: DataTypes.INTEGER,
 
       baseline: DataTypes.DECIMAL(15, 2),
@@ -60,7 +61,7 @@ module.exports = (sequelize, DataTypes) => {
 
       status_revisi: {
         type: DataTypes.STRING(20),
-        defaultValue: "draft",
+        defaultValue: 'draft',
       },
 
       last_revised_at: DataTypes.DATE,
@@ -68,11 +69,11 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       sequelize,
-      modelName: "RenstraTabelProgram",
-      tableName: "renstra_tabel_program",
+      modelName: 'RenstraTabelProgram',
+      tableName: 'renstra_tabel_program',
       underscored: true,
       timestamps: false,
-    }
+    },
   );
 
   return RenstraTabelProgram;

@@ -1,36 +1,36 @@
-"use strict";
-const { Model } = require("sequelize");
+'use strict';
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class RenstraProgram extends Model {
     static associate(models) {
       RenstraProgram.belongsTo(models.RenstraOPD, {
-        foreignKey: "renstra_id",
-        targetKey: "id",
-        as: "renstra",
+        foreignKey: 'renstra_id',
+        targetKey: 'id',
+        as: 'renstra',
       });
 
       RenstraProgram.belongsTo(models.Program, {
-        foreignKey: "rpjmd_program_id",
-        targetKey: "id",
-        as: "program_rpjmd",
+        foreignKey: 'rpjmd_program_id',
+        targetKey: 'id',
+        as: 'program_rpjmd',
       });
 
       RenstraProgram.hasMany(models.RenstraKegiatan, {
-        foreignKey: "program_id",
-        as: "kegiatans",
+        foreignKey: 'program_id',
+        as: 'kegiatans',
       });
 
       RenstraProgram.hasMany(models.IndikatorRenstra, {
-        foreignKey: "ref_id",
+        foreignKey: 'ref_id',
         constraints: false,
-        scope: { stage: "program" },
-        as: "indikators",
+        scope: { stage: 'program' },
+        as: 'indikators',
       });
 
       RenstraProgram.hasMany(models.RenstraTabelProgram, {
-        foreignKey: "program_id",
-        as: "tabelPrograms",
+        foreignKey: 'program_id',
+        as: 'tabelPrograms',
       });
     }
   }
@@ -57,6 +57,10 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: true,
       },
+      kebijakan_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
       rpjmd_program_id: {
         type: DataTypes.INTEGER,
         allowNull: true,
@@ -64,11 +68,11 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       sequelize,
-      modelName: "RenstraProgram",
-      tableName: "renstra_program",
+      modelName: 'RenstraProgram',
+      tableName: 'renstra_program',
       underscored: true,
       timestamps: false,
-    }
+    },
   );
 
   return RenstraProgram;

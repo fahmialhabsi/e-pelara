@@ -258,6 +258,7 @@ const buildLockedPaguPayload = () => ({
 const STRATEGI_ALLOWED_BODY_FIELDS = [
   'renstra_id',
   'strategi_id',
+  'sasaran_id',
   'indikator_id',
 
   'kode_strategi',
@@ -550,6 +551,7 @@ exports.create = async (req, res) => {
         indikator: relasi.indikator,
         userId: getUserId(req),
       }),
+      sasaran_id: req.body.sasaran_id ?? null,
       status_revisi: 'draft',
       versi: 1,
       last_revised_at: null,
@@ -781,6 +783,7 @@ exports.update = async (req, res) => {
 
     const afterPayload = {
       ...payload,
+      sasaran_id: req.body.sasaran_id ?? null,
       status_revisi: 'draft',
       versi: Number(current.versi || 1) + 1,
       last_revised_at: new Date(),
@@ -963,6 +966,7 @@ exports.createRevisi = async (req, res) => {
       ...current.toJSON(),
       ...req.body,
       pagu_rpjmd_acuan: current.pagu_rpjmd_acuan,
+      sasaran_id: req.body.sasaran_id ?? null,
     };
 
     if (!payloadBase.renstra_id || !payloadBase.strategi_id || !payloadBase.indikator_id) {
@@ -996,6 +1000,7 @@ exports.createRevisi = async (req, res) => {
         indikator: relasi.indikator,
         userId,
       }),
+      sasaran_id: req.body.sasaran_id ?? null,
       status_revisi: 'draft',
       versi: Number(current.versi || 1) + 1,
       last_revised_at: new Date(),

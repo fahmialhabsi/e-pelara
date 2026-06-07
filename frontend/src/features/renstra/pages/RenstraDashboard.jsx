@@ -1,27 +1,33 @@
 ﻿// src/features/renstra/pages/RenstraDashboard.jsx
-import { useEffect, useState } from "react";
-import { Card, CardBody, Row, Col, Spinner } from "react-bootstrap";
-import { useAuth } from "../../../hooks/useAuth";
-import { useDokumen } from "../../../hooks/useDokumen";
-import { Navigate, useNavigate } from "react-router-dom";
-import api from "../../../services/api";
-import GenerateRenstraButton from "../components/GenerateRenstraButton";
+import { useEffect, useState } from 'react';
+import { Card, CardBody, Row, Col, Spinner } from 'react-bootstrap';
+import { useAuth } from '../../../hooks/useAuth';
+import { useDokumen } from '../../../hooks/useDokumen';
+import { Navigate, useNavigate } from 'react-router-dom';
+import api from '../../../services/api';
+import GenerateRenstraButton from '../components/GenerateRenstraButton';
+import RenstraChainNavigator from '../components/RenstraChainNavigator';
 
 /** Kartu & akses cepat - path mengarah ke daftar yang dipakai pengguna (tabel vs hierarki). */
 const STAT_CONFIG = [
-  { key: "tujuan",         label: "Tujuan",         color: "primary",   path: "/renstra/tabel/tujuan" },
-  { key: "sasaran",        label: "Sasaran",        color: "success",   path: "/renstra/tabel/sasaran" },
-  { key: "strategi",       label: "Strategi",       color: "danger",    path: "/renstra/strategi" },
-  { key: "arah_kebijakan", label: "Arah Kebijakan", color: "dark",      path: "/renstra/kebijakan" },
-  { key: "program",        label: "Program",        color: "info",      path: "/renstra/tabel/program" },
-  { key: "kegiatan",       label: "Kegiatan",       color: "warning",   path: "/renstra/tabel/kegiatan" },
-  { key: "sub_kegiatan",   label: "Sub Kegiatan",   color: "secondary", path: "/renstra/tabel/subkegiatan" },
+  { key: 'tujuan', label: 'Tujuan', color: 'primary', path: '/renstra/tabel/tujuan' },
+  { key: 'sasaran', label: 'Sasaran', color: 'success', path: '/renstra/tabel/sasaran' },
+  { key: 'strategi', label: 'Strategi', color: 'danger', path: '/renstra/strategi' },
+  { key: 'arah_kebijakan', label: 'Arah Kebijakan', color: 'dark', path: '/renstra/kebijakan' },
+  { key: 'program', label: 'Program', color: 'info', path: '/renstra/tabel/program' },
+  { key: 'kegiatan', label: 'Kegiatan', color: 'warning', path: '/renstra/tabel/kegiatan' },
+  {
+    key: 'sub_kegiatan',
+    label: 'Sub Kegiatan',
+    color: 'secondary',
+    path: '/renstra/tabel/subkegiatan',
+  },
 ];
 const formatRupiah = (val) => {
   const n = Number(val) || 0;
   if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(2)} M`;
   if (n >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(2)} jt`;
-  return `Rp ${n.toLocaleString("id-ID")}`;
+  return `Rp ${n.toLocaleString('id-ID')}`;
 };
 
 const RenstraDashboard = () => {
@@ -40,7 +46,7 @@ const RenstraDashboard = () => {
     sub_kegiatan: null,
   });
   const [loadingStats, setLoadingStats] = useState(true);
-  const [errorMsg, setErrorMsg] = useState("");
+  const [errorMsg, setErrorMsg] = useState('');
   const [paguSummary, setPaguSummary] = useState(null);
   const [loadingPagu, setLoadingPagu] = useState(false);
 
@@ -50,10 +56,10 @@ const RenstraDashboard = () => {
     const fetchDashboardData = async () => {
       try {
         setLoadingStats(true);
-        setErrorMsg("");
+        setErrorMsg('');
 
         // Ambil daftar Renstra OPD dan cari yang aktif
-        const opdRes = await api.get("/renstra-opd");
+        const opdRes = await api.get('/renstra-opd');
         if (cancelled) return;
 
         const opdList = Array.isArray(opdRes.data?.data) ? opdRes.data.data : [];
@@ -98,15 +104,15 @@ const RenstraDashboard = () => {
           kebijakanRes,
           subKegiatanRes,
         ] = await Promise.all([
-          api.get("/renstra-tujuan", { params: { renstra_id: renstraId } }),
-          api.get("/renstra-tabel-tujuan", { params: { opd_id: renstraId } }),
-          api.get("/renstra-sasaran", { params: { renstra_id: renstraId } }),
-          api.get("/renstra-program", { params: { renstra_id: renstraId } }),
-          api.get("/renstra-kegiatan", { params: { renstra_id: renstraId } }),
+          api.get('/renstra-tujuan', { params: { renstra_id: renstraId } }),
+          api.get('/renstra-tabel-tujuan', { params: { opd_id: renstraId } }),
+          api.get('/renstra-sasaran', { params: { renstra_id: renstraId } }),
+          api.get('/renstra-program', { params: { renstra_id: renstraId } }),
+          api.get('/renstra-kegiatan', { params: { renstra_id: renstraId } }),
           // Daftar halaman /renstra/strategi & /renstra/kebijakan tanpa filter renstra_id - samakan hitungan kartu.
-          api.get("/renstra-strategi"),
-          api.get("/renstra-kebijakan"),
-          api.get("/renstra-subkegiatan", { params: { renstra_id: renstraId } }),
+          api.get('/renstra-strategi'),
+          api.get('/renstra-kebijakan'),
+          api.get('/renstra-subkegiatan', { params: { renstra_id: renstraId } }),
         ]);
 
         if (cancelled) return;
@@ -126,7 +132,7 @@ const RenstraDashboard = () => {
         // Fetch pagu summary dari Renstra Tabel Program
         setLoadingPagu(true);
         try {
-          const tabelProgramRes = await api.get("/renstra-tabel-program", {
+          const tabelProgramRes = await api.get('/renstra-tabel-program', {
             params: { renstra_id: renstraId },
           });
           const rows = Array.isArray(tabelProgramRes.data) ? tabelProgramRes.data : [];
@@ -135,16 +141,19 @@ const RenstraDashboard = () => {
               slot: i,
               total: rows.reduce((sum, r) => sum + (Number(r[`pagu_tahun_${i}`]) || 0), 0),
             }));
-            const totalAkhir = rows.reduce((sum, r) => sum + (Number(r.pagu_akhir_renstra) || 0), 0);
+            const totalAkhir = rows.reduce(
+              (sum, r) => sum + (Number(r.pagu_akhir_renstra) || 0),
+              0,
+            );
             setPaguSummary({ paguPerSlot, totalAkhir, count: rows.length });
           }
         } finally {
           setLoadingPagu(false);
         }
       } catch (err) {
-        console.error("Error fetching dashboard stats:", err);
+        console.error('Error fetching dashboard stats:', err);
         if (!cancelled) {
-          setErrorMsg("Gagal memuat statistik. Silakan refresh halaman.");
+          setErrorMsg('Gagal memuat statistik. Silakan refresh halaman.');
         }
       } finally {
         if (!cancelled) setLoadingStats(false);
@@ -152,17 +161,19 @@ const RenstraDashboard = () => {
     };
 
     fetchDashboardData();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [dokumen, tahun]);
 
   if (!dokumen || !tahun) {
     return <Navigate to="/" replace />;
   }
 
-  const namaOpd = renstraAktif?.nama_opd || "OPD";
+  const namaOpd = renstraAktif?.nama_opd || 'OPD';
   const periodeTeks = renstraAktif
     ? `${renstraAktif.tahun_mulai} - ${renstraAktif.tahun_akhir}`
-    : tahun || "-";
+    : tahun || '-';
 
   return (
     <>
@@ -170,18 +181,16 @@ const RenstraDashboard = () => {
       <div className="mb-4 d-flex align-items-center justify-content-between flex-wrap gap-2">
         <div>
           <h2 className="fw-bold text-primary mb-1">Dashboard Renstra</h2>
-          <p className="text-muted mb-0 small">{namaOpd} - Periode {periodeTeks}</p>
+          <p className="text-muted mb-0 small">
+            {namaOpd} - Periode {periodeTeks}
+          </p>
         </div>
         <div className="d-flex gap-2 align-items-center flex-wrap">
-          {renstraAktif && (
-            <span className="badge bg-success fs-6 px-3 py-2">
-              Renstra Aktif
-            </span>
-          )}
+          {renstraAktif && <span className="badge bg-success fs-6 px-3 py-2">Renstra Aktif</span>}
           {renstraAktif?.id && (
             <button
               className="btn btn-outline-primary btn-sm"
-              onClick={() => navigate("/renstra/audit/keterhubungan")}
+              onClick={() => navigate('/renstra/audit/keterhubungan')}
               disabled={loadingStats}
               title="Uji cepat keterhubungan Renstra <-> RPJMD (cascading)"
             >
@@ -204,12 +213,20 @@ const RenstraDashboard = () => {
           <CardBody>
             <Row className="gy-1">
               <Col md={6}>
-                <div><strong>OPD:</strong> {namaOpd}</div>
-                <div><strong>Dokumen Aktif:</strong> {dokumen || "-"}</div>
-                <div><strong>Periode Renstra:</strong> {periodeTeks}</div>
+                <div>
+                  <strong>OPD:</strong> {namaOpd}
+                </div>
+                <div>
+                  <strong>Dokumen Aktif:</strong> {dokumen || '-'}
+                </div>
+                <div>
+                  <strong>Periode Renstra:</strong> {periodeTeks}
+                </div>
               </Col>
               <Col md={6}>
-                <div><strong>Pengguna:</strong> {user.nama || user.email}</div>
+                <div>
+                  <strong>Pengguna:</strong> {user.nama || user.email}
+                </div>
                 <div>
                   <strong>Status Renstra: </strong>
                   {renstraAktif ? (
@@ -219,7 +236,9 @@ const RenstraDashboard = () => {
                   )}
                 </div>
                 {renstraAktif?.bidang_opd && (
-                  <div><strong>Bidang:</strong> {renstraAktif.bidang_opd}</div>
+                  <div>
+                    <strong>Bidang:</strong> {renstraAktif.bidang_opd}
+                  </div>
                 )}
               </Col>
             </Row>
@@ -235,10 +254,7 @@ const RenstraDashboard = () => {
             <p className="text-muted mt-1 mb-3 small">
               Silakan buat dan aktifkan Renstra OPD terlebih dahulu.
             </p>
-            <button
-              className="btn btn-warning btn-sm"
-              onClick={() => navigate("/renstra/opd")}
-            >
+            <button className="btn btn-warning btn-sm" onClick={() => navigate('/renstra/opd')}>
               Buat Renstra OPD
             </button>
           </CardBody>
@@ -258,10 +274,10 @@ const RenstraDashboard = () => {
           <Col key={stat.key} xs={6} sm={6} md={4} lg={3} className="mb-3">
             <Card
               className={`text-center shadow-sm border-top border-4 border-${stat.color} h-100`}
-              style={{ cursor: "pointer", transition: "transform .15s" }}
+              style={{ cursor: 'pointer', transition: 'transform .15s' }}
               onClick={() => navigate(stat.path)}
-              onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-3px)")}
-              onMouseLeave={(e) => (e.currentTarget.style.transform = "none")}
+              onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-3px)')}
+              onMouseLeave={(e) => (e.currentTarget.style.transform = 'none')}
             >
               <CardBody className="py-3">
                 <div className="text-muted small fw-semibold mb-1">{stat.label}</div>
@@ -269,10 +285,10 @@ const RenstraDashboard = () => {
                   {loadingStats ? (
                     <Spinner animation="border" size="sm" variant={stat.color} />
                   ) : (
-                    stats[stat.key] ?? 0
+                    (stats[stat.key] ?? 0)
                   )}
                 </div>
-</CardBody>
+              </CardBody>
             </Card>
           </Col>
         ))}
@@ -297,11 +313,16 @@ const RenstraDashboard = () => {
         </CardBody>
       </Card>
 
+      {/* Chain Navigator */}
+      <RenstraChainNavigator stats={stats} loadingStats={loadingStats} />
+
       {/* Pagu Summary */}
       {renstraAktif && (
         <Card className="shadow-sm border-0 mb-4">
           <CardBody>
-            <h6 className="fw-bold mb-3">Ringkasan Pagu Renstra ({paguSummary?.count ?? 0} Program)</h6>
+            <h6 className="fw-bold mb-3">
+              Ringkasan Pagu Renstra ({paguSummary?.count ?? 0} Program)
+            </h6>
             {loadingPagu ? (
               <div className="text-center py-2">
                 <Spinner animation="border" size="sm" /> Memuat data pagu...
@@ -324,8 +345,11 @@ const RenstraDashboard = () => {
               </>
             ) : (
               <div className="text-muted small">
-                Belum ada data pagu. Tambahkan data melalui{" "}
-                <a href="/renstra/tabel/program" className="text-decoration-underline">Tabel Program</a>.
+                Belum ada data pagu. Tambahkan data melalui{' '}
+                <a href="/renstra/tabel/program" className="text-decoration-underline">
+                  Tabel Program
+                </a>
+                .
               </div>
             )}
           </CardBody>
@@ -336,10 +360,14 @@ const RenstraDashboard = () => {
       <Card className="shadow-sm border-0 mb-4">
         <CardBody className="bg-light">
           <div className="text-muted small">
-            Dashboard Renstra OPD sesuai <strong>Permendagri 86/2017</strong>.
-            Data terintegrasi dengan RPJMD melalui modul Cascading.
+            Dashboard Renstra OPD sesuai <strong>Permendagri 86/2017</strong>. Data terintegrasi
+            dengan RPJMD melalui modul Cascading.
             {renstraAktif?.keterangan && (
-              <><br /><span className="fw-semibold">Keterangan: </span>{renstraAktif.keterangan}</>
+              <>
+                <br />
+                <span className="fw-semibold">Keterangan: </span>
+                {renstraAktif.keterangan}
+              </>
             )}
           </div>
         </CardBody>
@@ -349,6 +377,3 @@ const RenstraDashboard = () => {
 };
 
 export default RenstraDashboard;
-
-
-

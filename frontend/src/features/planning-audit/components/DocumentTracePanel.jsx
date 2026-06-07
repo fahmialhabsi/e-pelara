@@ -10,7 +10,7 @@ export default function DocumentTracePanel({ documentType, documentId }) {
     if (!documentType || !documentId) return undefined;
     (async () => {
       try {
-        const safeDocumentType = documentType?.replace('_dokumen', '');
+        const safeDocumentType = documentType;
 
         const t = await fetchDocumentTrace(safeDocumentType, documentId);
         if (!cancelled) setData(t);

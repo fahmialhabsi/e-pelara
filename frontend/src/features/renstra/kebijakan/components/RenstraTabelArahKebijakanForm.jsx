@@ -9,11 +9,14 @@ import { useRenstraFormTemplate } from '@/hooks/templatesUseRenstra/useRenstraFo
 import SelectWithLabelValue from '@/shared/components/form/SelectWithLabelValue';
 import InputField from '@/shared/components/form/InputField';
 import CurrencyInputField from '@/shared/components/form/CurrencyInputField';
+import RenstraBreadcrumb, {
+  useRenstraBreadcrumb,
+} from '@/features/renstra/shared/components/RenstraBreadcrumb';
 
 const YEARS = [1, 2, 3, 4, 5];
 const ALL_YEARS = [1, 2, 3, 4, 5, 6];
 const ENDPOINT = '/renstra-tabel-arah-kebijakan';
-const REDIRECT = '/renstra/tabel/arah-kebijakan';
+const REDIRECT = '/dashboard-renstra';
 
 const getStrategiRenstraId = (item) => item?.id ?? null;
 const getKebijakanRenstraId = (item) => item?.id ?? null;
@@ -130,9 +133,7 @@ export default function RenstraTabelArahKebijakanForm({ initialData = null, rens
       satuan_target: Yup.string().required('Satuan target wajib diisi'),
       lokasi: Yup.string().required('Lokasi wajib diisi'),
 
-      alasan_revisi: initialData
-        ? Yup.string().required('Alasan revisi wajib diisi')
-        : Yup.string().nullable(),
+      alasan_revisi: Yup.string().nullable(),
 
       ...YEARS.reduce(
         (acc, i) => ({
@@ -186,10 +187,7 @@ export default function RenstraTabelArahKebijakanForm({ initialData = null, rens
       ? Number(selectedKebijakan.id)
       : Number(data.kebijakan_id);
 
-    if (
-      selectedIndikator &&
-      Number(selectedIndikator._resolved_ref_id || 0) !== selectedKebijakanNumber
-    ) {
+    if (selectedIndikator && Number(selectedIndikator.ref_id || 0) !== selectedKebijakanNumber) {
       throw new Error(
         'Indikator belum valid untuk disimpan. Indikator harus berasal dari indikator_renstra stage kebijakan dengan ref_id sama dengan kebijakan_id.',
       );
@@ -198,6 +196,7 @@ export default function RenstraTabelArahKebijakanForm({ initialData = null, rens
     return {
       renstra_id: Number(renstraId),
       kebijakan_id: selectedKebijakanNumber,
+      strategi_id: Number(data.strategi_id) || null,
 
       kode_kebijakan: data.kode_kebijakan,
       deskripsi_kebijakan: data.deskripsi_kebijakan,
@@ -251,7 +250,7 @@ export default function RenstraTabelArahKebijakanForm({ initialData = null, rens
     (x) => String(getKebijakanRenstraId(x)) === String(selectedKebijakanId),
   );
 
-  const indikatorRefId = selectedKebijakanId || initialData?.id || null;
+  const indikatorRefId = selectedKebijakanId || initialData?.kebijakan_id || null;
 
   const { data: paguCache = null, isLoading: loadingPaguCache } = useQuery({
     queryKey: ['renstra-pagu-cache', 'kebijakan', initialData?.id],
@@ -447,7 +446,6 @@ export default function RenstraTabelArahKebijakanForm({ initialData = null, rens
         shouldValidate: false,
         shouldDirty: false,
       });
-
     }
 
     prevStrategiIdRef.current = currentStrategiId;
@@ -649,7 +647,6 @@ export default function RenstraTabelArahKebijakanForm({ initialData = null, rens
         shouldValidate: false,
         shouldDirty: false,
       });
-
     }
 
     prevKebijakanIdRef.current = cur;
@@ -836,10 +833,11 @@ export default function RenstraTabelArahKebijakanForm({ initialData = null, rens
       shouldValidate: false,
       shouldDirty: false,
     });
-
   }, [initialData, paguCache, setValue]);
 
   const handleSubmitRevisi = async (data) => {
+    console.log('handleSubmitRevisi called', data);
+
     if (!initialData?.id) {
       return onSubmit(data);
     }
@@ -853,10 +851,13 @@ export default function RenstraTabelArahKebijakanForm({ initialData = null, rens
       setSubmitRevisiLoading(true);
       setServerMessage('');
 
-      const payload = {
-        ...generatePayload(data),
-        alasan_revisi: alasanRevisi,
-      };
+      let payload;
+      try {
+        payload = { ...generatePayload(data), alasan_revisi: alasanRevisi };
+      } catch (err) {
+        setServerMessage(err.message);
+        return;
+      }
 
       if (isAuditMode) {
         setServerMessage('Data approved dalam mode audit. Klik Buat Revisi untuk mengubah.');
@@ -870,6 +871,7 @@ export default function RenstraTabelArahKebijakanForm({ initialData = null, rens
       }
 
       setServerMessage('✅ Revisi berhasil disimpan sebagai draft.');
+      navigate('/dashboard-renstra');
     } catch (err) {
       setServerMessage(
         err?.response?.data?.message || err?.response?.data?.error || 'Gagal menyimpan revisi.',
@@ -880,6 +882,12 @@ export default function RenstraTabelArahKebijakanForm({ initialData = null, rens
   };
 
   const isLoading = !renstraAktif || loadingStrategi || loadingKebijakan || loadingPaguCache;
+
+  const selectedStrategiIdForBreadcrumb = watch('strategi_id') || initialData?.strategi_id || null;
+  const breadcrumbChain = useRenstraBreadcrumb({
+    strategiId: selectedStrategiIdForBreadcrumb,
+    currentLabel: initialData ? 'Edit Arah Kebijakan' : 'Tambah Arah Kebijakan',
+  });
 
   return (
     <Card title={formTitle}>
@@ -901,219 +909,226 @@ export default function RenstraTabelArahKebijakanForm({ initialData = null, rens
       {isLoading ? (
         <div>Memuat data...</div>
       ) : (
-        <form onSubmit={handleSubmit(initialData ? handleSubmitRevisi : onSubmit)}>
-          <SelectWithLabelValue
-            name="strategi_id"
-            disabled={isAuditMode}
-            label="Strategi Induk"
-            control={control}
-            errors={errors}
-            required
-            options={strategiSelectOptions}
-          />
-          <InputField
-            name="kode_strategi"
-            label="Kode Strategi"
-            control={control}
-            errors={errors}
-            disabled
-          />
-          <InputField
-            name="deskripsi_strategi"
-            label="Deskripsi Strategi"
-            control={control}
-            errors={errors}
-            disabled
-          />
-
-          <SelectWithLabelValue
-            name="kebijakan_id"
-            label="Arah Kebijakan"
-            control={control}
-            errors={errors}
-            required
-            disabled={isAuditMode || !selectedStrategiId}
-            options={kebijakanSelectOptions}
-          />
-          {selectedStrategiId && kebijakanSelectOptions.length === 0 && (
-            <Alert
-              type="warning"
-              showIcon
-              style={{ marginBottom: 16 }}
-              message="Arah Kebijakan belum tersedia"
-              description="Tidak ada arah kebijakan yang terhubung dengan strategi induk yang dipilih."
+        <>
+          <RenstraBreadcrumb chain={breadcrumbChain} />
+          <form
+            onSubmit={handleSubmit(initialData ? handleSubmitRevisi : onSubmit, (errors) =>
+              console.log('VALIDATION ERRORS:', errors),
+            )}
+          >
+            <SelectWithLabelValue
+              name="strategi_id"
+              disabled={isAuditMode}
+              label="Strategi Induk"
+              control={control}
+              errors={errors}
+              required
+              options={strategiSelectOptions}
             />
-          )}
-          <InputField
-            name="kode_kebijakan"
-            label="Kode Arah Kebijakan"
-            control={control}
-            errors={errors}
-            disabled
-          />
-          <InputField
-            name="deskripsi_kebijakan"
-            label="Deskripsi Arah Kebijakan"
-            control={control}
-            errors={errors}
-            disabled
-          />
-
-          <SelectWithLabelValue
-            name="indikator_id"
-            label="Indikator"
-            control={control}
-            errors={errors}
-            required
-            disabled={isAuditMode || !selectedKebijakanId || loadingIndikator}
-            options={indikatorSelectOptions}
-          />
-
-          {selectedKebijakanId && !loadingIndikator && indikatorSelectOptions.length === 0 && (
-            <Alert
-              type="warning"
-              showIcon
-              style={{ marginBottom: 16 }}
-              message="Indikator belum tersedia untuk simpan"
-              description={`Tidak ada indikator_renstra stage kebijakan dengan ref_id = ${selectedKebijakanId}. Pastikan target Renstra kebijakan sudah disiapkan dan resolver source-map valid.`}
-            />
-          )}
-
-          <InputField
-            name="indikator"
-            label="Nama Indikator"
-            control={control}
-            errors={errors}
-            disabled
-          />
-          <InputField
-            name="baseline"
-            label="Baseline"
-            control={control}
-            errors={errors}
-            disabled={isAuditMode}
-          />
-
-          <InputField
-            name="satuan_target"
-            label="Satuan Target"
-            control={control}
-            errors={errors}
-            required
-            disabled={isAuditMode}
-          />
-
-          <InputField
-            name="lokasi"
-            label="Lokasi"
-            control={control}
-            errors={errors}
-            required
-            disabled={isAuditMode}
-          />
-
-          <InputField
-            name="opd_penanggung_jawab"
-            label="OPD Penanggung Jawab"
-            control={control}
-            errors={errors}
-            disabled={isAuditMode}
-          />
-
-          <h4 style={{ marginTop: 24 }}>Target periode (th. ke-1 s/d ke-5)</h4>
-          {YEARS.map((i) => (
             <InputField
-              key={`t${i}`}
-              name={`target_tahun_${i}`}
-              label={`Target (th. ke-${i})`}
+              name="kode_strategi"
+              label="Kode Strategi"
+              control={control}
+              errors={errors}
+              disabled
+            />
+            <InputField
+              name="deskripsi_strategi"
+              label="Deskripsi Strategi"
+              control={control}
+              errors={errors}
+              disabled
+            />
+
+            <SelectWithLabelValue
+              name="kebijakan_id"
+              label="Arah Kebijakan"
+              control={control}
+              errors={errors}
+              required
+              disabled={isAuditMode || !selectedStrategiId}
+              options={kebijakanSelectOptions}
+            />
+            {selectedStrategiId && kebijakanSelectOptions.length === 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="Arah Kebijakan belum tersedia"
+                description="Tidak ada arah kebijakan yang terhubung dengan strategi induk yang dipilih."
+              />
+            )}
+            <InputField
+              name="kode_kebijakan"
+              label="Kode Arah Kebijakan"
+              control={control}
+              errors={errors}
+              disabled
+            />
+            <InputField
+              name="deskripsi_kebijakan"
+              label="Deskripsi Arah Kebijakan"
+              control={control}
+              errors={errors}
+              disabled
+            />
+
+            <SelectWithLabelValue
+              name="indikator_id"
+              label="Indikator"
+              control={control}
+              errors={errors}
+              required
+              disabled={isAuditMode || !selectedKebijakanId || loadingIndikator}
+              options={indikatorSelectOptions}
+            />
+
+            {selectedKebijakanId && !loadingIndikator && indikatorSelectOptions.length === 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="Indikator belum tersedia untuk simpan"
+                description={`Tidak ada indikator_renstra stage kebijakan dengan ref_id = ${selectedKebijakanId}. Pastikan target Renstra kebijakan sudah disiapkan dan resolver source-map valid.`}
+              />
+            )}
+
+            <InputField
+              name="indikator"
+              label="Nama Indikator"
+              control={control}
+              errors={errors}
+              disabled
+            />
+            <InputField
+              name="baseline"
+              label="Baseline"
               control={control}
               errors={errors}
               disabled={isAuditMode}
             />
-          ))}
 
-          <h2 style={{ marginTop: 24 }}>Pagu RPJMD Acuan</h2>
-
-          <CurrencyInputField
-            name="pagu_rpjmd_acuan"
-            label="Pagu RPJMD Acuan"
-            control={control}
-            errors={errors}
-            disabled
-          />
-
-          <h2 style={{ marginTop: 24 }}>Pagu Renstra periode (th. ke-1 s/d ke-5)</h2>
-
-          {YEARS.map((i) => (
-            <CurrencyInputField
-              key={`p${i}`}
-              name={`pagu_tahun_${i}`}
-              label={`Pagu (th. ke-${i})`}
+            <InputField
+              name="satuan_target"
+              label="Satuan Target"
               control={control}
               errors={errors}
-              disabled={isAuditMode || !initialData}
+              required
+              disabled={isAuditMode}
             />
-          ))}
 
-          <h2 style={{ marginTop: 24 }}>Kondisi Akhir Renstra</h2>
-          <InputField
-            name="target_akhir_renstra"
-            label="Target Akhir Renstra"
-            control={control}
-            errors={errors}
-            disabled
-          />
-          <CurrencyInputField
-            name="pagu_akhir_renstra"
-            label="Pagu Akhir Renstra"
-            control={control}
-            errors={errors}
-            disabled
-          />
+            <InputField
+              name="lokasi"
+              label="Lokasi"
+              control={control}
+              errors={errors}
+              required
+              disabled={isAuditMode}
+            />
 
-          {initialData && (
-            <div style={{ marginTop: 24 }}>
-              <h4>Alasan Revisi</h4>
-              <Input.TextArea
-                rows={4}
-                value={alasanRevisi}
-                onChange={(e) => setAlasanRevisi(e.target.value)}
-                placeholder="Tuliskan alasan revisi target/pagu Renstra..."
+            <InputField
+              name="opd_penanggung_jawab"
+              label="OPD Penanggung Jawab"
+              control={control}
+              errors={errors}
+              disabled={isAuditMode}
+            />
+
+            <h4 style={{ marginTop: 24 }}>Target periode (th. ke-1 s/d ke-5)</h4>
+            {YEARS.map((i) => (
+              <InputField
+                key={`t${i}`}
+                name={`target_tahun_${i}`}
+                label={`Target (th. ke-${i})`}
+                control={control}
+                errors={errors}
+                disabled={isAuditMode}
               />
-            </div>
-          )}
+            ))}
 
-          {serverMessage && (
-            <Alert
-              style={{ marginTop: 16 }}
-              type={serverMessage.startsWith('✅') ? 'success' : 'warning'}
-              showIcon
-              message={serverMessage}
+            <h2 style={{ marginTop: 24 }}>Pagu RPJMD Acuan</h2>
+
+            <CurrencyInputField
+              name="pagu_rpjmd_acuan"
+              label="Pagu RPJMD Acuan"
+              control={control}
+              errors={errors}
+              disabled
             />
-          )}
 
-          <div style={{ marginTop: 24 }}>
-            {isAuditMode ? (
-              <Button
-                type="dashed"
-                style={{ borderColor: '#fa8c16', color: '#fa8c16' }}
-                onClick={() =>
-                  navigate(`/renstra/tabel/arah-kebijakan/edit/${initialData.id}?mode=revisi`)
-                }
-              >
-                Buat Revisi
-              </Button>
-            ) : (
-              <Button
-                type="primary"
-                htmlType="submit"
-                loading={initialData ? submitRevisiLoading : isSubmitting}
-              >
-                {initialData ? (isApproved ? 'Buat Revisi' : 'Simpan Draft') : 'Simpan'}
-              </Button>
+            <h2 style={{ marginTop: 24 }}>Pagu Renstra periode (th. ke-1 s/d ke-5)</h2>
+
+            {YEARS.map((i) => (
+              <CurrencyInputField
+                key={`p${i}`}
+                name={`pagu_tahun_${i}`}
+                label={`Pagu (th. ke-${i})`}
+                control={control}
+                errors={errors}
+                disabled={isAuditMode || !initialData}
+              />
+            ))}
+
+            <h2 style={{ marginTop: 24 }}>Kondisi Akhir Renstra</h2>
+            <InputField
+              name="target_akhir_renstra"
+              label="Target Akhir Renstra"
+              control={control}
+              errors={errors}
+              disabled
+            />
+            <CurrencyInputField
+              name="pagu_akhir_renstra"
+              label="Pagu Akhir Renstra"
+              control={control}
+              errors={errors}
+              disabled
+            />
+
+            {initialData && (
+              <div style={{ marginTop: 24 }}>
+                <h4>Alasan Revisi</h4>
+                <Input.TextArea
+                  rows={4}
+                  value={alasanRevisi}
+                  onChange={(e) => setAlasanRevisi(e.target.value)}
+                  placeholder="Tuliskan alasan revisi target/pagu Renstra..."
+                />
+              </div>
             )}
-          </div>
-        </form>
+
+            {serverMessage && (
+              <Alert
+                style={{ marginTop: 16 }}
+                type={serverMessage.startsWith('✅') ? 'success' : 'warning'}
+                showIcon
+                message={serverMessage}
+              />
+            )}
+
+            <div style={{ marginTop: 24 }}>
+              {isAuditMode ? (
+                <Button
+                  type="dashed"
+                  style={{ borderColor: '#fa8c16', color: '#fa8c16' }}
+                  onClick={() =>
+                    navigate(`/renstra/tabel/arah-kebijakan/edit/${initialData.id}?mode=revisi`)
+                  }
+                >
+                  Buat Revisi
+                </Button>
+              ) : (
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  loading={initialData ? submitRevisiLoading : isSubmitting}
+                >
+                  {initialData ? (isApproved ? 'Buat Revisi' : 'Simpan Draft') : 'Simpan'}
+                </Button>
+              )}
+            </div>
+          </form>
+        </>
       )}
     </Card>
   );

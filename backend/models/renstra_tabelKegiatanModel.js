@@ -1,37 +1,37 @@
-"use strict";
-const { Model } = require("sequelize");
+'use strict';
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class RenstraTabelKegiatan extends Model {
     static associate(models) {
       // Relasi ke renstra_program
       RenstraTabelKegiatan.belongsTo(models.RenstraProgram, {
-        foreignKey: "program_id",
-        as: "program",
+        foreignKey: 'program_id',
+        as: 'program',
       });
 
       // Relasi ke renstra_kegiatan
       RenstraTabelKegiatan.belongsTo(models.RenstraKegiatan, {
-        foreignKey: "kegiatan_id",
-        as: "kegiatan",
+        foreignKey: 'kegiatan_id',
+        as: 'kegiatan',
       });
 
       // Relasi ke Renstra OPD
       RenstraTabelKegiatan.belongsTo(models.RenstraOPD, {
-        foreignKey: "renstra_id",
-        as: "renstra",
+        foreignKey: 'renstra_id',
+        as: 'renstra',
       });
 
       // Relasi ke indikator_renstra
       RenstraTabelKegiatan.belongsTo(models.IndikatorRenstra, {
-        foreignKey: "indikator_id",
-        as: "indikator_detail",
+        foreignKey: 'indikator_id',
+        as: 'indikator_detail',
       });
 
       // ✅ Tambahkan relasi ke subkegiatan
       RenstraTabelKegiatan.hasMany(models.RenstraTabelSubkegiatan, {
-        foreignKey: "kegiatan_id",
-        as: "subkegiatans", // harus sama dengan yang di include
+        foreignKey: 'kegiatan_id',
+        as: 'subkegiatans', // harus sama dengan yang di include
       });
     }
   }
@@ -40,6 +40,7 @@ module.exports = (sequelize, DataTypes) => {
     {
       renstra_id: DataTypes.INTEGER,
       program_id: DataTypes.INTEGER,
+      kebijakan_id: DataTypes.INTEGER,
       kegiatan_id: DataTypes.INTEGER,
       indikator_id: DataTypes.INTEGER,
       baseline: DataTypes.FLOAT,
@@ -68,9 +69,9 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       sequelize,
-      modelName: "RenstraTabelKegiatan",
-      tableName: "renstra_tabel_kegiatan",
-    }
+      modelName: 'RenstraTabelKegiatan',
+      tableName: 'renstra_tabel_kegiatan',
+    },
   );
 
   return RenstraTabelKegiatan;

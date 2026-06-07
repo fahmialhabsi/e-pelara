@@ -1,11 +1,11 @@
-"use strict";
+'use strict';
 
 /**
  * Agregasi dashboard perencanaan v2 saja (rkpd_dokumen / renja_dokumen).
  * Tidak mencampur metrik legacy renja/rka/dpa.
  */
 
-const db = require("../models");
+const db = require('../models');
 
 const {
   RkpdDokumen,
@@ -21,20 +21,20 @@ const {
 async function rkpdDashboardV2(req, res) {
   try {
     const where = {};
-    if (req.query.tahun != null && req.query.tahun !== "") {
+    if (req.query.tahun != null && req.query.tahun !== '') {
       where.tahun = Number(req.query.tahun);
     }
-    if (req.query.periode_id != null && req.query.periode_id !== "") {
+    if (req.query.periode_id != null && req.query.periode_id !== '') {
       where.periode_id = Number(req.query.periode_id);
     }
 
     const docs = await RkpdDokumen.findAll({
       where,
       order: [
-        ["tahun", "DESC"],
-        ["id", "DESC"],
+        ['tahun', 'DESC'],
+        ['id', 'DESC'],
       ],
-      include: [{ model: PeriodeRpjmd, as: "periode", required: false }],
+      include: [{ model: PeriodeRpjmd, as: 'periode', required: false }],
     });
 
     const byStatus = { draft: 0, review: 0, final: 0 };
@@ -50,7 +50,7 @@ async function rkpdDashboardV2(req, res) {
 
       const items = await RkpdItem.findAll({
         where: { rkpd_dokumen_id: d.id },
-        attributes: ["id", "pagu"],
+        attributes: ['id', 'pagu'],
       });
 
       const n = items.length;
@@ -77,6 +77,7 @@ async function rkpdDashboardV2(req, res) {
         tahun: d.tahun,
         periode_id: d.periode_id,
         judul: d.judul,
+        nama_opd: d.nama_opd || null,
         status: d.status,
         is_final_active: d.is_final_active,
         derivation_key: d.derivation_key,
@@ -94,7 +95,7 @@ async function rkpdDashboardV2(req, res) {
     return res.json({
       success: true,
       data: {
-        domain: "planning_v2",
+        domain: 'planning_v2',
         filters: {
           tahun: where.tahun ?? null,
           periode_id: where.periode_id ?? null,
@@ -111,7 +112,7 @@ async function rkpdDashboardV2(req, res) {
         dokumen,
         meta: {
           catatan:
-            "Pagu dan item dari rkpd_item (teks perencanaan). Bukan angka APBD resmi tanpa validasi lanjut.",
+            'Pagu dan item dari rkpd_item (teks perencanaan). Bukan angka APBD resmi tanpa validasi lanjut.',
         },
       },
     });
@@ -124,27 +125,27 @@ async function rkpdDashboardV2(req, res) {
 async function renjaDashboardV2(req, res) {
   try {
     const where = {};
-    if (req.query.tahun != null && req.query.tahun !== "") {
+    if (req.query.tahun != null && req.query.tahun !== '') {
       where.tahun = Number(req.query.tahun);
     }
-    if (req.query.periode_id != null && req.query.periode_id !== "") {
+    if (req.query.periode_id != null && req.query.periode_id !== '') {
       where.periode_id = Number(req.query.periode_id);
     }
-    if (req.query.perangkat_daerah_id != null && req.query.perangkat_daerah_id !== "") {
+    if (req.query.perangkat_daerah_id != null && req.query.perangkat_daerah_id !== '') {
       where.perangkat_daerah_id = Number(req.query.perangkat_daerah_id);
     }
 
     const docs = await RenjaDokumen.findAll({
       where,
       order: [
-        ["tahun", "DESC"],
-        ["id", "DESC"],
+        ['tahun', 'DESC'],
+        ['id', 'DESC'],
       ],
       include: [
-        { model: PeriodeRpjmd, as: "periode", required: false },
-        { model: PerangkatDaerah, as: "perangkatDaerah", required: false },
-        { model: RkpdDokumen, as: "rkpdDokumen", required: false },
-        { model: RenstraPdDokumen, as: "renstraPdDokumen", required: false },
+        { model: PeriodeRpjmd, as: 'periode', required: false },
+        { model: PerangkatDaerah, as: 'perangkatDaerah', required: false },
+        { model: RkpdDokumen, as: 'rkpdDokumen', required: false },
+        { model: RenstraPdDokumen, as: 'renstraPdDokumen', required: false },
       ],
     });
 
@@ -159,7 +160,7 @@ async function renjaDashboardV2(req, res) {
 
       const items = await RenjaItem.findAll({
         where: { renja_dokumen_id: d.id },
-        attributes: ["id", "pagu"],
+        attributes: ['id', 'pagu'],
       });
       const n = items.length;
       totalItems += n;
@@ -205,7 +206,7 @@ async function renjaDashboardV2(req, res) {
     return res.json({
       success: true,
       data: {
-        domain: "planning_v2",
+        domain: 'planning_v2',
         filters: {
           tahun: where.tahun ?? null,
           periode_id: where.periode_id ?? null,
@@ -222,11 +223,10 @@ async function renjaDashboardV2(req, res) {
         dokumen,
         legacy_bridge: {
           catatan:
-            "legacy_renja_id hanya jembatan ke modul RKA/DPA. Jangan menjumlahkan dengan pagu Renja v2 tanpa konteks.",
+            'legacy_renja_id hanya jembatan ke modul RKA/DPA. Jangan menjumlahkan dengan pagu Renja v2 tanpa konteks.',
         },
         meta: {
-          catatan:
-            "Pagu renja_item adalah perencanaan v2, bukan realisasi keuangan.",
+          catatan: 'Pagu renja_item adalah perencanaan v2, bukan realisasi keuangan.',
         },
       },
     });

@@ -1,22 +1,22 @@
-"use strict";
-const { Model } = require("sequelize");
+'use strict';
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class RenstraTabelTujuan extends Model {
     static associate(models) {
       RenstraTabelTujuan.belongsTo(models.IndikatorRenstra, {
-        foreignKey: "indikator_id",
-        as: "indikator",
+        foreignKey: 'indikator_id',
+        as: 'indikator',
       });
 
       RenstraTabelTujuan.belongsTo(models.RenstraTujuan, {
-        foreignKey: "tujuan_id",
-        as: "tujuan",
+        foreignKey: 'tujuan_id',
+        as: 'tujuan',
       });
 
       RenstraTabelTujuan.belongsTo(models.RenstraOPD, {
-        foreignKey: "opd_id",
-        as: "opd",
+        foreignKey: 'opd_id',
+        as: 'opd',
       });
     }
   }
@@ -24,6 +24,8 @@ module.exports = (sequelize, DataTypes) => {
   RenstraTabelTujuan.init(
     {
       tujuan_id: DataTypes.INTEGER,
+      renstra_id: DataTypes.INTEGER,
+      misi_id: DataTypes.INTEGER,
       opd_id: DataTypes.INTEGER,
       indikator_id: DataTypes.INTEGER,
       pagu_rpjmd_acuan: DataTypes.DECIMAL(20, 2),
@@ -53,8 +55,8 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       status_revisi: {
-        type: DataTypes.ENUM("draft", "verifikasi", "approved", "ditolak"),
-        defaultValue: "draft",
+        type: DataTypes.ENUM('draft', 'verifikasi', 'approved', 'ditolak'),
+        defaultValue: 'draft',
       },
 
       last_revised_at: {
@@ -69,11 +71,11 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       sequelize,
-      modelName: "RenstraTabelTujuan",
-      tableName: "renstra_tabel_tujuan",
+      modelName: 'RenstraTabelTujuan',
+      tableName: 'renstra_tabel_tujuan',
       underscored: true,
       timestamps: true,
-    }
+    },
   );
 
   return RenstraTabelTujuan;

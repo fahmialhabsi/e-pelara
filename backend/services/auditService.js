@@ -1,5 +1,12 @@
 // services/auditService.js
-const { ActivityLog } = require("../models");
+const { ActivityLog } = require('../models');
+
+const ACTIVITY_EVENT_TYPES = {
+  CASCADE_VALIDATION_FAILED: 'CASCADE_VALIDATION_FAILED',
+  BUDGET_LOCKED: 'BUDGET_LOCKED',
+  BUDGET_UNLOCKED: 'BUDGET_UNLOCKED',
+  RKA_VERSION_CREATED: 'RKA_VERSION_CREATED',
+};
 
 /**
  * Catat aktivitas pengguna ke tabel activity_logs.
@@ -28,17 +35,13 @@ async function logActivity(
       entity_id: entityId,
       old_data: oldData,
       new_data: newData,
-      ip_address:
-        req.ip ||
-        req.headers["x-forwarded-for"] ||
-        req.connection?.remoteAddress ||
-        null,
-      user_agent: req.headers?.["user-agent"] || null,
+      ip_address: req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress || null,
+      user_agent: req.headers?.['user-agent'] || null,
     });
   } catch (err) {
     // Audit failure tidak boleh menghentikan request utama
-    console.error("[AuditService] Gagal mencatat aktivitas:", err.message);
+    console.error('[AuditService] Gagal mencatat aktivitas:', err.message);
   }
 }
 
-module.exports = { logActivity };
+module.exports = { logActivity, ACTIVITY_EVENT_TYPES };

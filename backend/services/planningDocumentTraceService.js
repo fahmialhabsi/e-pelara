@@ -1,22 +1,15 @@
-"use strict";
+('use strict');
 
-const {
-  RPJMD,
-  Renstra,
-  Renja,
-  Rkpd,
-  Rka,
-  Dpa,
-} = require("../models");
+const { RPJMD, Renstra, Renja, Rkpd, Rka, Dpa, RkpdDokumen, PeriodeRpjmd } = require('../models');
 
 /**
  * Jejak dokumen induk/turunan untuk baseline RPJMD & rantai perencanaan.
  */
 async function getPlanningDocumentTrace(documentType, documentId) {
-  const type = String(documentType || "").toLowerCase();
+  const type = String(documentType || '').toLowerCase();
   const id = Number(documentId);
   if (!Number.isFinite(id)) {
-    const err = new Error("document_id tidak valid");
+    const err = new Error('document_id tidak valid');
     err.statusCode = 400;
     throw err;
   }
@@ -29,12 +22,12 @@ async function getPlanningDocumentTrace(documentType, documentId) {
     baseline_rpjmd: null,
   };
 
-  if (type === "rpjmd") {
+  if (type === 'rpjmd') {
     const row = await RPJMD.findByPk(id, {
-      attributes: ["id", "nama_rpjmd", "periode_awal", "periode_akhir", "version"],
+      attributes: ['id', 'nama_rpjmd', 'periode_awal', 'periode_akhir', 'version'],
     });
     if (!row) {
-      const err = new Error("RPJMD tidak ditemukan");
+      const err = new Error('RPJMD tidak ditemukan');
       err.statusCode = 404;
       throw err;
     }
@@ -42,27 +35,27 @@ async function getPlanningDocumentTrace(documentType, documentId) {
     const [renstraList, renjaList, rkpdList, rkaList, dpaList] = await Promise.all([
       Renstra.findAll({
         where: { rpjmd_id: id },
-        attributes: ["id", "judul", "periode_awal", "periode_akhir", "status", "version"],
+        attributes: ['id', 'judul', 'periode_awal', 'periode_akhir', 'status', 'version'],
         limit: 500,
       }),
       Renja.findAll({
         where: { rpjmd_id: id },
-        attributes: ["id", "tahun", "judul", "status", "renstra_id", "version"],
+        attributes: ['id', 'tahun', 'judul', 'status', 'renstra_id', 'version'],
         limit: 500,
       }),
       Rkpd.findAll({
         where: { rpjmd_id: id },
-        attributes: ["id", "tahun", "nama_sub_kegiatan", "status", "renja_id", "version"],
+        attributes: ['id', 'tahun', 'nama_sub_kegiatan', 'status', 'renja_id', 'version'],
         limit: 500,
       }),
       Rka.findAll({
         where: { rpjmd_id: id },
-        attributes: ["id", "tahun", "program", "kegiatan", "renja_id", "version"],
+        attributes: ['id', 'tahun', 'program', 'kegiatan', 'renja_id', 'version'],
         limit: 500,
       }),
       Dpa.findAll({
         where: { rpjmd_id: id },
-        attributes: ["id", "tahun", "program", "kegiatan", "rka_id", "version"],
+        attributes: ['id', 'tahun', 'program', 'kegiatan', 'rka_id', 'version'],
         limit: 500,
       }),
     ]);
@@ -76,29 +69,21 @@ async function getPlanningDocumentTrace(documentType, documentId) {
     return out;
   }
 
-  if (type === "renstra") {
+  if (type === 'renstra') {
     const row = await Renstra.findByPk(id, {
-      attributes: [
-        "id",
-        "judul",
-        "rpjmd_id",
-        "periode_awal",
-        "periode_akhir",
-        "status",
-        "version",
-      ],
+      attributes: ['id', 'judul', 'rpjmd_id', 'periode_awal', 'periode_akhir', 'status', 'version'],
     });
     if (!row) {
-      const err = new Error("Renstra tidak ditemukan");
+      const err = new Error('Renstra tidak ditemukan');
       err.statusCode = 404;
       throw err;
     }
     if (row.rpjmd_id) {
       out.parents.push({
-        type: "rpjmd",
+        type: 'rpjmd',
         id: row.rpjmd_id,
         row: await RPJMD.findByPk(row.rpjmd_id, {
-          attributes: ["id", "nama_rpjmd", "version"],
+          attributes: ['id', 'nama_rpjmd', 'version'],
         }),
       });
       out.baseline_rpjmd = out.parents[0].row;
@@ -106,141 +91,147 @@ async function getPlanningDocumentTrace(documentType, documentId) {
     out.children = {
       renja: await Renja.findAll({
         where: { renstra_id: id },
-        attributes: ["id", "tahun", "judul", "status", "rpjmd_id", "version"],
+        attributes: ['id', 'tahun', 'judul', 'status', 'rpjmd_id', 'version'],
         limit: 500,
       }),
     };
     return out;
   }
 
-  if (type === "renja") {
+  if (type === 'renja') {
     const row = await Renja.findByPk(id, {
-      attributes: [
-        "id",
-        "tahun",
-        "judul",
-        "renstra_id",
-        "rpjmd_id",
-        "status",
-        "version",
-      ],
+      attributes: ['id', 'tahun', 'judul', 'renstra_id', 'rpjmd_id', 'status', 'version'],
     });
     if (!row) {
-      const err = new Error("Renja tidak ditemukan");
+      const err = new Error('Renja tidak ditemukan');
       err.statusCode = 404;
       throw err;
     }
     if (row.rpjmd_id) {
       const rp = await RPJMD.findByPk(row.rpjmd_id, {
-        attributes: ["id", "nama_rpjmd", "version"],
+        attributes: ['id', 'nama_rpjmd', 'version'],
       });
-      out.parents.push({ type: "rpjmd", id: row.rpjmd_id, row: rp });
+      out.parents.push({ type: 'rpjmd', id: row.rpjmd_id, row: rp });
       out.baseline_rpjmd = rp;
     }
     if (row.renstra_id) {
       out.parents.push({
-        type: "renstra",
+        type: 'renstra',
         id: row.renstra_id,
         row: await Renstra.findByPk(row.renstra_id, {
-          attributes: ["id", "judul", "rpjmd_id", "version"],
+          attributes: ['id', 'judul', 'rpjmd_id', 'version'],
         }),
       });
     }
     out.children.rkpd = await Rkpd.findAll({
       where: { renja_id: id },
-      attributes: ["id", "tahun", "nama_sub_kegiatan", "status", "version"],
+      attributes: ['id', 'tahun', 'nama_sub_kegiatan', 'status', 'version'],
       limit: 500,
     });
     out.children.rka = await Rka.findAll({
       where: { renja_id: id },
-      attributes: ["id", "tahun", "program", "kegiatan", "version"],
+      attributes: ['id', 'tahun', 'program', 'kegiatan', 'version'],
       limit: 500,
     });
     return out;
   }
 
-  if (type === "rkpd") {
-    const row = await Rkpd.findByPk(id, {
-      attributes: ["id", "tahun", "renja_id", "rpjmd_id", "status", "version"],
+  if (type === 'rkpd_dokumen') {
+    const row = await RkpdDokumen.findByPk(id, {
+      attributes: ['id', 'tahun', 'judul', 'status', 'periode_id', 'versi'],
+      include: [{ model: PeriodeRpjmd, as: 'periode', required: false }],
     });
     if (!row) {
-      const err = new Error("RKPD tidak ditemukan");
+      const err = new Error('Dokumen RKPD tidak ditemukan');
+      err.statusCode = 404;
+      throw err;
+    }
+    out.parents.push({ type: 'rkpd_dokumen', id: row.id, row });
+    return out;
+  }
+
+  if (type === 'rkpd') {
+    const row = await Rkpd.findByPk(id, {
+      attributes: ['id', 'tahun', 'renja_id', 'rpjmd_id', 'status', 'version'],
+    });
+    if (!row) {
+      const err = new Error('RKPD tidak ditemukan');
       err.statusCode = 404;
       throw err;
     }
     if (row.rpjmd_id) {
       const rp = await RPJMD.findByPk(row.rpjmd_id, {
-        attributes: ["id", "nama_rpjmd", "version"],
+        attributes: ['id', 'nama_rpjmd', 'version'],
       });
-      out.parents.push({ type: "rpjmd", id: row.rpjmd_id, row: rp });
+      out.parents.push({ type: 'rpjmd', id: row.rpjmd_id, row: rp });
       out.baseline_rpjmd = rp;
     }
     if (row.renja_id) {
       out.parents.push({
-        type: "renja",
+        type: 'renja',
         id: row.renja_id,
         row: await Renja.findByPk(row.renja_id, {
-          attributes: ["id", "tahun", "judul", "renstra_id", "version"],
+          attributes: ['id', 'tahun', 'judul', 'renstra_id', 'version'],
         }),
       });
     }
     return out;
   }
 
-  if (type === "rka") {
+  if (type === 'rka') {
     const row = await Rka.findByPk(id, {
-      attributes: ["id", "tahun", "renja_id", "rpjmd_id", "version"],
+      attributes: ['id', 'tahun', 'renja_id', 'rpjmd_id', 'version'],
     });
     if (!row) {
-      const err = new Error("RKA tidak ditemukan");
+      const err = new Error('RKA tidak ditemukan');
       err.statusCode = 404;
       throw err;
     }
     if (row.rpjmd_id) {
       const rp = await RPJMD.findByPk(row.rpjmd_id, {
-        attributes: ["id", "nama_rpjmd", "version"],
+        attributes: ['id', 'nama_rpjmd', 'version'],
       });
-      out.parents.push({ type: "rpjmd", id: row.rpjmd_id, row: rp });
+      out.parents.push({ type: 'rpjmd', id: row.rpjmd_id, row: rp });
       out.baseline_rpjmd = rp;
     }
     if (row.renja_id) {
       out.parents.push({
-        type: "renja",
+        type: 'renja',
         id: row.renja_id,
         row: await Renja.findByPk(row.renja_id, {
-          attributes: ["id", "tahun", "judul", "renstra_id", "version"],
+          attributes: ['id', 'tahun', 'judul', 'renstra_id', 'version'],
         }),
       });
     }
     out.children.dpa = await Dpa.findAll({
       where: { rka_id: id },
-      attributes: ["id", "tahun", "program", "kegiatan", "version"],
+      attributes: ['id', 'tahun', 'program', 'kegiatan', 'version'],
       limit: 200,
     });
     return out;
   }
 
-  if (type === "dpa") {
+  if (type === 'dpa') {
     const row = await Dpa.findByPk(id, {
-      attributes: ["id", "tahun", "rka_id", "rpjmd_id", "version"],
+      attributes: ['id', 'tahun', 'rka_id', 'rpjmd_id', 'version'],
     });
     if (!row) {
-      const err = new Error("DPA tidak ditemukan");
+      const err = new Error('DPA tidak ditemukan');
       err.statusCode = 404;
       throw err;
     }
     if (row.rpjmd_id) {
       const rp = await RPJMD.findByPk(row.rpjmd_id, {
-        attributes: ["id", "nama_rpjmd", "version"],
+        attributes: ['id', 'nama_rpjmd', 'version'],
       });
-      out.parents.push({ type: "rpjmd", id: row.rpjmd_id, row: rp });
+      out.parents.push({ type: 'rpjmd', id: row.rpjmd_id, row: rp });
       out.baseline_rpjmd = rp;
     }
     if (row.rka_id) {
       const rka = await Rka.findByPk(row.rka_id, {
-        attributes: ["id", "tahun", "renja_id", "rpjmd_id", "version"],
+        attributes: ['id', 'tahun', 'renja_id', 'rpjmd_id', 'version'],
       });
-      out.parents.push({ type: "rka", id: row.rka_id, row: rka });
+      out.parents.push({ type: 'rka', id: row.rka_id, row: rka });
     }
     return out;
   }

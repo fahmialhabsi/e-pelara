@@ -3,6 +3,7 @@
 const {
   sanitizeProviderPayload,
 } = require("./providerPayloadSanitizer");
+const { getAuditNarrativeStyleBlock } = require("./narrativeAuditStyleHelper");
 
 class OllamaNarrativeProviderError extends Error {
   constructor(message, details = null) {
@@ -73,11 +74,17 @@ const parseJsonStrict = (rawText) => {
   }
 };
 
+const buildOllamaJsonGuard = () => `
+Buat output JSON valid saja. Jangan pakai markdown. Jangan menambah penjelasan di luar JSON.
+`.trim();
+
 const buildOllamaPrompt = ({ sanitizedPayload = {} }) => {
+  const auditStyle = getAuditNarrativeStyleBlock();
+
   return `
 Anda adalah penyusun draft narasi Manajemen Risiko pemerintah daerah.
 
-Buat output JSON valid saja. Jangan pakai markdown. Jangan menambah penjelasan di luar JSON.
+${auditStyle ? `${auditStyle}\n\n` : ""}${buildOllamaJsonGuard()}
 
 Larangan:
 - Jangan membuat fakta baru.
@@ -143,6 +150,7 @@ const callOllamaGenerate = async ({
         prompt,
         stream: false,
         format: "json",
+        keep_alive: process.env.OLLAMA_KEEP_ALIVE || "10m",
         options: {
           temperature,
           num_predict: numPredict,
@@ -200,14 +208,19 @@ const callOllamaGenerate = async ({
   }
 };
 
-const buildOllamaNarrative = async ({ payload = {} } = {}) => {
+const buildOllamaNarrative = async ({ payload = {}, prompt: servicePrompt = null } = {}) => {
   const config = getOllamaConfig();
 
   const { sanitizedPayload } = sanitizeProviderPayload(payload);
 
-  const prompt = buildOllamaPrompt({
-    sanitizedPayload,
-  });
+  const auditStyle = getAuditNarrativeStyleBlock();
+  const prompt = servicePrompt
+    ? [auditStyle, String(servicePrompt).trim(), buildOllamaJsonGuard()]
+        .filter(Boolean)
+        .join("\n\n")
+    : buildOllamaPrompt({
+        sanitizedPayload,
+      });
 
   const rawText = await callOllamaGenerate({
     baseUrl: config.baseUrl,
