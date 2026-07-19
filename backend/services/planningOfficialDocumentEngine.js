@@ -21,6 +21,27 @@ const {
   AlignmentType,
   ShadingType,
 } = require('docx');
+const {
+  addPortrait,
+  addLandscape,
+  nextPortrait,
+  nextLandscape,
+  ensurePortrait,
+  ensureLandscape,
+  usableWidth,
+  usableHeight,
+  pageInfo,
+} = require('../helpers/RenjaPdfLayoutHelper');
+const { drawPdfGridTable, renderMarkdownToPdf } = require('../helpers/RenjaPdfTableHelper');
+const { itemRowsForPdf, renjaTableData } = require('../helpers/RenjaPdfDataHelper');
+const { renderSection } = require('../helpers/RenjaPdfSectionHelper');
+const { renderBab4 } = require('../helpers/RenjaPdfBab4Helper');
+const { renderBab2Section } = require('../helpers/RenjaPdfBab2Helper');
+const { renderDocumentHeader } = require('../helpers/RenjaPdfHeaderHelper');
+const { RENJA_BAB4, RENJA_BAB4_TABLE } = require('../helpers/RenjaDocumentThemeHelper');
+const { buildRenjaBab4 } = require('../helpers/RenjaBab4StructureHelper');
+const { buildRenjaBab4Table } = require('../helpers/RenjaBab4TableHelper');
+const { PDF_THEME } = require('../helpers/RenjaPdfThemeHelper');
 
 function numId(v) {
   if (v == null || v === '') return '—';
@@ -71,7 +92,7 @@ async function loadRenjaOfficialContext(db, dokumenId) {
   const items = await RenjaItem.findAll({
     where: { renja_dokumen_id: dokumenId },
     order: [
-      ['urutan', 'ASC'],
+      ['sub_kegiatan', 'ASC'],
       ['id', 'ASC'],
     ],
   });
@@ -138,6 +159,7 @@ async function loadRenjaOfficialContext(db, dokumenId) {
     dok,
     items,
     meta: {
+      tahun: dok.tahun,
       judulResmi: `RENCANA KERJA PERANGKAT DAERAH (RENJA OPD)\n${pdNama}\nTAHUN ${dok.tahun}`,
       pdNama,
       pdKode,
@@ -328,35 +350,21 @@ function heading2(text) {
   });
 }
 
-function renjaItemTableRows(items) {
-  const header = new TableRow({
-    children: [
-      cell('No', true),
-      cell('Program', true),
-      cell('Kegiatan', true),
-      cell('Sub Kegiatan', true),
-      cell('Indikator Kinerja', true),
-      cell('Target', true),
-      cell('Satuan', true),
-      cell('Pagu (Rp)', true),
-    ],
-  });
-  const body = items.map(
-    (it, i) =>
-      new TableRow({
-        children: [
-          cell(String(i + 1), false),
-          cell(plain(it.program), false),
-          cell(plain(it.kegiatan), false),
-          cell(plain(it.sub_kegiatan), false),
-          cell(plain(it.indikator), false),
-          cell(numId(it.target), false),
-          cell(plain(it.satuan) || '......', false),
-          cell(numId(it.pagu), false),
-        ],
-      }),
-  );
-  return [header, ...body];
+function renjaItemTableRows(rows) {
+  const table = buildRenjaBab4Table(rows);
+
+  return [
+    new TableRow({
+      children: table.headers.map((h) => cell(h, true)),
+    }),
+
+    ...table.rows.map(
+      (row) =>
+        new TableRow({
+          children: row.map((v) => cell(v)),
+        }),
+    ),
+  ];
 }
 
 function rkpdItemTableRows(items) {
@@ -441,6 +449,7 @@ function cell(text, bold) {
 
 async function buildRenjaOpdOfficialDocx(db, dokumenId, options = {}) {
   const { dok, items, meta } = await loadRenjaOfficialContext(db, dokumenId);
+  const bab4 = buildRenjaBab4(meta, items);
   const docVersion = options.documentVersion != null ? options.documentVersion : dok.versi;
   const itemIds = items.map((i) => i.id);
   const changeLogs =
@@ -490,18 +499,19 @@ async function buildRenjaOpdOfficialDocx(db, dokumenId, options = {}) {
     ...(meta.bab3
       ? richParagraphBlocks(meta.bab3)
       : [...paragraphBlocks(meta.bab3Title), ...paragraphBlocks(meta.bab3Tujuan)]),
-    heading1('BAB IV — RENCANA KERJA DAN PENDANAAN'),
-    heading2('4.1 Acuan Kebijakan'),
-    ...richParagraphBlocks(
-      `Penyusunan rencana kerja dan pendanaan ${meta.pdNama || ''} Tahun ${dok.tahun} mengacu pada:\n1. RKPD Provinsi Maluku Utara Tahun ${dok.tahun};\n2. Renstra ${meta.pdNama || ''} Tahun ${meta.periodeStr || ''};\n3. Prioritas pembangunan ketahanan pangan nasional dan daerah.\n\nRKPD acuan: ${meta.rkpdJudul || '—'}\nRenstra PD: ${meta.renstraJudul || '—'}`,
-    ),
-    heading2('4.2 Rencana Program, Kegiatan, Indikator, Target, dan Pagu Indikatif'),
-    ...richParagraphBlocks(
-      `Tabel 4.1 Rencana Program, Kegiatan, Indikator, Target, dan Pagu Indikatif ${meta.pdNama || ''} Tahun ${dok.tahun}`,
-    ),
+    heading1(bab4.title),
+
+    heading2(bab4.policy.heading),
+
+    ...richParagraphBlocks(bab4.policy.body),
+
+    heading2(bab4.table.heading),
+
+    ...richParagraphBlocks(bab4.table.caption + '\n\n' + bab4.table.note),
+
     new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
-      rows: renjaItemTableRows(items),
+      rows: renjaItemTableRows(bab4.table.rows),
     }),
     heading1('BAB V — PENUTUP'),
     ...paragraphBlocks(meta.bab5),
@@ -653,85 +663,9 @@ function pdfBufferFromBuilder(buildFn) {
   });
 }
 
-/** Tabel berbingkai (garis horisontal + vertikal) agar PDF mendekati layout Word. */
-function drawPdfGridTable(pdf, opts) {
-  const { left, yStart, width, rowH, cols, headers, rows, fontSize = 7 } = opts;
-  const rowCount = 1 + rows.length;
-  const totalH = rowH * rowCount;
-  pdf.save();
-  pdf.lineWidth(0.45).strokeColor('#333333');
-  for (let r = 0; r <= rowCount; r += 1) {
-    pdf
-      .moveTo(left, yStart + r * rowH)
-      .lineTo(left + width, yStart + r * rowH)
-      .stroke();
-  }
-  let vx = left;
-  pdf
-    .moveTo(vx, yStart)
-    .lineTo(vx, yStart + totalH)
-    .stroke();
-  for (let i = 0; i < cols.length; i += 1) {
-    vx += cols[i];
-    pdf
-      .moveTo(vx, yStart)
-      .lineTo(vx, yStart + totalH)
-      .stroke();
-  }
-  pdf.fontSize(fontSize).fillColor('#111111');
-  let xPos = left;
-  headers.forEach((h, i) => {
-    pdf.text(String(h), xPos + 2, yStart + 4, { width: cols[i] - 4 });
-    xPos += cols[i];
-  });
-  let y = yStart + rowH;
-  rows.forEach((row) => {
-    xPos = left;
-    row.forEach((cell, i) => {
-      pdf.text(String(cell).slice(0, 250), xPos + 2, y + 4, { width: cols[i] - 4 });
-      xPos += cols[i];
-    });
-    y += rowH;
-  });
-  pdf.restore();
-  const bottom = yStart + totalH + 10;
-  pdf.y = bottom;
-  return bottom;
-}
-
-const PDF_ITEM_COLS = [22, 95, 220, 80, 45, 53];
-// No | Kode | Uraian Program/Kegiatan/Sub+Indikator | Target | Satuan | Pagu
-
-function itemRowsForPdf(items) {
-  const rows = [];
-  items.forEach((it, i) => {
-    // Baris Program
-    rows.push([
-      String(i + 1),
-      plain(it.program).slice(0, 10),
-      plain(it.program).slice(0, 150),
-      '',
-      '',
-      '',
-    ]);
-    // Baris Kegiatan
-    rows.push(['', '', `  ${plain(it.kegiatan).slice(0, 150)}`, '', '', '']);
-    // Baris Sub Kegiatan + Indikator + Target + Pagu
-    rows.push([
-      '',
-      '',
-      `    ${plain(it.sub_kegiatan).slice(0, 100)}`,
-      plain(it.indikator).slice(0, 80),
-      numId(it.target),
-      numId(it.pagu),
-    ]);
-  });
-  return rows;
-}
-
 function pdfAppendChangeLog(pdf, changeLogs, entityLabel) {
   if (!changeLogs.length) return;
-  pdf.addPage();
+  addPortrait(pdf);
   pdf
     .fontSize(12)
     .fillColor('#000000')
@@ -764,7 +698,6 @@ function pdfAppendChangeLog(pdf, changeLogs, entityLabel) {
   drawPdfGridTable(pdf, {
     left: 50,
     yStart,
-    width,
     rowH,
     cols,
     headers,
@@ -781,90 +714,50 @@ async function buildRenjaOpdOfficialPdf(db, dokumenId, options = {}) {
   const changeLogs =
     options.includeChangeLog === false ? [] : await loadFieldChangeLogs(db, 'renja_item', itemIds);
 
-  return pdfBufferFromBuilder((pdf) => {
-    pdf.fontSize(9).fillColor('#333333');
-    pdf.fontSize(14).text('DOKUMEN RESMI — RENJA OPD', { align: 'center' });
-    pdf.moveDown(0.5);
-    pdf.fontSize(11).text(meta.judulResmi, { align: 'center' });
-    pdf.moveDown(1);
-    pdf
-      .fontSize(9)
-      .text(`Versi dokumen: ${docVersion} · Status: ${dok.status}`, { align: 'center' });
-    pdf.moveDown(1.2);
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const pdf = new PDFDocument({
+      margin: 40,
+      size: 'A4',
+      layout: 'portrait',
+    });
+    pdf.on('data', (c) => chunks.push(c));
+    pdf.on('end', () => resolve(Buffer.concat(chunks)));
+    pdf.on('error', reject);
+    try {
+      renderDocumentHeader(pdf, meta, dok, docVersion);
+      console.log('===== BAB III PDF =====');
+      console.log(meta.bab3 || `${meta.bab3Title}\n\n${meta.bab3Tujuan}`);
+      console.log('=======================');
 
-    const section = (bab, body) => {
-      pdf.fontSize(12).fillColor('#000000').text(bab, { underline: true });
-      pdf.moveDown(0.4);
-      pdf.fontSize(10).fillColor('#333333').text(body, { align: 'justify' });
-      pdf.moveDown(0.8);
-    };
-
-    section('BAB I — PENDAHULUAN', meta.bab1);
-    section('BAB II — EVALUASI PELAKSANAAN RENJA TAHUN LALU', meta.bab2);
-    section(
-      'BAB III — TUJUAN DAN SASARAN PERANGKAT DAERAH',
-      `${meta.bab3Title}\n\n${meta.bab3Tujuan}`,
-    );
-    pdf.addPage();
-    pdf
-      .fontSize(12)
-      .fillColor('#000000')
-      .text('BAB IV — RENCANA KERJA DAN PENDANAAN', { underline: true });
-    pdf.moveDown(0.5);
-    pdf
-      .fontSize(9)
-      .text(`RKPD acuan: ${meta.rkpdJudul || '—'}\nRenstra PD: ${meta.renstraJudul || '—'}`);
-    pdf.moveDown(0.6);
-    pdf.fontSize(10).text('Tabel rencana kerja dan pendanaan:');
-    pdf.moveDown(0.35);
-    const headers = [
-      'No',
-      'Kode/Uraian',
-      'Program / Kegiatan / Sub Kegiatan / Indikator',
-      'Target',
-      'Satuan',
-      'Pagu (Rp)',
-    ];
-
-    const rows = itemRowsForPdf(items);
-    const width = PDF_ITEM_COLS.reduce((a, b) => a + b, 0);
-    const rowH = 16;
-    const maxY = 720;
-    let yStart = pdf.y;
-    if (yStart > 560) {
-      pdf.addPage();
-      yStart = 50;
-    }
-    for (let off = 0; off < rows.length; off += 15) {
-      const chunk = rows.slice(off, off + 15);
-      const estH = rowH * (chunk.length + 1);
-      if (yStart + estH > maxY) {
-        pdf.addPage();
-        yStart = 50;
-      }
-      drawPdfGridTable(pdf, {
-        left: 50,
-        yStart,
-        width,
-        rowH,
-        cols: PDF_ITEM_COLS,
-        headers,
-        rows: chunk,
-        fontSize: 6,
+      renderSection(pdf, 'BAB I — PENDAHULUAN', meta.bab1);
+      pdf.fontSize(12).fillColor('#000000').text('BAB II — EVALUASI PELAKSANAAN RENJA TAHUN LALU', {
+        underline: true,
       });
-      yStart = pdf.y;
-      if (off + 15 < rows.length) {
-        pdf.addPage();
-        yStart = 50;
-      }
+      pdf.moveDown(0.4);
+      renderBab2Section(pdf, meta.bab2, Number(dok.tahun));
+      pdf.moveDown(0.8);
+      renderSection(
+        pdf,
+        'BAB III — TUJUAN DAN SASARAN PERANGKAT DAERAH',
+        meta.bab3 ? meta.bab3 : `${meta.bab3Title}\n\n${meta.bab3Tujuan}`,
+      );
+      renderBab4(pdf, {
+        meta,
+        items,
+      });
+
+      nextPortrait(pdf);
+      renderSection(pdf, 'BAB V — PENUTUP', meta.bab5);
+      pdfAppendChangeLog(pdf, changeLogs, 'Renja');
+      pdf
+        .fontSize(8)
+        .fillColor('#666666')
+        .text('Dokumen resmi (PDF) — ePelara. Bukan preview tabel internal.', { align: 'left' });
+      pdf.end();
+    } catch (e) {
+      reject(e);
     }
-    pdf.addPage();
-    section('BAB V — PENUTUP', meta.bab5);
-    pdfAppendChangeLog(pdf, changeLogs, 'Renja');
-    pdf
-      .fontSize(8)
-      .fillColor('#666666')
-      .text('Dokumen resmi (PDF) — ePelara. Bukan preview tabel internal.', { align: 'left' });
   });
 }
 
@@ -886,9 +779,12 @@ async function buildRkpdOfficialPdf(db, dokumenId, options = {}) {
     pdf.moveDown(1);
 
     const section = (bab, body) => {
-      pdf.fontSize(12).text(bab, { underline: true });
+      pdf.fontSize(12).fillColor('#000000').text(bab, { underline: true });
+
       pdf.moveDown(0.4);
-      pdf.fontSize(10).text(body, { align: 'justify' });
+
+      renderMarkdownToPdf(pdf, body);
+
       pdf.moveDown(0.8);
     };
     section('BAB I — PENDAHULUAN', meta.bab1);
@@ -897,14 +793,7 @@ async function buildRkpdOfficialPdf(db, dokumenId, options = {}) {
     pdf.addPage();
     pdf.fontSize(12).text('BAB IV — RENCANA PROGRAM, KEGIATAN, DAN PENDANAAN', { underline: true });
     pdf.moveDown(0.5);
-    const headers = [
-      'No',
-      'Kode/Uraian',
-      'Program / Kegiatan / Sub Kegiatan / Indikator',
-      'Target',
-      'Satuan',
-      'Pagu (Rp)',
-    ];
+    const headers = RENJA_BAB4_HEADERS;
     const rows = itemRowsForPdf(items);
     const width = PDF_ITEM_COLS.reduce((a, b) => a + b, 0);
     const rowH = 30;
@@ -920,9 +809,8 @@ async function buildRkpdOfficialPdf(db, dokumenId, options = {}) {
       drawPdfGridTable(pdf, {
         left: 50,
         yStart,
-        width,
         rowH,
-        cols: PDF_ITEM_COLS,
+        cols: RENJA_BAB4_TABLE.map((c) => c.width),
         headers,
         rows: chunk,
         fontSize: 6,

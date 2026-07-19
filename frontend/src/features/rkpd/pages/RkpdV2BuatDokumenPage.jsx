@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import api from '../../../services/api';
 import { useNavigate } from 'react-router-dom';
 import { Alert, Button, Card, Form, Spinner } from 'react-bootstrap';
 import fetchWithLog from '../../../utils/fetchWithLog';
@@ -29,6 +30,9 @@ const RkpdV2BuatDokumenPage = () => {
   const [periodeId, setPeriodeId] = useState('');
   const { resolvedTahun } = usePrioritasTahun(periodeList, periodeId, 'rkpd');
   const [tahunVal, setTahunVal] = useState(String(tahun || ''));
+  const [renstraAktifId, setRenstraAktifId] = useState(null);
+  const [programRenstraList, setProgramRenstraList] = useState([]);
+  const [indikatorProgramRenstraList, setIndikatorProgramRenstraList] = useState([]);
   const [judul, setJudul] = useState('');
   const [createReasonText, setCreateReasonText] = useState('');
   const [createReasonFile, setCreateReasonFile] = useState('');
@@ -83,6 +87,10 @@ const RkpdV2BuatDokumenPage = () => {
     fetchWithLog('/master-program', {}, (res) => {
       setMasterProgramList(Array.isArray(res) ? res : []);
     });
+    fetchWithLog('/renstra-opd/aktif', {}, (res) => {
+      const id = res?.data?.id || res?.id || null;
+      setRenstraAktifId(id);
+    });
   }, []);
 
   useEffect(() => {
@@ -115,15 +123,11 @@ const RkpdV2BuatDokumenPage = () => {
       limit: 1000,
     });
 
+    setMisiList([]);
     fetchWithLog(`/misi?${query.toString()}`, {}, (res) => {
-      console.log('MISI CALLBACK =', res);
-      console.log('MISI ARRAY ?', Array.isArray(res));
-
       setMisiList(Array.isArray(res) ? res : []);
     });
-
     setMisiId('');
-    setMisiList([]);
 
     setPrioritasNasionalId('');
     setPrioritasDaerahId('');
@@ -335,16 +339,25 @@ const RkpdV2BuatDokumenPage = () => {
 
     setSelectedArahKode(kodeArah);
 
-    fetchWithLog(`/indikator-renstra?stage=program&kode_parent=${kodeArah}`, {}, (res) => {
-      const options = Array.isArray(res) ? res : [];
-
-      setPrograms((prev) =>
-        prev.map((program) => ({
-          ...program,
-          indikatorProgramOptions: options,
-        })),
-      );
-    });
+    // Fetch program + indikator dari Renstra aktif
+    api
+      .get(`/indikator-renstra/rkpd-cascading`, {
+        params: { stage: 'program', renstra_id: renstraAktifId || 1 },
+      })
+      .then((res) => {
+        const programRenstra = Array.isArray(res.data?.programs) ? res.data.programs : [];
+        const indikatorProgram = Array.isArray(res.data?.indikators) ? res.data.indikators : [];
+        setProgramRenstraList(programRenstra);
+        setIndikatorProgramRenstraList(indikatorProgram);
+        setPrograms((prev) =>
+          prev.map((program) => ({
+            ...program,
+            programRenstraOptions: programRenstra,
+            indikatorProgramOptions: indikatorProgram,
+          })),
+        );
+      })
+      .catch(() => {});
   }, [arahKebijakanId, arahKebijakanList]);
 
   const periodeLabel = periodeList.find((p) => String(p.id) === periodeId);
@@ -380,23 +393,22 @@ const RkpdV2BuatDokumenPage = () => {
 
   const getNextId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-  const createProgram = () => ({
-    id: getNextId('program'),
-
-    program_id: '',
-    kode_program: '',
-    nama: '',
-
-    indikator_program_id: '',
-    kode_indikator_program: '',
-    nama_indikator_program: '',
-
-    indikatorProgramOptions: [],
-
-    kegiatanOptions: [],
-
-    kegiatan: [],
-  });
+  const createProgram = () => {
+    console.log('[DEBUG] createProgram programRenstraList:', programRenstraList);
+    return {
+      id: getNextId('program'),
+      program_id: '',
+      kode_program: '',
+      nama: '',
+      indikator_program_id: '',
+      kode_indikator_program: '',
+      nama_indikator_program: '',
+      programRenstraOptions: programRenstraList,
+      indikatorProgramOptions: indikatorProgramRenstraList,
+      kegiatanOptions: [],
+      kegiatan: [],
+    };
+  };
 
   const createKegiatan = () => ({
     id: getNextId('kegiatan'),
@@ -457,37 +469,21 @@ const RkpdV2BuatDokumenPage = () => {
     }));
 
     if (!indikator?.kode_indikator) return;
-    fetchWithLog(
-      `/indikator-renstra?stage=kegiatan&kode_parent=${indikator?.kode_indikator}`,
-      {},
-      (res) => {
-        const options = Array.isArray(res) ? res : [];
-
-        updateProgramById(programId, (program) => ({
-          ...program,
-          kegiatan: program.kegiatan.map((kegiatan) => ({
-            ...kegiatan,
-            indikatorKegiatanOptions: options,
-          })),
-        }));
-      },
-    );
+    const prog = programs.find((p) => p.id === programId);
+    const kegiatanRenstra = prog?.kegiatanRenstraOptions || [];
+    updateProgramById(programId, (program) => ({
+      ...program,
+      kegiatan: program.kegiatan.map((kegiatan) => ({
+        ...kegiatan,
+        indikatorKegiatanOptions: program.indikatorProgramOptions || [],
+        kegiatanRenstraOptions: kegiatanRenstra,
+      })),
+    }));
   };
 
   const addProgram = () => {
     const newProgram = createProgram();
-    if (selectedArahKode) {
-      fetchWithLog(
-        `/indikator-renstra?stage=program&kode_parent=${selectedArahKode}`,
-        {},
-        (res) => {
-          const options = Array.isArray(res) ? res : [];
-          setPrograms((prev) => [...prev, { ...newProgram, indikatorProgramOptions: options }]);
-        },
-      );
-    } else {
-      setPrograms((prev) => [...prev, newProgram]);
-    }
+    setPrograms((prev) => [...prev, newProgram]);
   };
 
   const updateProgramById = (programId, updater) => {
@@ -612,36 +608,51 @@ const RkpdV2BuatDokumenPage = () => {
 
   const handleProgramSelect = (programId) => (event) => {
     const selectedId = event.target.value;
-
-    const selected = masterProgramList.find((item) => String(item.id) === String(selectedId));
-
+    const prog = programs.find((p) => p.id === programId);
+    const selected = (prog?.programRenstraOptions || []).find(
+      (item) => String(item.id) === String(selectedId),
+    );
     updateProgramById(programId, (program) => ({
       ...program,
-
       program_id: selected?.id || '',
       kode_program: selected?.kode_program || '',
       nama: selected?.nama_program || '',
-
       kegiatan: [],
     }));
 
     fetchWithLog(`/master-kegiatan?program_id=${selectedId}`, {}, (res) => {
       setMasterKegiatanList(Array.isArray(res) ? res : []);
     });
+    // Fetch indikator program & kegiatan dari Renstra
+    if (selected?.kode_program) {
+      api
+        .get('/indikator-renstra/rkpd-cascading', {
+          params: { stage: 'kegiatan', kode_program: selected.kode_program },
+        })
+        .then((res) => {
+          const indikatorOptions = Array.isArray(res.data?.indikators) ? res.data.indikators : [];
+          const kegiatanRenstra = Array.isArray(res.data?.kegiatans) ? res.data.kegiatans : [];
+          updateProgramById(programId, (prog) => ({
+            ...prog,
+            indikatorProgramOptions: indikatorOptions,
+            kegiatanRenstraOptions: kegiatanRenstra,
+          }));
+        })
+        .catch(() => {});
+    }
   };
 
   const handleKegiatanSelect = (programId, kegiatanId) => (event) => {
     const selectedId = event.target.value;
-
-    const selected = masterKegiatanList.find((item) => String(item.id) === String(selectedId));
-
+    const prog = programs.find((p) => p.id === programId);
+    const selected = (prog?.kegiatanRenstraOptions || []).find(
+      (item) => String(item.id) === String(selectedId),
+    );
     updateKegiatanById(programId, kegiatanId, (kegiatan) => ({
       ...kegiatan,
-
       kegiatan_id: selected?.id || '',
       kode_kegiatan: selected?.kode_kegiatan || '',
       nama: selected?.nama_kegiatan || '',
-
       sub_kegiatan: [],
     }));
 
@@ -649,27 +660,78 @@ const RkpdV2BuatDokumenPage = () => {
       setMasterSubKegiatanList(Array.isArray(res) ? res : []);
     });
 
-    fetchWithLog(
-      `/indikator-renstra?stage=sub_kegiatan&kode_parent=${kegiatan.kode_indikator_kegiatan}`,
-      {},
-      (res) => {
-        setIndikatorSubKegiatanList(Array.isArray(res) ? res : []);
-      },
-    );
+    if (selected?.kode_kegiatan) {
+      // Fetch indikator kegiatan dari Renstra
+      const progData = programs.find((p) => p.id === programId);
+      api
+        .get('/indikator-renstra/rkpd-cascading', {
+          params: {
+            stage: 'kegiatan',
+            kode_program: progData?.kode_program || '',
+            renstra_id: renstraAktifId || 1,
+          },
+        })
+        .then((res) => {
+          const indikatorKegiatan = Array.isArray(res.data?.indikators) ? res.data.indikators : [];
+          updateKegiatanById(programId, kegiatanId, (keg) => ({
+            ...keg,
+            indikatorKegiatanOptions: indikatorKegiatan,
+          }));
+        })
+        .catch(() => {});
+      // Fetch sub kegiatan dari Renstra
+      api
+        .get('/indikator-renstra/rkpd-cascading', {
+          params: {
+            stage: 'sub_kegiatan',
+            kode_kegiatan: selected.kode_kegiatan,
+            renstra_id: renstraAktifId || 1,
+          },
+        })
+        .then((res) => {
+          const subRenstra = Array.isArray(res.data?.subs) ? res.data.subs : [];
+          const indikatorSub = Array.isArray(res.data?.indikators) ? res.data.indikators : [];
+          updateKegiatanById(programId, kegiatanId, (keg) => ({
+            ...keg,
+            subKegiatanRenstraOptions: subRenstra,
+            indikatorSubOptions: indikatorSub,
+          }));
+        });
+    }
   };
 
   const handleSubKegiatanSelect = (programId, kegiatanId, subId) => (event) => {
     const selectedId = event.target.value;
-
-    const selected = masterSubKegiatanList.find((item) => String(item.id) === String(selectedId));
-
+    const prog = programs.find((p) => p.id === programId);
+    const keg = prog?.kegiatan?.find((k) => k.id === kegiatanId);
+    const selected = (keg?.subKegiatanRenstraOptions || []).find(
+      (item) => String(item.id) === String(selectedId),
+    );
     updateSubKegiatanById(programId, kegiatanId, subId, (sub) => ({
       ...sub,
-
       sub_kegiatan_id: selected?.id || '',
       kode_sub_kegiatan: selected?.kode_sub_kegiatan || '',
       nama: selected?.nama_sub_kegiatan || '',
     }));
+    // Fetch indikator sub kegiatan
+    if (selected?.id) {
+      api
+        .get('/indikator-renstra/rkpd-cascading', {
+          params: {
+            stage: 'sub_kegiatan',
+            kode_kegiatan: keg?.kode_kegiatan,
+            renstra_id: renstraAktifId || 1,
+          },
+        })
+        .then((res) => {
+          const indikatorSub = Array.isArray(res.data?.indikators) ? res.data.indikators : [];
+          updateKegiatanById(programId, kegiatanId, (k) => ({
+            ...k,
+            indikatorSubOptions: indikatorSub,
+          }));
+        })
+        .catch(() => {});
+    }
   };
 
   const handleKegiatanNameChange = (programId, kegiatanId) => (event) =>
@@ -1212,10 +1274,9 @@ const RkpdV2BuatDokumenPage = () => {
                             onChange={handleProgramSelect(program.id)}
                           >
                             <option value="">Pilih Program</option>
-
-                            {masterProgramList.map((item) => (
+                            {(program.programRenstraOptions || []).map((item) => (
                               <option key={item.id} value={item.id}>
-                                {item.kode_program_full || item.kode_program} - {item.nama_program}
+                                {item.kode_program} - {item.nama_program}
                               </option>
                             ))}
                           </Form.Select>
@@ -1273,8 +1334,7 @@ const RkpdV2BuatDokumenPage = () => {
                                     onChange={handleKegiatanSelect(program.id, kegiatan.id)}
                                   >
                                     <option value="">Pilih Kegiatan</option>
-
-                                    {masterKegiatanList.map((item) => (
+                                    {(program.kegiatanRenstraOptions || []).map((item) => (
                                       <option key={item.id} value={item.id}>
                                         {item.kode_kegiatan_full || item.kode_kegiatan} -{' '}
                                         {item.nama_kegiatan}
@@ -1341,13 +1401,15 @@ const RkpdV2BuatDokumenPage = () => {
                                           >
                                             <option value="">Pilih Sub Kegiatan</option>
 
-                                            {masterSubKegiatanList.map((item) => (
-                                              <option key={item.id} value={item.id}>
-                                                {item.kode_sub_kegiatan_full ||
-                                                  item.kode_sub_kegiatan}{' '}
-                                                - {item.nama_sub_kegiatan}
-                                              </option>
-                                            ))}
+                                            {(kegiatan.subKegiatanRenstraOptions || []).map(
+                                              (item) => (
+                                                <option key={item.id} value={item.id}>
+                                                  {item.kode_sub_kegiatan_full ||
+                                                    item.kode_sub_kegiatan}{' '}
+                                                  - {item.nama_sub_kegiatan}
+                                                </option>
+                                              ),
+                                            )}
                                           </Form.Select>
                                           <Form.Group>
                                             <Form.Label>Indikator Sub Kegiatan</Form.Label>

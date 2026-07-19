@@ -1,19 +1,17 @@
-import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
-import { yupResolver } from "@hookform/resolvers/yup";
-import { useQueryClient } from "@tanstack/react-query";
-import * as Yup from "yup";
-import api from "@/services/api";
+import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { yupResolver } from '@hookform/resolvers/yup';
+import { useQueryClient } from '@tanstack/react-query';
+import * as Yup from 'yup';
+import api from '@/services/api';
 
 // ===== Schema =====
 const schema = Yup.object().shape({
-  kegiatan_id: Yup.number().nullable().required("Kegiatan wajib diisi"),
+  kegiatan_id: Yup.number().nullable().required('Kegiatan wajib diisi'),
   kode_sub_kegiatan: Yup.string().nullable(),
   nama_sub_kegiatan: Yup.string().nullable(),
-  renstra_program_id: Yup.number()
-    .nullable()
-    .required("Program Renstra wajib diisi"),
-  sub_kegiatan_id: Yup.number().nullable().required("Sub Kegiatan wajib diisi"),
+  renstra_program_id: Yup.number().nullable().required('Program Renstra wajib diisi'),
+  sub_kegiatan_id: Yup.number().nullable().required('Sub Kegiatan wajib diisi'),
   sub_bidang_opd: Yup.string().nullable(),
   nama_opd: Yup.string().nullable(),
   nama_bidang_opd: Yup.string().nullable(),
@@ -22,27 +20,24 @@ const schema = Yup.object().shape({
 const getDefaultValues = (initialData, renstraAktif = {}) => ({
   id: initialData.id ?? null,
   kegiatan_id: initialData.kegiatan_id ?? null,
-  kode_sub_kegiatan: initialData.kode_sub_kegiatan ?? "",
-  nama_sub_kegiatan: initialData.nama_sub_kegiatan ?? "",
+  kode_sub_kegiatan: initialData.kode_sub_kegiatan ?? '',
+  nama_sub_kegiatan: initialData.nama_sub_kegiatan ?? '',
   renstra_program_id: initialData.renstra_program_id ?? null,
   sub_kegiatan_id: initialData.sub_kegiatan_id ?? null,
-  sub_bidang_opd: initialData.sub_bidang_opd ?? renstraAktif.sub_bidang_opd ?? "",
-  nama_opd: initialData.nama_opd ?? renstraAktif.nama_opd ?? "",
-  nama_bidang_opd:
-    initialData.nama_bidang_opd ?? renstraAktif.bidang_opd ?? "",
+  sub_bidang_opd: initialData.sub_bidang_opd ?? renstraAktif.sub_bidang_opd ?? '',
+  nama_opd: initialData.nama_opd ?? renstraAktif.nama_opd ?? '',
+  nama_bidang_opd: initialData.nama_bidang_opd ?? renstraAktif.bidang_opd ?? '',
 });
 
-export function useSubkegiatanRenstraForm(
-  initialData = {},
-  renstraAktif = {},
-  onSuccess
-) {
+export function useSubkegiatanRenstraForm(initialData = {}, renstraAktif = {}, onSuccess) {
   const queryClient = useQueryClient();
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [kegiatanOptions, setKegiatanOptions] = useState([]);
   const [subKegiatanOptions, setSubKegiatanOptions] = useState([]);
+  const [subBidangOptions, setSubBidangOptions] = useState([]);
+  const [bidangOpdOptions, setBidangOpdOptions] = useState([]);
 
   const form = useForm({
     resolver: yupResolver(schema),
@@ -50,8 +45,63 @@ export function useSubkegiatanRenstraForm(
   });
 
   const { watch, setValue, reset, getValues } = form;
-  const selectedKegiatanId = watch("kegiatan_id");
-  const selectedSubKegiatanId = watch("sub_kegiatan_id");
+  const selectedKegiatanId = watch('kegiatan_id');
+  const selectedSubKegiatanId = watch('sub_kegiatan_id');
+  const watchedNamaBidangOpd = watch('nama_bidang_opd');
+  const watchedNamaOpd = watch('nama_opd');
+
+  useEffect(() => {
+    const namaOpd = watchedNamaOpd || renstraAktif?.nama_opd;
+    if (!namaOpd) {
+      setBidangOpdOptions([]);
+      return;
+    }
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const res = await api.get('/opd-penanggung-jawab');
+        const raw = res.data?.data ?? res.data;
+        const rows = Array.isArray(raw) ? raw : [];
+        const filtered = rows.filter(
+          (r) => (r.nama_opd || '').trim().toLowerCase() === namaOpd.trim().toLowerCase(),
+        );
+        const unique = Array.from(
+          new Set(filtered.map((r) => (r.nama_bidang_opd || '').trim()).filter(Boolean)),
+        );
+        setBidangOpdOptions(unique);
+      } catch (e) {
+        console.error('Gagal memuat daftar bidang OPD:', e);
+        setBidangOpdOptions([]);
+      }
+    })();
+    return () => controller.abort();
+  }, [watchedNamaOpd, renstraAktif?.nama_opd]);
+
+  useEffect(() => {
+    const namaOpd = watch('nama_opd') || renstraAktif?.nama_opd;
+    const namaBidangOpd = watchedNamaBidangOpd || renstraAktif?.bidang_opd;
+    if (!namaOpd || !namaBidangOpd) {
+      setSubBidangOptions([]);
+      return;
+    }
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const res = await api.get('/master-sub-bidang-opd', {
+          params: { nama_opd: namaOpd, nama_bidang_opd: namaBidangOpd },
+          signal: controller.signal,
+        });
+        const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+        setSubBidangOptions(rows.map((r) => r.nama_sub_bidang_opd));
+      } catch (e) {
+        if (e.name !== 'CanceledError' && e.name !== 'AbortError') {
+          console.error('Gagal memuat daftar sub bidang OPD:', e);
+          setSubBidangOptions([]);
+        }
+      }
+    })();
+    return () => controller.abort();
+  }, [watchedNamaBidangOpd, renstraAktif?.nama_opd, renstraAktif?.bidang_opd, watch]);
 
   useEffect(() => {
     if (!initialData?.id) return;
@@ -68,22 +118,21 @@ export function useSubkegiatanRenstraForm(
       try {
         const params = {};
         if (renstraAktif?.id) params.renstra_id = renstraAktif.id;
-        const res = await api.get("/renstra-kegiatan", {
+        const res = await api.get('/renstra-kegiatan', {
           params,
           signal: controller.signal,
         });
         const arr = Array.isArray(res.data?.data)
           ? res.data.data
           : Array.isArray(res.data)
-          ? res.data
-          : [];
+            ? res.data
+            : [];
 
         const options = arr.map((k) => ({
           label: `${k.kode_kegiatan} - ${k.nama_kegiatan}`,
           value: k.id,
           kode_kegiatan: k.kode_kegiatan,
-          renstra_program_id:
-            k.renstra_program_id || k.program_renstra?.id || null,
+          renstra_program_id: k.renstra_program_id || k.program_renstra?.id || null,
         }));
 
         setKegiatanOptions(options);
@@ -92,20 +141,18 @@ export function useSubkegiatanRenstraForm(
         // Jangan pakai options[0] saat tambah — itu menimpa pilihan user dan membuat nilai tampak "hilang".
         const pre =
           initialData?.id || initialData?.kegiatan_id != null
-            ? options.find(
-                (o) => Number(o.value) === Number(initialData.kegiatan_id)
-              )
+            ? options.find((o) => Number(o.value) === Number(initialData.kegiatan_id))
             : null;
         if (pre) {
-          setValue("kegiatan_id", Number(pre.value), { shouldValidate: true });
-          setValue("renstra_program_id", pre.renstra_program_id ?? null, {
+          setValue('kegiatan_id', Number(pre.value), { shouldValidate: true });
+          setValue('renstra_program_id', pre.renstra_program_id ?? null, {
             shouldValidate: true,
           });
         }
       } catch (e) {
-        if (e.name !== "CanceledError" && e.name !== "AbortError") {
+        if (e.name !== 'CanceledError' && e.name !== 'AbortError') {
           console.error(e);
-          setError("Gagal memuat data kegiatan");
+          setError('Gagal memuat data kegiatan');
         }
       } finally {
         setIsLoading(false);
@@ -129,38 +176,32 @@ export function useSubkegiatanRenstraForm(
       setIsLoading(true);
       setError(null);
       try {
-        const keg = kegiatanOptions.find(
-          (k) => Number(k.value) === Number(selectedKegiatanId)
-        );
+        const keg = kegiatanOptions.find((k) => Number(k.value) === Number(selectedKegiatanId));
         const kodeKegiatan = keg?.kode_kegiatan;
         if (!kodeKegiatan) {
           setSubKegiatanOptions([]);
           return;
         }
 
-        const res = await api.get(
-          "/renstra-subkegiatan/sub-kegiatan/by-kode-kegiatan",
-          {
-            params: {
-              kode_kegiatan: kodeKegiatan,
-              // Hindari mismatch kode renstra vs master RPJMD (mis. 02.09… vs 2.09…)
-              renstra_kegiatan_id: Number(selectedKegiatanId),
-            },
-            signal: controller.signal,
-          }
-        );
+        const res = await api.get('/renstra-subkegiatan/sub-kegiatan/by-kode-kegiatan', {
+          params: {
+            kode_kegiatan: kodeKegiatan,
+            // Hindari mismatch kode renstra vs master RPJMD (mis. 02.09… vs 2.09…)
+            renstra_kegiatan_id: Number(selectedKegiatanId),
+          },
+          signal: controller.signal,
+        });
 
         const rows = Array.isArray(res.data?.data) ? res.data.data : [];
         const options = rows.map((s) => ({
           label: `${s.kode_sub_kegiatan} - ${s.nama_sub_kegiatan}`,
-          value:
-            s.sub_kegiatan_id != null ? Number(s.sub_kegiatan_id) : s.sub_kegiatan_id,
+          value: s.sub_kegiatan_id != null ? Number(s.sub_kegiatan_id) : s.sub_kegiatan_id,
           kode_sub_kegiatan: s.kode_sub_kegiatan,
           nama_sub_kegiatan: s.nama_sub_kegiatan,
           sub_kegiatan_id: s.sub_kegiatan_id,
-          sub_bidang_opd: s.sub_bidang_opd || "",
-          nama_opd: s.nama_opd || "",
-          nama_bidang_opd: s.nama_bidang_opd || "",
+          sub_bidang_opd: renstraAktif?.sub_bidang_opd || s.sub_bidang_opd || '',
+          nama_opd: s.nama_opd || '',
+          nama_bidang_opd: s.nama_bidang_opd || '',
           renstra_program_id: keg?.renstra_program_id ?? null,
         }));
 
@@ -168,71 +209,49 @@ export function useSubkegiatanRenstraForm(
 
         const pre =
           initialData?.sub_kegiatan_id != null
-            ? options.find(
-                (o) => Number(o.value) === Number(initialData.sub_kegiatan_id)
-              )
+            ? options.find((o) => Number(o.value) === Number(initialData.sub_kegiatan_id))
             : null;
 
         if (pre) {
-          setValue("sub_kegiatan_id", Number(pre.value), {
+          setValue('sub_kegiatan_id', Number(pre.value), {
             shouldValidate: true,
           });
-          setValue("kode_sub_kegiatan", pre.kode_sub_kegiatan);
+          setValue('kode_sub_kegiatan', pre.kode_sub_kegiatan);
           setValue(
-            "nama_sub_kegiatan",
-            pre.nama_sub_kegiatan || initialData.nama_sub_kegiatan || ""
+            'nama_sub_kegiatan',
+            pre.nama_sub_kegiatan || initialData.nama_sub_kegiatan || '',
           );
           if (initialData?.id) {
             setValue(
-              "sub_bidang_opd",
-              pre.sub_bidang_opd ||
-                initialData.sub_bidang_opd ||
-                renstraAktif?.sub_bidang_opd ||
-                ""
+              'sub_bidang_opd',
+              renstraAktif?.sub_bidang_opd || initialData.sub_bidang_opd || '',
             );
+            setValue('nama_opd', renstraAktif?.nama_opd || initialData.nama_opd || '');
             setValue(
-              "nama_opd",
-              pre.nama_opd ||
-                initialData.nama_opd ||
-                renstraAktif?.nama_opd ||
-                ""
-            );
-            setValue(
-              "nama_bidang_opd",
-              pre.nama_bidang_opd ||
-                initialData.nama_bidang_opd ||
-                renstraAktif?.bidang_opd ||
-                ""
+              'nama_bidang_opd',
+              renstraAktif?.bidang_opd || initialData.nama_bidang_opd || '',
             );
           } else {
-            setValue(
-              "sub_bidang_opd",
-              pre.sub_bidang_opd || renstraAktif?.sub_bidang_opd || ""
-            );
-            setValue("nama_opd", pre.nama_opd || renstraAktif?.nama_opd || "");
-            setValue(
-              "nama_bidang_opd",
-              pre.nama_bidang_opd || renstraAktif?.bidang_opd || ""
-            );
+            setValue('sub_bidang_opd', renstraAktif?.sub_bidang_opd || '');
+            setValue('nama_opd', renstraAktif?.nama_opd || '');
+            setValue('nama_bidang_opd', renstraAktif?.bidang_opd || '');
           }
-          setValue("renstra_program_id", pre.renstra_program_id ?? null, {
+          setValue('renstra_program_id', pre.renstra_program_id ?? null, {
             shouldValidate: true,
           });
         } else {
-          const cur = getValues("sub_kegiatan_id");
-          const stillValid =
-            cur != null &&
-            options.some((o) => Number(o.value) === Number(cur));
+          const cur = getValues('sub_kegiatan_id');
+          const stillValid = cur != null && options.some((o) => Number(o.value) === Number(cur));
           if (!stillValid) {
-            setValue("sub_kegiatan_id", null, { shouldValidate: true });
-            setValue("kode_sub_kegiatan", "");
-            setValue("nama_sub_kegiatan", "");
+            setValue('sub_kegiatan_id', null, { shouldValidate: true });
+            setValue('kode_sub_kegiatan', '');
+            setValue('nama_sub_kegiatan', '');
           }
         }
       } catch (e) {
-        if (e.name !== "CanceledError" && e.name !== "AbortError") {
+        if (e.name !== 'CanceledError' && e.name !== 'AbortError') {
           console.error(e);
-          setError("Gagal memuat daftar subkegiatan");
+          setError('Gagal memuat daftar subkegiatan');
         }
       } finally {
         setIsLoading(false);
@@ -253,50 +272,32 @@ export function useSubkegiatanRenstraForm(
   // ===== 3) Sinkron saat user memilih dropdown Sub Kegiatan =====
   useEffect(() => {
     if (!selectedSubKegiatanId) return;
-    const sub = subKegiatanOptions.find(
-      (s) => Number(s.value) === Number(selectedSubKegiatanId)
-    );
+    const sub = subKegiatanOptions.find((s) => Number(s.value) === Number(selectedSubKegiatanId));
     if (!sub) return;
 
     const sameAsSavedEdit =
-      initialData?.id &&
-      Number(selectedSubKegiatanId) === Number(initialData.sub_kegiatan_id);
+      initialData?.id && Number(selectedSubKegiatanId) === Number(initialData.sub_kegiatan_id);
 
-    setValue("kode_sub_kegiatan", sub.kode_sub_kegiatan);
-    setValue(
-      "nama_sub_kegiatan",
-      sub.nama_sub_kegiatan || initialData.nama_sub_kegiatan || ""
-    );
+    setValue('kode_sub_kegiatan', sub.kode_sub_kegiatan);
+    setValue('nama_sub_kegiatan', sub.nama_sub_kegiatan || initialData.nama_sub_kegiatan || '');
     // Jangan set ulang sub_kegiatan_id di sini — itu sudah dari pilihan user / preload;
     // menimpa dengan sub.sub_kegiatan_id bisa tidak selaras dengan option.value (tipe/format).
     if (sameAsSavedEdit) {
       setValue(
-        "sub_bidang_opd",
-        sub.sub_bidang_opd ||
-          initialData.sub_bidang_opd ||
-          renstraAktif?.sub_bidang_opd ||
-          ""
+        'sub_bidang_opd',
+        initialData.sub_bidang_opd || sub.sub_bidang_opd || renstraAktif?.sub_bidang_opd || '',
       );
+      setValue('nama_opd', initialData.nama_opd || sub.nama_opd || renstraAktif?.nama_opd || '');
       setValue(
-        "nama_opd",
-        sub.nama_opd || initialData.nama_opd || renstraAktif?.nama_opd || ""
-      );
-      setValue(
-        "nama_bidang_opd",
-        sub.nama_bidang_opd ||
-          initialData.nama_bidang_opd ||
-          renstraAktif?.bidang_opd ||
-          ""
+        'nama_bidang_opd',
+        initialData.nama_bidang_opd || sub.nama_bidang_opd || renstraAktif?.bidang_opd || '',
       );
     } else {
-      setValue("sub_bidang_opd", sub.sub_bidang_opd || renstraAktif?.sub_bidang_opd || "");
-      setValue("nama_opd", sub.nama_opd || renstraAktif?.nama_opd || "");
-      setValue(
-        "nama_bidang_opd",
-        sub.nama_bidang_opd || renstraAktif?.bidang_opd || ""
-      );
+      setValue('sub_bidang_opd', sub.sub_bidang_opd || renstraAktif?.sub_bidang_opd || '');
+      setValue('nama_opd', sub.nama_opd || renstraAktif?.nama_opd || '');
+      setValue('nama_bidang_opd', sub.nama_bidang_opd || renstraAktif?.bidang_opd || '');
     }
-    setValue("renstra_program_id", sub.renstra_program_id ?? null, {
+    setValue('renstra_program_id', sub.renstra_program_id ?? null, {
       shouldValidate: true,
     });
   }, [
@@ -330,29 +331,27 @@ export function useSubkegiatanRenstraForm(
 
       if (data.id) {
         await api.put(`/renstra-subkegiatan/${data.id}`, payload);
-        alert("Subkegiatan berhasil diperbarui!");
+        alert('Subkegiatan berhasil diperbarui!');
       } else {
-        await api.post("/renstra-subkegiatan", payload);
-        alert("Subkegiatan berhasil ditambahkan!");
+        await api.post('/renstra-subkegiatan', payload);
+        alert('Subkegiatan berhasil ditambahkan!');
       }
 
-      await queryClient.invalidateQueries({ queryKey: ["subkegiatan-renstra"] });
-      await queryClient.invalidateQueries({ queryKey: ["renstra-kegiatan"] });
+      await queryClient.invalidateQueries({ queryKey: ['subkegiatan-renstra'] });
+      await queryClient.invalidateQueries({ queryKey: ['renstra-kegiatan'] });
 
       if (onSuccess) onSuccess();
     } catch (e) {
-  console.error("Gagal submit:", e);
+      console.error('Gagal submit:', e);
 
-  const backendMessage =
-    e.response?.data?.message ||
-    e.response?.data?.error ||
-    "Gagal menyimpan data subkegiatan.";
+      const backendMessage =
+        e.response?.data?.message || e.response?.data?.error || 'Gagal menyimpan data subkegiatan.';
 
-  alert(backendMessage);
-  setError(backendMessage);
-} finally {
-  setIsSubmitting(false);
-}
+      alert(backendMessage);
+      setError(backendMessage);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return {
@@ -362,6 +361,8 @@ export function useSubkegiatanRenstraForm(
     error,
     kegiatanOptions,
     subKegiatanOptions,
+    subBidangOptions,
+    bidangOpdOptions,
     onSubmit,
     setValue,
   };

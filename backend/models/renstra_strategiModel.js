@@ -1,19 +1,25 @@
-"use strict";
-const { Model } = require("sequelize");
+'use strict';
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class RenstraStrategi extends Model {
     static associate(models) {
       RenstraStrategi.belongsTo(models.RenstraOPD, {
-        foreignKey: "renstra_id",
-        targetKey: "id",
-        as: "renstra",
+        foreignKey: 'renstra_id',
+        targetKey: 'id',
+        as: 'renstra',
       });
 
       RenstraStrategi.belongsTo(models.Strategi, {
-        foreignKey: "rpjmd_strategi_id",
-        targetKey: "id",
-        as: "strategi_rpjmd",
+        foreignKey: 'rpjmd_strategi_id',
+        targetKey: 'id',
+        as: 'strategi_rpjmd',
+      });
+
+      RenstraStrategi.belongsTo(models.RenstraSasaran, {
+        foreignKey: 'sasaran_id',
+        targetKey: 'id',
+        as: 'sasaran',
       });
     }
   }
@@ -36,11 +42,11 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       sequelize,
-      modelName: "RenstraStrategi",
-      tableName: "renstra_strategi",
+      modelName: 'RenstraStrategi',
+      tableName: 'renstra_strategi',
       underscored: true,
       timestamps: false,
-    }
+    },
   );
 
   return RenstraStrategi;

@@ -1,49 +1,121 @@
-// File: helpers/rkaCalculationHelper.js
+// File: backend/helpers/rkaCalculationHelper.js
+
+'use strict';
+
+const { normalizeRincianBelanja } = require('./rkaNormalizePayload');
+const { validateRincianBelanja } = require('./rkaRincianValidator');
 
 /**
- * Memproses array rincian belanja untuk menghitung volume kumulatif,
- * teks satuan gabungan, dan total nominal per baris rekening.
- * * @param {Array} rincianBelanjaArray - Array rincian belanja dari client
- * @returns {Object} { processedRincian, totalAnggaranSubKegiatan }
+ * Memproses rincian belanja menjadi data siap simpan ke database.
+ *
+ * Yang dihitung otomatis:
+ * - Volume hasil (perkalian seluruh koefisien)
+ * - Jumlah
+ * - Nilai PPN
+ * - Total setelah PPN
+ * - Total anggaran sub kegiatan
+ *
+ * @param {Array} rincianBelanjaArray
+ * @returns {{
+ *   processedRincian: Array,
+ *   totalAnggaranSubKegiatan: number
+ * }}
  */
-function processRincianBelanja(rincianBelanjaArray) {
-  if (!Array.isArray(rincianBelanjaArray) || rincianBelanjaArray.length === 0) {
-    return { processedRincian: [], totalAnggaranSubKegiatan: 0 };
+function processRincianBelanja(rincianBelanjaArray = []) {
+  const rincian = normalizeRincianBelanja(rincianBelanjaArray);
+  validateRincianBelanja(rincian);
+  const rincianItem = rincian.filter((item) => item.kode_rekening && !item.is_group);
+
+  if (!rincianItem.length) {
+    return {
+      processedRincian: [],
+      totalAnggaranSubKegiatan: 0,
+    };
   }
 
   let totalAnggaranSubKegiatan = 0;
 
-  const processedRincian = rincianBelanjaArray.map((item, idx) => {
-    const koefisien = item.koefisien_array || [];
+  const processedRincian = rincianItem.map((item, idx) => {
+    const koefisien = Array.isArray(item.koefisien_array) ? item.koefisien_array : [];
 
-    // 1. Hitung total volume dengan mengalikan semua volume di dalam koefisien_array
-    // Contoh: 5 orang x 2 hari x 12 bulan = 120
-    const totalVolumeItem = koefisien.reduce((acc, current) => {
-      const vol = Number(current.volume);
-      return acc * (isNaN(vol) || vol <= 0 ? 1 : vol);
+    // ===========================
+    // Hitung volume hasil
+    // ===========================
+
+    const volumeHasil = koefisien.reduce((hasil, current) => {
+      const vol = Number(current.volume || 1);
+
+      return hasil * (vol > 0 ? vol : 1);
     }, 1);
 
-    // 2. Hitung total jumlah harga per item rekening
-    const totalJumlahItem = totalVolumeItem * Number(item.harga_satuan || 0);
+    // ===========================
+    // Harga satuan
+    // ===========================
 
-    // 3. Gabungkan teks satuan secara otomatis untuk kompatibilitas struktur data lama
-    // Contoh hasil: "5 Orang x 2 Hari x 12 Bulan"
-    const teksSatuanGabungan = koefisien.map((k) => `${k.volume} ${k.satuan}`).join(' x ');
+    const hargaSatuan = Number(item.harga_satuan || 0);
 
-    totalAnggaranSubKegiatan += totalJumlahItem;
+    // ===========================
+    // Jumlah sebelum PPN
+    // ===========================
+
+    const jumlah = volumeHasil * hargaSatuan;
+
+    // ===========================
+    // PPN
+    // ===========================
+
+    const ppn = Number(item.ppn) > 0 ? Number(item.ppn) : 0;
+
+    const nilaiPPN = (jumlah * ppn) / 100;
+
+    const totalSetelahPPN = jumlah + nilaiPPN;
+
+    // ===========================
+    // Total anggaran
+    // ===========================
+
+    totalAnggaranSubKegiatan += totalSetelahPPN;
+
+    // ===========================
+    // Bentuk teks satuan
+    // ===========================
+
+    const satuanGabungan =
+      koefisien
+        .map((k) => String(k.satuan || '').trim())
+        .filter((s) => s.length > 0)
+        .join(' x ') || String(item.satuan || '').trim();
 
     return {
+      urutan: Number(item.urutan) || idx + 1,
+
       kode_rekening: item.kode_rekening,
       nama_rekening: item.nama_rekening || null,
+
       uraian: item.uraian,
-      harga_satuan: Number(item.harga_satuan),
-      volume: totalVolumeItem,
-      satuan: teksSatuanGabungan,
-      jumlah: totalJumlahItem,
-      sumber_dana: item.sumber_dana,
+      spesifikasi: item.spesifikasi || null,
+
+      volume: volumeHasil,
+      volume_hasil: volumeHasil,
+
+      satuan: satuanGabungan,
+
+      harga_satuan: hargaSatuan,
+
+      jumlah,
+
+      ppn,
+
+      nilai_ppn: nilaiPPN,
+
+      total_setelah_ppn: totalSetelahPPN,
+
+      sumber_dana: item.sumber_dana || null,
+
       lokasi: item.lokasi || null,
+
       keterangan: item.keterangan || null,
-      // Simpan bentuk aslinya sebagai string JSON di DB anak
+
       koefisien_array: JSON.stringify(koefisien),
     };
   });

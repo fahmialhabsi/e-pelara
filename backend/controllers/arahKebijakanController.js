@@ -8,41 +8,36 @@ const {
   Program,
   ProgramArahKebijakan,
   RenstraStrategi,
-} = require("../models");
-const { Op } = require("sequelize");
-const { getPeriodeFromTahun } = require("../utils/periodeHelper");
-const { ensureClonedOnce } = require("../utils/autoCloneHelper");
-const { listResponse } = require("../utils/responseHelper");
+} = require('../models');
+const { Op } = require('sequelize');
+const { getPeriodeFromTahun } = require('../utils/periodeHelper');
+const { ensureClonedOnce } = require('../utils/autoCloneHelper');
+const { listResponse } = require('../utils/responseHelper');
 
 /**
  * Samakan awalan kode SST strategi dengan nomor sasaran (ST… → SST…).
  * Menangani kode_strategi di DB yang tidak selaras (mis. SST1-01-02.1 untuk sasaran ST3-01-02).
  */
 function canonicalSstKodeForArah(strategi) {
-  const raw = String(strategi?.kode_strategi || "").trim();
+  const raw = String(strategi?.kode_strategi || '').trim();
   const nom = strategi?.Sasaran?.nomor;
-  if (!nom) return raw || "";
-  const sasSst = String(nom).replace(/^ST/, "SST");
+  if (!nom) return raw || '';
+  const sasSst = String(nom).replace(/^ST/, 'SST');
   if (!raw) return `${sasSst}.1`;
   if (raw.startsWith(sasSst)) return raw;
   const m = raw.match(/\.(\d+)$/);
-  const suffix = m ? `.${m[1]}` : ".1";
+  const suffix = m ? `.${m[1]}` : '.1';
   return `${sasSst}${suffix}`;
 }
 
 function arahKodePrefixFromStrategi(strategi) {
-  return canonicalSstKodeForArah(strategi).replace(/^SST/, "ASST");
+  return canonicalSstKodeForArah(strategi).replace(/^SST/, 'ASST');
 }
 
 module.exports = {
   async create(req, res) {
     try {
-      const {
-        strategi_id: sidRaw,
-        deskripsi,
-        jenis_dokumen,
-        tahun,
-      } = req.body;
+      const { strategi_id: sidRaw, deskripsi, jenis_dokumen, tahun } = req.body;
       const strategi_id = parseInt(String(sidRaw), 10);
 
       if (
@@ -54,7 +49,7 @@ module.exports = {
       ) {
         return res.status(400).json({
           message:
-            "Field strategi_id (angka valid), deskripsi, jenis_dokumen, dan tahun wajib diisi.",
+            'Field strategi_id (angka valid), deskripsi, jenis_dokumen, dan tahun wajib diisi.',
         });
       }
 
@@ -62,19 +57,15 @@ module.exports = {
 
       const periode = await getPeriodeFromTahun(tahun);
       if (!periode) {
-        return res
-          .status(400)
-          .json({ message: "Periode tidak ditemukan untuk tahun tersebut." });
+        return res.status(400).json({ message: 'Periode tidak ditemukan untuk tahun tersebut.' });
       }
       const periode_id = periode.id;
 
       const strategi = await Strategi.findByPk(strategi_id, {
-        include: [
-          { model: Sasaran, as: "Sasaran", attributes: ["id", "nomor"] },
-        ],
+        include: [{ model: Sasaran, as: 'Sasaran', attributes: ['id', 'nomor'] }],
       });
       if (!strategi) {
-        return res.status(404).json({ message: "Strategi tidak ditemukan." });
+        return res.status(404).json({ message: 'Strategi tidak ditemukan.' });
       }
 
       // Samakan awalan ASST dengan nomor sasaran (ST→SST) bila kode_strategi di DB tidak selaras.
@@ -89,14 +80,14 @@ module.exports = {
           periode_id,
           kode_arah: { [Op.like]: `${prefix}.%` },
         },
-        attributes: ["kode_arah"],
+        attributes: ['kode_arah'],
       });
 
       // Ambil angka setelah prefix (setelah titik terakhir)
       const usedNumbers = existing
         .map((s) => {
           const kode = s.kode_arah;
-          if (kode.startsWith(prefix + ".")) {
+          if (kode.startsWith(prefix + '.')) {
             // Ambil bagian setelah prefix + '.'
             const suffix = kode.slice(prefix.length + 1);
             const number = parseInt(suffix, 10);
@@ -123,7 +114,7 @@ module.exports = {
       });
       if (duplicate) {
         return res.status(409).json({
-          message: "Data arah kebijakan sudah ada (duplikat kombinasi unik).",
+          message: 'Data arah kebijakan sudah ada (duplikat kombinasi unik).',
         });
       }
 
@@ -138,11 +129,11 @@ module.exports = {
 
       return res.status(201).json(arah);
     } catch (err) {
-      console.error("Gagal membuat arah kebijakan:", err);
+      console.error('Gagal membuat arah kebijakan:', err);
       return res.status(400).json({
         error:
-          err.name === "SequelizeUniqueConstraintError"
-            ? err.errors?.[0]?.message || "Data duplikat."
+          err.name === 'SequelizeUniqueConstraintError'
+            ? err.errors?.[0]?.message || 'Data duplikat.'
             : err.message,
       });
     }
@@ -150,26 +141,19 @@ module.exports = {
 
   async getAll(req, res) {
     try {
-      const jenis_dokumen = (req.query.jenis_dokumen || "").toLowerCase();
-      const {
-  tahun,
-  search,
-  strategi_id,
-  renstra_strategi_id,
-  include_mismatched_kode,
-} = req.query;
+      const jenis_dokumen = (req.query.jenis_dokumen || '').toLowerCase();
+      const { tahun, search, strategi_id, renstra_strategi_id, include_mismatched_kode } =
+        req.query;
 
       if (!jenis_dokumen || !tahun) {
-        return res
-          .status(400)
-          .json({ message: "jenis_dokumen dan tahun wajib diisi." });
+        return res.status(400).json({ message: 'jenis_dokumen dan tahun wajib diisi.' });
       }
 
       await ensureClonedOnce(jenis_dokumen, tahun);
 
       const periode = await getPeriodeFromTahun(tahun);
       if (!periode) {
-        return res.status(400).json({ message: "Periode tidak ditemukan." });
+        return res.status(400).json({ message: 'Periode tidak ditemukan.' });
       }
       const periode_id = periode.id;
 
@@ -184,45 +168,51 @@ module.exports = {
       }
 
       if (renstra_strategi_id) {
-  const renstraStrategi = await RenstraStrategi.findByPk(renstra_strategi_id, {
-    attributes: ["id", "rpjmd_strategi_id"],
-  });
+        const renstraStrategi = await RenstraStrategi.findByPk(renstra_strategi_id, {
+          attributes: ['id', 'rpjmd_strategi_id'],
+        });
 
-  if (!renstraStrategi?.rpjmd_strategi_id) {
-    return listResponse(
-      res,
-      200,
-      "Daftar arah kebijakan berhasil diambil",
-      [],
-      {
-        totalItems: 0,
-        totalPages: 0,
-        currentPage: page,
+        if (!renstraStrategi?.rpjmd_strategi_id) {
+          return listResponse(res, 200, 'Daftar arah kebijakan berhasil diambil', [], {
+            totalItems: 0,
+            totalPages: 0,
+            currentPage: page,
+          });
+        }
+
+        where.strategi_id = Number(renstraStrategi.rpjmd_strategi_id);
       }
-    );
-  }
 
-  where.strategi_id = Number(renstraStrategi.rpjmd_strategi_id);
-}
-
-      if (strategi_id  && !renstra_strategi_id) {
+      const renstra_id = req.query.renstra_id;
+      if (renstra_id && !renstra_strategi_id && !strategi_id) {
+        const stratejiList = await RenstraStrategi.findAll({
+          where: { renstra_id: Number(renstra_id) },
+          attributes: ['rpjmd_strategi_id'],
+          raw: true,
+        });
+        const rpjmdStrategiIds = stratejiList.map((s) => s.rpjmd_strategi_id).filter(Boolean);
+        where.strategi_id = rpjmdStrategiIds.length > 0 ? { [Op.in]: rpjmdStrategiIds } : -1;
+      }
+      if (strategi_id && !renstra_strategi_id) {
         const ids = strategi_id
-          .split(",")
+          .split(',')
           .map((id) => parseInt(id, 10))
           .filter(Boolean);
         if (ids.length === 1) where.strategi_id = ids[0];
         else if (ids.length > 1) where.strategi_id = { [Op.in]: ids };
 
         const allowMismatchedKode =
-          String(include_mismatched_kode || "").trim() === "1" ||
-          String(include_mismatched_kode || "").trim().toLowerCase() === "true";
+          String(include_mismatched_kode || '').trim() === '1' ||
+          String(include_mismatched_kode || '')
+            .trim()
+            .toLowerCase() === 'true';
 
         // Untuk dropdown Renstra (Arah Kebijakan RPJMD), filter prefix kode_arah (ASST...)
         // berdasarkan Strategi yang dipilih, agar item yang kodenya "nyasar" tidak ikut muncul.
         if (!allowMismatchedKode && ids.length === 1) {
           const selectedStrategi = await Strategi.findByPk(ids[0], {
-            include: [{ model: Sasaran, as: "Sasaran", attributes: ["id", "nomor"] }],
-            attributes: ["id", "kode_strategi"],
+            include: [{ model: Sasaran, as: 'Sasaran', attributes: ['id', 'nomor'] }],
+            attributes: ['id', 'kode_strategi'],
           });
           if (selectedStrategi) {
             const prefix = arahKodePrefixFromStrategi(selectedStrategi);
@@ -242,65 +232,59 @@ module.exports = {
         include: [
           {
             model: Strategi,
-            as: "Strategi",
-            attributes: [
-              "id",
-              "kode_strategi",
-              "deskripsi",
-              "periode_id",
-              "tahun",
-            ],
+            as: 'Strategi',
+            attributes: ['id', 'kode_strategi', 'deskripsi', 'periode_id', 'tahun'],
             include: [
               {
                 model: Sasaran,
-                as: "Sasaran",
-                attributes: ["id", "nomor", "isi_sasaran", "tujuan_id"],
+                as: 'Sasaran',
+                attributes: ['id', 'nomor', 'isi_sasaran', 'tujuan_id'],
                 include: [
                   {
                     model: Tujuan,
-                    as: "Tujuan",
-                    attributes: ["id", "no_tujuan", "isi_tujuan"],
+                    as: 'Tujuan',
+                    attributes: ['id', 'no_tujuan', 'isi_tujuan'],
                   },
                 ],
               },
             ],
           },
         ],
-        order: [["kode_arah", "ASC"]],
+        order: [['kode_arah', 'ASC']],
       });
 
       let finalRows = rows;
       let finalCount = count;
 
-      if (finalCount === 0 && strategi_id && jenis_dokumen !== "rpjmd") {
+      if (finalCount === 0 && strategi_id && jenis_dokumen !== 'rpjmd') {
         const selectedIds = strategi_id
-          .split(",")
+          .split(',')
           .map((id) => parseInt(id, 10))
           .filter(Boolean);
 
         const selectedStrategi = selectedIds.length
           ? await Strategi.findByPk(selectedIds[0], {
-              attributes: ["id", "kode_strategi", "jenis_dokumen"],
+              attributes: ['id', 'kode_strategi', 'jenis_dokumen'],
             })
           : null;
 
         let fallbackStrategiId = null;
-        if (selectedStrategi?.jenis_dokumen === "rpjmd") {
+        if (selectedStrategi?.jenis_dokumen === 'rpjmd') {
           fallbackStrategiId = selectedStrategi.id;
         } else if (selectedStrategi?.kode_strategi) {
           const sourceStrategi = await Strategi.findOne({
             where: {
               kode_strategi: selectedStrategi.kode_strategi,
-              jenis_dokumen: "rpjmd",
+              jenis_dokumen: 'rpjmd',
               tahun,
             },
-            attributes: ["id"],
+            attributes: ['id'],
           });
           fallbackStrategiId = sourceStrategi?.id || null;
         }
 
         if (fallbackStrategiId) {
-          const fallbackWhere = { jenis_dokumen: "rpjmd", tahun, strategi_id: fallbackStrategiId };
+          const fallbackWhere = { jenis_dokumen: 'rpjmd', tahun, strategi_id: fallbackStrategiId };
           if (search) {
             fallbackWhere.deskripsi = { [Op.like]: `%${search}%` };
           }
@@ -314,31 +298,25 @@ module.exports = {
             include: [
               {
                 model: Strategi,
-                as: "Strategi",
-                attributes: [
-                  "id",
-                  "kode_strategi",
-                  "deskripsi",
-                  "periode_id",
-                  "tahun",
-                ],
+                as: 'Strategi',
+                attributes: ['id', 'kode_strategi', 'deskripsi', 'periode_id', 'tahun'],
                 include: [
                   {
                     model: Sasaran,
-                    as: "Sasaran",
-                    attributes: ["id", "nomor", "isi_sasaran", "tujuan_id"],
+                    as: 'Sasaran',
+                    attributes: ['id', 'nomor', 'isi_sasaran', 'tujuan_id'],
                     include: [
                       {
                         model: Tujuan,
-                        as: "Tujuan",
-                        attributes: ["id", "no_tujuan", "isi_tujuan"],
+                        as: 'Tujuan',
+                        attributes: ['id', 'no_tujuan', 'isi_tujuan'],
                       },
                     ],
                   },
                 ],
               },
             ],
-            order: [["kode_arah", "ASC"]],
+            order: [['kode_arah', 'ASC']],
           });
 
           finalRows = fallback.rows;
@@ -349,7 +327,7 @@ module.exports = {
       return listResponse(
         res,
         200,
-        "Daftar arah kebijakan berhasil diambil",
+        'Daftar arah kebijakan berhasil diambil',
         finalRows.map((arah) => ({
           ...arah.toJSON(),
           strategi_id: Number(arah.strategi_id),
@@ -360,14 +338,14 @@ module.exports = {
           totalPages: Math.ceil(finalCount / limit),
           currentPage: page,
           ...(finalCount === 0 && search
-            ? { message: "Tidak ada yang cocok dengan pencarian." }
+            ? { message: 'Tidak ada yang cocok dengan pencarian.' }
             : {}),
-        }
+        },
       );
     } catch (err) {
-      console.error("Gagal mengambil data arah kebijakan:", err);
+      console.error('Gagal mengambil data arah kebijakan:', err);
       return res.status(500).json({
-        message: "Terjadi kesalahan saat mengambil arah kebijakan.",
+        message: 'Terjadi kesalahan saat mengambil arah kebijakan.',
         error: err.message,
       });
     }
@@ -381,18 +359,18 @@ module.exports = {
         include: [
           {
             model: Strategi,
-            as: "Strategi",
-            attributes: ["id", "kode_strategi", "deskripsi", "sasaran_id"],
+            as: 'Strategi',
+            attributes: ['id', 'kode_strategi', 'deskripsi', 'sasaran_id'],
             include: [
               {
                 model: Sasaran,
-                as: "Sasaran",
-                attributes: ["id", "nomor", "isi_sasaran", "tujuan_id"],
+                as: 'Sasaran',
+                attributes: ['id', 'nomor', 'isi_sasaran', 'tujuan_id'],
                 include: [
                   {
                     model: Tujuan,
-                    as: "Tujuan",
-                    attributes: ["id", "no_tujuan", "isi_tujuan"],
+                    as: 'Tujuan',
+                    attributes: ['id', 'no_tujuan', 'isi_tujuan'],
                   },
                 ],
               },
@@ -402,14 +380,12 @@ module.exports = {
       });
 
       if (!arah) {
-        return res
-          .status(404)
-          .json({ error: "ArahKebijakan tidak ditemukan." });
+        return res.status(404).json({ error: 'ArahKebijakan tidak ditemukan.' });
       }
 
       return res.status(200).json(arah);
     } catch (err) {
-      console.error("Gagal mengambil arah kebijakan:", err);
+      console.error('Gagal mengambil arah kebijakan:', err);
       return res.status(500).json({ error: err.message });
     }
   },
@@ -420,7 +396,7 @@ module.exports = {
 
       if (!strategi_id || !jenis_dokumen || !tahun) {
         return res.status(400).json({
-          message: "strategi_id, jenis_dokumen, dan tahun wajib diisi.",
+          message: 'strategi_id, jenis_dokumen, dan tahun wajib diisi.',
         });
       }
 
@@ -428,17 +404,15 @@ module.exports = {
 
       const periode = await getPeriodeFromTahun(tahun);
       if (!periode) {
-        return res.status(400).json({ message: "Periode tidak ditemukan." });
+        return res.status(400).json({ message: 'Periode tidak ditemukan.' });
       }
       const periode_id = periode.id;
 
       const strategi = await Strategi.findByPk(strategi_id, {
-        include: [
-          { model: Sasaran, as: "Sasaran", attributes: ["id", "nomor"] },
-        ],
+        include: [{ model: Sasaran, as: 'Sasaran', attributes: ['id', 'nomor'] }],
       });
       if (!strategi) {
-        return res.status(404).json({ message: "Strategi tidak ditemukan." });
+        return res.status(404).json({ message: 'Strategi tidak ditemukan.' });
       }
 
       const prefix = arahKodePrefixFromStrategi(strategi);
@@ -454,13 +428,13 @@ module.exports = {
             [Op.or]: [prefix, { [Op.like]: `${prefix}.%` }],
           },
         },
-        attributes: ["kode_arah"],
+        attributes: ['kode_arah'],
       });
 
       // Ambil nomor urut paling akhir
       const nomorList = existing
         .map((a) => {
-          const parts = a.kode_arah.split(".");
+          const parts = a.kode_arah.split('.');
           return parts.length > 0 ? Number(parts[parts.length - 1]) : 0;
         })
         .filter((n) => !isNaN(n));
@@ -470,9 +444,9 @@ module.exports = {
 
       return res.status(200).json({ kode_arah });
     } catch (err) {
-      console.error("Gagal menghasilkan kode arah:", err);
+      console.error('Gagal menghasilkan kode arah:', err);
       return res.status(500).json({
-        message: "Gagal menghasilkan kode.",
+        message: 'Gagal menghasilkan kode.',
         error: err.message,
       });
     }
@@ -485,56 +459,45 @@ module.exports = {
         include: [
           {
             model: Program,
-            as: "Program",
+            as: 'Program',
             where: { id: programId },
             attributes: [],
           },
         ],
-        group: ["ArahKebijakan.id"],
+        group: ['ArahKebijakan.id'],
       });
 
       return listResponse(
         res,
         200,
-        "Daftar arah kebijakan berdasarkan program berhasil diambil",
-        list
+        'Daftar arah kebijakan berdasarkan program berhasil diambil',
+        list,
       );
     } catch (err) {
-      console.error("Gagal memuat arah kebijakan:", err);
-      return res.status(500).json({ message: "Gagal memuat arah kebijakan." });
+      console.error('Gagal memuat arah kebijakan:', err);
+      return res.status(500).json({ message: 'Gagal memuat arah kebijakan.' });
     }
   },
 
   async update(req, res) {
     try {
       const { id } = req.params;
-      const { strategi_id, kode_arah, deskripsi, jenis_dokumen, tahun } =
-        req.body;
+      const { strategi_id, kode_arah, deskripsi, jenis_dokumen, tahun } = req.body;
 
-      if (
-        !strategi_id ||
-        !kode_arah ||
-        !deskripsi ||
-        !jenis_dokumen ||
-        !tahun
-      ) {
-        return res.status(400).json({ message: "Semua field wajib diisi." });
+      if (!strategi_id || !kode_arah || !deskripsi || !jenis_dokumen || !tahun) {
+        return res.status(400).json({ message: 'Semua field wajib diisi.' });
       }
 
       const periode = await getPeriodeFromTahun(tahun);
       if (!periode) {
-        return res
-          .status(400)
-          .json({ message: "Periode tidak ditemukan untuk tahun tersebut." });
+        return res.status(400).json({ message: 'Periode tidak ditemukan untuk tahun tersebut.' });
       }
 
       const periode_id = periode.id;
 
       const arah = await ArahKebijakan.findByPk(id);
       if (!arah) {
-        return res
-          .status(404)
-          .json({ error: "ArahKebijakan tidak ditemukan." });
+        return res.status(404).json({ error: 'ArahKebijakan tidak ditemukan.' });
       }
 
       // ✅ Validasi kombinasi unik selain dirinya
@@ -551,7 +514,7 @@ module.exports = {
       });
       if (duplicate) {
         return res.status(409).json({
-          message: "Data arah kebijakan sudah ada (duplikat kombinasi unik).",
+          message: 'Data arah kebijakan sudah ada (duplikat kombinasi unik).',
         });
       }
 
@@ -566,11 +529,11 @@ module.exports = {
 
       return res.status(200).json(arah);
     } catch (err) {
-      console.error("Gagal memperbarui arah kebijakan:", err);
+      console.error('Gagal memperbarui arah kebijakan:', err);
       return res.status(400).json({
         error:
-          err.name === "SequelizeUniqueConstraintError"
-            ? err.errors?.[0]?.message || "Data duplikat."
+          err.name === 'SequelizeUniqueConstraintError'
+            ? err.errors?.[0]?.message || 'Data duplikat.'
             : err.message,
       });
     }
@@ -582,26 +545,24 @@ module.exports = {
 
       const used = await ProgramArahKebijakan.findOne({
         where: { arah_kebijakan_id: id },
-        attributes: ["program_id", "arah_kebijakan_id"],
+        attributes: ['program_id', 'arah_kebijakan_id'],
       });
       if (used) {
         return res.status(400).json({
           error:
-            "Tidak bisa menghapus Arah Kebijakan yang masih dipakai Program. Lepaskan relasi program_arah_kebijakan terlebih dahulu.",
+            'Tidak bisa menghapus Arah Kebijakan yang masih dipakai Program. Lepaskan relasi program_arah_kebijakan terlebih dahulu.',
         });
       }
 
       const deleted = await ArahKebijakan.destroy({ where: { id } });
 
       if (!deleted) {
-        return res
-          .status(404)
-          .json({ error: "ArahKebijakan tidak ditemukan." });
+        return res.status(404).json({ error: 'ArahKebijakan tidak ditemukan.' });
       }
 
       return res.status(204).send();
     } catch (err) {
-      console.error("Gagal menghapus arah kebijakan:", err);
+      console.error('Gagal menghapus arah kebijakan:', err);
       return res.status(500).json({ error: err.message });
     }
   },

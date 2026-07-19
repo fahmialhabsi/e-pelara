@@ -91,7 +91,7 @@ const FormDPA = ({
   useEffect(() => {
     api
       .get('/rka')
-      .then((res) => setRkaOptions(Array.isArray(res.data) ? res.data : []))
+      .then((res) => setRkaOptions(Array.isArray(res.data?.data) ? res.data.data : []))
       .catch(console.error);
   }, []);
 
@@ -572,6 +572,7 @@ const FormDPA = ({
               placeholder="Pilih program dari master"
               value={pid != null ? String(pid) : undefined}
               onChange={onPickProgram}
+              disabled={Boolean(form.rka_id)}
               options={programs.map((p) => ({
                 value: String(p.id),
                 label: formatProgramLabel(p),
@@ -603,6 +604,7 @@ const FormDPA = ({
               placeholder="Pilih kegiatan"
               value={kid != null ? String(kid) : undefined}
               onChange={onPickKegiatan}
+              disabled={Boolean(form.rka_id)}
               options={kegiatans.map((k) => ({
                 value: String(k.id),
                 label: formatKegiatanLabel(k),
@@ -635,6 +637,7 @@ const FormDPA = ({
               placeholder="Pilih sub kegiatan"
               value={sid != null ? String(sid) : undefined}
               onChange={onPickSub}
+              disabled={Boolean(form.rka_id)}
               options={subs.map((s) => ({
                 value: String(s.id),
                 label: formatSubKegiatanLabel(s),
@@ -668,6 +671,7 @@ const FormDPA = ({
               placeholder="Pilih indikator (dari master indikator kegiatan)"
               value={iid != null ? String(iid) : undefined}
               onChange={onPickIndikator}
+              disabled={Boolean(form.rka_id)}
               options={indikators.map((r) => ({
                 value: String(r.id),
                 label: r.nama_indikator || r.kode_indikator || `ID ${r.id}`,

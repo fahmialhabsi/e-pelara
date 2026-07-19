@@ -1,65 +1,57 @@
-const express = require("express");
-const controller = require("../controllers/renstra_kegiatanController");
-const verifyToken = require("../middlewares/verifyToken");
-const allowRoles = require("../middlewares/allowRoles");
+const express = require('express');
+const controller = require('../controllers/renstra_kegiatanController');
+const verifyToken = require('../middlewares/verifyToken');
+const allowRoles = require('../middlewares/allowRoles');
 const router = express.Router();
 
-router.post(
-  "/",
+router.post('/', verifyToken, allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']), controller.create);
+
+router.get(
+  '/',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  controller.create
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  controller.findAll,
 );
 
 router.get(
-  "/",
+  '/kode-nama',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  controller.findAll
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  controller.getKodeNamaKegiatan,
 );
 
 router.get(
-  "/kode-nama",
+  '/:id',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  controller.getKodeNamaKegiatan
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  controller.findOne,
 );
 
-router.get(
-  "/:id",
-  verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  controller.findOne
-);
+router.put('/:id', verifyToken, allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']), controller.update);
 
-router.put(
-  "/:id",
-  verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  controller.update
-);
-
-router.delete(
-  "/:id",
-  verifyToken,
-  allowRoles(["SUPER_ADMIN"]),
-  controller.delete
-);
+router.delete('/:id', verifyToken, allowRoles(['SUPER_ADMIN']), controller.delete);
 
 // Ambil kegiatan berdasarkan programId
 router.get(
-  "/by-program/:id",
+  '/by-program/:id',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  controller.findByProgramKode
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  controller.findByProgramKode,
 );
 
 // Ambil kode & nama kegiatan sederhana (dropdown frontend)
 router.get(
-  "/kode-nama",
+  '/kode-nama',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  controller.getKodeNamaKegiatan
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  controller.getKodeNamaKegiatan,
+);
+
+router.post(
+  '/generate-indikator',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMIN', 'OPERATOR']),
+  controller.generateIndikatorKegiatan,
 );
 
 module.exports = router;

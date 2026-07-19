@@ -13,10 +13,12 @@ import DashboardLayout from './DashboardLayout';
 
 const STATUS_COLOR = {
   draft: 'secondary',
-  review: 'warning',
-  final: 'success',
+  submitted: 'warning',
+  reviewed: 'info',
   approved: 'primary',
+  published: 'success',
   rejected: 'danger',
+  archived: 'dark',
 };
 
 const RenjaDashboard = () => {
@@ -51,9 +53,9 @@ const RenjaDashboard = () => {
 
   const summary = {
     total: dokumen.length,
-    draft: dokumen.filter((d) => d.status === 'draft').length,
-    review: dokumen.filter((d) => d.status === 'review').length,
-    final: dokumen.filter((d) => d.status === 'final').length,
+    draft: dokumen.filter((d) => (d.workflow_status || 'draft') === 'draft').length,
+    review: dokumen.filter((d) => ['submitted', 'reviewed'].includes(d.workflow_status)).length,
+    final: dokumen.filter((d) => d.workflow_status === 'published').length,
   };
 
   const handleDelete = async (row) => {
@@ -79,7 +81,7 @@ const RenjaDashboard = () => {
       return;
     }
     try {
-      await updateRenjaStatus(row.id, { action, change_reason_text: reason.trim() });
+      await api.post(`/renja/v2/${row.id}/${action}`, { change_reason_text: reason.trim() });
       toast.success('Status diperbarui.');
       load();
     } catch (e) {
@@ -153,9 +155,11 @@ const RenjaDashboard = () => {
                     <td>{i + 1}</td>
                     <td>{row.judul || '—'}</td>
                     <td>{row.tahun || '—'}</td>
-                    <td>{row.nama_opd || row.perangkat_daerah?.nama || '—'}</td>
+                    <td>{row.perangkatDaerah?.nama || row.nama_opd || '—'}</td>
                     <td>
-                      <Badge bg={STATUS_COLOR[row.status] || 'secondary'}>{row.status}</Badge>
+                      <Badge bg={STATUS_COLOR[row.workflow_status] || 'secondary'}>
+                        {row.workflow_status || 'draft'}
+                      </Badge>
                     </td>
                     <td className="d-flex gap-1 flex-wrap">
                       <button
@@ -165,7 +169,7 @@ const RenjaDashboard = () => {
                       >
                         Detail
                       </button>
-                      {canManage && row.status === 'draft' && (
+                      {canManage && (row.workflow_status || 'draft') === 'draft' && (
                         <>
                           <button
                             type="button"
@@ -183,7 +187,25 @@ const RenjaDashboard = () => {
                           </button>
                         </>
                       )}
-                      {canManage && row.status === 'review' && (
+                      {canManage && row.workflow_status === 'submitted' && (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-info"
+                            onClick={() => handleStatus(row, 'review')}
+                          >
+                            Tinjau
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger"
+                            onClick={() => handleStatus(row, 'reject')}
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                      {canManage && row.workflow_status === 'reviewed' && (
                         <>
                           <button
                             type="button"
@@ -200,6 +222,24 @@ const RenjaDashboard = () => {
                             Reject
                           </button>
                         </>
+                      )}
+                      {canManage && row.workflow_status === 'approved' && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-primary"
+                          onClick={() => handleStatus(row, 'publish')}
+                        >
+                          Terbitkan
+                        </button>
+                      )}
+                      {canManage && row.workflow_status === 'rejected' && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-warning"
+                          onClick={() => handleStatus(row, 'submit')}
+                        >
+                          Ajukan Ulang
+                        </button>
                       )}
                     </td>
                   </tr>

@@ -1,14 +1,14 @@
 // src/features/renstra/sasaran/components/SasaranRenstraForm.jsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { App, Button, Card, Space } from "antd";
-import { useNavigate } from "react-router-dom";
-import { useSasaranRenstraForm } from "@/hooks/templatesUseRenstra/useSasaranRenstraForm";
-import api from "@/services/api";
-import { BsArrowLeftCircle, BsListCheck } from "react-icons/bs";
-import SelectWithLabelValue from "@/shared/components/form/SelectWithLabelValue";
-import InputField from "@/shared/components/form/InputField";
-import TextAreaField from "@/shared/components/form/TextAreaField";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { App, Button, Card, Space } from 'antd';
+import { useNavigate } from 'react-router-dom';
+import { useSasaranRenstraForm } from '@/hooks/templatesUseRenstra/useSasaranRenstraForm';
+import api from '@/services/api';
+import { BsArrowLeftCircle, BsListCheck } from 'react-icons/bs';
+import SelectWithLabelValue from '@/shared/components/form/SelectWithLabelValue';
+import InputField from '@/shared/components/form/InputField';
+import TextAreaField from '@/shared/components/form/TextAreaField';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 const SasaranRenstraForm = ({ initialData = null, renstraAktif }) => {
   const { message } = App.useApp();
@@ -16,10 +16,7 @@ const SasaranRenstraForm = ({ initialData = null, renstraAktif }) => {
   const queryClient = useQueryClient();
   const [isFormReady, setIsFormReady] = useState(false); // untuk disable input/tombol
 
-  const { form, isLoading, dropdowns } = useSasaranRenstraForm(
-    initialData,
-    renstraAktif
-  );
+  const { form, isLoading, dropdowns } = useSasaranRenstraForm(initialData, renstraAktif);
 
   const {
     control,
@@ -29,25 +26,22 @@ const SasaranRenstraForm = ({ initialData = null, renstraAktif }) => {
     handleSubmit,
   } = form;
 
-  const watchedTujuanId = watch("tujuan_id");
+  const watchedTujuanId = watch('tujuan_id');
 
   // Fetch Sasaran RPJMD untuk tujuan terpilih
-  const { data: sasaranRpjmdOptionsData = [], isLoading: isSasaranLoading } =
-    useQuery({
-      queryKey: ["sasaran-rpjmd", watchedTujuanId],
-      queryFn: async () => {
-        if (!watchedTujuanId) return [];
-        const res = await api.get(
-          `/renstra-sasaran/sasaran-rpjmd?tujuan_id=${watchedTujuanId}`
-        );
-        const raw = res.data?.data ?? res.data;
-        return Array.isArray(raw) ? raw : [];
-      },
-      enabled: !!watchedTujuanId,
-    });
+  const { data: sasaranRpjmdOptionsData = [], isLoading: isSasaranLoading } = useQuery({
+    queryKey: ['sasaran-rpjmd', watchedTujuanId],
+    queryFn: async () => {
+      if (!watchedTujuanId) return [];
+      const res = await api.get(`/renstra-sasaran/sasaran-rpjmd?tujuan_id=${watchedTujuanId}`);
+      const raw = res.data?.data ?? res.data;
+      return Array.isArray(raw) ? raw : [];
+    },
+    enabled: !!watchedTujuanId,
+  });
 
-  const tujuanOptionsRaw = Array.isArray(dropdowns?.["renstra-tujuan"])
-    ? dropdowns["renstra-tujuan"]
+  const tujuanOptionsRaw = Array.isArray(dropdowns?.['renstra-tujuan'])
+    ? dropdowns['renstra-tujuan']
     : [];
 
   // Jika tujuan terpilih tidak ada di GET /renstra-tujuan (filter), Select menampilkan ID mentah.
@@ -90,35 +84,47 @@ const SasaranRenstraForm = ({ initialData = null, renstraAktif }) => {
   const handleTujuanChange = useCallback(
     (selectedTujuanId) => {
       const v =
-        selectedTujuanId === undefined || selectedTujuanId === null
-          ? ""
-          : String(selectedTujuanId);
-      setValue("tujuan_id", v, { shouldValidate: true });
+        selectedTujuanId === undefined || selectedTujuanId === null ? '' : String(selectedTujuanId);
+      setValue('tujuan_id', v, { shouldValidate: true });
     },
-    [setValue]
+    [setValue],
   );
 
   const handleSasaranRpjmdChange = useCallback(
     (selectedSasaranId) => {
-      const selected = sasaranRpjmdOptions.find(
-        (s) => String(s.id) === String(selectedSasaranId)
-      );
+      const selected = sasaranRpjmdOptions.find((s) => String(s.id) === String(selectedSasaranId));
       const v =
         selectedSasaranId === undefined || selectedSasaranId === null
-          ? ""
+          ? ''
           : String(selectedSasaranId);
-      setValue("rpjmd_sasaran_id", v, { shouldValidate: true });
-      setValue("nomor", selected?.nomor || "");
-      setValue("isi_sasaran", selected?.isi_sasaran || "");
+      setValue('rpjmd_sasaran_id', v, { shouldValidate: true });
+      setValue('no_rpjmd', selected?.nomor || '');
+      setValue('isi_sasaran_rpjmd', selected?.isi_sasaran || '');
+      setValue('isi_sasaran', selected?.isi_sasaran || '');
+      // Generate via AI
+      if (selected?.isi_sasaran) {
+        const namaOpd = renstraAktif?.nama_opd ?? 'OPD';
+        const tujuanRenstra = watch('isi_tujuan') || '';
+        api
+          .post('/renstra-sasaran/generate-sasaran', {
+            namaOpd,
+            sasaranRpjmd: selected.isi_sasaran,
+            tujuanRenstra,
+          })
+          .then((res) => {
+            if (res.data?.sasaran) setValue('isi_sasaran', res.data.sasaran, { shouldDirty: true });
+          })
+          .catch(() => {});
+      }
     },
-    [sasaranRpjmdOptions, setValue]
+    [sasaranRpjmdOptions, setValue, renstraAktif, watch],
   );
 
   // Hanya isi renstra_opd_id otomatis saat tambah (bukan edit)
   useEffect(() => {
     if (initialData?.id) return;
     if (renstraAktif?.opd_id) {
-      setValue("renstra_opd_id", renstraAktif.opd_id);
+      setValue('renstra_opd_id', renstraAktif.opd_id);
     }
   }, [initialData?.id, renstraAktif, setValue]);
 
@@ -131,30 +137,19 @@ const SasaranRenstraForm = ({ initialData = null, renstraAktif }) => {
 
   // Setelah daftar tujuan terisi, paksa string agar cocok Option (Ant Select)
   useEffect(() => {
-    if (!initialData?.id || initialData.tujuan_id == null || !tujuanOptions.length)
-      return;
-    setValue("tujuan_id", String(initialData.tujuan_id), {
+    if (!initialData?.id || initialData.tujuan_id == null || !tujuanOptions.length) return;
+    setValue('tujuan_id', String(initialData.tujuan_id), {
       shouldValidate: false,
     });
-  }, [
-    initialData?.id,
-    initialData?.tujuan_id,
-    tujuanOptions.length,
-    setValue,
-  ]);
+  }, [initialData?.id, initialData?.tujuan_id, tujuanOptions.length, setValue]);
 
   // Setelah daftar Sasaran RPJMD (termasuk fallback dari GET detail) siap, paksa string = Option
   useEffect(() => {
     if (!initialData?.rpjmd_sasaran_id || !sasaranRpjmdOptions.length) return;
-    setValue("rpjmd_sasaran_id", String(initialData.rpjmd_sasaran_id), {
+    setValue('rpjmd_sasaran_id', String(initialData.rpjmd_sasaran_id), {
       shouldValidate: false,
     });
-  }, [
-    initialData?.id,
-    initialData?.rpjmd_sasaran_id,
-    sasaranRpjmdOptions.length,
-    setValue,
-  ]);
+  }, [initialData?.id, initialData?.rpjmd_sasaran_id, sasaranRpjmdOptions.length, setValue]);
 
   // Mutation untuk submit form
   const mutation = useMutation({
@@ -163,35 +158,35 @@ const SasaranRenstraForm = ({ initialData = null, renstraAktif }) => {
         const res = await api.put(`/renstra-sasaran/${initialData.id}`, payload);
         return res.data;
       }
-      const res = await api.post("/renstra-sasaran", payload);
+      const res = await api.post('/renstra-sasaran', payload);
       return res.data;
     },
     onSuccess: (data) => {
-      console.log("Response sukses dari backend:", data);
-      message.success("Sasaran berhasil disimpan");
-      queryClient.invalidateQueries({ queryKey: ["renstra-sasaran"] });
-      navigate("/renstra/sasaran");
+      console.log('Response sukses dari backend:', data);
+      message.success('Sasaran berhasil disimpan');
+      queryClient.invalidateQueries({ queryKey: ['renstra-sasaran'] });
+      navigate('/renstra/sasaran');
     },
     onError: (error) => {
-      console.error("Error saat submit ke backend:", error);
+      console.error('Error saat submit ke backend:', error);
       const msg =
         error?.response?.data?.message ||
         JSON.stringify(error?.response?.data) ||
-        "Gagal menyimpan Sasaran";
+        'Gagal menyimpan Sasaran';
       message.error(msg);
     },
   });
 
   // Handler submit form
   const onSubmit = (values) => {
-    console.log("Form submitted!", values);
-    console.log("=== DEBUG FORM SUBMIT ===");
-    console.log("Values:", values);
-    console.log("Renstra Aktif:", renstraAktif);
+    console.log('Form submitted!', values);
+    console.log('=== DEBUG FORM SUBMIT ===');
+    console.log('Values:', values);
+    console.log('Renstra Aktif:', renstraAktif);
 
     // Cek berdasarkan renstraAktif?.id (bukan values.renstra_opd_id yang tidak terdaftar di schema)
     if (!renstraAktif?.id) {
-      message.warning("Renstra belum siap, tidak bisa disimpan.");
+      message.warning('Renstra belum siap, tidak bisa disimpan.');
       return;
     }
 
@@ -205,27 +200,21 @@ const SasaranRenstraForm = ({ initialData = null, renstraAktif }) => {
   useEffect(() => {
     if (initialData?.id) return;
     if (renstraAktif?.id) {
-      setValue("renstra_id", renstraAktif.id);
+      setValue('renstra_id', renstraAktif.id);
     }
   }, [initialData?.id, renstraAktif, setValue]);
 
   return (
     <Card
-      title={initialData ? "Edit Sasaran Renstra" : "Tambah Sasaran Renstra"}
+      title={initialData ? 'Edit Sasaran Renstra' : 'Tambah Sasaran Renstra'}
       loading={isLoading}
     >
       <div style={{ marginBottom: 24 }}>
         <Space>
-          <Button
-            icon={<BsArrowLeftCircle />}
-            onClick={() => navigate("/dashboard-renstra")}
-          >
+          <Button icon={<BsArrowLeftCircle />} onClick={() => navigate('/dashboard-renstra')}>
             Kembali ke Dashboard
           </Button>
-          <Button
-            icon={<BsListCheck />}
-            onClick={() => navigate("/renstra/sasaran")}
-          >
+          <Button icon={<BsListCheck />} onClick={() => navigate('/renstra/sasaran')}>
             Lihat Daftar Sasaran
           </Button>
         </Space>
@@ -257,8 +246,8 @@ const SasaranRenstraForm = ({ initialData = null, renstraAktif }) => {
           disabled={!isFormReady || !watchedTujuanId}
           options={sasaranRpjmdOptions.map((item) => ({
             value: String(item.id),
-            label: `${item.kode_sasaran ?? item.nomor ?? ""} - ${
-              item.nama_sasaran ?? item.isi_sasaran ?? ""
+            label: `${item.kode_sasaran ?? item.nomor ?? ''} - ${
+              item.nama_sasaran ?? item.isi_sasaran ?? ''
             }`.trim(),
           }))}
           onChange={handleSasaranRpjmdChange}
@@ -269,7 +258,7 @@ const SasaranRenstraForm = ({ initialData = null, renstraAktif }) => {
           label="Nomor Sasaran"
           control={control}
           errors={errors}
-          disabled
+          disabled={!initialData?.id}
         />
 
         <TextAreaField
@@ -288,7 +277,7 @@ const SasaranRenstraForm = ({ initialData = null, renstraAktif }) => {
             loading={mutation.isLoading}
             disabled={!isFormReady || mutation.isLoading}
           >
-            {initialData ? "Update Sasaran" : "Simpan Sasaran"}
+            {initialData ? 'Update Sasaran' : 'Simpan Sasaran'}
           </Button>
         </div>
       </form>

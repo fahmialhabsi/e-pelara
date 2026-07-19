@@ -8,21 +8,14 @@ const {
   Tujuan,
   Misi,
   OpdPenanggungJawab,
-} = require("../models");
-const { validationResult } = require("express-validator");
-const { Op } = require("sequelize");
-const { getPeriodeFromTahun } = require("../utils/periodeHelper");
-const {
-  successResponse,
-  errorResponse,
-  listResponse,
-} = require("../utils/responseHelper");
-const {
-  recalcKegiatanTotal,
-  recalcProgramTotal,
-} = require("../utils/paguHelper");
-const { ensureClonedOnce } = require("../utils/autoCloneHelper");
-const { logActivity } = require("../services/auditService");
+} = require('../models');
+const { validationResult } = require('express-validator');
+const { Op } = require('sequelize');
+const { getPeriodeFromTahun } = require('../utils/periodeHelper');
+const { successResponse, errorResponse, listResponse } = require('../utils/responseHelper');
+const { recalcKegiatanTotal, recalcProgramTotal } = require('../utils/paguHelper');
+const { ensureClonedOnce } = require('../utils/autoCloneHelper');
+const { logActivity } = require('../services/auditService');
 
 const MAX_PAGE_LIMIT = 100;
 
@@ -31,42 +24,29 @@ const kegiatanController = {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return errorResponse(res, 400, "Validasi gagal", errors.array());
+        return errorResponse(res, 400, 'Validasi gagal', errors.array());
       }
 
-      const {
-        program_id,
-        nama_kegiatan,
-        kode_kegiatan,
-        jenis_dokumen,
-        tahun,
-        pagu_anggaran,
-      } = req.body;
+      const { program_id, nama_kegiatan, kode_kegiatan, jenis_dokumen, tahun, pagu_anggaran } =
+        req.body;
 
       const periode = await getPeriodeFromTahun(tahun);
       if (!periode) {
-        return errorResponse(res, 400, "Periode tidak ditemukan.");
+        return errorResponse(res, 400, 'Periode tidak ditemukan.');
       }
       const periode_id = periode.id;
 
       const program = await Program.findByPk(program_id);
-      if (!program) return errorResponse(res, 404, "Program tidak ditemukan.");
-      if (
-        program.periode_id !== periode_id ||
-        String(program.tahun) !== String(tahun)
-      ) {
-        return errorResponse(
-          res,
-          400,
-          "Program tidak sesuai dengan tahun dan periode.",
-        );
+      if (!program) return errorResponse(res, 404, 'Program tidak ditemukan.');
+      if (program.periode_id !== periode_id || String(program.tahun) !== String(tahun)) {
+        return errorResponse(res, 400, 'Program tidak sesuai dengan tahun dan periode.');
       }
 
       const dupeConditions = [];
       if (kode_kegiatan?.trim()) {
         dupeConditions.push({
           kode_kegiatan: sequelize.where(
-            sequelize.fn("lower", sequelize.col("kode_kegiatan")),
+            sequelize.fn('lower', sequelize.col('kode_kegiatan')),
             kode_kegiatan.trim().toLowerCase(),
           ),
         });
@@ -74,7 +54,7 @@ const kegiatanController = {
       if (nama_kegiatan?.trim()) {
         dupeConditions.push({
           nama_kegiatan: sequelize.where(
-            sequelize.fn("lower", sequelize.col("nama_kegiatan")),
+            sequelize.fn('lower', sequelize.col('nama_kegiatan')),
             nama_kegiatan.trim().toLowerCase(),
           ),
         });
@@ -91,11 +71,7 @@ const kegiatanController = {
         });
 
         if (exist) {
-          return errorResponse(
-            res,
-            409,
-            "Kode atau nama kegiatan sudah digunakan di periode ini.",
-          );
+          return errorResponse(res, 409, 'Kode atau nama kegiatan sudah digunakan di periode ini.');
         }
       }
 
@@ -114,43 +90,25 @@ const kegiatanController = {
       await recalcKegiatanTotal(kegiatan.id);
       await recalcProgramTotal(program.id);
 
-      logActivity(
-        req,
-        "CREATE",
-        "Kegiatan",
-        kegiatan.id,
-        null,
-        kegiatan.toJSON(),
-      );
-      return successResponse(res, 201, "Kegiatan berhasil dibuat", kegiatan);
+      logActivity(req, 'CREATE', 'Kegiatan', kegiatan.id, null, kegiatan.toJSON());
+      return successResponse(res, 201, 'Kegiatan berhasil dibuat', kegiatan);
     } catch (err) {
-      console.error("Error createKegiatan:", err);
-      return errorResponse(res, 500, "Gagal membuat kegiatan", err.message);
+      console.error('Error createKegiatan:', err);
+      return errorResponse(res, 500, 'Gagal membuat kegiatan', err.message);
     }
   },
 
   async list(req, res) {
     try {
-      const {
-        program_id,
-        tahun,
-        jenis_dokumen,
-        page = 1,
-        limit = 20,
-        search = "",
-      } = req.query;
+      const { program_id, tahun, jenis_dokumen, page = 1, limit = 20, search = '' } = req.query;
       if (!tahun || !jenis_dokumen) {
-        return errorResponse(
-          res,
-          400,
-          "Parameter 'tahun' dan 'jenis_dokumen' wajib diisi.",
-        );
+        return errorResponse(res, 400, "Parameter 'tahun' dan 'jenis_dokumen' wajib diisi.");
       }
 
       await ensureClonedOnce(jenis_dokumen, tahun);
       const periode = await getPeriodeFromTahun(tahun);
       if (!periode) {
-        return res.status(400).json({ message: "Periode tidak ditemukan." });
+        return res.status(400).json({ message: 'Periode tidak ditemukan.' });
       }
       const periode_id = periode.id;
 
@@ -167,35 +125,35 @@ const kegiatanController = {
       let rows = await Kegiatan.findAll({
         where,
         attributes: [
-          "id",
-          "kode_kegiatan",
-          "nama_kegiatan",
-          "pagu_anggaran",
-          "total_pagu_anggaran",
-          "program_id",
-          "opd_penanggung_jawab",
-          "bidang_opd_penanggung_jawab",
+          'id',
+          'kode_kegiatan',
+          'nama_kegiatan',
+          'pagu_anggaran',
+          'total_pagu_anggaran',
+          'program_id',
+          'opd_penanggung_jawab',
+          'bidang_opd_penanggung_jawab',
         ],
         include: [
           {
             model: Program,
-            as: "program",
-            attributes: ["id", "kode_program", "nama_program"],
+            as: 'program',
+            attributes: ['id', 'kode_program', 'nama_program', 'bidang_opd_penanggung_jawab'],
             include: [
               {
                 model: Sasaran,
-                as: "sasaran",
-                attributes: ["id", "nomor", "isi_sasaran", "tujuan_id"],
+                as: 'sasaran',
+                attributes: ['id', 'nomor', 'isi_sasaran', 'tujuan_id'],
                 include: [
                   {
                     model: Tujuan,
-                    as: "Tujuan",
-                    attributes: ["id", "no_tujuan", "isi_tujuan", "misi_id"], // tambahkan misi_id
+                    as: 'Tujuan',
+                    attributes: ['id', 'no_tujuan', 'isi_tujuan', 'misi_id'], // tambahkan misi_id
                     include: [
                       {
                         model: Misi,
-                        as: "Misi",
-                        attributes: ["id", "no_misi", "isi_misi"], // tambahkan ini
+                        as: 'Misi',
+                        attributes: ['id', 'no_misi', 'isi_misi'], // tambahkan ini
                       },
                     ],
                   },
@@ -205,33 +163,33 @@ const kegiatanController = {
           },
           {
             model: OpdPenanggungJawab,
-            as: "opd",
-            attributes: ["id", "nama_opd"],
+            as: 'opd',
+            attributes: ['id', 'nama_opd'],
           },
         ],
 
-        order: [["kode_kegiatan", "ASC"]],
+        order: [['kode_kegiatan', 'ASC']],
         limit: safeLimit,
         offset,
       });
       let totalCount = count;
 
-      if (totalCount === 0 && program_id && jenis_dokumen !== "rpjmd") {
+      if (totalCount === 0 && program_id && jenis_dokumen !== 'rpjmd') {
         const selectedProgram = await Program.findByPk(program_id, {
-          attributes: ["id", "kode_program", "jenis_dokumen"],
+          attributes: ['id', 'kode_program', 'jenis_dokumen'],
         });
 
         let fallbackProgramId = null;
-        if (selectedProgram?.jenis_dokumen === "rpjmd") {
+        if (selectedProgram?.jenis_dokumen === 'rpjmd') {
           fallbackProgramId = selectedProgram.id;
         } else if (selectedProgram?.kode_program) {
           const sourceProgram = await Program.findOne({
             where: {
               kode_program: selectedProgram.kode_program,
-              jenis_dokumen: "rpjmd",
+              jenis_dokumen: 'rpjmd',
               tahun,
             },
-            attributes: ["id"],
+            attributes: ['id'],
           });
           fallbackProgramId = sourceProgram?.id || null;
         }
@@ -240,7 +198,7 @@ const kegiatanController = {
           const fallbackWhere = {
             program_id: fallbackProgramId,
             tahun,
-            jenis_dokumen: "rpjmd",
+            jenis_dokumen: 'rpjmd',
           };
           if (search.trim()) {
             fallbackWhere.nama_kegiatan = { [Op.like]: `%${search.trim()}%` };
@@ -250,35 +208,35 @@ const kegiatanController = {
           rows = await Kegiatan.findAll({
             where: fallbackWhere,
             attributes: [
-              "id",
-              "kode_kegiatan",
-              "nama_kegiatan",
-              "pagu_anggaran",
-              "total_pagu_anggaran",
-              "program_id",
-              "opd_penanggung_jawab",
-              "bidang_opd_penanggung_jawab",
+              'id',
+              'kode_kegiatan',
+              'nama_kegiatan',
+              'pagu_anggaran',
+              'total_pagu_anggaran',
+              'program_id',
+              'opd_penanggung_jawab',
+              'bidang_opd_penanggung_jawab',
             ],
             include: [
               {
                 model: Program,
-                as: "program",
-                attributes: ["id", "kode_program", "nama_program"],
+                as: 'program',
+                attributes: ['id', 'kode_program', 'nama_program', 'bidang_opd_penanggung_jawab'],
                 include: [
                   {
                     model: Sasaran,
-                    as: "sasaran",
-                    attributes: ["id", "nomor", "isi_sasaran", "tujuan_id"],
+                    as: 'sasaran',
+                    attributes: ['id', 'nomor', 'isi_sasaran', 'tujuan_id'],
                     include: [
                       {
                         model: Tujuan,
-                        as: "Tujuan",
-                        attributes: ["id", "no_tujuan", "isi_tujuan", "misi_id"],
+                        as: 'Tujuan',
+                        attributes: ['id', 'no_tujuan', 'isi_tujuan', 'misi_id'],
                         include: [
                           {
                             model: Misi,
-                            as: "Misi",
-                            attributes: ["id", "no_misi", "isi_misi"],
+                            as: 'Misi',
+                            attributes: ['id', 'no_misi', 'isi_misi'],
                           },
                         ],
                       },
@@ -288,31 +246,25 @@ const kegiatanController = {
               },
               {
                 model: OpdPenanggungJawab,
-                as: "opd",
-                attributes: ["id", "nama_opd"],
+                as: 'opd',
+                attributes: ['id', 'nama_opd'],
               },
             ],
-            order: [["kode_kegiatan", "ASC"]],
+            order: [['kode_kegiatan', 'ASC']],
             limit: safeLimit,
             offset,
           });
         }
       }
 
-      return listResponse(
-        res,
-        200,
-        "Daftar kegiatan berhasil diambil",
-        rows,
-        {
-          totalItems: totalCount,
-          totalPages: Math.ceil(totalCount / safeLimit),
-          currentPage,
-        }
-      );
+      return listResponse(res, 200, 'Daftar kegiatan berhasil diambil', rows, {
+        totalItems: totalCount,
+        totalPages: Math.ceil(totalCount / safeLimit),
+        currentPage,
+      });
     } catch (err) {
-      console.error("Error list kegiatan:", err);
-      return errorResponse(res, 500, "Gagal mengambil kegiatan", err.message);
+      console.error('Error list kegiatan:', err);
+      return errorResponse(res, 500, 'Gagal mengambil kegiatan', err.message);
     }
   },
 
@@ -320,12 +272,16 @@ const kegiatanController = {
     try {
       const kegiatan = await Kegiatan.findByPk(req.params.id, {
         include: [
-          { model: Program, as: "program" },
-          { model: SubKegiatan, as: "sub_kegiatan" },
+          { model: Program, as: 'program' },
+          { model: SubKegiatan, as: 'sub_kegiatan' },
+          {
+            model: OpdPenanggungJawab,
+            as: 'opd',
+            attributes: ['id', 'nama_opd'],
+          },
         ],
       });
-      if (!kegiatan)
-        return errorResponse(res, 404, "Kegiatan tidak ditemukan.");
+      if (!kegiatan) return errorResponse(res, 404, 'Kegiatan tidak ditemukan.');
 
       let subs = kegiatan.sub_kegiatan;
       if (!subs || subs.length === 0) {
@@ -337,13 +293,13 @@ const kegiatanController = {
         });
       }
 
-      return successResponse(res, 200, "Detail kegiatan", {
+      return successResponse(res, 200, 'Detail kegiatan', {
         ...kegiatan.toJSON(),
         sub_kegiatan: subs,
       });
     } catch (err) {
-      console.error("Error getById kegiatan:", err);
-      return errorResponse(res, 500, "Gagal mengambil kegiatan", err.message);
+      console.error('Error getById kegiatan:', err);
+      return errorResponse(res, 500, 'Gagal mengambil kegiatan', err.message);
     }
   },
 
@@ -351,30 +307,28 @@ const kegiatanController = {
     try {
       const { id } = req.params;
       const program = await Program.findByPk(id);
-      if (!program) return errorResponse(res, 404, "Program tidak ditemukan.");
+      if (!program) return errorResponse(res, 404, 'Program tidak ditemukan.');
 
       const kegiatanList = await Kegiatan.findAll({
         where: { program_id: id },
-        order: [["kode_kegiatan", "ASC"]],
+        order: [['kode_kegiatan', 'ASC']],
         limit: 1000,
       });
 
-      return listResponse(res, 200, "Daftar kegiatan", kegiatanList);
+      return listResponse(res, 200, 'Daftar kegiatan', kegiatanList);
     } catch (err) {
-      console.error("Error getByProgramId:", err);
-      return errorResponse(res, 500, "Gagal mengambil kegiatan", err.message);
+      console.error('Error getByProgramId:', err);
+      return errorResponse(res, 500, 'Gagal mengambil kegiatan', err.message);
     }
   },
 
   async update(req, res) {
     try {
       const errors = validationResult(req);
-      if (!errors.isEmpty())
-        return errorResponse(res, 400, "Validasi gagal", errors.array());
+      if (!errors.isEmpty()) return errorResponse(res, 400, 'Validasi gagal', errors.array());
 
       const kegiatan = await Kegiatan.findByPk(req.params.id);
-      if (!kegiatan)
-        return errorResponse(res, 404, "Kegiatan tidak ditemukan.");
+      if (!kegiatan) return errorResponse(res, 404, 'Kegiatan tidak ditemukan.');
 
       const {
         program_id,
@@ -388,28 +342,21 @@ const kegiatanController = {
 
       const periode = await getPeriodeFromTahun(tahun);
       if (!periode) {
-        return errorResponse(res, 400, "Periode tidak ditemukan.");
+        return errorResponse(res, 400, 'Periode tidak ditemukan.');
       }
       const periode_id = periode.id;
 
       const program = await Program.findByPk(program_id);
-      if (!program) return errorResponse(res, 404, "Program tidak ditemukan.");
-      if (
-        program.periode_id !== periode_id ||
-        String(program.tahun) !== String(tahun)
-      ) {
-        return errorResponse(
-          res,
-          400,
-          "Program tidak sesuai dengan tahun dan periode.",
-        );
+      if (!program) return errorResponse(res, 404, 'Program tidak ditemukan.');
+      if (program.periode_id !== periode_id || String(program.tahun) !== String(tahun)) {
+        return errorResponse(res, 400, 'Program tidak sesuai dengan tahun dan periode.');
       }
 
       const orConditions = [];
       if (kode_kegiatan?.trim()) {
         orConditions.push({
           kode_kegiatan: sequelize.where(
-            sequelize.fn("lower", sequelize.col("kode_kegiatan")),
+            sequelize.fn('lower', sequelize.col('kode_kegiatan')),
             kode_kegiatan.trim().toLowerCase(),
           ),
         });
@@ -417,7 +364,7 @@ const kegiatanController = {
       if (nama_kegiatan?.trim()) {
         orConditions.push({
           nama_kegiatan: sequelize.where(
-            sequelize.fn("lower", sequelize.col("nama_kegiatan")),
+            sequelize.fn('lower', sequelize.col('nama_kegiatan')),
             nama_kegiatan.trim().toLowerCase(),
           ),
         });
@@ -435,11 +382,7 @@ const kegiatanController = {
         });
 
         if (dup) {
-          return errorResponse(
-            res,
-            409,
-            "Kode atau nama kegiatan sudah digunakan di periode ini.",
-          );
+          return errorResponse(res, 409, 'Kode atau nama kegiatan sudah digunakan di periode ini.');
         }
       }
 
@@ -461,31 +404,18 @@ const kegiatanController = {
       await recalcKegiatanTotal(kegiatan.id);
       await recalcProgramTotal(program.id);
 
-      logActivity(
-        req,
-        "UPDATE",
-        "Kegiatan",
-        kegiatan.id,
-        null,
-        kegiatan.toJSON(),
-      );
-      return successResponse(
-        res,
-        200,
-        "Kegiatan berhasil diperbarui",
-        kegiatan,
-      );
+      logActivity(req, 'UPDATE', 'Kegiatan', kegiatan.id, null, kegiatan.toJSON());
+      return successResponse(res, 200, 'Kegiatan berhasil diperbarui', kegiatan);
     } catch (err) {
-      console.error("Error updateKegiatan:", err);
-      return errorResponse(res, 500, "Gagal memperbarui kegiatan", err.message);
+      console.error('Error updateKegiatan:', err);
+      return errorResponse(res, 500, 'Gagal memperbarui kegiatan', err.message);
     }
   },
 
   async destroy(req, res) {
     try {
       const kegiatan = await Kegiatan.findByPk(req.params.id);
-      if (!kegiatan)
-        return errorResponse(res, 404, "Kegiatan tidak ditemukan.");
+      if (!kegiatan) return errorResponse(res, 404, 'Kegiatan tidak ditemukan.');
 
       const childCount = await SubKegiatan.count({
         where: { kegiatan_id: kegiatan.id },
@@ -494,12 +424,12 @@ const kegiatanController = {
         return errorResponse(
           res,
           400,
-          "Tidak bisa menghapus Kegiatan yang masih memiliki Sub Kegiatan. Hapus Sub Kegiatan terlebih dahulu.",
+          'Tidak bisa menghapus Kegiatan yang masih memiliki Sub Kegiatan. Hapus Sub Kegiatan terlebih dahulu.',
         );
       }
 
       const kodeKegiatan = kegiatan.kode_kegiatan;
-      const kodeProgram = kodeKegiatan?.split(".").slice(0, 3).join(".");
+      const kodeProgram = kodeKegiatan?.split('.').slice(0, 3).join('.');
 
       const oldData = kegiatan.toJSON();
       await kegiatan.destroy();
@@ -511,18 +441,11 @@ const kegiatanController = {
         await recalcProgramTotal(kodeProgram);
       }
 
-      logActivity(
-        req,
-        "DELETE",
-        "Kegiatan",
-        parseInt(req.params.id),
-        oldData,
-        null,
-      );
-      return successResponse(res, 200, "Kegiatan berhasil dihapus");
+      logActivity(req, 'DELETE', 'Kegiatan', parseInt(req.params.id), oldData, null);
+      return successResponse(res, 200, 'Kegiatan berhasil dihapus');
     } catch (err) {
-      console.error("Error deleteKegiatan:", err);
-      return errorResponse(res, 500, "Gagal menghapus kegiatan", err.message);
+      console.error('Error deleteKegiatan:', err);
+      return errorResponse(res, 500, 'Gagal menghapus kegiatan', err.message);
     }
   },
 };

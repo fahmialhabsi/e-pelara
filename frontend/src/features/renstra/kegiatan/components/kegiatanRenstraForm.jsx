@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from "react";
-import { Button, Card, Typography, App, Select, Form } from "antd";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from 'react';
+import { Button, Card, Typography, App, Select, Form } from 'antd';
+import { useNavigate } from 'react-router-dom';
 import {
   useKegiatanRenstraForm,
   EMPTY_KEGIATAN_INITIAL_DATA,
-} from "@/hooks/templatesUseRenstra/useKegiatanRenstraForm";
+} from '@/hooks/templatesUseRenstra/useKegiatanRenstraForm';
 
 const { Text } = Typography;
 
@@ -15,7 +15,7 @@ const KegiatanRenstraForm = ({
 }) => {
   const navigate = useNavigate();
   const { message } = App.useApp();
-  const [previewProgram, setPreviewProgram] = useState("");
+  const [previewProgram, setPreviewProgram] = useState('');
 
   const {
     form,
@@ -24,6 +24,7 @@ const KegiatanRenstraForm = ({
     programOptions,
     isLoading,
     kegiatanOptions,
+    bidangOpdOptions,
   } = useKegiatanRenstraForm(initialData, renstraAktif);
 
   const {
@@ -33,17 +34,15 @@ const KegiatanRenstraForm = ({
     formState: { errors },
   } = form;
 
-  const programRenstraId = watch("program_renstra_id");
-  const bidangOpd = watch("bidang_opd");
+  const programRenstraId = watch('program_renstra_id');
+  const bidangOpd = watch('bidang_opd');
 
   useEffect(() => {
     if (!programOptions.length || programRenstraId == null) return;
 
-    const program = programOptions.find(
-      (p) => Number(p.id) === Number(programRenstraId)
-    );
+    const program = programOptions.find((p) => Number(p.id) === Number(programRenstraId));
 
-    setPreviewProgram(program?.nama_program || "");
+    setPreviewProgram(program?.nama_program || '');
   }, [programOptions, programRenstraId]);
 
   if (!renstraAktif) {
@@ -57,18 +56,10 @@ const KegiatanRenstraForm = ({
   if (isLoading) return <div>Loading form...</div>;
 
   return (
-    <Card
-      title={
-        initialData?.id ? "Edit Kegiatan Renstra" : "Tambah Kegiatan Renstra"
-      }
-    >
-      <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
-        <Button onClick={() => navigate("/dashboard-renstra")}>
-          🔙 Kembali
-        </Button>
-        <Button onClick={() => navigate("/renstra/kegiatan")}>
-          📄 Daftar Kegiatan Renstra
-        </Button>
+    <Card title={initialData?.id ? 'Edit Kegiatan Renstra' : 'Tambah Kegiatan Renstra'}>
+      <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+        <Button onClick={() => navigate('/dashboard-renstra')}>🔙 Kembali</Button>
+        <Button onClick={() => navigate('/renstra/kegiatan')}>📄 Daftar Kegiatan Renstra</Button>
       </div>
 
       <form
@@ -81,24 +72,21 @@ const KegiatanRenstraForm = ({
         <Form.Item
           label="Pilih Program Renstra"
           required
-          validateStatus={errors.program_renstra_id ? "error" : ""}
+          validateStatus={errors.program_renstra_id ? 'error' : ''}
           help={errors.program_renstra_id?.message}
         >
           <Select
-            value={
-              programRenstraId != null ? Number(programRenstraId) : undefined
-            }
+            value={programRenstraId != null ? Number(programRenstraId) : undefined}
             onChange={(val) => {
-              setValue(
-                "program_renstra_id",
-                val === undefined ? undefined : Number(val),
-                { shouldDirty: true, shouldValidate: true }
-              );
+              setValue('program_renstra_id', val === undefined ? undefined : Number(val), {
+                shouldDirty: true,
+                shouldValidate: true,
+              });
 
-              setValue("kegiatan_id", undefined);
-              setValue("kode_kegiatan", "");
-              setValue("nama_kegiatan", "");
-              setValue("bidang_opd", "");
+              setValue('kegiatan_id', undefined);
+              setValue('kode_kegiatan', '');
+              setValue('nama_kegiatan', '');
+              setValue('bidang_opd', '');
             }}
             loading={isLoading}
             placeholder="Pilih Program Renstra"
@@ -112,7 +100,7 @@ const KegiatanRenstraForm = ({
         </Form.Item>
 
         {previewProgram && (
-          <Text type="secondary" style={{ marginBottom: 16, display: "block" }}>
+          <Text type="secondary" style={{ marginBottom: 16, display: 'block' }}>
             {previewProgram}
           </Text>
         )}
@@ -120,24 +108,22 @@ const KegiatanRenstraForm = ({
         <Form.Item
           label="Pilih Kegiatan Renstra"
           required
-          validateStatus={errors.kegiatan_id ? "error" : ""}
+          validateStatus={errors.kegiatan_id ? 'error' : ''}
           help={errors.kegiatan_id?.message}
         >
           <Select
-            value={watch("kegiatan_id") || undefined}
+            value={watch('kegiatan_id') || undefined}
             disabled={!programRenstraId}
             onChange={(val) => {
-              const selected = kegiatanOptions.find(
-                (item) => Number(item.id) === Number(val)
-              );
+              const selected = kegiatanOptions.find((item) => Number(item.id) === Number(val));
 
-              setValue("kegiatan_id", Number(val), {
+              setValue('kegiatan_id', Number(val), {
                 shouldDirty: true,
                 shouldValidate: true,
               });
-              setValue("kode_kegiatan", selected?.kode_kegiatan || "");
-              setValue("nama_kegiatan", selected?.nama_kegiatan || "");
-              setValue("bidang_opd", selected?.bidang_opd || "", {
+              setValue('kode_kegiatan', selected?.kode_kegiatan || '');
+              setValue('nama_kegiatan', selected?.nama_kegiatan || '');
+              setValue('bidang_opd', selected?.bidang_opd || '', {
                 shouldDirty: true,
                 shouldValidate: true,
               });
@@ -153,28 +139,34 @@ const KegiatanRenstraForm = ({
         </Form.Item>
 
         <Form.Item label="Bidang Penanggung Jawab">
-          <input
-            type="text"
-            readOnly
-            value={bidangOpd || ""}
-            style={{
-              width: "100%",
-              padding: 8,
-              border: "1px solid #d9d9d9",
-              borderRadius: 4,
-            }}
-          />
+          <Select
+            value={bidangOpd || undefined}
+            onChange={(val) =>
+              setValue('bidang_opd', val, {
+                shouldDirty: true,
+                shouldValidate: true,
+              })
+            }
+            placeholder="Pilih Bidang Penanggung Jawab"
+            allowClear
+          >
+            {bidangOpdOptions.map((b) => (
+              <Select.Option key={b} value={b}>
+                {b}
+              </Select.Option>
+            ))}
+          </Select>
         </Form.Item>
 
-        <input type="hidden" {...form.register("kegiatan_id")} />
-        <input type="hidden" {...form.register("kode_kegiatan")} />
-        <input type="hidden" {...form.register("nama_kegiatan")} />
-        <input type="hidden" {...form.register("bidang_opd")} />
-        <input type="hidden" {...form.register("renstra_id")} />
-        <input type="hidden" {...form.register("program_renstra_id")} />
+        <input type="hidden" {...form.register('kegiatan_id')} />
+        <input type="hidden" {...form.register('kode_kegiatan')} />
+        <input type="hidden" {...form.register('nama_kegiatan')} />
+        <input type="hidden" {...form.register('bidang_opd')} />
+        <input type="hidden" {...form.register('renstra_id')} />
+        <input type="hidden" {...form.register('program_renstra_id')} />
 
         {Object.keys(errors).length > 0 && (
-          <div style={{ color: "red", marginTop: 8 }}>
+          <div style={{ color: 'red', marginTop: 8 }}>
             <strong>Form Error:</strong>
             <ul>
               {Object.entries(errors).map(([field, error]) => (
@@ -188,7 +180,7 @@ const KegiatanRenstraForm = ({
 
         <div style={{ marginTop: 24 }}>
           <Button type="primary" htmlType="submit" loading={isSubmitting}>
-            {initialData?.id ? "Update" : "Simpan"}
+            {initialData?.id ? 'Update' : 'Simpan'}
           </Button>
         </div>
       </form>

@@ -1,19 +1,19 @@
-"use strict";
-const { Tujuan, Misi, Sasaran, Program, OpdPenanggungJawab, sequelize } = require("../models");
-const { ensureClonedOnce } = require("../utils/autoCloneHelper");
-const { Op } = require("sequelize");
-const { getPeriodeFromTahun } = require("../utils/periodeHelper");
-const { listResponse } = require("../utils/responseHelper");
-const path = require("path");
-const fs = require("fs");
-const puppeteer = require("puppeteer");
-const XLSX = require("xlsx");
+'use strict';
+const { Tujuan, Misi, Sasaran, Program, OpdPenanggungJawab, sequelize } = require('../models');
+const { ensureClonedOnce } = require('../utils/autoCloneHelper');
+const { Op } = require('sequelize');
+const { getPeriodeFromTahun } = require('../utils/periodeHelper');
+const { listResponse } = require('../utils/responseHelper');
+const path = require('path');
+const fs = require('fs');
+const puppeteer = require('puppeteer');
+const XLSX = require('xlsx');
 
 // === Utility ===
 
 const validateDokumenTahun = (jenis_dokumen, tahun, res) => {
   if (!jenis_dokumen || !tahun) {
-    res.status(400).json({ message: "jenis_dokumen dan tahun wajib diisi." });
+    res.status(400).json({ message: 'jenis_dokumen dan tahun wajib diisi.' });
     return false;
   }
   return true;
@@ -22,9 +22,7 @@ const validateDokumenTahun = (jenis_dokumen, tahun, res) => {
 const getPeriodeIdWithValidation = async (tahun, res) => {
   const periode = await getPeriodeFromTahun(tahun);
   if (!periode) {
-    res
-      .status(400)
-      .json({ message: `Periode tidak ditemukan untuk tahun ${tahun}.` });
+    res.status(400).json({ message: `Periode tidak ditemukan untuk tahun ${tahun}.` });
     return null;
   }
   return periode.id;
@@ -33,12 +31,10 @@ const getPeriodeIdWithValidation = async (tahun, res) => {
 const getTujuansWithMisi = async (periode_id, jenis_dokumen, tahun) => {
   return Tujuan.findAll({
     where: { periode_id, jenis_dokumen, tahun },
-    include: [
-      { model: Misi, as: "Misi", attributes: ["id", "no_misi", "isi_misi"] },
-    ],
+    include: [{ model: Misi, as: 'Misi', attributes: ['id', 'no_misi', 'isi_misi'] }],
     order: [
-      [{ model: Misi, as: "Misi" }, "no_misi", "ASC"],
-      ["no_tujuan", "ASC"],
+      [{ model: Misi, as: 'Misi' }, 'no_misi', 'ASC'],
+      ['no_tujuan', 'ASC'],
     ],
   });
 };
@@ -55,13 +51,13 @@ const fetchTujuanList = async ({ where, limit, offset }) => {
     include: [
       {
         model: Misi,
-        as: "Misi",
-        attributes: ["id", "no_misi", "isi_misi"],
+        as: 'Misi',
+        attributes: ['id', 'no_misi', 'isi_misi'],
       },
     ],
     order: [
-      [{ model: Misi, as: "Misi" }, "no_misi", "ASC"],
-      ["no_tujuan", "ASC"],
+      [{ model: Misi, as: 'Misi' }, 'no_misi', 'ASC'],
+      ['no_tujuan', 'ASC'],
     ],
     limit,
     offset,
@@ -70,24 +66,12 @@ const fetchTujuanList = async ({ where, limit, offset }) => {
   return { rows, totalItems };
 };
 
-const resolveMisiIdsForDokumen = async ({
-  misiId,
-  jenisDokumen,
-  tahun,
-  periodeId,
-}) => {
+const resolveMisiIdsForDokumen = async ({ misiId, jenisDokumen, tahun, periodeId }) => {
   const parsedMisiId = parseId(misiId);
   if (!parsedMisiId) return [];
 
   const sourceMisi = await Misi.findByPk(parsedMisiId, {
-    attributes: [
-      "id",
-      "no_misi",
-      "isi_misi",
-      "jenis_dokumen",
-      "tahun",
-      "periode_id",
-    ],
+    attributes: ['id', 'no_misi', 'isi_misi', 'jenis_dokumen', 'tahun', 'periode_id'],
   });
 
   if (!sourceMisi) {
@@ -95,16 +79,16 @@ const resolveMisiIdsForDokumen = async ({
   }
 
   const isSameScope =
-    String(sourceMisi.jenis_dokumen || "").toLowerCase() ===
-      String(jenisDokumen || "").toLowerCase() &&
-    String(sourceMisi.tahun || "") === String(tahun) &&
+    String(sourceMisi.jenis_dokumen || '').toLowerCase() ===
+      String(jenisDokumen || '').toLowerCase() &&
+    String(sourceMisi.tahun || '') === String(tahun) &&
     Number(sourceMisi.periode_id || 0) === Number(periodeId || 0);
 
   if (isSameScope) {
     return [sourceMisi.id];
   }
 
-  const usePeriodeFilter = String(jenisDokumen || "").toLowerCase() !== "rpjmd";
+  const usePeriodeFilter = String(jenisDokumen || '').toLowerCase() !== 'rpjmd';
   const byNoMisi = await Misi.findAll({
     where: {
       no_misi: sourceMisi.no_misi,
@@ -112,15 +96,15 @@ const resolveMisiIdsForDokumen = async ({
       tahun: String(tahun),
       ...(usePeriodeFilter ? { periode_id: periodeId } : {}),
     },
-    attributes: ["id"],
-    order: [["id", "ASC"]],
+    attributes: ['id'],
+    order: [['id', 'ASC']],
   });
 
   if (byNoMisi.length) {
     return byNoMisi.map((item) => item.id);
   }
 
-  const isiMisi = String(sourceMisi.isi_misi || "").trim();
+  const isiMisi = String(sourceMisi.isi_misi || '').trim();
   if (isiMisi) {
     const byIsiMisi = await Misi.findAll({
       where: {
@@ -129,8 +113,8 @@ const resolveMisiIdsForDokumen = async ({
         tahun: String(tahun),
         ...(usePeriodeFilter ? { periode_id: periodeId } : {}),
       },
-      attributes: ["id"],
-      order: [["id", "ASC"]],
+      attributes: ['id'],
+      order: [['id', 'ASC']],
     });
 
     if (byIsiMisi.length) {
@@ -151,7 +135,7 @@ async function resolveTujuanIdsForOpd({ opdId, jenisDokumen, tahun, periodeId })
   if (!parsedOpdId) return [];
   if (!Program) return [];
 
-  const normalizedDokumen = String(jenisDokumen || "").toLowerCase();
+  const normalizedDokumen = String(jenisDokumen || '').toLowerCase();
   const parsedTahun = parseInt(String(tahun), 10);
   if (!Number.isFinite(parsedTahun)) return [];
 
@@ -169,7 +153,7 @@ async function resolveTujuanIdsForOpd({ opdId, jenisDokumen, tahun, periodeId })
       { jenis_dokumen: null },
       { jenis_dokumen: normalizedDokumen },
       sequelize.where(
-        sequelize.fn("lower", sequelize.col("Program.jenis_dokumen")),
+        sequelize.fn('lower', sequelize.col('Program.jenis_dokumen')),
         normalizedDokumen,
       ),
     ],
@@ -181,9 +165,9 @@ async function resolveTujuanIdsForOpd({ opdId, jenisDokumen, tahun, periodeId })
     include: [
       {
         model: Sasaran,
-        as: "sasaran",
+        as: 'sasaran',
         required: true,
-        attributes: ["tujuan_id"],
+        attributes: ['tujuan_id'],
         where: sasaranWhere,
       },
     ],
@@ -192,8 +176,8 @@ async function resolveTujuanIdsForOpd({ opdId, jenisDokumen, tahun, periodeId })
 
   const ids = new Set();
   rows.forEach((r) => {
-    const tid = r["sasaran.tujuan_id"];
-    const n = parseInt(String(tid ?? ""), 10);
+    const tid = r['sasaran.tujuan_id'];
+    const n = parseInt(String(tid ?? ''), 10);
     if (Number.isFinite(n) && n > 0) ids.add(n);
   });
 
@@ -207,21 +191,20 @@ const tujuanController = {
     try {
       const { misi_id, jenis_dokumen, tahun, limit, offset, opd_id } = req.query;
       const isSuperAdmin =
-        String(req.user?.role || "")
+        String(req.user?.role || '')
           .trim()
           .toUpperCase()
-          .replace(/\s+/g, "_") === "SUPER_ADMIN";
+          .replace(/\s+/g, '_') === 'SUPER_ADMIN';
 
-      // Untuk halaman Renstra (dropdown Tujuan RPJMD), FE saat ini sering tidak mengirim opd_id.
-      // Default-kan ke OPD user (token) supaya daftar tidak menampilkan semua OPD.
-      const effectiveOpdRaw =
-        opd_id != null &&
-        String(opd_id).trim() !== "" &&
-        String(opd_id).toLowerCase() !== "all"
+      // Tujuan RPJMD bersifat provinsi (bukan per OPD) — jangan filter by opd_id
+      const isRpjmd = String(jenis_dokumen || '').toLowerCase() === 'rpjmd';
+      const effectiveOpdRaw = isRpjmd
+        ? null
+        : opd_id != null && String(opd_id).trim() !== '' && String(opd_id).toLowerCase() !== 'all'
           ? String(opd_id).trim()
           : !isSuperAdmin && req.user?.opd != null
-          ? String(req.user.opd).trim()
-          : null;
+            ? String(req.user.opd).trim()
+            : null;
 
       // Token user menyimpan `opd` sebagai nama OPD (string). Endpoint ini butuh OPD ID numerik
       // (untuk join ke `program.opd_penanggung_jawab`). Jadi, lakukan resolve nama->id bila perlu.
@@ -229,15 +212,13 @@ const tujuanController = {
       if (!resolvedOpdId && effectiveOpdRaw && !isSuperAdmin) {
         const opdRow = await OpdPenanggungJawab.findOne({
           where: { nama_opd: effectiveOpdRaw },
-          attributes: ["id"],
+          attributes: ['id'],
         });
         resolvedOpdId = opdRow ? Number(opdRow.id) : null;
       }
 
       if (!jenis_dokumen || !tahun) {
-        return res
-          .status(400)
-          .json({ message: "jenis_dokumen dan tahun wajib diisi." });
+        return res.status(400).json({ message: 'jenis_dokumen dan tahun wajib diisi.' });
       }
 
       const parsedTahun = parseInt(tahun, 10);
@@ -245,14 +226,14 @@ const tujuanController = {
       const parsedOffset = parseInt(offset, 10) || 0;
 
       if (isNaN(parsedTahun)) {
-        return res.status(400).json({ message: "Tahun tidak valid." });
+        return res.status(400).json({ message: 'Tahun tidak valid.' });
       }
 
       await ensureClonedOnce(jenis_dokumen, parsedTahun);
 
       const periode = await getPeriodeFromTahun(parsedTahun);
       if (!periode) {
-        return res.status(400).json({ message: "Periode tidak ditemukan." });
+        return res.status(400).json({ message: 'Periode tidak ditemukan.' });
       }
 
       const periode_id = periode.id;
@@ -261,11 +242,11 @@ const tujuanController = {
       const where = {
         jenis_dokumen: normalizedDokumen,
         tahun: String(tahun),
-        ...(normalizedDokumen === "rpjmd" ? {} : { periode_id }),
+        ...(normalizedDokumen === 'rpjmd' ? {} : { periode_id }),
       };
 
       const hasMisiFilter =
-        misi_id !== undefined && misi_id !== null && String(misi_id).trim() !== "";
+        misi_id !== undefined && misi_id !== null && String(misi_id).trim() !== '';
       if (hasMisiFilter) {
         const misiIds = await resolveMisiIdsForDokumen({
           misiId: misi_id,
@@ -290,7 +271,7 @@ const tujuanController = {
         });
 
         if (!tujuanIds.length) {
-          return listResponse(res, 200, "Daftar tujuan berhasil diambil", [], {
+          return listResponse(res, 200, 'Daftar tujuan berhasil diambil', [], {
             totalItems: 0,
             limit: parsedLimit,
             offset: parsedOffset,
@@ -302,7 +283,7 @@ const tujuanController = {
         where.id = { [Op.in]: tujuanIds };
       }
 
-      console.log("[tujuan.getAll] params", {
+      console.log('[tujuan.getAll] params', {
         jenis_dokumen,
         tahun,
         misi_id,
@@ -317,15 +298,15 @@ const tujuanController = {
         offset: parsedOffset,
       });
 
-      if (!tujuans.length && !hasOpdFilter && hasMisiFilter && resolvedDokumen !== "rpjmd") {
+      if (!tujuans.length && !hasOpdFilter && hasMisiFilter && resolvedDokumen !== 'rpjmd') {
         const fallbackWhere = {
-          jenis_dokumen: "rpjmd",
+          jenis_dokumen: 'rpjmd',
           tahun: String(tahun),
         };
 
         const fallbackMisiIds = await resolveMisiIdsForDokumen({
           misiId: misi_id,
-          jenisDokumen: "rpjmd",
+          jenisDokumen: 'rpjmd',
           tahun: String(tahun),
           periodeId: periode_id,
         });
@@ -340,20 +321,20 @@ const tujuanController = {
         if (fallbackResult.rows.length) {
           tujuans = fallbackResult.rows;
           totalItems = fallbackResult.totalItems;
-          resolvedDokumen = "rpjmd";
+          resolvedDokumen = 'rpjmd';
         }
       }
 
-      console.log("[tujuan.getAll] count", tujuans.length);
+      console.log('[tujuan.getAll] count', tujuans.length);
 
-      return listResponse(res, 200, "Daftar tujuan berhasil diambil", tujuans, {
+      return listResponse(res, 200, 'Daftar tujuan berhasil diambil', tujuans, {
         totalItems,
         limit: parsedLimit,
         offset: parsedOffset,
         resolvedDokumen,
       });
     } catch (err) {
-      console.error("[tujuan.getAll] error", err);
+      console.error('[tujuan.getAll] error', err);
       return res.status(500).json({ message: err.message });
     }
   },
@@ -364,9 +345,7 @@ const tujuanController = {
       const { tahun, jenis_dokumen, limit, offset } = req.query;
 
       if (!misi_id || !tahun || !jenis_dokumen) {
-        return res
-          .status(400)
-          .json({ message: "Parameter wajib: misi_id, tahun, jenis_dokumen." });
+        return res.status(400).json({ message: 'Parameter wajib: misi_id, tahun, jenis_dokumen.' });
       }
 
       await ensureClonedOnce(jenis_dokumen, tahun);
@@ -381,27 +360,19 @@ const tujuanController = {
       });
       const tujuans = await Tujuan.findAll({
         where: { misi_id, periode_id, jenis_dokumen, tahun },
-        order: [["no_tujuan", "ASC"]],
+        order: [['no_tujuan', 'ASC']],
         limit: pageSize,
         offset: pageOffset,
       });
 
-      return listResponse(
-        res,
-        200,
-        "Daftar tujuan berdasarkan misi berhasil diambil",
-        tujuans,
-        {
-          totalItems,
-          limit: pageSize,
-          offset: pageOffset,
-        }
-      );
+      return listResponse(res, 200, 'Daftar tujuan berdasarkan misi berhasil diambil', tujuans, {
+        totalItems,
+        limit: pageSize,
+        offset: pageOffset,
+      });
     } catch (err) {
-      console.error("Error getByMisi Tujuan:", err);
-      res
-        .status(500)
-        .json({ message: "Gagal mengambil Tujuan", error: err.message });
+      console.error('Error getByMisi Tujuan:', err);
+      res.status(500).json({ message: 'Gagal mengambil Tujuan', error: err.message });
     }
   },
 
@@ -416,32 +387,32 @@ const tujuanController = {
 
       const tujuans = await Tujuan.findAll({
         where: { periode_id, jenis_dokumen, tahun },
-        include: [{ model: Misi, as: "Misi" }],
-        order: [["no_tujuan", "ASC"]],
+        include: [{ model: Misi, as: 'Misi' }],
+        order: [['no_tujuan', 'ASC']],
       });
 
       if (tujuans.length > 1000) {
         return res.status(400).json({
           message:
-            "Jumlah data terlalu banyak untuk diekspor. Gunakan filter atau ekspor sebagian.",
+            'Jumlah data terlalu banyak untuk diekspor. Gunakan filter atau ekspor sebagian.',
         });
       }
 
       const data = [];
 
       data.push({
-        Kode: "",
-        "Uraian Misi & Tujuan": `DAFTAR TUJUAN RPJMD TAHUN ${tahun}`,
+        Kode: '',
+        'Uraian Misi & Tujuan': `DAFTAR TUJUAN RPJMD TAHUN ${tahun}`,
       });
       data.push({});
       data.push({
-        Kode: "",
-        "Uraian Misi & Tujuan": `Dibuat oleh: Badan Perencanaan Dan Pembangunan Daerah`,
+        Kode: '',
+        'Uraian Misi & Tujuan': `Dibuat oleh: Badan Perencanaan Dan Pembangunan Daerah`,
       });
       data.push({});
       data.push({
-        Kode: "Kode",
-        "Uraian Misi & Tujuan": "Uraian Misi & Tujuan",
+        Kode: 'Kode',
+        'Uraian Misi & Tujuan': 'Uraian Misi & Tujuan',
       });
 
       const misiSudah = new Set();
@@ -450,13 +421,13 @@ const tujuanController = {
         if (!misiSudah.has(misi.id)) {
           data.push({
             Kode: misi.no_misi,
-            "Uraian Misi & Tujuan": misi.isi_misi.toUpperCase(),
+            'Uraian Misi & Tujuan': misi.isi_misi.toUpperCase(),
           });
           misiSudah.add(misi.id);
         }
         data.push({
           Kode: no_tujuan,
-          "Uraian Misi & Tujuan": isi_tujuan.trim(),
+          'Uraian Misi & Tujuan': isi_tujuan.trim(),
         });
       }
 
@@ -465,15 +436,13 @@ const tujuanController = {
       XLSX.utils.book_append_sheet(workbook, worksheet, `Tujuan ${tahun}`);
 
       const filename = `tujuan_rpjmd_${tahun}.xlsx`;
-      const filepath = path.join(__dirname, "..", "exports", filename);
+      const filepath = path.join(__dirname, '..', 'exports', filename);
       XLSX.writeFile(workbook, filepath);
 
       res.download(filepath, filename);
     } catch (err) {
-      console.error("Error exportTujuan:", err);
-      res
-        .status(500)
-        .json({ message: "Gagal ekspor Tujuan", error: err.message });
+      console.error('Error exportTujuan:', err);
+      res.status(500).json({ message: 'Gagal ekspor Tujuan', error: err.message });
     }
   },
 
@@ -486,11 +455,7 @@ const tujuanController = {
       const periode_id = await getPeriodeIdWithValidation(tahun, res);
       if (!periode_id) return;
 
-      const tujuans = await getTujuansWithMisi(
-        periode_id,
-        jenis_dokumen,
-        tahun
-      );
+      const tujuans = await getTujuansWithMisi(periode_id, jenis_dokumen, tahun);
 
       let html = `
         <html>
@@ -518,9 +483,7 @@ const tujuanController = {
       const misiSudah = new Set();
       for (const { Misi: misi, no_tujuan, isi_tujuan } of tujuans) {
         if (!misiSudah.has(misi.id)) {
-          html += `<tr><td>${
-            misi.no_misi
-          }</td><td>${misi.isi_misi.toUpperCase()}</td></tr>`;
+          html += `<tr><td>${misi.no_misi}</td><td>${misi.isi_misi.toUpperCase()}</td></tr>`;
           misiSudah.add(misi.id);
         }
         html += `<tr><td>${no_tujuan}</td><td>${isi_tujuan}</td></tr>`;
@@ -534,20 +497,20 @@ const tujuanController = {
         </html>
       `;
 
-      const browser = await puppeteer.launch({ headless: "new" });
+      const browser = await puppeteer.launch({ headless: 'new' });
       const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: "networkidle0" });
-      const pdfBuffer = await page.pdf({ format: "A4", printBackground: true });
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
       await browser.close();
 
       const filename = `tujuan_rpjmd_${tahun}.pdf`;
-      const filepath = path.join(__dirname, "..", "exports", filename);
+      const filepath = path.join(__dirname, '..', 'exports', filename);
       fs.writeFileSync(filepath, pdfBuffer);
 
       res.download(filepath, filename);
     } catch (err) {
-      console.error("Error exportTujuanPdf:", err);
-      res.status(500).json({ message: "Gagal ekspor PDF", error: err.message });
+      console.error('Error exportTujuanPdf:', err);
+      res.status(500).json({ message: 'Gagal ekspor PDF', error: err.message });
     }
   },
 
@@ -555,19 +518,17 @@ const tujuanController = {
     try {
       const { id } = req.params;
       const tujuan = await Tujuan.findByPk(id, {
-        include: [{ model: Misi, as: "Misi" }],
+        include: [{ model: Misi, as: 'Misi' }],
       });
 
       if (!tujuan) {
-        return res.status(404).json({ message: "Tujuan tidak ditemukan." });
+        return res.status(404).json({ message: 'Tujuan tidak ditemukan.' });
       }
 
       res.json(tujuan);
     } catch (err) {
-      console.error("Error getById Tujuan:", err);
-      res
-        .status(500)
-        .json({ message: "Gagal mengambil data Tujuan", error: err.message });
+      console.error('Error getById Tujuan:', err);
+      res.status(500).json({ message: 'Gagal mengambil data Tujuan', error: err.message });
     }
   },
 
@@ -578,7 +539,7 @@ const tujuanController = {
 
       if (!periode_id || !jenis_dokumen || !tahun) {
         return res.status(400).json({
-          message: "periode_id, jenis_dokumen, dan tahun wajib diisi.",
+          message: 'periode_id, jenis_dokumen, dan tahun wajib diisi.',
         });
       }
 
@@ -586,21 +547,14 @@ const tujuanController = {
 
       const tujuans = await Tujuan.findAll({
         where: { periode_id, jenis_dokumen, tahun },
-        include: [{ model: Misi, as: "Misi" }],
-        order: [["no_tujuan", "ASC"]],
+        include: [{ model: Misi, as: 'Misi' }],
+        order: [['no_tujuan', 'ASC']],
       });
 
-      return listResponse(
-        res,
-        200,
-        "Daftar tujuan berdasarkan periode berhasil diambil",
-        tujuans
-      );
+      return listResponse(res, 200, 'Daftar tujuan berdasarkan periode berhasil diambil', tujuans);
     } catch (err) {
-      console.error("Error getByPeriode Tujuan:", err);
-      res
-        .status(500)
-        .json({ message: "Gagal mengambil data Tujuan", error: err.message });
+      console.error('Error getByPeriode Tujuan:', err);
+      res.status(500).json({ message: 'Gagal mengambil data Tujuan', error: err.message });
     }
   },
 
@@ -608,9 +562,7 @@ const tujuanController = {
     try {
       const { misi_id, jenis_dokumen, tahun } = req.query;
       if (!misi_id || !jenis_dokumen || !tahun) {
-        return res
-          .status(400)
-          .json({ message: "misi_id, jenis_dokumen, dan tahun wajib diisi." });
+        return res.status(400).json({ message: 'misi_id, jenis_dokumen, dan tahun wajib diisi.' });
       }
 
       await ensureClonedOnce(jenis_dokumen, tahun);
@@ -619,34 +571,31 @@ const tujuanController = {
 
       const misi = await Misi.findByPk(misi_id);
       if (!misi) {
-        return res.status(404).json({ message: "Misi tidak ditemukan." });
+        return res.status(404).json({ message: 'Misi tidak ditemukan.' });
       }
 
       const lastTujuan = await Tujuan.findOne({
         where: { misi_id, jenis_dokumen, tahun, periode_id },
-        order: [["no_tujuan", "DESC"]],
+        order: [['no_tujuan', 'DESC']],
       });
 
       let nextIndex = 1;
-      if (lastTujuan && typeof lastTujuan.no_tujuan === "string") {
+      if (lastTujuan && typeof lastTujuan.no_tujuan === 'string') {
         const match = lastTujuan.no_tujuan.match(/T\d+-(\d+)/);
         if (match && match[1]) {
           nextIndex = parseInt(match[1], 10) + 1;
         }
       }
 
-      const formattedNo = `T${misi.no_misi}-${String(nextIndex).padStart(
-        2,
-        "0"
-      )}`;
+      const formattedNo = `T${misi.no_misi}-${String(nextIndex).padStart(2, '0')}`;
 
       console.log(`[getNextNo] Misi ${misi_id}, hasil: ${formattedNo}`);
 
       res.json({ no_tujuan: formattedNo });
     } catch (err) {
-      console.error("Error getNextNo Tujuan:", err);
+      console.error('Error getNextNo Tujuan:', err);
       res.status(500).json({
-        message: "Gagal mendapatkan nomor berikutnya",
+        message: 'Gagal mendapatkan nomor berikutnya',
         error: err.message,
       });
     }
@@ -655,18 +604,10 @@ const tujuanController = {
   async create(req, res) {
     const t = await sequelize.transaction();
     try {
-      const { rpjmd_id, misi_id, no_tujuan, isi_tujuan, jenis_dokumen, tahun } =
-        req.body;
+      const { rpjmd_id, misi_id, no_tujuan, isi_tujuan, jenis_dokumen, tahun } = req.body;
 
-      if (
-        !rpjmd_id ||
-        !misi_id ||
-        !no_tujuan ||
-        !isi_tujuan ||
-        !jenis_dokumen ||
-        !tahun
-      ) {
-        return res.status(400).json({ message: "Semua field wajib diisi." });
+      if (!rpjmd_id || !misi_id || !no_tujuan || !isi_tujuan || !jenis_dokumen || !tahun) {
+        return res.status(400).json({ message: 'Semua field wajib diisi.' });
       }
 
       await ensureClonedOnce(jenis_dokumen, tahun);
@@ -700,21 +641,19 @@ const tujuanController = {
           tahun,
           periode_id,
         },
-        { transaction: t }
+        { transaction: t },
       );
 
       await t.commit();
       res.status(201).json({
-        message: "Tujuan berhasil ditambahkan.",
+        message: 'Tujuan berhasil ditambahkan.',
         data: newTujuan,
         no_tujuan: newTujuan.no_tujuan,
       });
     } catch (err) {
       await t.rollback();
-      console.error("Error create Tujuan:", err);
-      res
-        .status(500)
-        .json({ message: "Gagal menambahkan Tujuan", error: err.message });
+      console.error('Error create Tujuan:', err);
+      res.status(500).json({ message: 'Gagal menambahkan Tujuan', error: err.message });
     }
   },
 
@@ -726,7 +665,7 @@ const tujuanController = {
 
       const tujuan = await Tujuan.findByPk(id);
       if (!tujuan) {
-        return res.status(404).json({ message: "Tujuan tidak ditemukan." });
+        return res.status(404).json({ message: 'Tujuan tidak ditemukan.' });
       }
 
       // Validasi data unik selain ID ini
@@ -747,19 +686,14 @@ const tujuanController = {
         });
       }
 
-      await tujuan.update(
-        { misi_id, no_tujuan, isi_tujuan },
-        { transaction: t }
-      );
+      await tujuan.update({ misi_id, no_tujuan, isi_tujuan }, { transaction: t });
 
       await t.commit();
-      res.json({ message: "Tujuan berhasil diperbarui.", data: tujuan });
+      res.json({ message: 'Tujuan berhasil diperbarui.', data: tujuan });
     } catch (err) {
       await t.rollback();
-      console.error("Error update Tujuan:", err);
-      res
-        .status(500)
-        .json({ message: "Gagal memperbarui Tujuan", error: err.message });
+      console.error('Error update Tujuan:', err);
+      res.status(500).json({ message: 'Gagal memperbarui Tujuan', error: err.message });
     }
   },
 
@@ -770,7 +704,7 @@ const tujuanController = {
 
       const tujuan = await Tujuan.findByPk(id);
       if (!tujuan) {
-        return res.status(404).json({ message: "Tujuan tidak ditemukan." });
+        return res.status(404).json({ message: 'Tujuan tidak ditemukan.' });
       }
 
       const relatedSasaran = await Sasaran.findOne({
@@ -778,19 +712,17 @@ const tujuanController = {
       });
       if (relatedSasaran) {
         return res.status(400).json({
-          message: "Tidak bisa menghapus Tujuan yang memiliki Sasaran.",
+          message: 'Tidak bisa menghapus Tujuan yang memiliki Sasaran.',
         });
       }
 
       await tujuan.destroy({ transaction: t });
       await t.commit();
-      res.json({ message: "Tujuan berhasil dihapus." });
+      res.json({ message: 'Tujuan berhasil dihapus.' });
     } catch (err) {
       await t.rollback();
-      console.error("Error delete Tujuan:", err);
-      res
-        .status(500)
-        .json({ message: "Gagal menghapus Tujuan", error: err.message });
+      console.error('Error delete Tujuan:', err);
+      res.status(500).json({ message: 'Gagal menghapus Tujuan', error: err.message });
     }
   },
 };

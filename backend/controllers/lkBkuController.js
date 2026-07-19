@@ -16,6 +16,8 @@ const {
   nominalJurnal,
 } = require("../services/bkuJurnalService");
 const { syncSpjDariSigap } = require("../services/sigapSpjSyncService");
+const { recalcDpaRealisasi } = require("../services/dpaRealisasiRollupService");
+const { recalcLkDispang } = require("../services/lkDispangRollupService");
 
 function bulanDariTanggal(tanggal) {
   return parseInt(String(tanggal).slice(5, 7), 10) || 1;
@@ -278,7 +280,21 @@ exports.syncSigap = async (req, res) => {
     const tahun = Number(req.body.tahun_anggaran || req.query.tahun_anggaran);
     if (!tahun) return res.status(400).json({ message: "tahun_anggaran wajib" });
     const hasil = await syncSpjDariSigap(sequelize, db, tahun);
-    res.json({ data: hasil });
+    const rollupDpa = await recalcDpaRealisasi(db, tahun);
+    const rollupLkDispang = await recalcLkDispang(db, tahun);
+    res.json({ data: hasil, rollup_dpa: rollupDpa, rollup_lk_dispang: rollupLkDispang });
+  } catch (e) {
+    res.status(500).json({ message: e.message });
+  }
+};
+
+exports.recalcRollup = async (req, res) => {
+  try {
+    const tahun = Number(req.body.tahun_anggaran || req.query.tahun_anggaran);
+    if (!tahun) return res.status(400).json({ message: "tahun_anggaran wajib" });
+    const rollupDpa = await recalcDpaRealisasi(db, tahun);
+    const rollupLkDispang = await recalcLkDispang(db, tahun);
+    res.json({ rollup_dpa: rollupDpa, rollup_lk_dispang: rollupLkDispang });
   } catch (e) {
     res.status(500).json({ message: e.message });
   }

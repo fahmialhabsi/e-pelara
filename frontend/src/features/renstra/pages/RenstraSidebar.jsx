@@ -1,54 +1,62 @@
 // src/features/renstra/components/RenstraSidebar.jsx
-import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import { Card, Accordion, Spinner, Alert } from "react-bootstrap";
-import api from "../../../services/api";
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { Card, Accordion, Spinner, Alert } from 'react-bootstrap';
+import api from '../../../services/api';
 
 const babList = [
-  { nomor: "I", title: "Pendahuluan" },
-  { nomor: "II", title: "Gambaran Umum Dinas Pangan" },
-  { nomor: "III", title: "Permasalahan & Isu Strategis" },
-  { nomor: "IV", title: "Tujuan & Sasaran" },
-  { nomor: "V", title: "Strategi & Kebijakan" },
-  { nomor: "VI", title: "Program & Kegiatan" },
-  { nomor: "VII", title: "Indikator Kinerja" },
-  { nomor: "VIII", title: "Penutup" },
+  { nomor: 'I', title: 'Pendahuluan' },
+  { nomor: 'II', title: 'Gambaran Umum Dinas Pangan' },
+  { nomor: 'III', title: 'Permasalahan & Isu Strategis' },
+  { nomor: 'IV', title: 'Tujuan & Sasaran' },
+  { nomor: 'V', title: 'Strategi & Kebijakan' },
+  { nomor: 'VI', title: 'Program & Kegiatan' },
+  { nomor: 'VII', title: 'Indikator Kinerja' },
+  { nomor: 'VIII', title: 'Penutup' },
 ];
 
 const inputActions = [
-  { label: "Tujuan", to: "/renstra/tujuan/add", className: "btn-primary" },
-  { label: "Sasaran", to: "/renstra/sasaran/add", className: "btn-info" },
-  { label: "Strategi", to: "/renstra/strategi/add", className: "btn-warning" },
-  { label: "Kebijakan", to: "/renstra/kebijakan/add", className: "btn-danger" },
-  { label: "Program", to: "/renstra/program/add", className: "btn-secondary" },
-  { label: "Kegiatan", to: "/renstra/kegiatan/add", className: "btn-dark" },
+  { label: 'Tujuan', to: '/renstra/tujuan/add', className: 'btn-primary' },
+  { label: 'Sasaran', to: '/renstra/sasaran/add', className: 'btn-info' },
+  { label: 'Strategi', to: '/renstra/strategi/add', className: 'btn-warning' },
+  { label: 'Kebijakan', to: '/renstra/kebijakan/add', className: 'btn-danger' },
+  { label: 'Program', to: '/renstra/program/add', className: 'btn-secondary' },
+  { label: 'Kegiatan', to: '/renstra/kegiatan/add', className: 'btn-dark' },
   {
-    label: "Sub Kegiatan",
-    to: "/renstra/subkegiatan/add",
-    className: "btn-outline-secondary",
+    label: 'Sub Kegiatan',
+    to: '/renstra/subkegiatan/add',
+    className: 'btn-outline-secondary',
   },
   {
-    label: "Indikator",
-    to: "/renstra/indikator-umum/add",
-    className: "btn-outline-primary",
+    label: 'Indikator',
+    to: '/renstra/indikator',
+    className: 'btn-outline-primary',
+    submenu: [
+      { label: '📋 Semua Indikator', to: '/renstra/indikator' },
+      { label: 'Indikator Tujuan', to: '/renstra/indikator/tujuan' },
+      { label: 'Indikator Sasaran', to: '/renstra/indikator/sasaran' },
+      { label: 'Indikator Program', to: '/renstra/indikator/program' },
+      { label: 'Indikator Kegiatan', to: '/renstra/indikator/kegiatan' },
+      { label: 'Indikator Sub Kegiatan', to: '/renstra/indikator/subkegiatan' },
+    ],
   },
 ];
 
-const STORAGE_KEY = "renstraAccordionOpen";
+const STORAGE_KEY = 'renstraAccordionOpen';
 
 const defaultBidangList = [
-  "Sekretariat",
-  "Bidang Ketersediaan dan Kerawanan Pangan",
-  "Bidang Distribusi dan Cadangan Pangan",
-  "Bidang Konsumsi dan Keamanan Pangan",
-  "Balai Pengawasan Mutu Pangan",
+  'Sekretariat',
+  'Bidang Ketersediaan dan Kerawanan Pangan',
+  'Bidang Distribusi dan Cadangan Pangan',
+  'Bidang Konsumsi dan Keamanan Pangan',
+  'Balai Pengawasan Mutu Pangan',
 ];
 
 const RenstraSidebar = () => {
-  const [activeKeys, setActiveKeys] = useState(["0"]);
+  const [activeKeys, setActiveKeys] = useState(['0']);
   const [bidangList, setBidangList] = useState(defaultBidangList);
   const [loadingBidang, setLoadingBidang] = useState(true);
-  const [errorBidang, setErrorBidang] = useState("");
+  const [errorBidang, setErrorBidang] = useState('');
 
   // Load state accordion dari localStorage
   useEffect(() => {
@@ -82,11 +90,11 @@ const RenstraSidebar = () => {
     const loadBidang = async () => {
       try {
         // Ambil Renstra aktif untuk mendapatkan nama_opd sebagai filter
-        const renstraRes = await api.get("/renstra-opd/aktif");
+        const renstraRes = await api.get('/renstra-opd/aktif');
         const namaOpd = renstraRes.data?.data?.nama_opd || null;
 
         // Ambil daftar OPD / bidang lalu filter hanya milik OPD ini
-        const opdRes = await api.get("/opd-penanggung-jawab");
+        const opdRes = await api.get('/opd-penanggung-jawab');
         if (!isMounted) return;
 
         const allData = opdRes.data?.data || [];
@@ -94,9 +102,7 @@ const RenstraSidebar = () => {
           ? allData.filter(
               (item) =>
                 item.nama_opd === namaOpd ||
-                (item.nama_opd || "").toLowerCase().includes(
-                  (namaOpd || "").toLowerCase()
-                )
+                (item.nama_opd || '').toLowerCase().includes((namaOpd || '').toLowerCase()),
             )
           : allData;
 
@@ -109,8 +115,8 @@ const RenstraSidebar = () => {
         }
         // jika kosong setelah filter, defaultBidangList tetap dipakai
       } catch (err) {
-        console.error("Gagal memuat bidang OPD:", err);
-        if (isMounted) setErrorBidang("Gagal memuat daftar bidang dari server.");
+        console.error('Gagal memuat bidang OPD:', err);
+        if (isMounted) setErrorBidang('Gagal memuat daftar bidang dari server.');
       } finally {
         if (isMounted) setLoadingBidang(false);
       }
@@ -130,9 +136,7 @@ const RenstraSidebar = () => {
           <Accordion activeKey={activeKeys} alwaysOpen flush>
             {/* BAB RENSTRA */}
             <Accordion.Item eventKey="0">
-              <Accordion.Header onClick={() => handleToggle("0")}>
-                BAB RENSTRA
-              </Accordion.Header>
+              <Accordion.Header onClick={() => handleToggle('0')}>BAB RENSTRA</Accordion.Header>
               <Accordion.Body>
                 <ul className="mb-0 ps-3">
                   {babList.map((bab) => (
@@ -148,30 +152,70 @@ const RenstraSidebar = () => {
 
             {/* Aksi Input */}
             <Accordion.Item eventKey="1">
-              <Accordion.Header onClick={() => handleToggle("1")}>
+              <Accordion.Header onClick={() => handleToggle('1')}>
                 Aksi Input Data Renstra
               </Accordion.Header>
               <Accordion.Body>
                 <small className="text-muted d-block mb-2">
-                  Input entitas: Tujuan, Sasaran, Strategi, Kebijakan, Program, Kegiatan, Sub Kegiatan
+                  Input entitas: Tujuan, Sasaran, Strategi, Kebijakan, Program, Kegiatan, Sub
+                  Kegiatan
                 </small>
                 <div className="d-flex flex-wrap gap-2">
-                  {inputActions.map((act, idx) => (
-                    <Link
-                      key={idx}
-                      to={act.to}
-                      className={`btn btn-sm ${act.className}`}
-                    >
-                      {act.label}
-                    </Link>
-                  ))}
+                  {inputActions.map((act, idx) =>
+                    act.submenu ? (
+                      <div key={idx} style={{ position: 'relative' }}>
+                        <button
+                          className={`btn btn-sm ${act.className} dropdown-toggle`}
+                          onClick={(e) => {
+                            const menu = e.currentTarget.nextSibling;
+                            menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+                          }}
+                        >
+                          {act.label}
+                        </button>
+                        <ul
+                          style={{
+                            display: 'none',
+                            position: 'absolute',
+                            zIndex: 1000,
+                            background: '#fff',
+                            border: '1px solid #ccc',
+                            padding: '4px 0',
+                            minWidth: '180px',
+                            listStyle: 'none',
+                            margin: 0,
+                          }}
+                        >
+                          {act.submenu.map((sub, i) => (
+                            <li key={i}>
+                              <Link
+                                to={sub.to}
+                                style={{
+                                  padding: '6px 12px',
+                                  display: 'block',
+                                  color: '#333',
+                                  textDecoration: 'none',
+                                }}
+                              >
+                                {sub.label}
+                              </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      <Link key={idx} to={act.to} className={`btn btn-sm ${act.className}`}>
+                        {act.label}
+                      </Link>
+                    ),
+                  )}
                 </div>
               </Accordion.Body>
             </Accordion.Item>
 
             {/* Input Tabel Renstra */}
             <Accordion.Item eventKey="5">
-              <Accordion.Header onClick={() => handleToggle("5")}>
+              <Accordion.Header onClick={() => handleToggle('5')}>
                 Input Tabel Renstra
               </Accordion.Header>
               <Accordion.Body>
@@ -179,41 +223,23 @@ const RenstraSidebar = () => {
                   Isi tabel dokumen Renstra per entitas
                 </small>
                 <div className="d-flex flex-column gap-2">
-                  <Link
-                    to="/renstra/tabel/tujuan"
-                    className="btn btn-outline-primary btn-sm"
-                  >
+                  <Link to="/renstra/tabel/tujuan" className="btn btn-outline-primary btn-sm">
                     Tabel Tujuan
                   </Link>
-                  <Link
-                    to="/renstra/tabel/sasaran"
-                    className="btn btn-outline-success btn-sm"
-                  >
+                  <Link to="/renstra/tabel/sasaran" className="btn btn-outline-success btn-sm">
                     Tabel Sasaran
                   </Link>
-                  <Link
-                    to="/renstra/tabel/strategi"
-                    className="btn btn-outline-dark btn-sm"
-                  >
+                  <Link to="/renstra/tabel/strategi" className="btn btn-outline-dark btn-sm">
                     Tabel Strategi
                   </Link>
 
-                  <Link
-                    to="/renstra/tabel/arah-kebijakan"
-                    className="btn btn-outline-dark btn-sm"
-                  >
+                  <Link to="/renstra/tabel/arah-kebijakan" className="btn btn-outline-dark btn-sm">
                     Tabel Arah Kebijakan
                   </Link>
-                  <Link
-                    to="/renstra/tabel/program"
-                    className="btn btn-outline-warning btn-sm"
-                  >
+                  <Link to="/renstra/tabel/program" className="btn btn-outline-warning btn-sm">
                     Tabel Program
                   </Link>
-                  <Link
-                    to="/renstra/tabel/kegiatan"
-                    className="btn btn-outline-info btn-sm"
-                  >
+                  <Link to="/renstra/tabel/kegiatan" className="btn btn-outline-info btn-sm">
                     Tabel Kegiatan
                   </Link>
                   <Link
@@ -222,7 +248,7 @@ const RenstraSidebar = () => {
                   >
                     Tabel Sub Kegiatan
                   </Link>
-                  
+
                   <Link
                     to="/renstra/tabel/prioritas/nasional"
                     className="btn btn-outline-danger btn-sm"
@@ -238,7 +264,7 @@ const RenstraSidebar = () => {
                   <Link
                     to="/renstra/tabel/prioritas/gubernur"
                     className="btn btn-outline-purple btn-sm"
-                    style={{ borderColor: "#6f42c1", color: "#6f42c1" }}
+                    style={{ borderColor: '#6f42c1', color: '#6f42c1' }}
                   >
                     Prioritas Gubernur
                   </Link>
@@ -248,9 +274,7 @@ const RenstraSidebar = () => {
 
             {/* Target Renstra */}
             <Accordion.Item eventKey="4">
-              <Accordion.Header onClick={() => handleToggle("4")}>
-                Target Renstra
-              </Accordion.Header>
+              <Accordion.Header onClick={() => handleToggle('4')}>Target Renstra</Accordion.Header>
               <Accordion.Body>
                 <div className="d-flex flex-column gap-2">
                   <Link
@@ -271,21 +295,15 @@ const RenstraSidebar = () => {
 
             {/* Manajemen Dokumen Renstra */}
             <Accordion.Item eventKey="2">
-              <Accordion.Header onClick={() => handleToggle("2")}>
+              <Accordion.Header onClick={() => handleToggle('2')}>
                 Manajemen Dokumen Renstra
               </Accordion.Header>
               <Accordion.Body>
                 <div className="d-flex flex-column gap-2">
-                  <Link
-                    to="/renstra-opd"
-                    className="btn btn-outline-primary btn-sm"
-                  >
+                  <Link to="/renstra-opd" className="btn btn-outline-primary btn-sm">
                     M027 - Daftar Renstra
                   </Link>
-                  <Link
-                    to="/renstra-opd/new"
-                    className="btn btn-outline-success btn-sm"
-                  >
+                  <Link to="/renstra-opd/new" className="btn btn-outline-success btn-sm">
                     Setup / Aktifkan Renstra OPD
                   </Link>
                 </div>
@@ -294,7 +312,7 @@ const RenstraSidebar = () => {
 
             {/* Bidang Dinas Pangan */}
             <Accordion.Item eventKey="3">
-              <Accordion.Header onClick={() => handleToggle("3")}>
+              <Accordion.Header onClick={() => handleToggle('3')}>
                 Bidang Dinas Pangan
               </Accordion.Header>
               <Accordion.Body>

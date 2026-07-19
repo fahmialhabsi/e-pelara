@@ -1,19 +1,10 @@
 // src/features/renstra/sasaran/pages/sasaranRenstraListPage.jsx
-import React from "react";
-import {
-  App,
-  Table,
-  Button,
-  Popconfirm,
-  Spin,
-  Alert,
-  Empty,
-  Space,
-} from "antd";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
-import api from "@/services/api";
-import { BsPencil, BsTrash, BsPlus, BsArrowLeftCircle } from "react-icons/bs";
+import React from 'react';
+import { App, Table, Button, Popconfirm, Spin, Alert, Empty, Space } from 'antd';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import api from '@/services/api';
+import { BsPencil, BsTrash, BsPlus, BsArrowLeftCircle } from 'react-icons/bs';
 
 const SasaranRenstraListPage = () => {
   const { message } = App.useApp();
@@ -22,9 +13,9 @@ const SasaranRenstraListPage = () => {
 
   // Ambil data dari server → langsung return array
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["renstra-sasaran"],
+    queryKey: ['renstra-sasaran'],
     queryFn: async () => {
-      const res = await api.get("/renstra-sasaran");
+      const res = await api.get('/renstra-sasaran');
       return res.data?.data || []; // ⬅️ hanya array yang dikembalikan
     },
   });
@@ -33,30 +24,19 @@ const SasaranRenstraListPage = () => {
   const deleteMutation = useMutation({
     mutationFn: (id) => api.delete(`/renstra-sasaran/${id}`),
     onSuccess: () => {
-      message.success("Data sasaran berhasil dihapus");
-      queryClient.invalidateQueries({ queryKey: ["renstra-sasaran"] });
+      message.success('Data sasaran berhasil dihapus');
+      queryClient.invalidateQueries({ queryKey: ['renstra-sasaran'] });
     },
     onError: (err) => {
-      message.error(err?.response?.data?.message || "Gagal menghapus data");
+      message.error(err?.response?.data?.message || 'Gagal menghapus data');
     },
   });
 
   // Kolom tabel
   const columns = [
     {
-      title: "Sasaran Renstra",
-      key: "sasaran_renstra",
-      render: (_, record) => (
-        <pre
-          style={{ margin: 0, fontFamily: "inherit", whiteSpace: "pre-wrap" }}
-        >
-          <strong>{record.nomor}</strong> - {record.isi_sasaran}
-        </pre>
-      ),
-    },
-    {
-      title: "Sasaran RPJMD Terkait",
-      key: "sasaran_rpjmd",
+      title: 'Sasaran RPJMD Terkait',
+      key: 'sasaran_rpjmd',
       render: (_, record) => {
         if (record.no_rpjmd && record.isi_sasaran_rpjmd) {
           return (
@@ -65,14 +45,23 @@ const SasaranRenstraListPage = () => {
             </div>
           );
         }
-        return <span style={{ color: "gray" }}>Tidak ada</span>;
+        return <span style={{ color: 'gray' }}>Tidak ada</span>;
       },
     },
     {
-      title: "Aksi",
-      key: "aksi",
+      title: 'Sasaran Renstra',
+      key: 'sasaran_renstra',
+      render: (_, record) => (
+        <pre style={{ margin: 0, fontFamily: 'inherit', whiteSpace: 'pre-wrap' }}>
+          <strong>{record.nomor}</strong> - {record.isi_sasaran}
+        </pre>
+      ),
+    },
+    {
+      title: 'Aksi',
+      key: 'aksi',
       width: 120,
-      align: "center",
+      align: 'center',
       render: (_, record) => (
         <Space>
           <Button
@@ -87,12 +76,7 @@ const SasaranRenstraListPage = () => {
             okText="Ya, Hapus"
             cancelText="Batal"
           >
-            <Button
-              type="link"
-              danger
-              icon={<BsTrash />}
-              loading={deleteMutation.isLoading}
-            />
+            <Button type="link" danger icon={<BsTrash />} loading={deleteMutation.isLoading} />
           </Popconfirm>
         </Space>
       ),
@@ -110,8 +94,7 @@ const SasaranRenstraListPage = () => {
       <Alert
         message="Gagal Memuat Data"
         description={
-          error?.response?.data?.message ||
-          "Terjadi kesalahan saat mengambil data dari server."
+          error?.response?.data?.message || 'Terjadi kesalahan saat mengambil data dari server.'
         }
         type="error"
         showIcon
@@ -125,25 +108,18 @@ const SasaranRenstraListPage = () => {
     <div style={{ padding: 24 }}>
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
+          display: 'flex',
+          justifyContent: 'space-between',
           marginBottom: 16,
-          alignItems: "center",
+          alignItems: 'center',
         }}
       >
         <h2>Daftar Sasaran Renstra</h2>
         <Space>
-          <Button
-            icon={<BsArrowLeftCircle />}
-            onClick={() => navigate("/dashboard-renstra")}
-          >
+          <Button icon={<BsArrowLeftCircle />} onClick={() => navigate('/dashboard-renstra')}>
             Kembali ke Dashboard
           </Button>
-          <Button
-            type="primary"
-            icon={<BsPlus />}
-            onClick={() => navigate("/renstra/sasaran/add")}
-          >
+          <Button type="primary" icon={<BsPlus />} onClick={() => navigate('/renstra/sasaran/add')}>
             Tambah Sasaran
           </Button>
         </Space>

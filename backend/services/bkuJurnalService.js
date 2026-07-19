@@ -2,6 +2,7 @@
 
 const { Op } = require("sequelize");
 const { applyJournalPostingWithTransaction } = require("./lkSaldoService");
+const { resolveKodeAkunBasFromRekening } = require("./kodeRekeningBasMappingService");
 
 const AKUN_KAS = "1.1.01.02";
 const AKUN_EKUITAS = "3.1.01";
@@ -109,10 +110,21 @@ async function buildBarisJurnal(bku, models, t) {
       akun = bku.kode_akun;
       if (!akun) throw new Error("kode_akun wajib diisi untuk jenis pengeluaran ini");
     }
-    const kab = await models.KodeAkunBas.findOne({
+    let kab = await models.KodeAkunBas.findOne({
       where: { kode: akun, aktif: true },
       transaction: t,
     });
+    if (!kab) {
+      // akun mungkin berupa kode_rekening APBD (mis. dari SPJ SIGAP), bukan kode BAS langsung
+      const mapped = resolveKodeAkunBasFromRekening(akun);
+      if (mapped) {
+        kab = await models.KodeAkunBas.findOne({
+          where: { kode: mapped, aktif: true },
+          transaction: t,
+        });
+        if (kab) akun = mapped;
+      }
+    }
     if (!kab) throw new Error(`Kode akun BAS tidak ditemukan: ${akun}`);
     const base = {
       kode_akun: akun,

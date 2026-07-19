@@ -25,6 +25,7 @@ const selectStyles = {
     color: state.isSelected ? 'white' : '#111827',
   }),
   placeholder: (base) => ({ ...base, color: '#9ca3af', fontSize: '0.875rem' }),
+  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
 };
 
 const initialState = {
@@ -81,6 +82,7 @@ export default function MasterRekeningCascading({
   disabled = false,
   required = false,
   datasetKey = 'kepmendagri_provinsi_900_2024',
+  allowedKodeProgram = [],
 }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const {
@@ -101,14 +103,32 @@ export default function MasterRekeningCascading({
     api
       .get('/master-program', { params: { dataset_key: datasetKey } })
       .then((res) => {
-        if (!cancelled)
-          dispatch({ type: 'SET_PROGRAMS', payload: (res.data?.data || []).map(toOption) });
+        let items = res.data?.data || [];
+        if (allowedKodeProgram && allowedKodeProgram.length > 0) {
+          items = items.filter((p) =>
+            allowedKodeProgram.some((kode) => (p.kode_program_full || '').startsWith(kode)),
+          );
+        }
+        // Deduplikasi berdasarkan kode_program_full, ambil id terkecil
+        const seen = new Set();
+        items = items.filter((p) => {
+          const kode = p.kode_program_full || '';
+          if (seen.has(kode)) return false;
+          seen.add(kode);
+          return true;
+        });
+
+        if (!cancelled) dispatch({ type: 'SET_PROGRAMS', payload: items.map(toOption) });
       })
       .catch(console.error);
     return () => {
       cancelled = true;
     };
-  }, [datasetKey]);
+  }, [datasetKey, allowedKodeProgram]);
+
+  useEffect(() => {
+    dispatch({ type: 'SELECT_PROGRAM', payload: null });
+  }, [allowedKodeProgram]);
 
   useEffect(() => {
     if (!selectedProgram) return;
@@ -185,6 +205,8 @@ export default function MasterRekeningCascading({
           noOptionsMessage={() => 'Tidak ada data'}
           loadingMessage={() => 'Memuat...'}
           styles={selectStyles}
+          menuPortalTarget={document.body}
+          menuPosition="fixed"
           isClearable
         />
         {selectedProgram && <p style={hintStyle}>Kode: {selectedProgram.raw?.kode_program_full}</p>}
@@ -204,6 +226,8 @@ export default function MasterRekeningCascading({
           noOptionsMessage={() => 'Tidak ada data'}
           loadingMessage={() => 'Memuat...'}
           styles={selectStyles}
+          menuPortalTarget={document.body}
+          menuPosition="fixed"
           isClearable
         />
         {selectedKegiatan && (
@@ -227,6 +251,8 @@ export default function MasterRekeningCascading({
           noOptionsMessage={() => 'Tidak ada data'}
           loadingMessage={() => 'Memuat...'}
           styles={selectStyles}
+          menuPortalTarget={document.body}
+          menuPosition="fixed"
           isClearable
         />
         {selectedSubKegiatan && (

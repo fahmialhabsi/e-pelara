@@ -54,6 +54,7 @@ router.get("/bku/cetak/:tahun/:bulan", allowRoles(LK_READ), bku.cetak);
 router.get("/bku/up/:tahun", allowRoles(LK_READ), bku.listUp);
 router.post("/bku/up", allowRoles(LK_WRITE), bku.createUp);
 router.post("/bku/sync-sigap", allowRoles(LK_WRITE), bku.syncSigap);
+router.post("/bku/recalc-rollup", allowRoles(LK_WRITE), bku.recalcRollup);
 router.post("/bku/preview-jurnal", allowRoles(LK_READ), bku.previewJurnal);
 router.get("/bku/rekonsiliasi/:tahun/:bulan", allowRoles(LK_READ), bku.rekonsiliasiKas);
 router.get("/bku", allowRoles(LK_READ), bku.list);

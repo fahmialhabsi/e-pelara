@@ -26,6 +26,20 @@ router.get(
 );
 
 router.get(
+  '/program-by-kode',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  controller.getIndikatorProgramByKode,
+);
+
+router.get(
+  '/kegiatan-by-kode',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  controller.getIndikatorKegiatanByKode,
+);
+
+router.get(
   '/indikatorkegiatans',
   verifyToken,
   allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
@@ -46,6 +60,12 @@ router.get(
   controller.validateHierarchy,
 );
 
+router.get(
+  '/rkpd-cascading',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  controller.getRkpdCascading,
+);
 // Endpoint 1: Untuk mengambil data dropdown cascading berdasarkan parent level struktural
 router.get(
   '/cascading/list',

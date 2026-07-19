@@ -20,6 +20,7 @@ const {
   RenjaRkpdItemMap,
   RkpdItem,
   PerangkatDaerah,
+  PerangkatDaerahOpdMapping,
   PlanningLineItemChangeLog,
   PlanningAuditEvent,
   RPJMD,
@@ -75,6 +76,27 @@ async function referensiBuatDokumen(req, res) {
         attributes: ['id', 'nama', 'kode', 'is_test'],
       }),
     ]);
+    // Auto-sync: buat renstra_pd_dokumen dari renstra_opd jika belum ada
+    if (renstraPdDokumen.length === 0 && periodeId) {
+      const { RenstraOPD, PerangkatDaerah: PD } = require('../models');
+      const renstraOpds = await RenstraOPD.findAll({ where: { rpjmd_id: periodeId, is_aktif: 1 } });
+      for (const ro of renstraOpds) {
+        const pd = await PD.findOne({ where: { id: 3, is_test: false } });
+        if (pd) {
+          const [rec] = await RenstraPdDokumen.findOrCreate({
+            where: { renstra_opd_id: ro.id, periode_id: periodeId },
+            defaults: {
+              judul: `Renstra ${ro.nama_opd} ${ro.tahun_mulai}-${ro.tahun_akhir}`,
+              status: 'final',
+              is_final_active: true,
+              perangkat_daerah_id: pd.id,
+              is_test: false,
+            },
+          });
+          renstraPdDokumen.push(rec);
+        }
+      }
+    }
     const filtered = filterReferensiBuatDokumenRenja(
       { rkpdDokumen, renstraPdDokumen, perangkatDaerah },
       { includeTest },
@@ -130,11 +152,22 @@ async function listDokumen(req, res) {
     const includeTest =
       req.query.include_test === '1' ||
       String(req.query.include_test ?? '').toLowerCase() === 'true';
-    const where = {};
+    const where = { deleted_at: null };
     if (req.query.tahun) where.tahun = Number(req.query.tahun);
     if (req.query.periode_id) where.periode_id = Number(req.query.periode_id);
     if (req.query.perangkat_daerah_id) {
       where.perangkat_daerah_id = Number(req.query.perangkat_daerah_id);
+    } else if (req.query.opd_penanggung_jawab_id) {
+      const { PerangkatDaerahOpdMapping } = require('../models');
+      const mapping = await PerangkatDaerahOpdMapping.findOne({
+        where: { opd_penanggung_jawab_id: Number(req.query.opd_penanggung_jawab_id) },
+        attributes: ['perangkat_daerah_id'],
+      });
+      if (mapping?.perangkat_daerah_id) {
+        where.perangkat_daerah_id = mapping.perangkat_daerah_id;
+      } else {
+        return res.json({ success: true, data: [] });
+      }
     }
     if (req.query.status) where.status = req.query.status;
     if (!includeTest) where.is_test = false;
@@ -149,6 +182,7 @@ async function listDokumen(req, res) {
         { model: PeriodeRpjmd, as: 'periode', required: false },
         { model: RkpdDokumen, as: 'rkpdDokumen', required: false },
         { model: RenstraPdDokumen, as: 'renstraPdDokumen', required: false },
+        { model: PerangkatDaerah, as: 'perangkatDaerah', required: false },
       ],
     });
     return res.json({ success: true, data: rows });
@@ -169,6 +203,8 @@ async function getDokumenById(req, res) {
           model: RenjaItem,
           as: 'items',
           required: false,
+          separate: true,
+          order: [['sub_kegiatan', 'ASC']],
           include: [{ model: RenjaRkpdItemMap, as: 'rkpdLink', required: false }],
         },
       ],
@@ -438,28 +474,121 @@ async function getDokumenAudit(req, res) {
 async function listItem(req, res) {
   try {
     const where = {};
+
     if (req.query.renja_dokumen_id) {
       where.renja_dokumen_id = Number(req.query.renja_dokumen_id);
+    } else if (req.query.perangkat_daerah_id) {
+      // ===================================================
+      // Mapping OPD Penanggung Jawab -> Perangkat Daerah
+      // ===================================================
+      let perangkatDaerahId = Number(req.query.perangkat_daerah_id);
+
+      const mapping = await PerangkatDaerahOpdMapping.findOne({
+        where: {
+          opd_penanggung_jawab_id: perangkatDaerahId,
+        },
+      });
+
+      if (mapping) {
+        perangkatDaerahId = mapping.perangkat_daerah_id;
+      }
+
+      console.log(
+        '[RENJA ITEM] OPD =',
+        req.query.perangkat_daerah_id,
+        '-> PD =',
+        perangkatDaerahId,
+      );
+
+      // ===================================================
+      // Cari Dokumen Renja Aktif
+      // ===================================================
+      const dokAktif = await RenjaDokumen.findOne({
+        where: {
+          perangkat_daerah_id: perangkatDaerahId,
+          workflow_status: 'approved',
+          is_final_active: true,
+          deleted_at: null,
+        },
+        order: [
+          ['versi', 'DESC'],
+          ['id', 'DESC'],
+        ],
+        attributes: ['id'],
+      });
+
+      if (!dokAktif) {
+        console.log('[RENJA ITEM] Dokumen approved tidak ditemukan untuk PD', perangkatDaerahId);
+
+        return res.json({
+          success: true,
+          data: [],
+        });
+      }
+
+      console.log('[RENJA ITEM] Dokumen aktif =', dokAktif.id);
+
+      where.renja_dokumen_id = dokAktif.id;
     }
+
     const rows = await RenjaItem.findAll({
       where,
       order: [
         ['renja_dokumen_id', 'ASC'],
-        ['urutan', 'ASC'],
+        ['sub_kegiatan', 'ASC'],
         ['id', 'ASC'],
       ],
       include: [
-        { model: RenjaDokumen, as: 'renjaDokumen', required: false },
-        { model: RenjaRkpdItemMap, as: 'rkpdLink', required: false },
+        {
+          model: RenjaDokumen,
+          as: 'renjaDokumen',
+          required: false,
+        },
+        {
+          model: RenjaRkpdItemMap,
+          as: 'rkpdLink',
+          required: false,
+        },
       ],
     });
-    return res.json({ success: true, data: rows });
+
+    // ===================================================
+    // DEBUG
+    // ===================================================
+    console.log('========== RENJA ITEM UNTUK RKA ==========');
+
+    console.table(
+      rows.map((r) => ({
+        id: r.id,
+        kode_program: r.kode_program,
+        program: r.program,
+        kode_kegiatan: r.kode_kegiatan,
+        kegiatan: r.kegiatan,
+        kode_sub_kegiatan: r.kode_sub_kegiatan,
+        sub_kegiatan: r.sub_kegiatan,
+      })),
+    );
+
+    console.log('Jumlah Item =', rows.length);
+    console.log('==========================================');
+    if (rows.length) {
+      console.log('===== FIELD RENJA ITEM =====');
+      console.log(Object.keys(rows[0].toJSON()));
+      console.log(rows[0].toJSON());
+    }
+
+    return res.json({
+      success: true,
+      data: rows,
+    });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ success: false, message: e.message });
+    return res.status(500).json({
+      success: false,
+      message: e.message,
+    });
   }
 }
-
 async function createItem(req, res) {
   const t = await sequelize.transaction();
   try {

@@ -1,11 +1,15 @@
-import { useReducer, useEffect, useCallback } from 'react';
+// frontend/src/shared/components/MasterBelanjaCascading.jsx
+import { useReducer, useEffect, useCallback, useRef } from 'react';
 import Select from 'react-select';
 import api from '../../services/api';
 
 const toOption = (item) => ({
-  value: item.kode_rekening,
-  label: `${item.kode_rekening} - ${item.uraian}`,
-  raw: item,
+  value: String(item.kode_rekening).replace(/\.$/, ''),
+  label: `${String(item.kode_rekening).replace(/\.$/, '')} - ${item.uraian}`,
+  raw: {
+    ...item,
+    kode_rekening: String(item.kode_rekening).replace(/\.$/, ''),
+  },
 });
 
 const selectStyles = {
@@ -70,15 +74,20 @@ function reducer(state, action) {
     case 'SELECT_AKUN':
       return {
         ...state,
+
         selectedAkun: action.payload,
-        selectedKelompok: null,
-        selectedJenis: null,
-        selectedObjek: null,
-        selectedRincian: null,
-        kelompokList: [],
-        jenisList: [],
-        objekList: [],
-        rincianList: [],
+
+        selectedKelompok: action.keepChildren ? state.selectedKelompok : null,
+        selectedJenis: action.keepChildren ? state.selectedJenis : null,
+        selectedObjek: action.keepChildren ? state.selectedObjek : null,
+        selectedRincian: action.keepChildren ? state.selectedRincian : null,
+        selectedSubRincian: action.keepChildren ? state.selectedSubRincian : null,
+
+        kelompokList: action.keepChildren ? state.kelompokList : [],
+        jenisList: action.keepChildren ? state.jenisList : [],
+        objekList: action.keepChildren ? state.objekList : [],
+        rincianList: action.keepChildren ? state.rincianList : [],
+        subRincianList: action.keepChildren ? state.subRincianList : [],
       };
 
     case 'SET_KELOMPOK':
@@ -87,13 +96,18 @@ function reducer(state, action) {
     case 'SELECT_KELOMPOK':
       return {
         ...state,
+
         selectedKelompok: action.payload,
-        selectedJenis: null,
-        selectedObjek: null,
-        selectedRincian: null,
-        jenisList: [],
-        objekList: [],
-        rincianList: [],
+
+        selectedJenis: action.keepChildren ? state.selectedJenis : null,
+        selectedObjek: action.keepChildren ? state.selectedObjek : null,
+        selectedRincian: action.keepChildren ? state.selectedRincian : null,
+        selectedSubRincian: action.keepChildren ? state.selectedSubRincian : null,
+
+        jenisList: action.keepChildren ? state.jenisList : [],
+        objekList: action.keepChildren ? state.objekList : [],
+        rincianList: action.keepChildren ? state.rincianList : [],
+        subRincianList: action.keepChildren ? state.subRincianList : [],
       };
 
     case 'SET_JENIS':
@@ -102,18 +116,33 @@ function reducer(state, action) {
     case 'SELECT_JENIS':
       return {
         ...state,
+
         selectedJenis: action.payload,
-        selectedObjek: null,
-        selectedRincian: null,
-        objekList: [],
-        rincianList: [],
+
+        selectedObjek: action.keepChildren ? state.selectedObjek : null,
+        selectedRincian: action.keepChildren ? state.selectedRincian : null,
+        selectedSubRincian: action.keepChildren ? state.selectedSubRincian : null,
+
+        objekList: action.keepChildren ? state.objekList : [],
+        rincianList: action.keepChildren ? state.rincianList : [],
+        subRincianList: action.keepChildren ? state.subRincianList : [],
       };
 
     case 'SET_OBJEK':
       return { ...state, objekList: action.payload, loadingObjek: false };
 
     case 'SELECT_OBJEK':
-      return { ...state, selectedObjek: action.payload, selectedRincian: null, rincianList: [] };
+      return {
+        ...state,
+
+        selectedObjek: action.payload,
+
+        selectedRincian: action.keepChildren ? state.selectedRincian : null,
+        selectedSubRincian: action.keepChildren ? state.selectedSubRincian : null,
+
+        rincianList: action.keepChildren ? state.rincianList : [],
+        subRincianList: action.keepChildren ? state.subRincianList : [],
+      };
 
     case 'SET_RINCIAN':
       return { ...state, rincianList: action.payload, loadingRincian: false };
@@ -128,9 +157,12 @@ function reducer(state, action) {
     case 'SELECT_RINCIAN':
       return {
         ...state,
+
         selectedRincian: action.payload,
-        selectedSubRincian: null,
-        subRincianList: [],
+
+        selectedSubRincian: action.keepChildren ? state.selectedSubRincian : null,
+
+        subRincianList: action.keepChildren ? state.subRincianList : [],
       };
 
     case 'SELECT_SUB_RINCIAN':
@@ -144,6 +176,16 @@ function reducer(state, action) {
   }
 }
 
+async function fetchChildren(parentKode) {
+  const res = await api.get('/master-kode-rekening-belanja', {
+    params: {
+      parent_kode: parentKode,
+    },
+  });
+
+  return (res.data?.data || []).map(toOption);
+}
+
 export default function MasterBelanjaCascading({
   value = null,
   onChange,
@@ -151,10 +193,127 @@ export default function MasterBelanjaCascading({
   required = false,
 }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const preloadRef = useRef(false);
 
-  useEffect(() => {
-    console.log('MasterBelanja value:', value);
-  }, [value]);
+  const preloadHierarchy = useCallback(async (kodeRekening) => {
+    if (!kodeRekening) return;
+
+    preloadRef.current = true;
+
+    try {
+      const parts = String(kodeRekening).split('.');
+
+      const kode = [];
+
+      for (let i = 1; i <= parts.length; i++) {
+        kode.push(parts.slice(0, i).join('.').replace(/\.$/, ''));
+      }
+
+      //
+      // AKUN
+      //
+      const akun = await fetchChildren(null);
+
+      console.table(
+        akun.map((x) => ({
+          value: x.value,
+          label: x.label,
+        })),
+      );
+
+      dispatch({
+        type: 'SET_AKUN',
+        payload: akun,
+      });
+
+      dispatch({
+        type: 'SELECT_AKUN',
+        payload: akun.find((x) => x.value === kode[0]) || null,
+        keepChildren: true,
+      });
+
+      //
+      // KELOMPOK
+      //
+      const kelompok = await fetchChildren(kode[0]);
+
+      dispatch({
+        type: 'SET_KELOMPOK',
+        payload: kelompok,
+      });
+
+      dispatch({
+        type: 'SELECT_KELOMPOK',
+        payload: kelompok.find((x) => x.value === kode[1]) || null,
+        keepChildren: true,
+      });
+
+      //
+      // JENIS
+      //
+      const jenis = await fetchChildren(kode[1]);
+
+      dispatch({
+        type: 'SET_JENIS',
+        payload: jenis,
+      });
+
+      dispatch({
+        type: 'SELECT_JENIS',
+        payload: jenis.find((x) => x.value === kode[2]) || null,
+        keepChildren: true,
+      });
+
+      //
+      // OBJEK
+      //
+      const objek = await fetchChildren(kode[2]);
+
+      dispatch({
+        type: 'SET_OBJEK',
+        payload: objek,
+      });
+
+      dispatch({
+        type: 'SELECT_OBJEK',
+        payload: objek.find((x) => x.value === kode[3]) || null,
+        keepChildren: true,
+      });
+
+      //
+      // RINCIAN
+      //
+      const rincian = await fetchChildren(kode[3]);
+
+      dispatch({
+        type: 'SET_RINCIAN',
+        payload: rincian,
+      });
+
+      dispatch({
+        type: 'SELECT_RINCIAN',
+        payload: rincian.find((x) => x.value === kode[4]) || null,
+        keepChildren: true,
+      });
+
+      //
+      // SUB RINCIAN
+      //
+      const sub = await fetchChildren(kode[4]);
+
+      dispatch({
+        type: 'SET_SUB_RINCIAN',
+        payload: sub,
+      });
+
+      dispatch({
+        type: 'SELECT_SUB_RINCIAN',
+        payload: sub.find((x) => x.value === kode[5]) || null,
+      });
+    } finally {
+      preloadRef.current = false;
+    }
+  }, []);
 
   const {
     akunList,
@@ -179,46 +338,80 @@ export default function MasterBelanjaCascading({
     loadingSubRincian,
   } = state;
 
+  const lastKodeRef = useRef(null);
+
   useEffect(() => {
     if (!value) return;
 
-    console.log('PRELOAD RINCIAN', value);
+    let kode = null;
 
-    if (Array.isArray(value) && value.length > 0) {
-      const first = value[0];
-
-      console.log('Kode rekening existing:', first.kode_rekening);
+    if (Array.isArray(value)) {
+      const first = value.find((x) => !x.is_group);
+      kode = first?.kode_rekening;
+    } else {
+      kode = value.kode_rekening;
     }
-  }, [value]);
+
+    if (!kode) return;
+
+    if (lastKodeRef.current === kode) return;
+
+    lastKodeRef.current = kode;
+
+    preloadHierarchy(kode);
+  }, [value, preloadHierarchy]);
 
   // Level 1 — Akun
   useEffect(() => {
+    if (value) return;
+
     let cancelled = false;
+
     dispatch({ type: 'LOADING_AKUN' });
+
     api
       .get('/master-kode-rekening-belanja')
       .then((res) => {
-        if (!cancelled)
-          dispatch({ type: 'SET_AKUN', payload: (res.data?.data || []).map(toOption) });
+        if (!cancelled) {
+          dispatch({
+            type: 'SET_AKUN',
+            payload: (res.data?.data || []).map(toOption),
+          });
+        }
       })
       .catch(console.error);
+
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [value]);
 
   // Level 2 — Kelompok
   useEffect(() => {
     if (!selectedAkun) return;
+
+    if (preloadRef.current) return;
+
     let cancelled = false;
+
     dispatch({ type: 'LOADING_KELOMPOK' });
+
     api
-      .get('/master-kode-rekening-belanja', { params: { parent_kode: selectedAkun.value } })
+      .get('/master-kode-rekening-belanja', {
+        params: {
+          parent_kode: selectedAkun.value,
+        },
+      })
       .then((res) => {
-        if (!cancelled)
-          dispatch({ type: 'SET_KELOMPOK', payload: (res.data?.data || []).map(toOption) });
+        if (!cancelled) {
+          dispatch({
+            type: 'SET_KELOMPOK',
+            payload: (res.data?.data || []).map(toOption),
+          });
+        }
       })
       .catch(console.error);
+
     return () => {
       cancelled = true;
     };
@@ -227,6 +420,7 @@ export default function MasterBelanjaCascading({
   // Level 3 — Jenis
   useEffect(() => {
     if (!selectedKelompok) return;
+    if (preloadRef.current) return;
     let cancelled = false;
     dispatch({ type: 'LOADING_JENIS' });
     api
@@ -244,6 +438,7 @@ export default function MasterBelanjaCascading({
   // Level 4 — Objek
   useEffect(() => {
     if (!selectedJenis) return;
+    if (preloadRef.current) return;
     let cancelled = false;
     dispatch({ type: 'LOADING_OBJEK' });
     api
@@ -261,6 +456,7 @@ export default function MasterBelanjaCascading({
   // Level 5 — Rincian
   useEffect(() => {
     if (!selectedObjek) return;
+    if (preloadRef.current) return;
     let cancelled = false;
     dispatch({ type: 'LOADING_RINCIAN' });
     api
@@ -278,7 +474,7 @@ export default function MasterBelanjaCascading({
   // Level 6 — Sub Rincian
   useEffect(() => {
     if (!selectedRincian) return;
-
+    if (preloadRef.current) return;
     let cancelled = false;
 
     dispatch({ type: 'LOADING_SUB_RINCIAN' });
@@ -305,6 +501,7 @@ export default function MasterBelanjaCascading({
   // Notify parent
   useEffect(() => {
     if (!onChange) return;
+
     onChange({
       akun: selectedAkun?.raw || null,
       kelompok: selectedKelompok?.raw || null,
@@ -323,21 +520,53 @@ export default function MasterBelanjaCascading({
     selectedSubRincian,
   ]);
 
-  const handleAkun = useCallback((opt) => dispatch({ type: 'SELECT_AKUN', payload: opt }), []);
-  const handleKelompok = useCallback(
-    (opt) => dispatch({ type: 'SELECT_KELOMPOK', payload: opt }),
-    [],
-  );
-  const handleJenis = useCallback((opt) => dispatch({ type: 'SELECT_JENIS', payload: opt }), []);
-  const handleObjek = useCallback((opt) => dispatch({ type: 'SELECT_OBJEK', payload: opt }), []);
-  const handleRincian = useCallback(
-    (opt) => dispatch({ type: 'SELECT_RINCIAN', payload: opt }),
-    [],
-  );
-  const handleSubRincian = useCallback(
-    (opt) => dispatch({ type: 'SELECT_SUB_RINCIAN', payload: opt }),
-    [],
-  );
+  const handleAkun = useCallback((opt) => {
+    dispatch({
+      type: 'SELECT_AKUN',
+      payload: opt,
+      keepChildren: false,
+    });
+  }, []);
+
+  const handleKelompok = useCallback((opt) => {
+    dispatch({
+      type: 'SELECT_KELOMPOK',
+      payload: opt,
+      keepChildren: false,
+    });
+  }, []);
+
+  const handleJenis = useCallback((opt) => {
+    dispatch({
+      type: 'SELECT_JENIS',
+      payload: opt,
+      keepChildren: false,
+    });
+  }, []);
+
+  const handleObjek = useCallback((opt) => {
+    dispatch({
+      type: 'SELECT_OBJEK',
+      payload: opt,
+      keepChildren: false,
+    });
+  }, []);
+
+  const handleRincian = useCallback((opt) => {
+    dispatch({
+      type: 'SELECT_RINCIAN',
+      payload: opt,
+      keepChildren: false,
+    });
+  }, []);
+
+  const handleSubRincian = useCallback((opt) => {
+    dispatch({
+      type: 'SELECT_SUB_RINCIAN',
+      payload: opt,
+      keepChildren: false,
+    });
+  }, []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>

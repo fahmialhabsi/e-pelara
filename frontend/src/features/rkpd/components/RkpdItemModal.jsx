@@ -42,6 +42,7 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
   const [form, setForm] = useState(emptyForm);
   const [reasonText, setReasonText] = useState('');
   const [reasonFile, setReasonFile] = useState('');
+  const [renstraTahunMulai, setRenstraTahunMulai] = useState(2025);
 
   // Cascading lists
   const [programList, setProgramList] = useState([]);
@@ -64,8 +65,16 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
   useEffect(() => {
     if (!show || !doc) return;
 
+    api
+      .get('/renstra-opd/aktif')
+      .then((res) => {
+        const tahunMulai =
+          res.data?.data?.tahun_mulai || res.data?.tahun_mulai || Number(doc?.tahun || 0) - 1;
+        setRenstraTahunMulai(Number(tahunMulai));
+      })
+      .catch(() => {});
     fetchList('/prioritas-daerah', {
-      jenis_dokumen: 'rkpd',
+      jenis_dokumen: 'rpjmd',
       tahun: resolvedTahun,
     }).then(setPrioritasDaerahList);
 
@@ -131,14 +140,23 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
       return;
     }
     setLoadingSub(true);
-    fetchList('/sub-kegiatan', {
-      kegiatan_id: form.kegiatan_id,
-      jenis_dokumen: 'rpjmd',
-      tahun: resolvedTahun,
-    }).then((data) => {
-      setSubKegiatanList(data);
+    // Cari renstra_kegiatan berdasarkan kode_kegiatan
+    const kegiatanSelected = kegiatanList.find((k) => String(k.id) === String(form.kegiatan_id));
+    const kodeKegiatan = kegiatanSelected?.kode_kegiatan || '';
+    if (!kodeKegiatan) {
       setLoadingSub(false);
-    });
+      return;
+    }
+    api
+      .get('/indikator-renstra/rkpd-cascading', {
+        params: { stage: 'sub_kegiatan', kode_kegiatan: kodeKegiatan, renstra_id: 1 },
+      })
+      .then((res) => {
+        const subs = Array.isArray(res.data?.subs) ? res.data.subs : [];
+        setSubKegiatanList(subs);
+        setLoadingSub(false);
+      })
+      .catch(() => setLoadingSub(false));
   }, [form.kegiatan_id]);
 
   // Load indikator saat sub kegiatan dipilih
@@ -147,10 +165,22 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
       setIndikatorList([]);
       return;
     }
-    fetchList('/indikator-renstra', {
-      stage: 'sub_kegiatan',
-      ref_id: form.sub_kegiatan_id,
-    }).then(setIndikatorList);
+    api
+      .get('/renstra-opd/aktif')
+      .then((res) => {
+        const renstraId = res.data?.data?.id || res.data?.id || 1;
+        fetchList('/indikator-renstra', {
+          stage: 'sub_kegiatan',
+          ref_id: form.sub_kegiatan_id,
+          renstra_id: renstraId,
+        }).then(setIndikatorList);
+      })
+      .catch(() => {
+        fetchList('/indikator-renstra', {
+          stage: 'sub_kegiatan',
+          ref_id: form.sub_kegiatan_id,
+        }).then(setIndikatorList);
+      });
   }, [form.sub_kegiatan_id]);
 
   const handleProgramChange = (e) => {
@@ -210,13 +240,31 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
   const handleIndikatorChange = (e) => {
     const id = e.target.value;
     const selected = indikatorList.find((i) => String(i.id) === id);
+    console.log('[DEBUG] indikator selected:', selected);
+    console.log('[DEBUG] doc.tahun:', doc?.tahun, 'renstraTahunMulai:', renstraTahunMulai);
     if (selected) {
+      const tahunRkpd = Number(doc?.tahun || 0);
+      const idx = tahunRkpd - renstraTahunMulai + 1;
+      console.log(
+        '[DEBUG] idx:',
+        idx,
+        'tIdx:',
+        Math.max(1, Math.min(6, idx >= 1 && idx <= 6 ? idx : 1)),
+      );
+      console.log('[DEBUG] selected keys:', Object.keys(selected));
+      console.log(
+        '[DEBUG] target_tahun_2:',
+        selected.target_tahun_2,
+        'pagu_tahun_2:',
+        selected.pagu_tahun_2,
+      );
+      const tIdx = idx >= 1 && idx <= 6 ? idx : Math.max(1, Math.min(6, idx));
       setForm((prev) => ({
         ...prev,
         indikator: selected.nama_indikator || '',
         satuan: selected.satuan || '',
-        target: selected.target_tahun_1 || '',
-        pagu: selected.pagu_cached || selected.pagu_tahun_1 || '',
+        target: selected[`target_tahun_${tIdx}`] || '',
+        pagu: selected[`pagu_tahun_${tIdx}`] || selected.pagu_cached || '',
       }));
     }
   };
@@ -400,33 +448,37 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
             </Form.Group>
           </Col>
 
-          {/* Alasan */}
-          <Col xs={12}>
-            <Form.Group>
-              <Form.Label className="small fw-semibold">
-                Alasan perubahan <span className="text-muted">(wajib salah satu)</span>
-              </Form.Label>
-              <Form.Control
-                as="textarea"
-                rows={2}
-                size="sm"
-                value={reasonText}
-                onChange={(e) => setReasonText(e.target.value)}
-                placeholder="Tuliskan alasan..."
-              />
-            </Form.Group>
-          </Col>
-          <Col xs={12}>
-            <Form.Group>
-              <Form.Label className="small fw-semibold">Referensi berkas</Form.Label>
-              <Form.Control
-                size="sm"
-                value={reasonFile}
-                onChange={(e) => setReasonFile(e.target.value)}
-                placeholder="path / URL / nama berkas"
-              />
-            </Form.Group>
-          </Col>
+          {/* Alasan — hanya wajib/tampil saat Edit (perubahan data), bukan saat Tambah baru */}
+          {editingItem && (
+            <>
+              <Col xs={12}>
+                <Form.Group>
+                  <Form.Label className="small fw-semibold">
+                    Alasan perubahan <span className="text-muted">(wajib salah satu)</span>
+                  </Form.Label>
+                  <Form.Control
+                    as="textarea"
+                    rows={2}
+                    size="sm"
+                    value={reasonText}
+                    onChange={(e) => setReasonText(e.target.value)}
+                    placeholder="Tuliskan alasan..."
+                  />
+                </Form.Group>
+              </Col>
+              <Col xs={12}>
+                <Form.Group>
+                  <Form.Label className="small fw-semibold">Referensi berkas</Form.Label>
+                  <Form.Control
+                    size="sm"
+                    value={reasonFile}
+                    onChange={(e) => setReasonFile(e.target.value)}
+                    placeholder="path / URL / nama berkas"
+                  />
+                </Form.Group>
+              </Col>
+            </>
+          )}
         </Row>
       </Modal.Body>
       <Modal.Footer>

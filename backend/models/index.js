@@ -1,44 +1,37 @@
-"use strict";
-const fs = require("fs");
-const path = require("path");
-const Sequelize = require("sequelize");
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const Sequelize = require('sequelize');
 const basename = path.basename(__filename);
-const env = process.env.NODE_ENV || "development";
-const config = require(__dirname + "/../config/config.json")[env];
+const env = process.env.NODE_ENV || 'development';
+const config = require(__dirname + '/../config/config.json')[env];
 const db = {};
 
 const MODEL_ALIASES = Object.freeze({
   // Canonical: PeriodeRpjmd (periodeModel.js)
-  RpjmdPeriode: "PeriodeRpjmd",
+  RpjmdPeriode: 'PeriodeRpjmd',
 });
 
 let sequelize;
 if (config.use_env_variable) {
   sequelize = new Sequelize(process.env[config.use_env_variable], config);
 } else {
-  sequelize = new Sequelize(
-    config.database,
-    config.username,
-    config.password,
-    config
-  );
+  sequelize = new Sequelize(config.database, config.username, config.password, config);
 }
 
-const MODEL_SKIP_FILES = new Set([
-  "mrAssociations.js",
-]);
+const MODEL_SKIP_FILES = new Set(['mrAssociations.js']);
 
 // Load all model files automatically
 fs.readdirSync(__dirname)
   .filter((file) => {
-      return (
-        file.indexOf(".") !== 0 &&
-        file !== basename &&
-        file.slice(-3) === ".js" &&
-        !file.endsWith(".test.js") &&
-        !MODEL_SKIP_FILES.has(file)
-      );
-    })
+    return (
+      file.indexOf('.') !== 0 &&
+      file !== basename &&
+      file.slice(-3) === '.js' &&
+      !file.endsWith('.test.js') &&
+      !MODEL_SKIP_FILES.has(file)
+    );
+  })
   .forEach((file) => {
     const mod = require(path.join(__dirname, file));
     const candidate = mod && mod.default ? mod.default : mod;
@@ -60,12 +53,12 @@ fs.readdirSync(__dirname)
     }
 
     // Case 3: factory function klasik (sequelize, DataTypes) => model
-    if (typeof candidate === "function") {
+    if (typeof candidate === 'function') {
       // Jangan panggil jika itu class Model (akan throw "Class constructor ... cannot be invoked without 'new'")
       const isClassLike = /^\s*class\s/.test(candidate.toString());
       if (isClassLike) {
         console.warn(
-          `[models/index] Lewati file ${file} karena export adalah class tanpa factory wrapper`
+          `[models/index] Lewati file ${file} karena export adalah class tanpa factory wrapper`,
         );
         return;
       }
@@ -76,12 +69,10 @@ fs.readdirSync(__dirname)
       return;
     }
 
-    console.warn(
-      `[models/index] Lewati file ${file} karena export bukan function/model`
-    );
+    console.warn(`[models/index] Lewati file ${file} karena export bukan function/model`);
   });
 
-console.log("Registered models:", Object.keys(db));
+console.log('Registered models:', Object.keys(db));
 
 // Normalisasi alias model agar tidak ada registry planning ganda/ambigu.
 Object.entries(MODEL_ALIASES).forEach(([aliasName, canonicalName]) => {
@@ -101,41 +92,56 @@ uniqueModels.forEach((model) => {
   if (model.associate) model.associate(db);
 });
 
+db.DpaPergeseran.hasMany(db.DpaPergeseranItem, {
+  foreignKey: 'pergeseran_id',
+  as: 'items',
+});
+db.DpaPergeseranItem.belongsTo(db.DpaPergeseran, {
+  foreignKey: 'pergeseran_id',
+  as: 'pergeseran',
+});
+
+db.DpaPerubahan.hasMany(db.DpaPerubahanItem, {
+  foreignKey: 'perubahan_id',
+  as: 'items',
+});
+db.DpaPerubahanItem.belongsTo(db.DpaPerubahan, {
+  foreignKey: 'perubahan_id',
+  as: 'perubahan',
+});
+
 if (db.RpjmdSyncJob && db.RpjmdSyncJobItem && db.RpjmdSyncAuditLog) {
   db.RpjmdSyncJob.hasMany(db.RpjmdSyncJobItem, {
-    as: "items",
-    foreignKey: "job_id",
+    as: 'items',
+    foreignKey: 'job_id',
   });
-
   db.RpjmdSyncJobItem.belongsTo(db.RpjmdSyncJob, {
-    as: "job",
-    foreignKey: "job_id",
+    as: 'job',
+    foreignKey: 'job_id',
   });
-
   db.RpjmdSyncJob.hasMany(db.RpjmdSyncAuditLog, {
-    as: "audit_logs",
-    foreignKey: "job_id",
+    as: 'audit_logs',
+    foreignKey: 'job_id',
   });
-
   db.RpjmdSyncAuditLog.belongsTo(db.RpjmdSyncJob, {
-    as: "job",
-    foreignKey: "job_id",
+    as: 'job',
+    foreignKey: 'job_id',
   });
 }
 
 // Run Enterprise MR associations
 try {
-  const applyMrAssociations = require("./mrAssociations");
-  if (typeof applyMrAssociations === "function") {
+  const applyMrAssociations = require('./mrAssociations');
+  if (typeof applyMrAssociations === 'function') {
     applyMrAssociations(db);
   }
 } catch (error) {
-  console.warn("[models/index] MR associations tidak dijalankan:", error.message);
+  console.warn('[models/index] MR associations tidak dijalankan:', error.message);
 }
 
-console.log("Available models:", Object.keys(db));
+console.log('Available models:', Object.keys(db));
 
-const { installTenantIsolation } = require("../lib/tenantSequelizeHooks");
+const { installTenantIsolation } = require('../lib/tenantSequelizeHooks');
 installTenantIsolation(sequelize, db);
 
 db.sequelize = sequelize;

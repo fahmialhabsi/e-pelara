@@ -79,7 +79,6 @@ router.post(
   verifyToken,
   allowRoles(WRITE_ROLES),
   schemas.validate(schemas.rkpdItemCreate),
-  requireChangeReason,
   ctrl.createItem,
 );
 router.put(

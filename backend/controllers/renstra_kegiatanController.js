@@ -1,15 +1,9 @@
-const {
-  Program,
-  RenstraKegiatan,
-  RenstraOPD,
-  Kegiatan,
-  RenstraProgram,
-} = require("../models");
-const { Op } = require("sequelize");
+const { Program, RenstraKegiatan, RenstraOPD, Kegiatan, RenstraProgram } = require('../models');
+const { Op } = require('sequelize');
 const {
   programWhereForRenstraOpdQuery,
   renstraOpdSiblingIds,
-} = require("../helpers/renstraOpdProgramFilter");
+} = require('../helpers/renstraOpdProgramFilter');
 
 /**
  * Pastikan setiap kegiatan RPJMD (tabel `kegiatan`) yang program_id-nya sama dengan
@@ -21,7 +15,7 @@ async function ensureRenstraKegiatanRowsForRenstraOpd(renstraOpdId) {
   const programWhere = await programWhereForRenstraOpdQuery(renstraOpdId);
   const programs = await RenstraProgram.findAll({
     where: programWhere,
-    attributes: ["id", "renstra_id", "rpjmd_program_id"],
+    attributes: ['id', 'renstra_id', 'rpjmd_program_id'],
   });
 
   for (const p of programs) {
@@ -29,12 +23,7 @@ async function ensureRenstraKegiatanRowsForRenstraOpd(renstraOpdId) {
 
     const masters = await Kegiatan.unscoped().findAll({
       where: { program_id: p.rpjmd_program_id },
-      attributes: [
-        "id",
-        "kode_kegiatan",
-        "nama_kegiatan",
-        "bidang_opd_penanggung_jawab",
-      ],
+      attributes: ['id', 'kode_kegiatan', 'nama_kegiatan', 'bidang_opd_penanggung_jawab'],
     });
 
     for (const k of masters) {
@@ -59,70 +48,64 @@ async function ensureRenstraKegiatanRowsForRenstraOpd(renstraOpdId) {
         rpjmd_kegiatan_id: k.id,
         kode_kegiatan: k.kode_kegiatan,
         nama_kegiatan: k.nama_kegiatan,
-        bidang_opd: k.bidang_opd_penanggung_jawab ?? "",
+        bidang_opd: k.bidang_opd_penanggung_jawab ?? '',
       });
     }
   }
 }
 
-async function validateKegiatanChain({
-  program_renstra_id,
-  kegiatan_id,
-  renstra_id,
-}) {
-    const programRenstra = await RenstraProgram.findByPk(program_renstra_id);
+async function validateKegiatanChain({ program_renstra_id, kegiatan_id, renstra_id }) {
+  const programRenstra = await RenstraProgram.findByPk(program_renstra_id);
 
-    if (!programRenstra) {
-      return {
-        ok: false,
-        status: 404,
-        error: "PROGRAM_RENSTRA_NOT_FOUND",
-        message: "Program Renstra tidak ditemukan.",
-      };
-    }
-
-    if (
-      renstra_id &&
-      programRenstra.renstra_id &&
-      Number(programRenstra.renstra_id) !== Number(renstra_id)
-    ) {
-      return {
-        ok: false,
-        status: 400,
-        error: "CHAIN_MISMATCH",
-        message: "Program Renstra tidak sesuai dengan Renstra aktif.",
-      };
-    }
-
-    const kegiatan = await Kegiatan.unscoped().findByPk(kegiatan_id);
-
-    if (!kegiatan) {
-      return {
-        ok: false,
-        status: 404,
-        error: "KEGIATAN_RPJMD_NOT_FOUND",
-        message: "Kegiatan RPJMD tidak ditemukan.",
-      };
-    }
-
-    if (
-      Number(kegiatan.program_id) !== Number(programRenstra.rpjmd_program_id)
-    ) {
-      return {
-        ok: false,
-        status: 400,
-        error: "CHAIN_MISMATCH",
-        message:
-          "Kegiatan RPJMD tidak berada di bawah Program RPJMD milik Program Renstra yang dipilih.",
-      };
-    }
-
+  if (!programRenstra) {
     return {
-      ok: true,
-      programRenstra,
-      kegiatan,
+      ok: false,
+      status: 404,
+      error: 'PROGRAM_RENSTRA_NOT_FOUND',
+      message: 'Program Renstra tidak ditemukan.',
     };
   }
+
+  if (
+    renstra_id &&
+    programRenstra.renstra_id &&
+    Number(programRenstra.renstra_id) !== Number(renstra_id)
+  ) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'CHAIN_MISMATCH',
+      message: 'Program Renstra tidak sesuai dengan Renstra aktif.',
+    };
+  }
+
+  const kegiatan = await Kegiatan.unscoped().findByPk(kegiatan_id);
+
+  if (!kegiatan) {
+    return {
+      ok: false,
+      status: 404,
+      error: 'KEGIATAN_RPJMD_NOT_FOUND',
+      message: 'Kegiatan RPJMD tidak ditemukan.',
+    };
+  }
+
+  if (Number(kegiatan.program_id) !== Number(programRenstra.rpjmd_program_id)) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'CHAIN_MISMATCH',
+      message:
+        'Kegiatan RPJMD tidak berada di bawah Program RPJMD milik Program Renstra yang dipilih.',
+    };
+  }
+
+  return {
+    ok: true,
+    programRenstra,
+    kegiatan,
+  };
+}
 
 /**
  * Membuat Renstra Kegiatan baru (tanpa rpjmd_kegiatan_id)
@@ -140,22 +123,22 @@ exports.create = async (req, res) => {
 
     if (!program_renstra_id) {
       return res.status(400).json({
-        error: "PROGRAM_RENSTRA_REQUIRED",
-        message: "Program Renstra wajib dipilih.",
+        error: 'PROGRAM_RENSTRA_REQUIRED',
+        message: 'Program Renstra wajib dipilih.',
       });
     }
 
     if (!kegiatan_id) {
       return res.status(400).json({
-        error: "KEGIATAN_REQUIRED",
-        message: "Kegiatan wajib dipilih.",
+        error: 'KEGIATAN_REQUIRED',
+        message: 'Kegiatan wajib dipilih.',
       });
     }
 
     if (!kode_kegiatan || !nama_kegiatan) {
       return res.status(400).json({
-        error: "KEGIATAN_DETAIL_REQUIRED",
-        message: "Kode dan nama kegiatan wajib diisi.",
+        error: 'KEGIATAN_DETAIL_REQUIRED',
+        message: 'Kode dan nama kegiatan wajib diisi.',
       });
     }
 
@@ -182,8 +165,8 @@ exports.create = async (req, res) => {
 
     if (existing) {
       return res.status(409).json({
-        error: "DUPLICATE_RENSTRA_KEGIATAN",
-        message: "Kegiatan Renstra ini sudah pernah ditambahkan.",
+        error: 'DUPLICATE_RENSTRA_KEGIATAN',
+        message: 'Kegiatan Renstra ini sudah pernah ditambahkan.',
       });
     }
 
@@ -193,16 +176,15 @@ exports.create = async (req, res) => {
       kode_kegiatan: chain.kegiatan.kode_kegiatan || kode_kegiatan,
       nama_kegiatan: chain.kegiatan.nama_kegiatan || nama_kegiatan,
       renstra_id: renstra_id || null,
-      bidang_opd:
-        chain.kegiatan.bidang_opd_penanggung_jawab || bidang_opd || "",
+      bidang_opd: chain.kegiatan.bidang_opd_penanggung_jawab || bidang_opd || '',
     });
 
     res.status(201).json(data);
   } catch (err) {
-    console.error("🔥 Error create Renstra Kegiatan:", err);
+    console.error('🔥 Error create Renstra Kegiatan:', err);
     res.status(500).json({
-      error: "INTERNAL_SERVER_ERROR",
-      message: "Gagal menyimpan data. Silakan coba lagi.",
+      error: 'INTERNAL_SERVER_ERROR',
+      message: 'Gagal menyimpan data. Silakan coba lagi.',
     });
   }
 };
@@ -217,11 +199,13 @@ exports.update = async (req, res) => {
     const existingData = await RenstraKegiatan.findByPk(id);
 
     if (!existingData) {
-      return res.status(404).json({ message: "Data tidak ditemukan" });
+      return res.status(404).json({ message: 'Data tidak ditemukan' });
     }
 
-    const program_renstra_id = req.body.program_renstra_id || req.body.program_id || existingData.program_id;
-    const kegiatan_id = req.body.kegiatan_id || req.body.rpjmd_kegiatan_id || existingData.rpjmd_kegiatan_id;
+    const program_renstra_id =
+      req.body.program_renstra_id || req.body.program_id || existingData.program_id;
+    const kegiatan_id =
+      req.body.kegiatan_id || req.body.rpjmd_kegiatan_id || existingData.rpjmd_kegiatan_id;
     const renstra_id = req.body.renstra_id ?? existingData.renstra_id;
 
     const chain = await validateKegiatanChain({
@@ -248,8 +232,8 @@ exports.update = async (req, res) => {
 
     if (duplicate) {
       return res.status(409).json({
-        error: "DUPLICATE_RENSTRA_KEGIATAN",
-        message: "Kegiatan Renstra ini sudah pernah ditambahkan.",
+        error: 'DUPLICATE_RENSTRA_KEGIATAN',
+        message: 'Kegiatan Renstra ini sudah pernah ditambahkan.',
       });
     }
 
@@ -259,18 +243,15 @@ exports.update = async (req, res) => {
       kode_kegiatan: chain.kegiatan.kode_kegiatan,
       nama_kegiatan: chain.kegiatan.nama_kegiatan,
       renstra_id: renstra_id || null,
-      bidang_opd:
-        chain.kegiatan.bidang_opd_penanggung_jawab ||
-        req.body.bidang_opd ||
-        "",
+      bidang_opd: req.body.bidang_opd || chain.kegiatan.bidang_opd_penanggung_jawab || '',
     });
 
     res.json(existingData);
   } catch (err) {
-    console.error("🔥 Error update Renstra Kegiatan:", err);
+    console.error('🔥 Error update Renstra Kegiatan:', err);
     res.status(500).json({
-      error: "INTERNAL_SERVER_ERROR",
-      message: "Gagal memperbarui data.",
+      error: 'INTERNAL_SERVER_ERROR',
+      message: 'Gagal memperbarui data.',
     });
   }
 };
@@ -292,7 +273,7 @@ exports.findAll = async (req, res) => {
       try {
         await ensureRenstraKegiatanRowsForRenstraOpd(renstra_id);
       } catch (e) {
-        console.error("ensureRenstraKegiatanRowsForRenstraOpd:", e.message);
+        console.error('ensureRenstraKegiatanRowsForRenstraOpd:', e.message);
       }
     }
 
@@ -305,7 +286,7 @@ exports.findAll = async (req, res) => {
       const programWhere = await programWhereForRenstraOpdQuery(renstra_id);
       const programs = await RenstraProgram.findAll({
         where: programWhere,
-        attributes: ["id"],
+        attributes: ['id'],
       });
       const programIds = programs.map((p) => p.id);
       const renstraOpdIds = await renstraOpdSiblingIds(renstra_id);
@@ -329,32 +310,33 @@ exports.findAll = async (req, res) => {
       include: [
         {
           model: RenstraOPD,
-          as: "renstra",
-          attributes: ["id", "bidang_opd", "sub_bidang_opd"],
+          as: 'renstra',
+          attributes: ['id', 'bidang_opd', 'sub_bidang_opd'],
           ...(tahun_mulai && {
             where: { tahun_mulai: parseInt(tahun_mulai, 10) },
           }),
         },
         {
           model: Kegiatan,
-          as: "kegiatan_rpjmd",
-          attributes: ["id", "kode_kegiatan", "nama_kegiatan"],
+          as: 'kegiatan_rpjmd',
+          attributes: ['id', 'kode_kegiatan', 'nama_kegiatan'],
         },
         {
           model: RenstraProgram,
-          as: "program_renstra",
-          attributes: ["id", "kode_program", "nama_program"],
+          as: 'program_renstra',
+          attributes: ['id', 'kode_program', 'nama_program'],
         },
       ],
+      order: [['kode_kegiatan', 'ASC']],
     });
 
     const result = data.map((item) => ({
       ...item.toJSON(),
-      bidang_opd: item.bidang_opd ?? "",
+      bidang_opd: item.bidang_opd ?? '',
       renstra: {
         ...item.renstra?.toJSON(),
-        bidang_opd: item.renstra?.bidang_opd ?? "",
-        sub_bidang_opd: item.renstra?.sub_bidang_opd ?? "",
+        bidang_opd: item.renstra?.bidang_opd ?? '',
+        sub_bidang_opd: item.renstra?.sub_bidang_opd ?? '',
       },
     }));
 
@@ -373,31 +355,31 @@ exports.findOne = async (req, res) => {
       include: [
         {
           model: RenstraOPD,
-          as: "renstra",
-          attributes: ["id", "bidang_opd", "sub_bidang_opd"],
+          as: 'renstra',
+          attributes: ['id', 'bidang_opd', 'sub_bidang_opd'],
         },
         {
           model: Kegiatan,
-          as: "kegiatan_rpjmd",
-          attributes: ["id", "kode_kegiatan", "nama_kegiatan"],
+          as: 'kegiatan_rpjmd',
+          attributes: ['id', 'kode_kegiatan', 'nama_kegiatan'],
         },
         {
           model: RenstraProgram,
-          as: "program_renstra",
-          attributes: ["id", "kode_program", "nama_program"],
+          as: 'program_renstra',
+          attributes: ['id', 'kode_program', 'nama_program'],
         },
       ],
     });
 
-    if (!data) return res.status(404).json({ message: "Data not found" });
+    if (!data) return res.status(404).json({ message: 'Data not found' });
 
     const result = {
       ...data.toJSON(),
-      bidang_opd: data.bidang_opd ?? "",
+      bidang_opd: data.bidang_opd ?? '',
       renstra: {
         ...data.renstra?.toJSON(),
-        bidang_opd: data.renstra?.bidang_opd ?? "",
-        sub_bidang_opd: data.renstra?.sub_bidang_opd ?? "",
+        bidang_opd: data.renstra?.bidang_opd ?? '',
+        sub_bidang_opd: data.renstra?.sub_bidang_opd ?? '',
       },
     };
 
@@ -414,12 +396,11 @@ exports.findOne = async (req, res) => {
 exports.findByProgramKode = async (req, res) => {
   try {
     const programId = Number(req.params.id || req.query.programId);
-    if (!programId)
-      return res.status(400).json({ error: "Program ID wajib diberikan." });
+    if (!programId) return res.status(400).json({ error: 'Program ID wajib diberikan.' });
 
     // Ambil program yang terkait renstra
     const program = await Program.findByPk(programId, {
-      include: [{ model: Kegiatan, as: "kegiatan" }],
+      include: [{ model: Kegiatan, as: 'kegiatan' }],
     });
 
     const kegiatan = program?.kegiatan || []; // gunakan ? untuk aman jika null
@@ -430,12 +411,12 @@ exports.findByProgramKode = async (req, res) => {
       label: `${k.kode_kegiatan} - ${k.nama_kegiatan}`,
       kode_kegiatan: k.kode_kegiatan,
       nama_kegiatan: k.nama_kegiatan,
-      bidang_opd: k.bidang_opd_penanggung_jawab ?? "",
+      bidang_opd: k.bidang_opd_penanggung_jawab ?? '',
     }));
 
     res.json(result);
   } catch (err) {
-    console.error("🔥 Error findByProgramKode:", err);
+    console.error('🔥 Error findByProgramKode:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -449,8 +430,8 @@ exports.getKodeNamaKegiatan = async (req, res) => {
       include: [
         {
           model: Kegiatan,
-          as: "kegiatan_rpjmd",
-          attributes: ["id", "kode_kegiatan", "nama_kegiatan", "rpjmd_id"],
+          as: 'kegiatan_rpjmd',
+          attributes: ['id', 'kode_kegiatan', 'nama_kegiatan', 'rpjmd_id'],
         },
       ],
       attributes: [],
@@ -465,10 +446,23 @@ exports.getKodeNamaKegiatan = async (req, res) => {
 
     res.json(result);
   } catch (err) {
-    console.error("🔥 Error getKodeNamaKegiatan:", err);
-    res
-      .status(500)
-      .json({ message: "Gagal mengambil kegiatan", error: err.message });
+    console.error('🔥 Error getKodeNamaKegiatan:', err);
+    res.status(500).json({ message: 'Gagal mengambil kegiatan', error: err.message });
+  }
+};
+
+exports.generateIndikatorKegiatan = async (req, res) => {
+  try {
+    const { namaOpd, kegiatanRenstra, tahunMulai } = req.body;
+    if (!namaOpd || !kegiatanRenstra) {
+      return res.status(400).json({ message: 'namaOpd dan kegiatanRenstra wajib diisi' });
+    }
+    const { generateIndikatorKegiatanRenstra } = require('../services/renstraAIService');
+    const hasil = await generateIndikatorKegiatanRenstra({ namaOpd, kegiatanRenstra, tahunMulai });
+    return res.json({ success: true, indikator: hasil });
+  } catch (err) {
+    console.error('[generateIndikatorKegiatan]', err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -480,9 +474,9 @@ exports.delete = async (req, res) => {
     const id = req.params.id;
     const deleted = await RenstraKegiatan.destroy({ where: { id } });
 
-    if (!deleted) return res.status(404).json({ message: "Data not found" });
+    if (!deleted) return res.status(404).json({ message: 'Data not found' });
 
-    res.json({ message: "Deleted successfully" });
+    res.json({ message: 'Deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

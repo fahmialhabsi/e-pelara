@@ -1,6 +1,6 @@
 // File: services/rkaValidationService.js
 const Joi = require('joi');
-const { Renja } = require('../models');
+const { Renja, RenjaItem } = require('../models');
 
 // 1. Definisikan Sub-Skema untuk elemen Koefisien (Multi-Volume)
 const koefisienItemSchema = Joi.object({
@@ -26,6 +26,10 @@ const rkaCreateSchema = Joi.object({
     .integer()
     .required()
     .messages({ 'any.required': 'OPD Penanggung Jawab wajib ditentukan.' }),
+  urusan: Joi.string().allow(null, ''),
+  kode_urusan: Joi.string().allow(null, ''),
+  bidang_urusan: Joi.string().allow(null, ''),
+  kode_bidang_urusan: Joi.string().allow(null, ''),
   program: Joi.string().required().messages({ 'any.required': 'Nama/Kode Program wajib diisi.' }),
   kegiatan: Joi.string().required().messages({ 'any.required': 'Nama/Kode Kegiatan wajib diisi.' }),
   sub_kegiatan: Joi.string()
@@ -41,7 +45,23 @@ const rkaCreateSchema = Joi.object({
   target: Joi.string().allow(null, ''),
   jenis_dokumen: Joi.string().allow(null, '').default('RKA'),
   renja_id: Joi.number().integer().allow(null),
-
+  // Indikator & Tolok Ukur Kinerja (Permendagri 77/2020)
+  kode_program: Joi.string().allow(null, ''),
+  kode_kegiatan: Joi.string().allow(null, ''),
+  kode_sub_kegiatan: Joi.string().allow(null, ''),
+  capaian_program: Joi.string().allow(null, ''),
+  target_capaian: Joi.string().allow(null, ''),
+  satuan_capaian: Joi.string().allow(null, ''),
+  masukan: Joi.string().allow(null, ''),
+  keluaran: Joi.string().allow(null, ''),
+  target_keluaran: Joi.string().allow(null, ''),
+  satuan_keluaran: Joi.string().allow(null, ''),
+  hasil: Joi.string().allow(null, ''),
+  target_hasil: Joi.string().allow(null, ''),
+  satuan_hasil: Joi.string().allow(null, ''),
+  waktu_mulai: Joi.string().allow(null, ''),
+  waktu_selesai: Joi.string().allow(null, ''),
+  lokasi: Joi.string().allow(null, ''),
   // Validasi Array Rincian Belanja
   rincian_belanja: Joi.array()
     .items(
@@ -50,7 +70,12 @@ const rkaCreateSchema = Joi.object({
           .required()
           .messages({ 'any.required': 'Kode rekening belanja wajib diisi.' }),
         nama_rekening: Joi.string().allow(null, ''),
-        uraian: Joi.string().required().messages({ 'any.required': 'Uraian belanja wajib diisi.' }),
+        uraian: Joi.string().required().messages({
+          'any.required': 'Uraian belanja wajib diisi.',
+        }),
+
+        spesifikasi: Joi.string().allow(null, ''),
+        volume_hasil: Joi.number().min(0).allow(null),
         harga_satuan: Joi.number().min(0).required().messages({
           'number.min': 'Harga satuan tidak boleh minus.',
           'any.required': 'Harga satuan wajib diisi.',
@@ -59,6 +84,21 @@ const rkaCreateSchema = Joi.object({
           .valid('PAD', 'DAU', 'DAK Fisik', 'DAK Non Fisik', 'DBH')
           .required(),
         lokasi: Joi.string().allow(null, ''),
+        kode_program: Joi.string().allow(null, ''),
+        kode_kegiatan: Joi.string().allow(null, ''),
+        kode_sub_kegiatan: Joi.string().allow(null, ''),
+        capaian_program: Joi.string().allow(null, ''),
+        target_capaian: Joi.string().allow(null, ''),
+        satuan_capaian: Joi.string().allow(null, ''),
+        masukan: Joi.string().allow(null, ''),
+        keluaran: Joi.string().allow(null, ''),
+        target_keluaran: Joi.string().allow(null, ''),
+        satuan_keluaran: Joi.string().allow(null, ''),
+        hasil: Joi.string().allow(null, ''),
+        target_hasil: Joi.string().allow(null, ''),
+        satuan_hasil: Joi.string().allow(null, ''),
+        waktu_mulai: Joi.string().allow(null, ''),
+        waktu_selesai: Joi.string().allow(null, ''),
         keterangan: Joi.string().allow(null, ''),
         koefisien_array: Joi.array().items(koefisienItemSchema).min(1).required(),
       }),
@@ -94,17 +134,18 @@ function validatePayload(data, isUpdate = false) {
  */
 async function validatePaguRenja(renjaId, totalBelanjaBaru) {
   if (!renjaId) return;
-
-  const renja = await Renja.findByPk(renjaId, { attributes: ['id', 'anggaran'] });
-  if (!renja) {
-    const err = new Error('Referensi dokumen Renja tidak ditemukan.');
+  // renjaId di RKA merujuk ke renja_item.id, bukan renja.id
+  const renjaItem = await RenjaItem.findByPk(renjaId, { attributes: ['id', 'pagu'] });
+  if (!renjaItem) {
+    const err = new Error('Referensi item Renja tidak ditemukan.');
     err.status = 400;
     throw err;
   }
-
-  const paguMaksimal = Number(renja.anggaran || 0);
-  if (totalBelanjaBaru > paguMaksimal) {
-    const err = new Error(`Total rincian belanja melampaui Pagu Renja.`);
+  const paguMaksimal = Number(renjaItem.pagu || 0);
+  if (paguMaksimal > 0 && totalBelanjaBaru > paguMaksimal) {
+    const err = new Error(
+      `Total rincian belanja (${totalBelanjaBaru.toLocaleString('id-ID')}) melampaui Pagu Renja (${paguMaksimal.toLocaleString('id-ID')}).`,
+    );
     err.status = 400;
     throw err;
   }

@@ -60,6 +60,7 @@ const RenjaDokumenDetailPage = () => {
   const [officialValidate, setOfficialValidate] = useState(null);
   const [busyValidate, setBusyValidate] = useState(false);
   const [busyGenBab, setBusyGenBab] = useState(false);
+  const [busyEnrich, setBusyEnrich] = useState(false);
 
   const [judul, setJudul] = useState('');
   const [status, setStatus] = useState('draft');
@@ -76,6 +77,8 @@ const RenjaDokumenDetailPage = () => {
   const [linkModal, setLinkModal] = useState(false);
   const [linkTarget, setLinkTarget] = useState(null);
   const [rkpdItemId, setRkpdItemId] = useState('');
+  const [rkpdItemOptions, setRkpdItemOptions] = useState([]);
+  const [loadingRkpdOptions, setLoadingRkpdOptions] = useState(false);
   const [linkBusy, setLinkBusy] = useState(false);
   const [itemReasonText, setItemReasonText] = useState('');
   const [itemReasonFile, setItemReasonFile] = useState('');
@@ -88,6 +91,8 @@ const RenjaDokumenDetailPage = () => {
   const [wfBusy, setWfBusy] = useState(false);
   const [revisionReason, setRevisionReason] = useState('');
   const [readiness, setReadiness] = useState(null);
+  const [step, setStep] = useState(1);
+  const [itemSearch, setItemSearch] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -156,6 +161,44 @@ const RenjaDokumenDetailPage = () => {
       toast.error(e?.response?.data?.message || e.message || 'Gagal simpan.');
     } finally {
       setSavingMeta(false);
+    }
+  };
+
+  const handleBulkImportRkpd = async () => {
+    if (!doc?.rkpd_dokumen_id) return;
+    const freshDoc = await fetchRenjaDokumenById(id);
+    const existingRkpdIds = (freshDoc?.items || [])
+      .map((i) => i.source_rkpd_item_id)
+      .filter(Boolean);
+    try {
+      const res = await api.get('/rkpd/item', { params: { rkpd_dokumen_id: doc.rkpd_dokumen_id } });
+      const items = res.data?.data || res.data?.rows || [];
+      const toImport = items.filter((i) => !existingRkpdIds.includes(i.id));
+      if (toImport.length === 0) {
+        toast.info('Semua item RKPD sudah diimport.');
+        return;
+      }
+      for (const item of toImport) {
+        await api.post(`/renja/item`, {
+          renja_dokumen_id: doc.id,
+          urutan: (doc.items?.length || 0) + 1,
+          program: item.program || null,
+          kegiatan: item.kegiatan || null,
+          sub_kegiatan: item.sub_kegiatan || null,
+          indikator: item.indikator || null,
+          target: item.target || null,
+          satuan: item.satuan || null,
+          pagu: item.pagu || null,
+          source_rkpd_item_id: item.id,
+          mode: 'rkpd',
+          source_mode: 'RKPD',
+          change_reason_text: 'Bulk import dari RKPD',
+        });
+      }
+      toast.success(`${toImport.length} item berhasil diimport dari RKPD.`);
+      fetchDoc();
+    } catch (e) {
+      toast.error(e?.message || 'Gagal import dari RKPD');
     }
   };
 
@@ -241,18 +284,38 @@ const RenjaDokumenDetailPage = () => {
     }
   };
 
-  const openLink = (row) => {
+  const openLink = async (row) => {
     setLinkTarget(row);
-    setRkpdItemId(
-      row?.rkpdLink?.rkpd_item_id
-        ? String(row.rkpdLink.rkpd_item_id)
-        : row?.rkpd_item_id
-          ? String(row.rkpd_item_id)
-          : '',
-    );
+    const existingId = row?.rkpdLink?.rkpd_item_id
+      ? String(row.rkpdLink.rkpd_item_id)
+      : row?.rkpd_item_id
+        ? String(row.rkpd_item_id)
+        : '';
+    setRkpdItemId(existingId);
     setLinkReasonText(`Mapping otomatis dari RKPD acuan dokumen #${doc?.rkpd_dokumen_id || ''}`);
     setLinkReasonFile('');
     setLinkModal(true);
+    if (!doc?.rkpd_dokumen_id) return;
+    setLoadingRkpdOptions(true);
+    try {
+      const res = await api.get('/rkpd/item', {
+        params: { rkpd_dokumen_id: doc.rkpd_dokumen_id },
+      });
+      const options = res.data?.data || res.data?.rows || [];
+      setRkpdItemOptions(options);
+      // Auto-suggest: cocokkan berdasarkan kode sub_kegiatan (prefix) jika belum ada mapping
+      if (!existingId && row?.sub_kegiatan) {
+        const kodeAwal = String(row.sub_kegiatan).split(' - ')[0].trim();
+        const suggestion = options.find(
+          (o) => o.sub_kegiatan && String(o.sub_kegiatan).startsWith(kodeAwal),
+        );
+        if (suggestion) setRkpdItemId(String(suggestion.id));
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingRkpdOptions(false);
+    }
   };
 
   const saveLink = async () => {
@@ -274,7 +337,9 @@ const RenjaDokumenDetailPage = () => {
       });
       toast.success('Mapping RKPD disimpan.');
       setLinkModal(false);
-      load();
+      const scrollY = window.scrollY;
+      await load();
+      requestAnimationFrame(() => window.scrollTo(0, scrollY));
     } catch (e) {
       toast.error(e?.response?.data?.message || e.message || 'Gagal mapping.');
     } finally {
@@ -331,6 +396,24 @@ const RenjaDokumenDetailPage = () => {
     }
   };
 
+  const enrichBab = async () => {
+    if (
+      !window.confirm(
+        'Enrich narasi BAB I-V dengan AI dan data BPS terbaru? Narasi yang ada akan diperbarui.',
+      )
+    )
+      return;
+    setBusyEnrich(true);
+    try {
+      await api.post(`/renja/dokumen/${id}/enrich-bab`);
+      toast.success('Narasi BAB berhasil di-enrich dengan AI dan data BPS terbaru!');
+      load();
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'Gagal enrich BAB.');
+    } finally {
+      setBusyEnrich(false);
+    }
+  };
   const items = doc?.items || [];
   const isReadonly = doc?.workflow_status === 'published';
 
@@ -483,6 +566,14 @@ const RenjaDokumenDetailPage = () => {
             >
               {busyGenBab ? <Spinner size="sm" /> : 'Auto-Generate Narasi BAB'}
             </Button>
+            <Button
+              variant="outline-primary"
+              size="sm"
+              disabled={busyEnrich || isReadonly}
+              onClick={enrichBab}
+            >
+              {busyEnrich ? <Spinner size="sm" /> : '✨ Enrich AI + BPS'}
+            </Button>
           </div>
           <div className="d-flex flex-wrap gap-2 justify-content-end">
             <span className="small text-muted align-self-center me-1">Dokumen resmi</span>
@@ -523,232 +614,328 @@ const RenjaDokumenDetailPage = () => {
         </div>
       </div>
       <RenjaDokumenNavTabs id={id} />
-      <Card className="mb-3 shadow-sm">
-        <CardBody>
-          <div className="d-flex flex-wrap gap-2 align-items-center">
-            {['submit', 'review', 'approve', 'publish'].map((action) => (
-              <Button
-                key={action}
-                size="sm"
-                variant="outline-success"
-                disabled={
-                  wfBusy ||
-                  !can ||
-                  (action === 'submit' && readiness && !readiness.readiness?.ready_for_submit) ||
-                  (action === 'publish' && readiness && !readiness.readiness?.ready_for_publish)
-                }
-                onClick={() => runAction(action)}
-              >
-                {action}
-              </Button>
-            ))}
-            <input
-              className="form-control form-control-sm"
-              placeholder="Alasan create revision"
-              value={revisionReason}
-              onChange={(e) => setRevisionReason(e.target.value)}
-              style={{ maxWidth: 280 }}
-            />
-            <Button
-              size="sm"
-              variant="warning"
-              disabled={wfBusy || !can || !['approved', 'published'].includes(doc?.workflow_status)}
-              onClick={runCreateRevision}
-            >
-              Create Revision
-            </Button>
-            <Button
-              size="sm"
-              variant="outline-success"
-              as={Link}
-              to={`/dashboard-renja/v2/dokumen/${id}/data-fix`}
-            >
-              Data Fix & Mapping
-            </Button>
-            <Badge bg={isReadonly ? 'success' : 'secondary'}>
-              {isReadonly ? 'Readonly Final' : 'Editable Draft'}
-            </Badge>
-          </div>
-        </CardBody>
-      </Card>
-      <Card className="mb-3 shadow-sm">
-        <CardBody>
-          <h6 className="fw-bold mb-1">Readiness Panel</h6>
-          <div className="small">
-            Siap submit: <b>{readiness?.readiness?.ready_for_submit ? 'Ya' : 'Tidak'}</b> · Siap
-            publish: <b>{readiness?.readiness?.ready_for_publish ? 'Ya' : 'Tidak'}</b>
-          </div>
-          <div className="small text-muted">
-            blocker {readiness?.summary?.blocking_count ?? 0} · warning{' '}
-            {readiness?.summary?.warning_count ?? 0}
-          </div>
-          {!!(readiness?.next_actions || []).length && (
-            <ul className="small mb-0 mt-1">
-              {readiness.next_actions.slice(0, 5).map((x, i) => (
-                <li key={i}>{x}</li>
-              ))}
-            </ul>
-          )}
-        </CardBody>
-      </Card>
 
-      <Card className="mb-3 shadow-sm">
-        <CardBody>
-          <h6 className="fw-bold">Metadata</h6>
-          <Form.Group className="mb-2">
-            <Form.Label className="small">Judul</Form.Label>
-            <Form.Control
-              value={judul}
-              onChange={(e) => setJudul(e.target.value)}
-              disabled={!can || isReadonly}
-            />
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label className="small">Status</Form.Label>
-            <Form.Select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              disabled={!can || isReadonly}
+      <div className="d-flex align-items-center justify-content-between mb-3 p-2 bg-light border rounded">
+        <div className="d-flex gap-2">
+          {[
+            { n: 1, label: 'Metadata & Workflow' },
+            { n: 2, label: 'Item Renja' },
+            { n: 3, label: 'Review & Audit' },
+          ].map((s) => (
+            <Button
+              key={s.n}
+              size="sm"
+              variant={step === s.n ? 'success' : 'outline-secondary'}
+              onClick={() => setStep(s.n)}
             >
-              <option value="draft">draft</option>
-              <option value="review">review</option>
-              <option value="final">final</option>
-            </Form.Select>
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label className="small fw-semibold">Catatan Perubahan</Form.Label>
-            <Form.Control
-              as="textarea"
-              rows={2}
-              value={metaReasonText}
-              onChange={(e) => setMetaReasonText(e.target.value)}
-              disabled={!can || isReadonly}
-              placeholder="Isi catatan jika ada perubahan pada dokumen"
-            />
-            <Form.Text className="text-muted">Kosongkan jika tidak ada perubahan.</Form.Text>
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label className="small fw-semibold">📎 Upload Dasar Hukum Perubahan</Form.Label>
-            <Form.Control
-              type="file"
-              accept=".pdf,.doc,.docx"
-              disabled={!can || isReadonly}
-              onChange={(e) => setMetaReasonFile(e.target.files?.[0]?.name || '')}
-            />
-            {metaReasonFile && (
-              <Form.Text className="text-success">File: {metaReasonFile}</Form.Text>
-            )}
-          </Form.Group>
-          {can && (
-            <Button size="sm" onClick={saveMeta} disabled={savingMeta || isReadonly}>
-              {savingMeta ? <Spinner size="sm" /> : 'Simpan metadata'}
+              {s.n}. {s.label}
             </Button>
-          )}
-        </CardBody>
-      </Card>
-
-      <div className="mb-3">
-        <PlanningAuditSection
-          documentType="renja_dokumen"
-          documentId={Number(id)}
-          auditRows={auditRows}
-          auditLoading={false}
-          allowRestore={canRestorePlanningDocumentVersion(user?.role)}
-          onVersionRestored={() => {
-            load();
-            loadAudit();
-          }}
-        />
+          ))}
+        </div>
+        <div className="d-flex gap-2">
+          <Button
+            size="sm"
+            variant="outline-secondary"
+            disabled={step === 1}
+            onClick={() => setStep((v) => Math.max(1, v - 1))}
+          >
+            ← Sebelumnya
+          </Button>
+          <Button
+            size="sm"
+            variant="outline-secondary"
+            disabled={step === 3}
+            onClick={() => setStep((v) => Math.min(3, v + 1))}
+          >
+            Selanjutnya →
+          </Button>
+        </div>
       </div>
-
-      <Card className="shadow-sm">
-        <CardBody>
-          <div className="d-flex justify-content-between align-items-center mb-2">
-            <h6 className="fw-bold mb-0">Item (renja_item)</h6>
-            {can && (
-              <Button size="sm" variant="success" onClick={openAddItem}>
-                + Item
-              </Button>
-            )}
-          </div>
-          <Table striped bordered hover size="sm" responsive>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Program</th>
-                <th>Kegiatan</th>
-                <th>Sub</th>
-                <th>rkpd_item</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="text-muted small">
-                    Belum ada item.
-                  </td>
-                </tr>
-              ) : (
-                items.map((row) => (
-                  <tr key={row.id}>
-                    <td>{row.urutan}</td>
-                    <td>{row.program}</td>
-                    <td>{row.kegiatan}</td>
-                    <td>{row.sub_kegiatan}</td>
-                    <td>
-                      {row.rkpdLink?.rkpd_item_id ? (
-                        <Badge bg="info">#{row.rkpdLink.rkpd_item_id}</Badge>
-                      ) : (
-                        <Badge bg="warning" text="dark">
-                          belum
-                        </Badge>
-                      )}
-                    </td>
-                    <td>
-                      {can && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="outline-primary"
-                            className="me-1"
-                            disabled={isReadonly}
-                            onClick={() => openEditItem(row)}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline-warning"
-                            disabled={isReadonly}
-                            onClick={() => openLink(row)}
-                          >
-                            Map RKPD
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline-danger"
-                            className="ms-1"
-                            disabled={isReadonly}
-                            onClick={() => deleteItem(row)}
-                          >
-                            Hapus
-                          </Button>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                ))
+      {step === 1 && (
+        <>
+          <Card className="mb-3 shadow-sm">
+            <CardBody>
+              <div className="d-flex flex-wrap gap-2 align-items-center">
+                {['submit', 'review', 'approve', 'publish'].map((action) => (
+                  <Button
+                    key={action}
+                    size="sm"
+                    variant="outline-success"
+                    disabled={
+                      wfBusy ||
+                      !can ||
+                      (action === 'submit' &&
+                        readiness &&
+                        !readiness.readiness?.ready_for_submit) ||
+                      (action === 'publish' && readiness && !readiness.readiness?.ready_for_publish)
+                    }
+                    onClick={() => runAction(action)}
+                  >
+                    {action}
+                  </Button>
+                ))}
+                <input
+                  className="form-control form-control-sm"
+                  placeholder="Alasan create revision"
+                  value={revisionReason}
+                  onChange={(e) => setRevisionReason(e.target.value)}
+                  style={{ maxWidth: 280 }}
+                />
+                <Button
+                  size="sm"
+                  variant="warning"
+                  disabled={
+                    wfBusy || !can || !['approved', 'published'].includes(doc?.workflow_status)
+                  }
+                  onClick={runCreateRevision}
+                >
+                  Create Revision
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline-success"
+                  as={Link}
+                  to={`/dashboard-renja/v2/dokumen/${id}/data-fix`}
+                >
+                  Data Fix & Mapping
+                </Button>
+                <Badge bg={isReadonly ? 'success' : 'secondary'}>
+                  {isReadonly ? 'Readonly Final' : 'Editable Draft'}
+                </Badge>
+              </div>
+            </CardBody>
+          </Card>
+          <Card className="mb-3 shadow-sm">
+            <CardBody>
+              <h6 className="fw-bold mb-1">Readiness Panel</h6>
+              <div className="small">
+                Siap submit: <b>{readiness?.readiness?.ready_for_submit ? 'Ya' : 'Tidak'}</b> · Siap
+                publish: <b>{readiness?.readiness?.ready_for_publish ? 'Ya' : 'Tidak'}</b>
+              </div>
+              <div className="small text-muted">
+                blocker {readiness?.summary?.blocking_count ?? 0} · warning{' '}
+                {readiness?.summary?.warning_count ?? 0}
+              </div>
+              {!!(readiness?.next_actions || []).length && (
+                <ul className="small mb-0 mt-1">
+                  {readiness.next_actions.slice(0, 5).map((x, i) => (
+                    <li key={i}>{x}</li>
+                  ))}
+                </ul>
               )}
-            </tbody>
-          </Table>
-          <p className="small text-muted mb-0">
-            Edit manual Renja saat ini <strong>tidak</strong> menulis{' '}
-            <code>planning_line_item_change_log</code> — log terisi untuk baris Renja saat{' '}
-            <strong>cascade dari RKPD</strong> (bukti di backend update RKPD item).
-          </p>
-        </CardBody>
-      </Card>
+            </CardBody>
+          </Card>
+
+          <Card className="mb-3 shadow-sm">
+            <CardBody>
+              <h6 className="fw-bold">Metadata</h6>
+              <Form.Group className="mb-2">
+                <Form.Label className="small">Judul</Form.Label>
+                <Form.Control
+                  value={judul}
+                  onChange={(e) => setJudul(e.target.value)}
+                  disabled={!can || isReadonly}
+                />
+              </Form.Group>
+              <Form.Group className="mb-2">
+                <Form.Label className="small">Status</Form.Label>
+                <Form.Select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                  disabled={!can || isReadonly}
+                >
+                  <option value="draft">draft</option>
+                  <option value="review">review</option>
+                  <option value="final">final</option>
+                </Form.Select>
+              </Form.Group>
+              <Form.Group className="mb-2">
+                <Form.Label className="small fw-semibold">Catatan Perubahan</Form.Label>
+                <Form.Control
+                  as="textarea"
+                  rows={2}
+                  value={metaReasonText}
+                  onChange={(e) => setMetaReasonText(e.target.value)}
+                  disabled={!can || isReadonly}
+                  placeholder="Isi catatan jika ada perubahan pada dokumen"
+                />
+                <Form.Text className="text-muted">Kosongkan jika tidak ada perubahan.</Form.Text>
+              </Form.Group>
+              <Form.Group className="mb-2">
+                <Form.Label className="small fw-semibold">
+                  📎 Upload Dasar Hukum Perubahan
+                </Form.Label>
+                <Form.Control
+                  type="file"
+                  accept=".pdf,.doc,.docx"
+                  disabled={!can || isReadonly}
+                  onChange={(e) => setMetaReasonFile(e.target.files?.[0]?.name || '')}
+                />
+                {metaReasonFile && (
+                  <Form.Text className="text-success">File: {metaReasonFile}</Form.Text>
+                )}
+              </Form.Group>
+              {can && (
+                <Button size="sm" onClick={saveMeta} disabled={savingMeta || isReadonly}>
+                  {savingMeta ? <Spinner size="sm" /> : 'Simpan metadata'}
+                </Button>
+              )}
+            </CardBody>
+          </Card>
+        </>
+      )}
+
+      {step === 2 && (
+        <Card className="shadow-sm">
+          <CardBody>
+            <div className="d-flex justify-content-between align-items-center mb-2">
+              <h6 className="fw-bold mb-0">Item (renja_item)</h6>
+              {can && (
+                <div className="d-flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline-primary"
+                    onClick={handleBulkImportRkpd}
+                    disabled={!doc?.rkpd_dokumen_id || isReadonly}
+                  >
+                    ⬇ Import dari RKPD
+                  </Button>
+                  <Button size="sm" variant="success" onClick={openAddItem}>
+                    + Item
+                  </Button>
+                </div>
+              )}
+            </div>
+            <Form.Control
+              className="mb-2"
+              size="sm"
+              placeholder="Cari program / kegiatan / sub kegiatan..."
+              value={itemSearch}
+              onChange={(e) => setItemSearch(e.target.value)}
+            />
+            <Table striped bordered hover size="sm" responsive>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Program</th>
+                  <th>Kegiatan</th>
+                  <th>Sub</th>
+                  <th>rkpd_item</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const q = itemSearch.trim().toLowerCase();
+                  const filteredItems = q
+                    ? items.filter((row) =>
+                        [row.program, row.kegiatan, row.sub_kegiatan]
+                          .filter(Boolean)
+                          .some((v) => String(v).toLowerCase().includes(q)),
+                      )
+                    : items;
+
+                  if (filteredItems.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={6} className="text-muted small">
+                          {items.length === 0
+                            ? 'Belum ada item.'
+                            : 'Tidak ada item yang cocok dengan pencarian.'}
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return filteredItems.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.urutan}</td>
+                      <td>{row.program}</td>
+                      <td>{row.kegiatan}</td>
+                      <td>{row.sub_kegiatan}</td>
+                      <td>
+                        {row.rkpdLink?.rkpd_item_id ? (
+                          <Badge bg="info">#{row.rkpdLink.rkpd_item_id}</Badge>
+                        ) : (
+                          <Badge bg="warning" text="dark">
+                            belum
+                          </Badge>
+                        )}
+                      </td>
+                      <td>
+                        {can && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline-primary"
+                              className="me-1"
+                              disabled={isReadonly}
+                              onClick={() => openEditItem(row)}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline-warning"
+                              disabled={isReadonly}
+                              onClick={() => openLink(row)}
+                            >
+                              Map RKPD
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline-danger"
+                              className="ms-1"
+                              disabled={isReadonly}
+                              onClick={() => deleteItem(row)}
+                            >
+                              Hapus
+                            </Button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ));
+                })()}
+              </tbody>
+            </Table>
+            <p className="small text-muted mb-0">
+              Edit manual Renja saat ini <strong>tidak</strong> menulis{' '}
+              <code>planning_line_item_change_log</code> — log terisi untuk baris Renja saat{' '}
+              <strong>cascade dari RKPD</strong> (bukti di backend update RKPD item).
+            </p>
+          </CardBody>
+        </Card>
+      )}
+
+      {step === 3 && (
+        <>
+          <Card className="mb-3 shadow-sm">
+            <CardBody>
+              <h6 className="fw-bold">Ringkasan Dokumen</h6>
+              <ul className="small mb-0">
+                <li>Judul: {doc.judul}</li>
+                <li>Status: {doc.status}</li>
+                <li>Jumlah item: {items.length}</li>
+              </ul>
+            </CardBody>
+          </Card>
+          <div className="mb-3">
+            <PlanningAuditSection
+              documentType="renja_dokumen"
+              documentId={Number(id)}
+              auditRows={auditRows}
+              auditLoading={false}
+              allowRestore={canRestorePlanningDocumentVersion(user?.role)}
+              onVersionRestored={() => {
+                load();
+                loadAudit();
+              }}
+              defaultExpanded={false}
+            />
+          </div>
+        </>
+      )}
 
       <RenjaItemModal
         show={itemModal}
@@ -794,17 +981,24 @@ const RenjaDokumenDetailPage = () => {
         </Modal.Header>
         <Modal.Body>
           <Form.Group className="mb-3">
-            <Form.Label className="fw-semibold small">RKPD Item ID</Form.Label>
-            <Form.Control
+            <Form.Label className="fw-semibold small">Sub Kegiatan RKPD</Form.Label>
+            <Form.Select
               value={rkpdItemId}
               onChange={(e) => setRkpdItemId(e.target.value)}
-              placeholder="ID baris rkpd_item"
-              readOnly={!!rkpdItemId}
-              className={rkpdItemId ? 'bg-light' : ''}
-            />
+              disabled={loadingRkpdOptions}
+            >
+              <option value="">
+                {loadingRkpdOptions ? 'Memuat daftar RKPD…' : '— Pilih Sub Kegiatan RKPD —'}
+              </option>
+              {rkpdItemOptions.map((o) => (
+                <option key={o.id} value={String(o.id)}>
+                  {o.sub_kegiatan}
+                </option>
+              ))}
+            </Form.Select>
             {rkpdItemId && (
               <Form.Text className="text-success">
-                ✅ Auto-fill dari item RKPD yang dipilih
+                ✅ Tersorot otomatis berdasarkan kecocokan Sub Kegiatan
               </Form.Text>
             )}
           </Form.Group>

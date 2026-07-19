@@ -34,7 +34,15 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
       },
 
+      spesifikasi: {
+        type: DataTypes.TEXT,
+      },
+
       volume: {
+        type: DataTypes.DECIMAL(20, 2),
+      },
+
+      volume_hasil: {
         type: DataTypes.DECIMAL(20, 2),
       },
 
@@ -60,6 +68,10 @@ module.exports = (sequelize, DataTypes) => {
 
       keterangan: {
         type: DataTypes.TEXT,
+      },
+
+      koefisien_array: {
+        type: DataTypes.TEXT('long'),
       },
     },
     {

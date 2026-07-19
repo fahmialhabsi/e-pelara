@@ -197,7 +197,67 @@ async function attachTotalPaguRpjmd(rows) {
   });
 }
 
-// CREATE
+async function recalcPaguRenstra(renstraId) {
+  const { IndikatorRenstra } = require('../models');
+  const YEARS = [1, 2, 3, 4, 5];
+
+  // Ambil semua indikator sub_kegiatan
+  const subKegRows = await IndikatorRenstra.findAll({
+    where: { renstra_id: renstraId, stage: 'sub_kegiatan' },
+    attributes: ['ref_id', ...YEARS.map((i) => `pagu_tahun_${i}`)],
+    raw: true,
+  });
+
+  // Group by ref_id (kegiatan_id) → sum pagu
+  const kegiatanPagu = {};
+  subKegRows.forEach((row) => {
+    const kid = row.ref_id;
+    if (!kegiatanPagu[kid])
+      kegiatanPagu[kid] = YEARS.reduce((acc, i) => ({ ...acc, [`pagu_tahun_${i}`]: 0 }), {});
+    YEARS.forEach((i) => {
+      kegiatanPagu[kid][`pagu_tahun_${i}`] += Number(row[`pagu_tahun_${i}`] || 0);
+    });
+  });
+
+  // Update indikator kegiatan
+  for (const [kid, pagu] of Object.entries(kegiatanPagu)) {
+    await IndikatorRenstra.update(pagu, {
+      where: { renstra_id: renstraId, stage: 'kegiatan', ref_id: kid },
+    });
+  }
+
+  // Ambil semua indikator kegiatan → sum ke program
+  const kegRows = await IndikatorRenstra.findAll({
+    where: { renstra_id: renstraId, stage: 'kegiatan' },
+    attributes: ['ref_id', ...YEARS.map((i) => `pagu_tahun_${i}`)],
+    raw: true,
+  });
+
+  // Perlu mapping kegiatan → program via RenstraKegiatan
+  const { RenstraKegiatan } = require('../models');
+  const programPagu = {};
+  for (const row of kegRows) {
+    const keg = await RenstraKegiatan.findByPk(row.ref_id, {
+      attributes: ['program_id'],
+      raw: true,
+    });
+    if (!keg) continue;
+    const pid = keg.program_id;
+    if (!programPagu[pid])
+      programPagu[pid] = YEARS.reduce((acc, i) => ({ ...acc, [`pagu_tahun_${i}`]: 0 }), {});
+    YEARS.forEach((i) => {
+      programPagu[pid][`pagu_tahun_${i}`] += Number(row[`pagu_tahun_${i}`] || 0);
+    });
+  }
+
+  // Update indikator program
+  for (const [pid, pagu] of Object.entries(programPagu)) {
+    await IndikatorRenstra.update(pagu, {
+      where: { renstra_id: renstraId, stage: 'program', ref_id: pid },
+    });
+  }
+}
+
 exports.create = async (req, res) => {
   try {
     const renstraId = validateRenstraId(req, res);
@@ -207,18 +267,24 @@ exports.create = async (req, res) => {
       ...req.body,
       renstra_id: renstraId,
     });
+    if (data.stage === 'sub_kegiatan' && data.renstra_id) {
+      await recalcPaguRenstra(data.renstra_id);
+    }
     res.status(201).json(data);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
-
 // READ ALL
 exports.findAll = async (req, res) => {
   try {
-    const { renstra_id, tahun_mulai, stage, ref_id, sasaran_id } = req.query;
-
+    const { renstra_id, tahun_mulai, stage, ref_id, sasaran_id, kode_parent } = req.query;
     const whereClause = {};
+    // Filter by kode_parent: ambil indikator yang kode_indikator-nya diawali kode_parent
+    if (kode_parent) {
+      const { Op } = require('sequelize');
+      whereClause.kode_indikator = { [Op.like]: `${kode_parent}%` };
+    }
 
     if (renstra_id) {
       Object.assign(whereClause, await programWhereForRenstraOpdQuery(renstra_id));
@@ -296,6 +362,7 @@ exports.findAll = async (req, res) => {
           }),
         },
       ],
+      order: [['kode_indikator', 'ASC']],
     });
 
     const result = await attachTotalPaguRpjmd(data);
@@ -342,14 +409,15 @@ exports.update = async (req, res) => {
       { where: { id } },
     );
     if (!updated) return res.status(404).json({ message: 'Data not found' });
-
     const updatedData = await IndikatorRenstra.findByPk(id);
+    if (updatedData.stage === 'sub_kegiatan' && updatedData.renstra_id) {
+      await recalcPaguRenstra(updatedData.renstra_id);
+    }
     res.json(updatedData);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
-
 // DELETE
 exports.delete = async (req, res) => {
   try {
@@ -650,6 +718,58 @@ exports.getIndikatorProgram = async (req, res) => {
   res.json(data);
 };
 
+// Untuk auto-fill RKA: cari indikator program (level Renstra) by kode_program
+exports.getIndikatorProgramByKode = async (req, res) => {
+  try {
+    const { kode_program } = req.query;
+    if (!kode_program) {
+      return res.status(400).json({ success: false, message: 'kode_program wajib diisi' });
+    }
+    const program = await RenstraProgram.findOne({
+      where: { kode_program },
+      attributes: ['id'],
+      order: [['id', 'DESC']],
+    });
+    if (!program) {
+      return res.json({ success: true, data: null });
+    }
+    const indikator = await IndikatorRenstra.findOne({
+      where: { stage: 'program', ref_id: program.id },
+      order: [['id', 'DESC']],
+    });
+    return res.json({ success: true, data: indikator });
+  } catch (err) {
+    console.error('getIndikatorProgramByKode error:', err);
+    return res.status(500).json({ success: false, message: 'Gagal mengambil indikator program' });
+  }
+};
+
+// Untuk auto-fill RKA baris Hasil: cari indikator kegiatan (level Renstra) by kode_kegiatan
+exports.getIndikatorKegiatanByKode = async (req, res) => {
+  try {
+    const { kode_kegiatan } = req.query;
+    if (!kode_kegiatan) {
+      return res.status(400).json({ success: false, message: 'kode_kegiatan wajib diisi' });
+    }
+    const kegiatan = await RenstraKegiatan.findOne({
+      where: { kode_kegiatan },
+      attributes: ['id'],
+      order: [['id', 'DESC']],
+    });
+    if (!kegiatan) {
+      return res.json({ success: true, data: null });
+    }
+    const indikator = await IndikatorRenstra.findOne({
+      where: { stage: 'kegiatan', ref_id: kegiatan.id },
+      order: [['id', 'DESC']],
+    });
+    return res.json({ success: true, data: indikator });
+  } catch (err) {
+    console.error('getIndikatorKegiatanByKode error:', err);
+    return res.status(500).json({ success: false, message: 'Gagal mengambil indikator kegiatan' });
+  }
+};
+
 // GET indikator kegiatan
 exports.getIndikatorKegiatan = async (req, res) => {
   try {
@@ -795,6 +915,126 @@ exports.getRiskPropagation = async (req, res) => {
     });
   } catch (err) {
     console.error('❌ [getRiskPropagation] Error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getRkpdCascading = async (req, res) => {
+  try {
+    const { stage, program_id, kegiatan_id, renstra_id, kode_program, kode_kegiatan, sasaran_id } =
+      req.query;
+    const {
+      IndikatorRenstra,
+      RenstraKegiatan,
+      RenstraSubkegiatan,
+      RenstraProgram,
+      RenstraSasaran,
+    } = require('../models');
+
+    // Stage: program — ambil semua program + indikatornya berdasarkan renstra_id
+    if (stage === 'program' && renstra_id) {
+      const programs = await RenstraProgram.findAll({
+        where: { renstra_id: Number(renstra_id) },
+        attributes: ['id', 'kode_program', 'nama_program'],
+        raw: true,
+      });
+      const programIds = programs.map((p) => p.id);
+      const indikators =
+        programIds.length > 0
+          ? await IndikatorRenstra.findAll({
+              where: { stage: 'program', ref_id: programIds },
+              raw: true,
+            })
+          : [];
+      return res.json({ programs, indikators });
+    }
+
+    if (stage === 'kegiatan' && kode_program) {
+      // Cari renstra_program berdasarkan kode_program
+      const renstraProgram = await RenstraProgram.findOne({
+        where: { kode_program: kode_program },
+        attributes: ['id'],
+        raw: true,
+      });
+      if (!renstraProgram) return res.json({ kegiatans: [], indikators: [] });
+      const kegiatans = await RenstraKegiatan.findAll({
+        where: { program_id: renstraProgram.id },
+        attributes: ['id', 'kode_kegiatan', 'nama_kegiatan'],
+        raw: true,
+      });
+      const kegiatanIds = kegiatans.map((k) => k.id);
+      const indikators =
+        kegiatanIds.length > 0
+          ? await IndikatorRenstra.findAll({
+              where: { stage: 'kegiatan', ref_id: kegiatanIds },
+              raw: true,
+            })
+          : [];
+      return res.json({ kegiatans, indikators });
+    }
+
+    if (stage === 'kegiatan' && program_id) {
+      const kegiatans = await RenstraKegiatan.findAll({
+        where: { program_id: Number(program_id) },
+        attributes: ['id', 'kode_kegiatan', 'nama_kegiatan'],
+        raw: true,
+      });
+      const kegiatanIds = kegiatans.map((k) => k.id);
+      const indikators =
+        kegiatanIds.length > 0
+          ? await IndikatorRenstra.findAll({
+              where: { stage: 'kegiatan', ref_id: kegiatanIds },
+              raw: true,
+            })
+          : [];
+      return res.json({ kegiatans, indikators });
+    }
+
+    if (stage === 'sub_kegiatan' && kode_kegiatan) {
+      const renstraKegiatan = await RenstraKegiatan.findOne({
+        where: { kode_kegiatan },
+        attributes: ['id'],
+        raw: true,
+      });
+      if (!renstraKegiatan) return res.json({ subs: [], indikators: [] });
+      const subs = await RenstraSubkegiatan.findAll({
+        where: { kegiatan_id: renstraKegiatan.id },
+        attributes: ['id', 'kode_sub_kegiatan', 'nama_sub_kegiatan'],
+        raw: true,
+      });
+      const subIds = subs.map((s) => s.id);
+      const indikators =
+        subIds.length > 0
+          ? await IndikatorRenstra.findAll({
+              where: { stage: 'sub_kegiatan', ref_id: subIds, renstra_id: Number(renstra_id || 1) },
+              raw: true,
+            })
+          : [];
+      return res.json({ subs, indikators });
+    }
+
+    if (stage === 'sub_kegiatan' && kegiatan_id) {
+      const { Op } = require('sequelize');
+      // Ambil sub kegiatan milik kegiatan ini via renstra_program_id
+      const subs = await RenstraSubkegiatan.findAll({
+        where: { kegiatan_id: Number(kegiatan_id) },
+        attributes: ['id', 'kode_sub_kegiatan', 'nama_sub_kegiatan', 'renstra_program_id'],
+        raw: true,
+      });
+      const subIds = subs.map((s) => s.id);
+      const indikators =
+        subIds.length > 0
+          ? await IndikatorRenstra.findAll({
+              where: { stage: 'sub_kegiatan', ref_id: subIds, renstra_id: Number(renstra_id || 1) },
+              raw: true,
+            })
+          : [];
+      return res.json({ subs, indikators });
+    }
+
+    return res.json([]);
+  } catch (err) {
+    console.error('❌ [getRkpdCascading] Error:', err);
     return res.status(500).json({ error: err.message });
   }
 };

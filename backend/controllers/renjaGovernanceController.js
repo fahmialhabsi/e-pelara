@@ -1,15 +1,15 @@
-﻿"use strict";
+﻿'use strict';
 
-const { Op } = require("sequelize");
-const db = require("../models");
-const svc = require("../services/renjaGovernanceService");
-const readinessSvc = require("../services/renjaDocumentReadinessService");
-const mismatchSvc = require("../services/renjaMismatchEngineService");
-const workflowGuardSvc = require("../services/renjaWorkflowGuardService");
-const dataFixSvc = require("../services/renjaDataFixService");
-const { validateHierarchy } = require("../validators/renjaHierarchyValidator");
-const { detectDuplicateItems } = require("../services/renjaDuplicateDetectorService");
-const { classifyGovernance } = require("../services/renjaGovernanceSeverityService");
+const { Op } = require('sequelize');
+const db = require('../models');
+const svc = require('../services/renjaGovernanceService');
+const readinessSvc = require('../services/renjaDocumentReadinessService');
+const mismatchSvc = require('../services/renjaMismatchEngineService');
+const workflowGuardSvc = require('../services/renjaWorkflowGuardService');
+const dataFixSvc = require('../services/renjaDataFixService');
+const { validateHierarchy } = require('../validators/renjaHierarchyValidator');
+const { detectDuplicateItems } = require('../services/renjaDuplicateDetectorService');
+const { classifyGovernance } = require('../services/renjaGovernanceSeverityService');
 
 const {
   RenjaDokumen,
@@ -67,33 +67,33 @@ async function getDashboardActionItems(req, res) {
 async function getDashboardMismatchAlerts(req, res) {
   try {
     const where = { is_resolved: false };
-    const severityFilterRaw = String(req.query.severity_final || req.query.severity || "").trim();
+    const severityFilterRaw = String(req.query.severity_final || req.query.severity || '').trim();
     if (req.query.renja_dokumen_id) where.renja_dokumen_id = Number(req.query.renja_dokumen_id);
     const rows = await RenjaMismatchResult.findAll({
       where,
       include: [
         {
           model: RenjaItem,
-          as: "renjaItem",
+          as: 'renjaItem',
           required: false,
-          attributes: ["id", "program", "kegiatan", "sub_kegiatan", "indikator", "source_mode"],
+          attributes: ['id', 'program', 'kegiatan', 'sub_kegiatan', 'indikator', 'source_mode'],
         },
       ],
-      order: [["computed_at", "DESC"]],
+      order: [['computed_at', 'DESC']],
       limit: 500,
     });
     let data = rows.map((x) => classifyGovernance(x.get({ plain: true })));
     if (severityFilterRaw) {
       const norm = severityFilterRaw.toUpperCase();
       const mapped =
-        norm === "ERROR"
-          ? "BLOCKER"
-          : norm === "WARNING"
-            ? "WARNING"
-            : norm === "INFO"
-              ? "INFO"
+        norm === 'ERROR'
+          ? 'BLOCKER'
+          : norm === 'WARNING'
+            ? 'WARNING'
+            : norm === 'INFO'
+              ? 'INFO'
               : norm;
-      data = data.filter((x) => String(x.severity_final || "").toUpperCase() === mapped);
+      data = data.filter((x) => String(x.severity_final || '').toUpperCase() === mapped);
     }
     return res.json({ success: true, data });
   } catch (e) {
@@ -111,49 +111,72 @@ async function workflowAction(req, res) {
     const row = await RenjaDokumen.findByPk(id, { transaction: t });
     if (!row) {
       await t.rollback();
-      return res.status(404).json({ success: false, message: "Dokumen RENJA tidak ditemukan." });
+      return res.status(404).json({ success: false, message: 'Dokumen RENJA tidak ditemukan.' });
     }
 
-    workflowGuardSvc.assertStrictTransition(row.workflow_status || "draft", targetStatus);
+    workflowGuardSvc.assertStrictTransition(row.workflow_status || 'draft', targetStatus);
 
-    if (["submitted", "published"].includes(targetStatus)) {
+    if (['reviewed', 'approved'].includes(targetStatus)) {
+      const currentActor = actorId(req);
+      const priorActor = targetStatus === 'reviewed' ? row.submitted_by : row.reviewed_by;
+      if (priorActor && currentActor && Number(priorActor) === Number(currentActor)) {
+        await t.rollback();
+        return res.status(403).json({
+          success: false,
+          message:
+            targetStatus === 'reviewed'
+              ? 'PEMISAHAN_TUGAS_DILANGGAR: Penyetuju tahap review tidak boleh sama dengan pengaju submit.'
+              : 'PEMISAHAN_TUGAS_DILANGGAR: Penyetuju tahap approve tidak boleh sama dengan penyetuju review.',
+        });
+      }
+    }
+
+    if (['submitted', 'published'].includes(targetStatus)) {
       const readiness = await readinessSvc.evaluateReadiness(
         db,
         id,
-        targetStatus === "submitted" ? "submit" : "publish",
+        targetStatus === 'submitted' ? 'submit' : 'publish',
       );
       if (
-        (targetStatus === "submitted" && !readiness.readiness.ready_for_submit) ||
-        (targetStatus === "published" && !readiness.readiness.ready_for_publish)
+        (targetStatus === 'submitted' && !readiness.readiness.ready_for_submit) ||
+        (targetStatus === 'published' && !readiness.readiness.ready_for_publish)
       ) {
         await t.rollback();
         return res.status(409).json({
           success: false,
           message:
-            targetStatus === "submitted"
-              ? "DOCUMENT_NOT_READY_FOR_SUBMIT"
-              : "DOCUMENT_NOT_READY_FOR_PUBLISH",
+            targetStatus === 'submitted'
+              ? 'DOCUMENT_NOT_READY_FOR_SUBMIT'
+              : 'DOCUMENT_NOT_READY_FOR_PUBLISH',
           data: readiness,
         });
       }
     }
 
     const phase =
-      targetStatus === "published"
-        ? "final"
-        : targetStatus === "reviewed"
-          ? "rancangan"
+      targetStatus === 'published'
+        ? 'final'
+        : targetStatus === 'reviewed'
+          ? 'rancangan'
           : row.document_phase;
 
     await row.update(
       {
         workflow_status: targetStatus,
         document_phase: phase,
-        status: targetStatus === "published" ? "final" : row.status,
-        published_at: targetStatus === "published" ? new Date() : row.published_at,
-        published_by: targetStatus === "published" ? actorId(req) : row.published_by,
-        approved_at: ["approved", "published"].includes(targetStatus) ? new Date() : row.approved_at,
-        approved_by: ["approved", "published"].includes(targetStatus) ? actorId(req) : row.approved_by,
+        status: targetStatus === 'published' ? 'final' : row.status,
+        published_at: targetStatus === 'published' ? new Date() : row.published_at,
+        published_by: targetStatus === 'published' ? actorId(req) : row.published_by,
+        approved_at: ['approved', 'published'].includes(targetStatus)
+          ? new Date()
+          : row.approved_at,
+        approved_by: ['approved', 'published'].includes(targetStatus)
+          ? actorId(req)
+          : row.approved_by,
+        submitted_at: targetStatus === 'submitted' ? new Date() : row.submitted_at,
+        submitted_by: targetStatus === 'submitted' ? actorId(req) : row.submitted_by,
+        reviewed_at: targetStatus === 'reviewed' ? new Date() : row.reviewed_at,
+        reviewed_by: targetStatus === 'reviewed' ? actorId(req) : row.reviewed_by,
         updated_by: actorId(req),
       },
       { transaction: t },
@@ -165,8 +188,8 @@ async function workflowAction(req, res) {
       status: targetStatus,
       changeType: action,
       changeReason: req.body?.change_reason_text || req.body?.change_reason || null,
-      isPublished: targetStatus === "published",
-      sectionSnapshotType: targetStatus === "published" ? "published" : "after_change",
+      isPublished: targetStatus === 'published',
+      sectionSnapshotType: targetStatus === 'published' ? 'published' : 'after_change',
     });
 
     await t.commit();
@@ -194,25 +217,25 @@ async function deleteDokumen(req, res) {
     const row = await RenjaDokumen.findByPk(id, { transaction: t });
     if (!row) {
       await t.rollback();
-      return res.status(404).json({ success: false, message: "Dokumen tidak ditemukan." });
+      return res.status(404).json({ success: false, message: 'Dokumen tidak ditemukan.' });
     }
-    if (row.workflow_status === "published") {
+    if (row.workflow_status === 'published') {
       await t.rollback();
       return res.status(409).json({
         success: false,
-        message: "Dokumen published tidak dapat dihapus. Gunakan arsip.",
+        message: 'Dokumen published tidak dapat dihapus. Gunakan arsip.',
       });
     }
     await row.update(
       {
         deleted_at: new Date(),
         deleted_by: actorId(req),
-        workflow_status: "archived",
+        workflow_status: 'archived',
       },
       { transaction: t },
     );
     await t.commit();
-    return res.json({ success: true, message: "Dokumen diarsipkan." });
+    return res.json({ success: true, message: 'Dokumen diarsipkan.' });
   } catch (e) {
     await t.rollback();
     return res.status(500).json({ success: false, message: e.message });
@@ -223,7 +246,7 @@ async function listVersions(req, res) {
   try {
     const rows = await RenjaDokumenVersion.findAll({
       where: { renja_dokumen_id: Number(req.params.id) },
-      order: [["version_number", "DESC"]],
+      order: [['version_number', 'DESC']],
     });
     return res.json({ success: true, data: rows });
   } catch (e) {
@@ -236,7 +259,7 @@ async function compareVersions(req, res) {
     const from = Number(req.query.from);
     const to = Number(req.query.to);
     if (!Number.isFinite(from) || !Number.isFinite(to)) {
-      return res.status(400).json({ success: false, message: "Query from dan to wajib numerik." });
+      return res.status(400).json({ success: false, message: 'Query from dan to wajib numerik.' });
     }
     const data = await svc.compareVersions(db, Number(req.params.id), from, to);
     return res.json({ success: true, data });
@@ -249,11 +272,11 @@ async function getSections(req, res) {
   try {
     const id = Number(req.params.id);
     const row = await RenjaDokumen.findByPk(id);
-    if (!row) return res.status(404).json({ success: false, message: "Dokumen tidak ditemukan." });
+    if (!row) return res.status(404).json({ success: false, message: 'Dokumen tidak ditemukan.' });
     await svc.ensureDefaultSections(db, id);
     const sections = await RenjaDokumenSection.findAll({
       where: { renja_dokumen_id: id },
-      order: [["id", "ASC"]],
+      order: [['id', 'ASC']],
     });
     return res.json({ success: true, data: sections });
   } catch (e) {
@@ -265,15 +288,15 @@ async function exportDocument(req, res) {
   try {
     const id = Number(req.params.id);
     const doc = await RenjaDokumen.findByPk(id);
-    if (!doc) return res.status(404).json({ success: false, message: "Dokumen tidak ditemukan." });
+    if (!doc) return res.status(404).json({ success: false, message: 'Dokumen tidak ditemukan.' });
 
     await svc.ensureDefaultSections(db, id);
     const [items, sections, snapshots] = await Promise.all([
-      RenjaItem.findAll({ where: { renja_dokumen_id: id }, order: [["urutan", "ASC"]] }),
-      RenjaDokumenSection.findAll({ where: { renja_dokumen_id: id }, order: [["id", "ASC"]] }),
+      RenjaItem.findAll({ where: { renja_dokumen_id: id }, order: [['sub_kegiatan', 'ASC']] }),
+      RenjaDokumenSection.findAll({ where: { renja_dokumen_id: id }, order: [['id', 'ASC']] }),
       RenjaSnapshot.findAll({
         where: { renja_dokumen_id: id },
-        order: [["created_at", "DESC"]],
+        order: [['created_at', 'DESC']],
         limit: 10,
       }),
     ]);
@@ -310,19 +333,27 @@ async function putSection(req, res) {
   try {
     const id = Number(req.params.id);
     const key = req.params.sectionKey;
-    const allowedKeys = new Set(["pendahuluan", "evaluasi", "tujuan_sasaran", "rencana_kerja", "penutup"]);
+    const allowedKeys = new Set([
+      'pendahuluan',
+      'evaluasi',
+      'tujuan_sasaran',
+      'rencana_kerja',
+      'penutup',
+    ]);
     if (!allowedKeys.has(key)) {
       await t.rollback();
-      return res.status(400).json({ success: false, message: "sectionKey tidak sah." });
+      return res.status(400).json({ success: false, message: 'sectionKey tidak sah.' });
     }
     const doc = await RenjaDokumen.findByPk(id, { transaction: t });
     if (!doc) {
       await t.rollback();
-      return res.status(404).json({ success: false, message: "Dokumen tidak ditemukan." });
+      return res.status(404).json({ success: false, message: 'Dokumen tidak ditemukan.' });
     }
-    if (["published", "archived"].includes(doc.workflow_status)) {
+    if (['published', 'archived'].includes(doc.workflow_status)) {
       await t.rollback();
-      return res.status(409).json({ success: false, message: "Dokumen published bersifat readonly." });
+      return res
+        .status(409)
+        .json({ success: false, message: 'Dokumen published bersifat readonly.' });
     }
 
     await svc.ensureDefaultSections(db, id, t);
@@ -344,8 +375,8 @@ async function putSection(req, res) {
       );
     }
 
-    const content = req.body?.content ?? section.content ?? "";
-    const computedCompletion = String(content || "").trim() ? 100 : 0;
+    const content = req.body?.content ?? section.content ?? '';
+    const computedCompletion = String(content || '').trim() ? 100 : 0;
 
     await section.update(
       {
@@ -368,7 +399,7 @@ async function listItems(req, res) {
   try {
     const rows = await RenjaItem.findAll({
       where: { renja_dokumen_id: Number(req.params.id) },
-      order: [["urutan", "ASC"]],
+      order: [['urutan', 'ASC']],
     });
     return res.json({ success: true, data: rows });
   } catch (e) {
@@ -380,7 +411,7 @@ async function createItem(req, res) {
   try {
     const dokumenId = Number(req.params.id);
     const doc = await RenjaDokumen.findByPk(dokumenId);
-    if (!doc) return res.status(404).json({ success: false, message: "Dokumen tidak ditemukan." });
+    if (!doc) return res.status(404).json({ success: false, message: 'Dokumen tidak ditemukan.' });
     workflowGuardSvc.assertEditableWorkflow(doc.workflow_status);
 
     const payload = { ...req.body, renja_dokumen_id: dokumenId };
@@ -388,7 +419,7 @@ async function createItem(req, res) {
     if (validation.some((x) => x.is_blocking)) {
       return res.status(400).json({
         success: false,
-        message: "Validasi item gagal.",
+        message: 'Validasi item gagal.',
         data: validation,
       });
     }
@@ -402,19 +433,19 @@ async function createItem(req, res) {
 async function updateItem(req, res) {
   try {
     const doc = await RenjaDokumen.findByPk(Number(req.params.id));
-    if (!doc) return res.status(404).json({ success: false, message: "Dokumen tidak ditemukan." });
+    if (!doc) return res.status(404).json({ success: false, message: 'Dokumen tidak ditemukan.' });
     workflowGuardSvc.assertEditableWorkflow(doc.workflow_status);
 
     const row = await RenjaItem.findByPk(Number(req.params.itemId));
     if (!row || Number(row.renja_dokumen_id) !== Number(req.params.id)) {
-      return res.status(404).json({ success: false, message: "Item tidak ditemukan." });
+      return res.status(404).json({ success: false, message: 'Item tidak ditemukan.' });
     }
     const nextPayload = { ...row.get({ plain: true }), ...(req.body || {}) };
     const validation = await validateHierarchy(db, { dokumen: doc, item: nextPayload });
     if (validation.some((x) => x.is_blocking)) {
       return res.status(400).json({
         success: false,
-        message: "Validasi item gagal.",
+        message: 'Validasi item gagal.',
         data: validation,
       });
     }
@@ -428,12 +459,12 @@ async function updateItem(req, res) {
 async function deleteItem(req, res) {
   try {
     const doc = await RenjaDokumen.findByPk(Number(req.params.id));
-    if (!doc) return res.status(404).json({ success: false, message: "Dokumen tidak ditemukan." });
+    if (!doc) return res.status(404).json({ success: false, message: 'Dokumen tidak ditemukan.' });
     workflowGuardSvc.assertEditableWorkflow(doc.workflow_status);
 
     const row = await RenjaItem.findByPk(Number(req.params.itemId));
     if (!row || Number(row.renja_dokumen_id) !== Number(req.params.id)) {
-      return res.status(404).json({ success: false, message: "Item tidak ditemukan." });
+      return res.status(404).json({ success: false, message: 'Item tidak ditemukan.' });
     }
     await row.destroy();
     return res.json({ success: true });
@@ -449,7 +480,7 @@ async function syncRenstra(req, res) {
     const doc = await RenjaDokumen.findByPk(id, { transaction: t });
     if (!doc) {
       await t.rollback();
-      return res.status(404).json({ success: false, message: "Dokumen tidak ditemukan." });
+      return res.status(404).json({ success: false, message: 'Dokumen tidak ditemukan.' });
     }
 
     const programs = await RenstraProgram.findAll({
@@ -463,7 +494,7 @@ async function syncRenstra(req, res) {
       const ex = await RenjaItem.findOne({
         where: {
           renja_dokumen_id: id,
-          source_mode: "RENSTRA",
+          source_mode: 'RENSTRA',
           source_renstra_program_id: p.id,
         },
         transaction: t,
@@ -472,11 +503,11 @@ async function syncRenstra(req, res) {
         await RenjaItem.create(
           {
             renja_dokumen_id: id,
-            source_mode: "RENSTRA",
+            source_mode: 'RENSTRA',
             source_renstra_program_id: p.id,
             program: p.nama_program,
             kode_program: p.kode_program,
-            mismatch_status: "renstra_only",
+            mismatch_status: 'renstra_only',
           },
           { transaction: t },
         );
@@ -499,20 +530,23 @@ async function syncRkpd(req, res) {
     const doc = await RenjaDokumen.findByPk(id, { transaction: t });
     if (!doc) {
       await t.rollback();
-      return res.status(404).json({ success: false, message: "Dokumen tidak ditemukan." });
+      return res.status(404).json({ success: false, message: 'Dokumen tidak ditemukan.' });
     }
     if (!doc.rkpd_dokumen_id) {
       await t.rollback();
-      return res.status(400).json({ success: false, message: "rkpd_dokumen_id belum diisi." });
+      return res.status(400).json({ success: false, message: 'rkpd_dokumen_id belum diisi.' });
     }
 
-    const rows = await RkpdItem.findAll({ where: { rkpd_dokumen_id: doc.rkpd_dokumen_id }, transaction: t });
+    const rows = await RkpdItem.findAll({
+      where: { rkpd_dokumen_id: doc.rkpd_dokumen_id },
+      transaction: t,
+    });
     let created = 0;
     for (const r of rows) {
       const ex = await RenjaItem.findOne({
         where: {
           renja_dokumen_id: id,
-          source_mode: "RKPD",
+          source_mode: 'RKPD',
           source_rkpd_item_id: r.id,
         },
         transaction: t,
@@ -521,7 +555,7 @@ async function syncRkpd(req, res) {
         await RenjaItem.create(
           {
             renja_dokumen_id: id,
-            source_mode: "RKPD",
+            source_mode: 'RKPD',
             source_rkpd_item_id: r.id,
             program: r.program,
             kegiatan: r.kegiatan,
@@ -530,7 +564,7 @@ async function syncRkpd(req, res) {
             target: r.target,
             satuan: r.satuan,
             pagu: r.pagu,
-            mismatch_status: "rkpd_only",
+            mismatch_status: 'rkpd_only',
           },
           { transaction: t },
         );
@@ -551,12 +585,15 @@ async function getValidationMismatch(req, res) {
     const renjaDokumenId = Number(req.params.id);
     const latestRun = await RenjaValidationRun.findOne({
       where: { renja_dokumen_id: renjaDokumenId },
-      order: [["computed_at", "DESC"]],
+      order: [['computed_at', 'DESC']],
     });
     if (latestRun) {
       const rows = await RenjaMismatchResult.findAll({
         where: { renja_validation_run_id: latestRun.id, is_resolved: false },
-        order: [["severity", "DESC"], ["id", "ASC"]],
+        order: [
+          ['severity', 'DESC'],
+          ['id', 'ASC'],
+        ],
       });
       const hydratedRows = mismatchSvc.hydrateMismatchNavigation(rows, renjaDokumenId);
       return res.json({
@@ -589,7 +626,7 @@ async function recomputeMismatch(req, res) {
   try {
     const id = Number(req.params.id);
     const output = await mismatchSvc.computeMismatchForDokumen(db, id);
-    const run = await mismatchSvc.persistMismatchResults(db, id, output, "mismatch", actorId(req));
+    const run = await mismatchSvc.persistMismatchResults(db, id, output, 'mismatch', actorId(req));
     const hydratedRows = mismatchSvc.hydrateMismatchNavigation(output.results, id);
     return res.json({
       success: true,
@@ -612,7 +649,7 @@ async function recomputeMismatch(req, res) {
 async function getReadiness(req, res) {
   try {
     const id = Number(req.params.id);
-    const data = await readinessSvc.evaluateReadiness(db, id, String(req.query.action || "submit"));
+    const data = await readinessSvc.evaluateReadiness(db, id, String(req.query.action || 'submit'));
     return res.json({ success: true, data });
   } catch (e) {
     return res.status(400).json({ success: false, message: e.message });
@@ -622,10 +659,20 @@ async function getReadiness(req, res) {
 async function validateDokumen(req, res) {
   try {
     const id = Number(req.params.id);
-    const action = String(req.body?.action || "validate");
-    const data = await readinessSvc.evaluateReadiness(db, id, action === "publish" ? "publish" : "submit");
+    const action = String(req.body?.action || 'validate');
+    const data = await readinessSvc.evaluateReadiness(
+      db,
+      id,
+      action === 'publish' ? 'publish' : 'submit',
+    );
     const hydratedResults = mismatchSvc.hydrateMismatchNavigation(data.results || [], id);
-    const run = await mismatchSvc.persistMismatchResults(db, id, { results: hydratedResults }, "full", actorId(req));
+    const run = await mismatchSvc.persistMismatchResults(
+      db,
+      id,
+      { results: hydratedResults },
+      'full',
+      actorId(req),
+    );
     return res.json({
       success: true,
       data: {
@@ -653,7 +700,7 @@ async function validateItem(req, res) {
   try {
     const dokumenId = Number(req.params.id);
     const doc = await RenjaDokumen.findByPk(dokumenId);
-    if (!doc) return res.status(404).json({ success: false, message: "Dokumen tidak ditemukan." });
+    if (!doc) return res.status(404).json({ success: false, message: 'Dokumen tidak ditemukan.' });
     const payload = req.body || {};
     const data = await validateHierarchy(db, { dokumen: doc, item: payload });
     const governed = data.map((x) => classifyGovernance(x));
@@ -662,10 +709,10 @@ async function validateItem(req, res) {
       data: {
         summary: {
           total: governed.length,
-          blocker_count: governed.filter((x) => x.severity_final === "BLOCKER").length,
-          blocking_count: governed.filter((x) => x.severity_final === "BLOCKER").length,
-          warning_count: governed.filter((x) => x.severity_final === "WARNING").length,
-          info_count: governed.filter((x) => x.severity_final === "INFO").length,
+          blocker_count: governed.filter((x) => x.severity_final === 'BLOCKER').length,
+          blocking_count: governed.filter((x) => x.severity_final === 'BLOCKER').length,
+          warning_count: governed.filter((x) => x.severity_final === 'WARNING').length,
+          info_count: governed.filter((x) => x.severity_final === 'INFO').length,
         },
         results: governed,
       },
@@ -679,7 +726,7 @@ async function bulkValidateItems(req, res) {
   try {
     const dokumenId = Number(req.params.id);
     const doc = await RenjaDokumen.findByPk(dokumenId);
-    if (!doc) return res.status(404).json({ success: false, message: "Dokumen tidak ditemukan." });
+    if (!doc) return res.status(404).json({ success: false, message: 'Dokumen tidak ditemukan.' });
     const items = await RenjaItem.findAll({ where: { renja_dokumen_id: dokumenId } });
     const all = [];
     for (const item of items) {
@@ -689,13 +736,13 @@ async function bulkValidateItems(req, res) {
     const duplicates = detectDuplicateItems(items.map((x) => x.get({ plain: true })));
     for (const dup of duplicates) {
       all.push({
-        severity: "error",
-        mismatch_scope: "item",
-        source_type: "INTERNAL",
-        mismatch_code: "DUPLICATE_ITEM",
-        mismatch_label: "DUPLICATE_ITEM",
+        severity: 'error',
+        mismatch_scope: 'item',
+        source_type: 'INTERNAL',
+        mismatch_code: 'DUPLICATE_ITEM',
+        mismatch_label: 'DUPLICATE_ITEM',
         message: `Terdeteksi duplikasi business key item (${dup.count} baris).`,
-        recommendation: "Ubah indikator/lokasi atau satukan item duplikat.",
+        recommendation: 'Ubah indikator/lokasi atau satukan item duplikat.',
         is_blocking: true,
         related_item_id: dup.item?.id || null,
       });
@@ -706,10 +753,10 @@ async function bulkValidateItems(req, res) {
       data: {
         summary: {
           total: governed.length,
-          blocker_count: governed.filter((x) => x.severity_final === "BLOCKER").length,
-          blocking_count: governed.filter((x) => x.severity_final === "BLOCKER").length,
-          warning_count: governed.filter((x) => x.severity_final === "WARNING").length,
-          info_count: governed.filter((x) => x.severity_final === "INFO").length,
+          blocker_count: governed.filter((x) => x.severity_final === 'BLOCKER').length,
+          blocking_count: governed.filter((x) => x.severity_final === 'BLOCKER').length,
+          warning_count: governed.filter((x) => x.severity_final === 'WARNING').length,
+          info_count: governed.filter((x) => x.severity_final === 'INFO').length,
         },
         results: governed,
       },
@@ -721,16 +768,17 @@ async function bulkValidateItems(req, res) {
 
 async function dropdownOpd(req, res) {
   const where = { aktif: true };
-  const rows = await PerangkatDaerah.findAll({ where, order: [["nama", "ASC"]], limit: 1000 });
+  const rows = await PerangkatDaerah.findAll({ where, order: [['nama', 'ASC']], limit: 1000 });
   return res.json({ success: true, data: rows });
 }
 
 async function dropdownRenstra(req, res) {
   const where = {};
-  if (req.query.perangkat_daerah_id) where.perangkat_daerah_id = Number(req.query.perangkat_daerah_id);
+  if (req.query.perangkat_daerah_id)
+    where.perangkat_daerah_id = Number(req.query.perangkat_daerah_id);
   if (req.query.periode_id) where.periode_id = Number(req.query.periode_id);
-  where.status = "final";
-  const rows = await RenstraPdDokumen.findAll({ where, order: [["id", "DESC"]], limit: 300 });
+  where.status = 'final';
+  const rows = await RenstraPdDokumen.findAll({ where, order: [['id', 'DESC']], limit: 300 });
   return res.json({ success: true, data: rows });
 }
 
@@ -738,35 +786,44 @@ async function dropdownRkpd(req, res) {
   const where = {};
   if (req.query.tahun) where.tahun = Number(req.query.tahun);
   if (req.query.periode_id) where.periode_id = Number(req.query.periode_id);
-  where.status = "final";
-  const rows = await RkpdDokumen.findAll({ where, order: [["id", "DESC"]], limit: 300 });
+  where.status = 'final';
+  const rows = await RkpdDokumen.findAll({ where, order: [['id', 'DESC']], limit: 300 });
   return res.json({ success: true, data: rows });
 }
 
 async function dropdownPrograms(req, res) {
   const renstraPdDokumenId = Number(req.query.renstra_pd_dokumen_id);
   if (!Number.isFinite(renstraPdDokumenId)) {
-    return res.status(400).json({ success: false, message: "renstra_pd_dokumen_id wajib." });
+    return res.status(400).json({ success: false, message: 'renstra_pd_dokumen_id wajib.' });
   }
-  const rows = await RenstraProgram.findAll({ where: { renstra_id: renstraPdDokumenId }, order: [["kode_program", "ASC"]] });
+  const rows = await RenstraProgram.findAll({
+    where: { renstra_id: renstraPdDokumenId },
+    order: [['kode_program', 'ASC']],
+  });
   return res.json({ success: true, data: rows });
 }
 
 async function dropdownKegiatan(req, res) {
   const programId = Number(req.query.program_id);
   if (!Number.isFinite(programId)) {
-    return res.status(400).json({ success: false, message: "program_id wajib." });
+    return res.status(400).json({ success: false, message: 'program_id wajib.' });
   }
-  const rows = await RenstraKegiatan.findAll({ where: { program_id: programId }, order: [["kode_kegiatan", "ASC"]] });
+  const rows = await RenstraKegiatan.findAll({
+    where: { program_id: programId },
+    order: [['kode_kegiatan', 'ASC']],
+  });
   return res.json({ success: true, data: rows });
 }
 
 async function dropdownSubKegiatan(req, res) {
   const kegiatanId = Number(req.query.kegiatan_id);
   if (!Number.isFinite(kegiatanId)) {
-    return res.status(400).json({ success: false, message: "kegiatan_id wajib." });
+    return res.status(400).json({ success: false, message: 'kegiatan_id wajib.' });
   }
-  const rows = await RenstraSubkegiatan.findAll({ where: { kegiatan_id: kegiatanId }, order: [["kode_sub_kegiatan", "ASC"]] });
+  const rows = await RenstraSubkegiatan.findAll({
+    where: { kegiatan_id: kegiatanId },
+    order: [['kode_sub_kegiatan', 'ASC']],
+  });
   return res.json({ success: true, data: rows });
 }
 
@@ -775,7 +832,7 @@ async function dropdownSasaran(req, res) {
   try {
     const renstraPdDokumenId = Number(req.query.renstra_pd_dokumen_id);
     if (!Number.isFinite(renstraPdDokumenId)) {
-      return res.status(400).json({ success: false, message: "renstra_pd_dokumen_id wajib." });
+      return res.status(400).json({ success: false, message: 'renstra_pd_dokumen_id wajib.' });
     }
     const [rows] = await sequelize.query(
       `
@@ -803,9 +860,14 @@ async function getDataFixSummary(req, res) {
 
 async function generateDataFixMapping(req, res) {
   try {
-    const out = await dataFixSvc.generateMappingSuggestions(db, Number(req.params.id), actorId(req), {
-      includeMapped: Boolean(req.body?.include_mapped),
-    });
+    const out = await dataFixSvc.generateMappingSuggestions(
+      db,
+      Number(req.params.id),
+      actorId(req),
+      {
+        includeMapped: Boolean(req.body?.include_mapped),
+      },
+    );
     return res.json({
       success: true,
       data: {
@@ -813,8 +875,10 @@ async function generateDataFixMapping(req, res) {
         run_type: out.run.run_type,
         generated_at: out.run.generated_at,
         total: out.rows.length,
-        high_confidence: out.rows.filter((x) => x.suggestion_confidence === "HIGH").length,
-        manual_review_needed: out.rows.filter((x) => x.suggestion_confidence !== "HIGH" || x.is_conflict).length,
+        high_confidence: out.rows.filter((x) => x.suggestion_confidence === 'HIGH').length,
+        manual_review_needed: out.rows.filter(
+          (x) => x.suggestion_confidence !== 'HIGH' || x.is_conflict,
+        ).length,
       },
     });
   } catch (e) {
@@ -849,7 +913,7 @@ async function applyDataFixMapping(req, res) {
   } catch (e) {
     return res.status(dataFixErrorStatus(e)).json({
       success: false,
-      code: e.code || "APPLY_FAILED",
+      code: e.code || 'APPLY_FAILED',
       message: e.message,
       meta: e.meta || null,
     });
@@ -884,8 +948,8 @@ async function listMappingApplyBatches(req, res) {
 async function getDataFixBatchHistory(req, res) {
   try {
     const activeOnly =
-      String(req.query.active_only || "") === "1" ||
-      String(req.query.active_only || "").toLowerCase() === "true";
+      String(req.query.active_only || '') === '1' ||
+      String(req.query.active_only || '').toLowerCase() === 'true';
     const data = await dataFixSvc.listDataFixBatchHistory(db, Number(req.params.id), {
       active_only: activeOnly,
       limit: req.query.limit ? Number(req.query.limit) : undefined,
@@ -903,8 +967,12 @@ async function getDataFixBatchHistory(req, res) {
 
 async function getDataFixBatchDetail(req, res) {
   try {
-    const row = await dataFixSvc.getDataFixBatchDetail(db, Number(req.params.id), Number(req.params.batchId));
-    if (!row) return res.status(404).json({ success: false, message: "BATCH_NOT_FOUND" });
+    const row = await dataFixSvc.getDataFixBatchDetail(
+      db,
+      Number(req.params.id),
+      Number(req.params.batchId),
+    );
+    if (!row) return res.status(404).json({ success: false, message: 'BATCH_NOT_FOUND' });
     return res.json({ success: true, data: row });
   } catch (e) {
     return res.status(400).json({ success: false, message: e.message });
@@ -923,7 +991,7 @@ async function previewDataFixImpact(req, res) {
   } catch (e) {
     return res.status(dataFixErrorStatus(e)).json({
       success: false,
-      code: e.code || "PREVIEW_IMPACT_FAILED",
+      code: e.code || 'PREVIEW_IMPACT_FAILED',
       message: e.message,
     });
   }
@@ -938,7 +1006,7 @@ async function acquireDataFixLock(req, res) {
   } catch (e) {
     return res.status(dataFixErrorStatus(e, 423)).json({
       success: false,
-      code: e.code || "LOCK_FAILED",
+      code: e.code || 'LOCK_FAILED',
       message: e.message,
       meta: e.meta || null,
     });
@@ -952,7 +1020,7 @@ async function releaseDataFixLock(req, res) {
   } catch (e) {
     return res.status(dataFixErrorStatus(e, 403)).json({
       success: false,
-      code: e.code || "LOCK_RELEASE_FAILED",
+      code: e.code || 'LOCK_RELEASE_FAILED',
       message: e.message,
     });
   }
@@ -981,24 +1049,28 @@ async function rollbackMappingApplyBatch(req, res) {
     );
     return res.json({ success: true, data });
   } catch (e) {
-    const msg = e.message || "";
-    if (msg.includes("ROLLBACK_BATCH_NOT_FOUND")) {
-      return res.status(404).json({ success: false, code: "ROLLBACK_BATCH_NOT_FOUND", message: msg });
+    const msg = e.message || '';
+    if (msg.includes('ROLLBACK_BATCH_NOT_FOUND')) {
+      return res
+        .status(404)
+        .json({ success: false, code: 'ROLLBACK_BATCH_NOT_FOUND', message: msg });
     }
-    if (msg.includes("ROLLBACK_BATCH_ALREADY_ROLLED_BACK")) {
-      return res.status(409).json({ success: false, code: "ROLLBACK_BATCH_ALREADY_ROLLED_BACK", message: msg });
+    if (msg.includes('ROLLBACK_BATCH_ALREADY_ROLLED_BACK')) {
+      return res
+        .status(409)
+        .json({ success: false, code: 'ROLLBACK_BATCH_ALREADY_ROLLED_BACK', message: msg });
     }
-    if (msg.includes("ROLLBACK_ITEM_CHANGED")) {
+    if (msg.includes('ROLLBACK_ITEM_CHANGED')) {
       return res.status(409).json({
         success: false,
-        code: "ROLLBACK_ITEM_CHANGED",
+        code: 'ROLLBACK_ITEM_CHANGED',
         message: msg,
         meta: e.meta || null,
       });
     }
     return res.status(dataFixErrorStatus(e)).json({
       success: false,
-      code: e.code || "ROLLBACK_FAILED",
+      code: e.code || 'ROLLBACK_FAILED',
       message: msg,
     });
   }
@@ -1006,9 +1078,14 @@ async function rollbackMappingApplyBatch(req, res) {
 
 async function generateIndicatorSuggestions(req, res) {
   try {
-    const out = await dataFixSvc.generateIndicatorSuggestions(db, Number(req.params.id), actorId(req), {
-      includeMapped: Boolean(req.body?.include_mapped),
-    });
+    const out = await dataFixSvc.generateIndicatorSuggestions(
+      db,
+      Number(req.params.id),
+      actorId(req),
+      {
+        includeMapped: Boolean(req.body?.include_mapped),
+      },
+    );
     return res.json({
       success: true,
       data: {
@@ -1050,7 +1127,7 @@ async function applyIndicatorMapping(req, res) {
   } catch (e) {
     return res.status(dataFixErrorStatus(e)).json({
       success: false,
-      code: e.code || "APPLY_FAILED",
+      code: e.code || 'APPLY_FAILED',
       message: e.message,
       meta: e.meta || null,
     });
@@ -1059,9 +1136,14 @@ async function applyIndicatorMapping(req, res) {
 
 async function autofillTargets(req, res) {
   try {
-    const generated = await dataFixSvc.generateTargetSuggestions(db, Number(req.params.id), actorId(req), {
-      overwrite: Boolean(req.body?.overwrite_target),
-    });
+    const generated = await dataFixSvc.generateTargetSuggestions(
+      db,
+      Number(req.params.id),
+      actorId(req),
+      {
+        overwrite: Boolean(req.body?.overwrite_target),
+      },
+    );
     const autoApply = req.body?.auto_apply !== false;
     const applied = autoApply
       ? await dataFixSvc.applySuggestions(db, Number(req.params.id), actorId(req), {
@@ -1103,7 +1185,11 @@ async function getTargetSuggestions(req, res) {
 
 async function resolvePolicyConflicts(req, res) {
   try {
-    const generated = await dataFixSvc.generatePolicyConflictSuggestions(db, Number(req.params.id), actorId(req));
+    const generated = await dataFixSvc.generatePolicyConflictSuggestions(
+      db,
+      Number(req.params.id),
+      actorId(req),
+    );
     const autoApply = Boolean(req.body?.auto_apply);
     const applied = autoApply
       ? await dataFixSvc.applySuggestions(db, Number(req.params.id), actorId(req), {
@@ -1154,7 +1240,7 @@ async function applyAllHighConfidence(req, res) {
   } catch (e) {
     return res.status(dataFixErrorStatus(e)).json({
       success: false,
-      code: e.code || "APPLY_FAILED",
+      code: e.code || 'APPLY_FAILED',
       message: e.message,
       meta: e.meta || null,
     });

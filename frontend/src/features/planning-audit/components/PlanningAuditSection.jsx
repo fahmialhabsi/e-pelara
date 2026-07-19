@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import AuditTimeline from './AuditTimeline';
 import BeforeAfterDiffCard from './BeforeAfterDiffCard';
 import DocumentTracePanel from './DocumentTracePanel';
@@ -17,7 +17,9 @@ export default function PlanningAuditSection({
   onVersionRestored,
   fieldLabelMap = {},
   statusLabelMap = {},
+  defaultExpanded = true,
 }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const localizedAuditRows = useMemo(() => {
     return (auditRows || []).map((row) => {
       const normalized = row?.normalized;
@@ -68,31 +70,47 @@ export default function PlanningAuditSection({
 
   return (
     <div className="rounded border bg-slate-50 p-4 text-sm shadow-sm">
-      <h6 className="mb-3 font-semibold text-gray-900">{title}</h6>
-      <div className="mb-4 grid gap-3 md:grid-cols-2">
-        <DocumentTracePanel documentType={documentType} documentId={documentId} />
-        <VersionHistoryPanel
-          documentType={documentType}
-          documentId={documentId}
-          allowRestore={allowRestore}
-          onRestored={onVersionRestored}
-        />
-      </div>
-      {auditLoading ? (
-        <p className="text-gray-600">Memuat…</p>
-      ) : (
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="mb-0 flex w-full items-center justify-between border-0 bg-transparent p-0 font-semibold text-gray-900"
+        style={{ cursor: 'pointer' }}
+      >
+        <span>{title}</span>
+        <span>{expanded ? '▲ Sembunyikan' : '▼ Tampilkan'}</span>
+      </button>
+      {expanded && (
         <>
-          {latestDiffNormalized ? (
-            <div className="mb-4">
-              <div className="mb-1 text-xs font-medium text-gray-600">Ringkasan perubahan</div>
-              <BeforeAfterDiffCard
-                normalized={latestDiffNormalized}
+          <div className="mb-4 mt-3 grid gap-3 md:grid-cols-2">
+            <DocumentTracePanel documentType={documentType} documentId={documentId} />
+            <VersionHistoryPanel
+              documentType={documentType}
+              documentId={documentId}
+              allowRestore={allowRestore}
+              onRestored={onVersionRestored}
+            />
+          </div>
+          {auditLoading ? (
+            <p className="text-gray-600">Memuat…</p>
+          ) : (
+            <>
+              {latestDiffNormalized ? (
+                <div className="mb-4">
+                  <div className="mb-1 text-xs font-medium text-gray-600">Ringkasan perubahan</div>
+                  <BeforeAfterDiffCard
+                    normalized={latestDiffNormalized}
+                    fieldLabelMap={fieldLabelMap}
+                    statusLabelMap={statusLabelMap}
+                  />
+                </div>
+              ) : null}
+              <AuditTimeline
+                rows={localizedAuditRows}
+                loading={false}
                 fieldLabelMap={fieldLabelMap}
-                statusLabelMap={statusLabelMap}
               />
-            </div>
-          ) : null}
-          <AuditTimeline rows={localizedAuditRows} loading={false} fieldLabelMap={fieldLabelMap} />
+            </>
+          )}
         </>
       )}
     </div>

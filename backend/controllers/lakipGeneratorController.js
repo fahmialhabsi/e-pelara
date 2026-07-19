@@ -91,11 +91,11 @@ async function collectLakipData(tahun, periode_id) {
     tahun ? { replacements: { tahun } } : undefined
   );
 
-  // 9. Agregasi anggaran dari DPA (kolom sesuai skema aktual: 'anggaran')
+  // 9. Agregasi anggaran dari DPA (realisasi diisi oleh dpaRealisasiRollupService dari BKU)
   const [anggaranRows] = await sequelize.query(
     `SELECT
        SUM(anggaran) as total_pagu,
-       0             as total_realisasi
+       SUM(realisasi) as total_realisasi
      FROM dpa
      ${tahun ? "WHERE tahun = :tahun" : ""}`,
     tahun ? { replacements: { tahun } } : undefined

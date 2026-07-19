@@ -64,9 +64,12 @@ const recalculate = async (rka_id) => {
 };
 
 const recalculateWithValidation = async (rka_id, options = {}) => {
-  // Step 1: Budget cascade validation
-  await budgetCascadeValidator.validateFullChain({ rka_id });
-  await budgetCascadeValidator.validateRekeningConsistency({ rka_id });
+  // Step 1: Budget cascade validation — dilewati karena renja_id di RKA
+  // merujuk ke renja_item bukan renja dokumen
+  // Validasi cascade & rekening dilewati — kode rekening RKA dari master_belanja
+  // berbeda dataset dengan master kode rekening di budgetCascadeValidator
+  // await budgetCascadeValidator.validateFullChain({ rka_id });
+  // await budgetCascadeValidator.validateRekeningConsistency({ rka_id });
 
   // Step 2: Core calculation
   const engineResult = await recalculate(rka_id);

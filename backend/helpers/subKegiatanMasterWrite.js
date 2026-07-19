@@ -1,29 +1,29 @@
-"use strict";
+'use strict';
 
-const { assertSubKegiatanMasterPayload } = require("../middlewares/validateHierarchy");
+const { assertSubKegiatanMasterPayload } = require('../middlewares/validateHierarchy');
 
 function hasOwn(obj, key) {
   return obj != null && Object.prototype.hasOwnProperty.call(obj, key);
 }
 
 function parsePositiveInt(val) {
-  if (val === undefined || val === null || val === "") return null;
+  if (val === undefined || val === null || val === '') return null;
   const n = Number.parseInt(String(val).trim(), 10);
   return Number.isInteger(n) && n >= 1 ? n : null;
 }
 
 function isMasterPayload(body) {
-  if (!body || typeof body !== "object") return false;
+  if (!body || typeof body !== 'object') return false;
   return (
-    hasOwn(body, "master_sub_kegiatan_id") ||
-    hasOwn(body, "masterSubKegiatanId") ||
-    hasOwn(body, "regulasi_versi_id") ||
-    hasOwn(body, "regulasiVersiId")
+    hasOwn(body, 'master_sub_kegiatan_id') ||
+    hasOwn(body, 'masterSubKegiatanId') ||
+    hasOwn(body, 'regulasi_versi_id') ||
+    hasOwn(body, 'regulasiVersiId')
   );
 }
 
 function isCompleteMasterPayload(body) {
-  if (!body || typeof body !== "object") return false;
+  if (!body || typeof body !== 'object') return false;
   const sid = parsePositiveInt(body.master_sub_kegiatan_id ?? body.masterSubKegiatanId);
   const vid = parsePositiveInt(body.regulasi_versi_id ?? body.regulasiVersiId);
   return sid != null && vid != null;
@@ -41,27 +41,30 @@ function mergeMasterContext(body, existing) {
   let master_sub_kegiatan_id;
   let regulasi_versi_id;
 
-  if (hasOwn(b, "master_sub_kegiatan_id") || hasOwn(b, "masterSubKegiatanId")) {
+  // MODIFIKASI: Jika nilainya null atau kosong di body, coba cari nilai existing-nya
+  if (hasOwn(b, 'master_sub_kegiatan_id') || hasOwn(b, 'masterSubKegiatanId')) {
     const raw = b.master_sub_kegiatan_id ?? b.masterSubKegiatanId;
     master_sub_kegiatan_id =
-      raw === null || raw === "" ? null : parsePositiveInt(raw);
+      raw === null || raw === ''
+        ? (e?.master_sub_kegiatan_id ?? null) // <-- Ambil dari existing jika body null
+        : parsePositiveInt(raw);
   } else {
     master_sub_kegiatan_id = e?.master_sub_kegiatan_id ?? null;
   }
 
-  if (hasOwn(b, "regulasi_versi_id") || hasOwn(b, "regulasiVersiId")) {
+  // MODIFIKASI: Jika nilainya null atau kosong di body, coba cari nilai existing-nya
+  if (hasOwn(b, 'regulasi_versi_id') || hasOwn(b, 'regulasiVersiId')) {
     const raw = b.regulasi_versi_id ?? b.regulasiVersiId;
-    regulasi_versi_id = raw === null || raw === "" ? null : parsePositiveInt(raw);
+    regulasi_versi_id =
+      raw === null || raw === ''
+        ? (e?.regulasi_versi_id ?? null) // <-- Ambil dari existing jika body null
+        : parsePositiveInt(raw);
   } else {
     regulasi_versi_id = e?.regulasi_versi_id ?? null;
   }
 
-  const master_kegiatan_id = parsePositiveInt(
-    b.master_kegiatan_id ?? b.masterKegiatanId,
-  );
-  const master_program_id = parsePositiveInt(
-    b.master_program_id ?? b.masterProgramId,
-  );
+  const master_kegiatan_id = parsePositiveInt(b.master_kegiatan_id ?? b.masterKegiatanId);
+  const master_program_id = parsePositiveInt(b.master_program_id ?? b.masterProgramId);
 
   return {
     master_sub_kegiatan_id,
@@ -72,10 +75,7 @@ function mergeMasterContext(body, existing) {
 }
 
 function mergedIsComplete(merged) {
-  return (
-    merged.master_sub_kegiatan_id != null &&
-    merged.regulasi_versi_id != null
-  );
+  return merged.master_sub_kegiatan_id != null && merged.regulasi_versi_id != null;
 }
 
 /**
@@ -83,7 +83,7 @@ function mergedIsComplete(merged) {
  */
 function isExistingMasterBound(existing) {
   if (!existing) return false;
-  if (String(existing.input_mode || "") === "MASTER") return true;
+  if (String(existing.input_mode || '') === 'MASTER') return true;
   if (existing.master_sub_kegiatan_id != null) return true;
   return false;
 }
@@ -95,40 +95,45 @@ function isExistingMasterBound(existing) {
  * @param {string} opts.operationalMode
  */
 async function prepareSubKegiatanMasterWrite({ body, existing, operationalMode }) {
-  const mode = String(operationalMode || "LEGACY").toUpperCase();
+  const mode = String(operationalMode || 'LEGACY').toUpperCase();
   const merged = mergeMasterContext(body, existing);
   const complete = mergedIsComplete(merged);
   const masterBound = isExistingMasterBound(existing);
 
+  // 1. Jika data lama sudah terikat master, pastikan gabungannya tetap lengkap
   if (masterBound) {
-    if (merged.master_sub_kegiatan_id == null || merged.regulasi_versi_id == null) {
+    // MODIFIKASI: Hanya kunci master_sub_kegiatan_id, jangan paksa regulasi_versi_id jika di DB bernilai null
+    if (merged.master_sub_kegiatan_id == null) {
       return {
         ok: false,
         status: 400,
-        code: "MASTER_FIELDS_REQUIRED",
+        code: 'MASTER_FIELDS_REQUIRED',
         message:
-          "Baris sudah terikat master; master_sub_kegiatan_id dan regulasi_versi_id harus tetap lengkap (kirim di body atau pertahankan nilai existing).",
+          'Baris sudah terikat master; master_sub_kegiatan_id harus tetap lengkap (kirim di body atau pertahankan nilai existing).',
       };
     }
   }
 
-  if (isMasterPayload(body) && !isCompleteMasterPayload(body)) {
+  // 2. MODIFIKASI DISINI: Tambahkan kondisi !existing
+  // Agar pengecekan body mentah ini HANYA berlaku saat membuat data BARU (POST).
+  // Jika sedang UPDATE (existing ada), kita harusnya percaya pada variabel `complete` (hasil gabungan).
+  if (!existing && isMasterPayload(body) && !isCompleteMasterPayload(body)) {
     return {
       ok: false,
       status: 400,
-      code: "MASTER_FIELDS_REQUIRED",
+      code: 'MASTER_FIELDS_REQUIRED',
       message:
-        "Field master tidak lengkap: kirim master_sub_kegiatan_id dan regulasi_versi_id bersamaan.",
+        'Field master tidak lengkap: kirim master_sub_kegiatan_id dan regulasi_versi_id bersamaan.',
     };
   }
 
-  if (mode === "MASTER" && !complete) {
+  if (mode === 'MASTER' && !complete) {
     return {
       ok: false,
       status: 400,
-      code: "MASTER_FIELDS_REQUIRED",
+      code: 'MASTER_FIELDS_REQUIRED',
       message:
-        "Mode MASTER: master_sub_kegiatan_id dan regulasi_versi_id wajib (pada body atau dari baris yang sudah terikat master).",
+        'Mode MASTER: master_sub_kegiatan_id dan regulasi_versi_id wajib (pada body atau dari baris yang sudah terikat master).',
     };
   }
 
@@ -143,32 +148,43 @@ async function prepareSubKegiatanMasterWrite({ body, existing, operationalMode }
       return {
         ok: false,
         status: 400,
-        code: "INVALID_HIERARCHY",
-        message: "Hierarki master tidak valid untuk regulasi ini.",
+        code: 'INVALID_HIERARCHY',
+        message: 'Hierarki master tidak valid untuk regulasi ini.',
         details: hier.errors,
       };
     }
     return {
       ok: true,
-      input_mode: "MASTER",
+      input_mode: 'MASTER',
       merged,
       transitionWarning: null,
     };
   }
 
-  if (mode === "TRANSITION") {
+  // MODIFIKASI/TAMBAHKAN BLOK BARU DI BAWAHNYA:
+  // Jika master_sub_kegiatan_id ada tapi regulasi_versi_id-nya null (seperti kasus data Anda ini)
+  if (merged.master_sub_kegiatan_id != null && merged.regulasi_versi_id == null) {
     return {
       ok: true,
-      input_mode: "LEGACY",
+      input_mode: 'MASTER', // Tetap anggap MASTER karena terikat sub_kegiatan master
+      merged,
+      transitionWarning: 'Data terikat master tanpa versi regulasi.',
+    };
+  }
+
+  if (mode === 'TRANSITION') {
+    return {
+      ok: true,
+      input_mode: 'LEGACY',
       merged,
       transitionWarning:
-        "Transaksi legacy (tanpa master) di mode TRANSITION; pertimbangkan penyesuaian sebelum mode MASTER.",
+        'Transaksi legacy (tanpa master) di mode TRANSITION; pertimbangkan penyesuaian sebelum mode MASTER.',
     };
   }
 
   return {
     ok: true,
-    input_mode: "LEGACY",
+    input_mode: 'LEGACY',
     merged,
     transitionWarning: null,
   };

@@ -1,34 +1,34 @@
-const { RenstraTujuan, RenstraOPD, Tujuan } = require("../models");
+const { RenstraTujuan, RenstraOPD, Tujuan } = require('../models');
 
 function toInt(v) {
-  const n = Number.parseInt(String(v ?? "").trim(), 10);
+  const n = Number.parseInt(String(v ?? '').trim(), 10);
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
 async function assertRenstraTujuanPayload(body) {
   const renstraId = toInt(body.renstra_id);
-  if (!renstraId) return { ok: false, message: "renstra_id wajib diisi." };
+  if (!renstraId) return { ok: false, message: 'renstra_id wajib diisi.' };
 
   const renstra = await RenstraOPD.findByPk(renstraId, {
-    attributes: ["id", "rpjmd_id"],
+    attributes: ['id', 'rpjmd_id'],
   });
-  if (!renstra) return { ok: false, message: "Renstra OPD tidak ditemukan." };
+  if (!renstra) return { ok: false, message: 'Renstra OPD tidak ditemukan.' };
 
   const rawRpjmdTujuanId = body.rpjmd_tujuan_id;
-  if (rawRpjmdTujuanId == null || String(rawRpjmdTujuanId).trim() === "") {
-    return { ok: false, message: "rpjmd_tujuan_id wajib diisi." };
+  if (rawRpjmdTujuanId == null || String(rawRpjmdTujuanId).trim() === '') {
+    return { ok: false, message: 'rpjmd_tujuan_id wajib diisi.' };
   }
   // Aman untuk tipe existing: wajib angka dalam string (untuk data baru).
   if (!/^\d+$/.test(String(rawRpjmdTujuanId).trim())) {
     return {
       ok: false,
       message:
-        "rpjmd_tujuan_id harus berupa angka (string numerik). Data baru tidak boleh memakai UUID/teks.",
+        'rpjmd_tujuan_id harus berupa angka (string numerik). Data baru tidak boleh memakai UUID/teks.',
     };
   }
   const tujuanId = toInt(rawRpjmdTujuanId);
-  const tujuan = await Tujuan.findByPk(tujuanId, { attributes: ["id", "rpjmd_id"] });
-  if (!tujuan) return { ok: false, message: "Tujuan RPJMD tidak ditemukan." };
+  const tujuan = await Tujuan.findByPk(tujuanId, { attributes: ['id', 'rpjmd_id'] });
+  if (!tujuan) return { ok: false, message: 'Tujuan RPJMD tidak ditemukan.' };
 
   if (
     renstra.rpjmd_id != null &&
@@ -37,8 +37,7 @@ async function assertRenstraTujuanPayload(body) {
   ) {
     return {
       ok: false,
-      message:
-        "Tujuan RPJMD yang dipilih tidak sesuai dengan rpjmd_id pada Renstra OPD.",
+      message: 'Tujuan RPJMD yang dipilih tidak sesuai dengan rpjmd_id pada Renstra OPD.',
     };
   }
 
@@ -69,8 +68,8 @@ exports.findAll = async (req, res) => {
       include: [
         {
           model: RenstraOPD,
-          as: "renstra",
-          attributes: ["id", "bidang_opd", "sub_bidang_opd"],
+          as: 'renstra',
+          attributes: ['id', 'bidang_opd', 'sub_bidang_opd'],
           ...(tahun_mulai && {
             where: { tahun_mulai: parseInt(tahun_mulai, 10) },
           }),
@@ -90,13 +89,13 @@ exports.findOne = async (req, res) => {
       include: [
         {
           model: RenstraOPD,
-          as: "renstra", // pastikan as-nya cocok
-          attributes: ["id", "rpjmd_id", "bidang_opd", "sub_bidang_opd"],
+          as: 'renstra', // pastikan as-nya cocok
+          attributes: ['id', 'rpjmd_id', 'bidang_opd', 'sub_bidang_opd'],
         },
       ],
     });
 
-    if (!data) return res.status(404).json({ message: "Data not found" });
+    if (!data) return res.status(404).json({ message: 'Data not found' });
 
     res.json(data);
   } catch (err) {
@@ -109,20 +108,18 @@ exports.generateNomorTujuan = async (req, res) => {
     const { tujuan_id, renstra_id } = req.query;
 
     if (!tujuan_id || !renstra_id) {
-      return res
-        .status(400)
-        .json({ message: "Parameter tujuan_id dan renstra_id diperlukan." });
+      return res.status(400).json({ message: 'Parameter tujuan_id dan renstra_id diperlukan.' });
     }
 
     // Ambil data tujuan RPJMD untuk dapatkan no_tujuan sebagai prefix
-    const { Tujuan } = require("../models");
+    const { Tujuan } = require('../models');
     const tujuan = await Tujuan.findByPk(tujuan_id);
 
     if (!tujuan) {
-      return res.status(404).json({ message: "Tujuan RPJMD tidak ditemukan." });
+      return res.status(404).json({ message: 'Tujuan RPJMD tidak ditemukan.' });
     }
 
-    const noDasar = tujuan.no_tujuan || "T1-00";
+    const noDasar = tujuan.no_tujuan || 'T1-00';
 
     // Hitung jumlah data dengan kombinasi tersebut
     const count = await RenstraTujuan.count({
@@ -132,13 +129,13 @@ exports.generateNomorTujuan = async (req, res) => {
       },
     });
 
-    const nextUrutan = String(count + 1).padStart(2, "0");
+    const nextUrutan = String(count + 1).padStart(2, '0');
     const generatedNomor = `${noDasar}.${nextUrutan}`;
 
     res.status(200).json({ nomor_otomatis: generatedNomor });
   } catch (error) {
-    console.error("Error generating nomor tujuan:", error);
-    res.status(500).json({ message: "Gagal menghasilkan nomor tujuan." });
+    console.error('Error generating nomor tujuan:', error);
+    res.status(500).json({ message: 'Gagal menghasilkan nomor tujuan.' });
   }
 };
 
@@ -147,12 +144,12 @@ exports.update = async (req, res) => {
     const id = req.params.id;
 
     // Validasi minimal untuk data baru: jika rpjmd_tujuan_id dikirim, harus valid & konsisten.
-    if (Object.prototype.hasOwnProperty.call(req.body || {}, "rpjmd_tujuan_id")) {
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'rpjmd_tujuan_id')) {
       // Safe: jika client tidak mengirim renstra_id saat update, ambil dari data existing.
       let effectiveRenstraId = req.body.renstra_id;
-      if (effectiveRenstraId == null || String(effectiveRenstraId).trim() === "") {
+      if (effectiveRenstraId == null || String(effectiveRenstraId).trim() === '') {
         const existing = await RenstraTujuan.findByPk(id, {
-          attributes: ["id", "renstra_id"],
+          attributes: ['id', 'renstra_id'],
         });
         effectiveRenstraId = existing?.renstra_id ?? null;
       }
@@ -165,7 +162,7 @@ exports.update = async (req, res) => {
     }
 
     const [updated] = await RenstraTujuan.update(req.body, { where: { id } });
-    if (!updated) return res.status(404).json({ message: "Data not found" });
+    if (!updated) return res.status(404).json({ message: 'Data not found' });
 
     const updatedData = await RenstraTujuan.findByPk(id);
     res.json(updatedData);
@@ -178,9 +175,38 @@ exports.delete = async (req, res) => {
   try {
     const id = req.params.id;
     const deleted = await RenstraTujuan.destroy({ where: { id } });
-    if (!deleted) return res.status(404).json({ message: "Data not found" });
-    res.json({ message: "Deleted successfully" });
+    if (!deleted) return res.status(404).json({ message: 'Data not found' });
+    res.json({ message: 'Deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+exports.generateIndikatorTujuan = async (req, res) => {
+  try {
+    const { namaOpd, tujuanRenstra, tahunMulai } = req.body;
+    if (!namaOpd || !tujuanRenstra) {
+      return res.status(400).json({ message: 'namaOpd dan tujuanRenstra wajib diisi' });
+    }
+    const { generateIndikatorTujuanRenstra } = require('../services/renstraAIService');
+    const hasil = await generateIndikatorTujuanRenstra({ namaOpd, tujuanRenstra, tahunMulai });
+    return res.json({ success: true, indikator: hasil });
+  } catch (err) {
+    console.error('[generateIndikatorTujuan]', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+exports.generateTujuan = async (req, res) => {
+  try {
+    const { namaOpd, tujuanRpjmd, noTujuanRpjmd, tupoksi } = req.body;
+    if (!namaOpd || !tujuanRpjmd) {
+      return res.status(400).json({ message: 'namaOpd dan tujuanRpjmd wajib diisi' });
+    }
+    const { generateTujuanRenstra } = require('../services/renstraAIService');
+    const hasil = await generateTujuanRenstra({ namaOpd, tujuanRpjmd, noTujuanRpjmd, tupoksi });
+    return res.json({ success: true, tujuan: hasil });
+  } catch (err) {
+    console.error('[generateTujuan]', err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };

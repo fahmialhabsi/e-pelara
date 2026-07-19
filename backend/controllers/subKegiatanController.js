@@ -10,38 +10,33 @@ const {
   MasterSubKegiatan,
   MasterKegiatan,
   IndikatorSubKegiatan,
-} = require("../models");
+} = require('../models');
 
-const { Op } = require("sequelize");
-const { validationResult } = require("express-validator");
-const { getPeriodeFromTahun } = require("../utils/periodeHelper");
-const { ensureClonedOnce } = require("../utils/autoCloneHelper");
+const { Op } = require('sequelize');
+const { validationResult } = require('express-validator');
+const { getPeriodeFromTahun } = require('../utils/periodeHelper');
+const { ensureClonedOnce } = require('../utils/autoCloneHelper');
 const {
   successResponse,
   errorResponse,
   listResponse,
   structuredErrorResponse,
-} = require("../utils/responseHelper");
-const {
-  getEffectiveOperationalModeForSubKegiatan,
-} = require("../services/appPolicyService");
+} = require('../utils/responseHelper');
+const { getEffectiveOperationalModeForSubKegiatan } = require('../services/appPolicyService');
 const {
   prepareSubKegiatanMasterWrite,
   isMasterPayload,
-} = require("../helpers/subKegiatanMasterWrite");
-const {
-  recalcKegiatanTotal,
-  recalcProgramTotal,
-} = require("../utils/paguHelper");
+} = require('../helpers/subKegiatanMasterWrite');
+const { recalcKegiatanTotal, recalcProgramTotal } = require('../utils/paguHelper');
 const {
   queuePaguSubKegiatanId,
   queuePaguPrefixes,
-} = require("../services/paguCachedIncrementalQueueService");
+} = require('../services/paguCachedIncrementalQueueService');
 
 const MAX_LIMIT = 100;
 
 function parsePositiveIntLocal(val) {
-  if (val === undefined || val === null || val === "") return null;
+  if (val === undefined || val === null || val === '') return null;
   const n = Number.parseInt(String(val).trim(), 10);
   return Number.isInteger(n) && n >= 1 ? n : null;
 }
@@ -52,50 +47,46 @@ function parsePositiveIntLocal(val) {
  * @returns {Promise<ReturnType<structuredErrorResponse>|null>}
  */
 async function masterHierarchyCrossCheck(res, prep, reqBody) {
-  if (!prep || prep.input_mode !== "MASTER") return null;
+  if (!prep || prep.input_mode !== 'MASTER') return null;
   const sid = parsePositiveIntLocal(prep.merged?.master_sub_kegiatan_id);
   if (sid == null) return null;
 
   const subRow = await MasterSubKegiatan.findByPk(sid, {
-    attributes: ["id", "master_kegiatan_id"],
+    attributes: ['id', 'master_kegiatan_id'],
   });
   if (!subRow) {
     return structuredErrorResponse(res, 400, {
-      code: "MASTER_HIERARCHY_INVALID",
+      code: 'MASTER_HIERARCHY_INVALID',
       message:
-        "Sub kegiatan tidak sesuai dengan kegiatan: baris master_sub_kegiatan tidak ditemukan.",
-      field: "master_sub_kegiatan_id",
+        'Sub kegiatan tidak sesuai dengan kegiatan: baris master_sub_kegiatan tidak ditemukan.',
+      field: 'master_sub_kegiatan_id',
       details: null,
     });
   }
 
   const derivedKid = Number(subRow.master_kegiatan_id);
-  const bodyKid = parsePositiveIntLocal(
-    reqBody?.master_kegiatan_id ?? reqBody?.masterKegiatanId,
-  );
+  const bodyKid = parsePositiveIntLocal(reqBody?.master_kegiatan_id ?? reqBody?.masterKegiatanId);
   if (bodyKid != null && bodyKid !== derivedKid) {
     return structuredErrorResponse(res, 400, {
-      code: "MASTER_HIERARCHY_INVALID",
+      code: 'MASTER_HIERARCHY_INVALID',
       message:
-        "Sub kegiatan tidak sesuai dengan kegiatan: master_kegiatan_id tidak cocok dengan induk sub di basis data.",
-      field: "master_kegiatan_id",
+        'Sub kegiatan tidak sesuai dengan kegiatan: master_kegiatan_id tidak cocok dengan induk sub di basis data.',
+      field: 'master_kegiatan_id',
       details: null,
     });
   }
 
-  const bodyPid = parsePositiveIntLocal(
-    reqBody?.master_program_id ?? reqBody?.masterProgramId,
-  );
+  const bodyPid = parsePositiveIntLocal(reqBody?.master_program_id ?? reqBody?.masterProgramId);
   if (bodyPid != null) {
     const kegRow = await MasterKegiatan.findByPk(derivedKid, {
-      attributes: ["id", "master_program_id"],
+      attributes: ['id', 'master_program_id'],
     });
     if (!kegRow || Number(kegRow.master_program_id) !== bodyPid) {
       return structuredErrorResponse(res, 400, {
-        code: "MASTER_HIERARCHY_INVALID",
+        code: 'MASTER_HIERARCHY_INVALID',
         message:
-          "Sub kegiatan tidak sesuai dengan kegiatan: master_program_id tidak cocok dengan rantai master.",
-        field: "master_program_id",
+          'Sub kegiatan tidak sesuai dengan kegiatan: master_program_id tidak cocok dengan rantai master.',
+        field: 'master_program_id',
         details: null,
       });
     }
@@ -109,49 +100,39 @@ async function masterHierarchyCrossCheck(res, prep, reqBody) {
  * @returns {ReturnType<structuredErrorResponse>|null}
  */
 function masterModeStructuredError(res, prep, reqBody) {
-  if (!prep || prep.input_mode !== "MASTER") return null;
+  if (!prep || prep.input_mode !== 'MASTER') return null;
   const msid = prep.merged?.master_sub_kegiatan_id;
-  const msidNum = Number.parseInt(String(msid ?? ""), 10);
-  if (
-    msid == null ||
-    String(msid).trim() === "" ||
-    !Number.isInteger(msidNum) ||
-    msidNum < 1
-  ) {
+  const msidNum = Number.parseInt(String(msid ?? ''), 10);
+  if (msid == null || String(msid).trim() === '' || !Number.isInteger(msidNum) || msidNum < 1) {
     return structuredErrorResponse(res, 400, {
-      code: "MASTER_SUB_REQUIRED",
+      code: 'MASTER_SUB_REQUIRED',
       message:
-        "Input mode MASTER wajib disertai master_sub_kegiatan_id yang valid (referensi sub kegiatan master).",
-      field: "master_sub_kegiatan_id",
+        'Input mode MASTER wajib disertai master_sub_kegiatan_id yang valid (referensi sub kegiatan master).',
+      field: 'master_sub_kegiatan_id',
       details: null,
     });
   }
   const kid = reqBody?.kegiatan_id;
-  if (
-    kid == null ||
-    String(kid).trim() === "" ||
-    Number.isNaN(Number.parseInt(String(kid), 10))
-  ) {
+  if (kid == null || String(kid).trim() === '' || Number.isNaN(Number.parseInt(String(kid), 10))) {
     return structuredErrorResponse(res, 400, {
-      code: "MASTER_MAPPING_INCOMPLETE",
-      message:
-        "Mode MASTER memerlukan mapping RPJMD: kegiatan_id transaksi wajib diisi.",
-      field: "kegiatan_id",
+      code: 'MASTER_MAPPING_INCOMPLETE',
+      message: 'Mode MASTER memerlukan mapping RPJMD: kegiatan_id transaksi wajib diisi.',
+      field: 'kegiatan_id',
       details: null,
     });
   }
-  if (Object.prototype.hasOwnProperty.call(reqBody, "program_id")) {
+  if (Object.prototype.hasOwnProperty.call(reqBody, 'program_id')) {
     const pid = reqBody.program_id;
     if (
       pid == null ||
-      String(pid).trim() === "" ||
+      String(pid).trim() === '' ||
       Number.isNaN(Number.parseInt(String(pid), 10))
     ) {
       return structuredErrorResponse(res, 400, {
-        code: "MASTER_MAPPING_INCOMPLETE",
+        code: 'MASTER_MAPPING_INCOMPLETE',
         message:
-          "Mode MASTER: program_id transaksi tidak boleh kosong jika dikirim; isi mapping RPJMD yang valid.",
-        field: "program_id",
+          'Mode MASTER: program_id transaksi tidak boleh kosong jika dikirim; isi mapping RPJMD yang valid.',
+        field: 'program_id',
         details: null,
       });
     }
@@ -163,8 +144,7 @@ const subKegiatanController = {
   async create(req, res) {
     try {
       const errors = validationResult(req);
-      if (!errors.isEmpty())
-        return errorResponse(res, 400, "Validasi gagal", errors.array());
+      if (!errors.isEmpty()) return errorResponse(res, 400, 'Validasi gagal', errors.array());
 
       const {
         kegiatan_id,
@@ -183,48 +163,33 @@ const subKegiatanController = {
       }
 
       const periode = await getPeriodeFromTahun(tahun);
-      if (!periode)
-        return errorResponse(
-          res,
-          400,
-          `Periode tidak ditemukan untuk tahun ${tahun}.`
-        );
+      if (!periode) return errorResponse(res, 400, `Periode tidak ditemukan untuk tahun ${tahun}.`);
 
       const periode_id = periode.id;
 
-      console.log("🧪 Validasi duplikat:", {
+      console.log('🧪 Validasi duplikat:', {
         kode_sub_kegiatan: kode_sub_kegiatan.trim(),
         nama_sub_kegiatan: nama_sub_kegiatan.trim(),
         periode_id,
       });
 
       const kegiatan = await Kegiatan.findByPk(kegiatan_id, {
-        include: { model: Program, as: "program" },
+        include: { model: Program, as: 'program' },
       });
-      if (!kegiatan)
-        return errorResponse(res, 404, "Kegiatan tidak ditemukan.");
+      if (!kegiatan) return errorResponse(res, 404, 'Kegiatan tidak ditemukan.');
       if (kegiatan.periode_id !== periode_id)
-        return errorResponse(res, 400, "Periode kegiatan tidak sesuai.");
+        return errorResponse(res, 400, 'Periode kegiatan tidak sesuai.');
 
       const existing = await SubKegiatan.findOne({
         where: {
           periode_id,
-          [Op.or]: [
-            { kode_sub_kegiatan: kode_sub_kegiatan.trim() },
-            { nama_sub_kegiatan: nama_sub_kegiatan.trim() },
-          ],
+          kode_sub_kegiatan: kode_sub_kegiatan.trim(),
         },
       });
-      if (existing)
-        return errorResponse(
-          res,
-          409,
-          "Kode atau nama sub-kegiatan sudah digunakan."
-        );
+      if (existing) return errorResponse(res, 409, 'Kode atau nama sub-kegiatan sudah digunakan.');
 
       const modeEffective =
-        req.operationalMode ??
-        (await getEffectiveOperationalModeForSubKegiatan());
+        req.operationalMode ?? (await getEffectiveOperationalModeForSubKegiatan());
       const prep = await prepareSubKegiatanMasterWrite({
         body: req.body,
         existing: null,
@@ -232,8 +197,8 @@ const subKegiatanController = {
       });
       if (!prep.ok) {
         return structuredErrorResponse(res, prep.status || 400, {
-          code: prep.code || "ENFORCEMENT_ERROR",
-          message: prep.message || "Validasi master / mode operasional gagal",
+          code: prep.code || 'ENFORCEMENT_ERROR',
+          message: prep.message || 'Validasi master / mode operasional gagal',
           field: null,
           details: prep.details,
         });
@@ -245,21 +210,21 @@ const subKegiatanController = {
       const hierErr = await masterHierarchyCrossCheck(res, prep, req.body);
       if (hierErr) return hierErr;
 
-      console.log("[ENFORCEMENT]", {
+      console.log('[ENFORCEMENT]', {
         mode: modeEffective,
-        entity: "sub_kegiatan",
-        action: "create",
+        entity: 'sub_kegiatan',
+        action: 'create',
         isMasterPayload: isMasterPayload(req.body),
       });
 
       const masterFields =
-        prep.input_mode === "MASTER"
+        prep.input_mode === 'MASTER'
           ? {
               master_sub_kegiatan_id: prep.merged.master_sub_kegiatan_id,
               regulasi_versi_id: prep.merged.regulasi_versi_id,
-              input_mode: "MASTER",
+              input_mode: 'MASTER',
             }
-          : { input_mode: "LEGACY" };
+          : { input_mode: 'LEGACY' };
 
       const created = await SubKegiatan.create({
         kegiatan_id,
@@ -267,9 +232,7 @@ const subKegiatanController = {
         kode_sub_kegiatan: kode_sub_kegiatan.trim(),
         nama_sub_kegiatan: nama_sub_kegiatan.trim(),
         pagu_anggaran:
-          typeof pagu_anggaran === "string"
-            ? parseInt(pagu_anggaran.trim())
-            : pagu_anggaran,
+          typeof pagu_anggaran === 'string' ? parseInt(pagu_anggaran.trim()) : pagu_anggaran,
         nama_opd: nama_opd.trim(),
         nama_bidang_opd: nama_bidang_opd.trim(),
         sub_bidang_opd: sub_bidang_opd.trim(),
@@ -284,18 +247,10 @@ const subKegiatanController = {
       queuePaguSubKegiatanId(created.id);
 
       const meta =
-        prep.transitionWarning != null
-          ? { enforcementWarning: prep.transitionWarning }
-          : undefined;
-      return successResponse(
-        res,
-        201,
-        "Sub-kegiatan berhasil dibuat",
-        created,
-        meta,
-      );
+        prep.transitionWarning != null ? { enforcementWarning: prep.transitionWarning } : undefined;
+      return successResponse(res, 201, 'Sub-kegiatan berhasil dibuat', created, meta);
     } catch (err) {
-      return errorResponse(res, 500, "Gagal membuat sub-kegiatan", err);
+      return errorResponse(res, 500, 'Gagal membuat sub-kegiatan', err);
     }
   },
 
@@ -308,63 +263,43 @@ const subKegiatanController = {
       const kegiatanId = parseInt(req.params.kegiatanId, 10);
       const tahunRaw = req.query.tahun;
       if (!kegiatanId || Number.isNaN(kegiatanId)) {
-        return errorResponse(res, 400, "Parameter kegiatanId tidak valid.");
+        return errorResponse(res, 400, 'Parameter kegiatanId tidak valid.');
       }
-      if (tahunRaw === undefined || tahunRaw === null || tahunRaw === "") {
-        return errorResponse(res, 400, "Query tahun wajib diisi.");
+      if (tahunRaw === undefined || tahunRaw === null || tahunRaw === '') {
+        return errorResponse(res, 400, 'Query tahun wajib diisi.');
       }
       const tahunNum = parseInt(String(tahunRaw).trim(), 10);
       if (Number.isNaN(tahunNum)) {
-        return errorResponse(res, 400, "Query tahun tidak valid.");
+        return errorResponse(res, 400, 'Query tahun tidak valid.');
       }
       const kg = await Kegiatan.findByPk(kegiatanId);
       if (!kg) {
-        return errorResponse(res, 404, "Kegiatan tidak ditemukan.");
+        return errorResponse(res, 404, 'Kegiatan tidak ditemukan.');
       }
       const rows = await SubKegiatan.findAll({
         where: { kegiatan_id: kegiatanId, tahun: tahunNum },
-        attributes: [
-          "id",
-          "kode_sub_kegiatan",
-          "nama_sub_kegiatan",
-          "pagu_anggaran",
-        ],
-        order: [["kode_sub_kegiatan", "ASC"]],
+        attributes: ['id', 'kode_sub_kegiatan', 'nama_sub_kegiatan', 'pagu_anggaran'],
+        order: [['kode_sub_kegiatan', 'ASC']],
         limit: 500,
       });
-      return listResponse(res, 200, "Daftar sub kegiatan", rows);
+      return listResponse(res, 200, 'Daftar sub kegiatan', rows);
     } catch (err) {
-      console.error("listByKegiatanForDpa:", err);
-      return errorResponse(
-        res,
-        500,
-        "Gagal mengambil sub kegiatan",
-        err.message,
-      );
+      console.error('listByKegiatanForDpa:', err);
+      return errorResponse(res, 500, 'Gagal mengambil sub kegiatan', err.message);
     }
   },
 
   async list(req, res) {
     try {
-      const {
-        kegiatan_id,
-        tahun,
-        jenis_dokumen,
-        page = 1,
-        limit = 50,
-      } = req.query;
+      const { kegiatan_id, tahun, jenis_dokumen, page = 1, limit = 50 } = req.query;
       if (!tahun || !jenis_dokumen) {
-        return errorResponse(
-          res,
-          400,
-          "Parameter 'tahun' dan 'jenis_dokumen' wajib diisi."
-        );
+        return errorResponse(res, 400, "Parameter 'tahun' dan 'jenis_dokumen' wajib diisi.");
       }
 
       await ensureClonedOnce(jenis_dokumen, tahun);
       const periode = await getPeriodeFromTahun(tahun);
       if (!periode) {
-        return res.status(400).json({ message: "Periode tidak ditemukan." });
+        return res.status(400).json({ message: 'Periode tidak ditemukan.' });
       }
       const periode_id = periode.id;
 
@@ -377,48 +312,48 @@ const subKegiatanController = {
       let { rows, count } = await SubKegiatan.findAndCountAll({
         where,
         attributes: [
-          "id",
-          "kode_sub_kegiatan",
-          "nama_sub_kegiatan",
-          "pagu_anggaran",
-          "nama_opd",
-          "nama_bidang_opd",
-          "sub_bidang_opd",
+          'id',
+          'kode_sub_kegiatan',
+          'nama_sub_kegiatan',
+          'pagu_anggaran',
+          'nama_opd',
+          'nama_bidang_opd',
+          'sub_bidang_opd',
         ],
         include: [
           {
             model: Kegiatan,
-            as: "kegiatan",
+            as: 'kegiatan',
             attributes: [
-              "id",
-              "kode_kegiatan",
-              "nama_kegiatan",
-              "total_pagu_anggaran",
-              "opd_penanggung_jawab",
-              "bidang_opd_penanggung_jawab",
+              'id',
+              'kode_kegiatan',
+              'nama_kegiatan',
+              'total_pagu_anggaran',
+              'opd_penanggung_jawab',
+              'bidang_opd_penanggung_jawab',
             ],
             include: [
               {
                 model: Program,
-                as: "program",
+                as: 'program',
                 attributes: [
-                  "id",
-                  "kode_program",
-                  "nama_program",
-                  "total_pagu_anggaran",
-                  "opd_penanggung_jawab",
-                  "bidang_opd_penanggung_jawab",
+                  'id',
+                  'kode_program',
+                  'nama_program',
+                  'total_pagu_anggaran',
+                  'opd_penanggung_jawab',
+                  'bidang_opd_penanggung_jawab',
                 ],
                 include: [
                   {
                     model: Sasaran,
-                    as: "sasaran",
-                    attributes: ["id", "nomor", "isi_sasaran", "tujuan_id"],
+                    as: 'sasaran',
+                    attributes: ['id', 'nomor', 'isi_sasaran', 'tujuan_id'],
                     include: [
                       {
                         model: Tujuan,
-                        as: "Tujuan",
-                        attributes: ["id", "no_tujuan", "isi_tujuan"],
+                        as: 'Tujuan',
+                        attributes: ['id', 'no_tujuan', 'isi_tujuan'],
                       },
                     ],
                   },
@@ -427,27 +362,27 @@ const subKegiatanController = {
             ],
           },
         ],
-        order: [["kode_sub_kegiatan", "ASC"]],
+        order: [['kode_sub_kegiatan', 'ASC']],
         limit: safeLimit,
         offset,
       });
 
-      if (count === 0 && kegiatan_id && jenis_dokumen !== "rpjmd") {
+      if (count === 0 && kegiatan_id && jenis_dokumen !== 'rpjmd') {
         const selectedKegiatan = await Kegiatan.findByPk(kegiatan_id, {
-          attributes: ["id", "kode_kegiatan", "jenis_dokumen"],
+          attributes: ['id', 'kode_kegiatan', 'jenis_dokumen'],
         });
 
         let fallbackKegiatanId = null;
-        if (selectedKegiatan?.jenis_dokumen === "rpjmd") {
+        if (selectedKegiatan?.jenis_dokumen === 'rpjmd') {
           fallbackKegiatanId = selectedKegiatan.id;
         } else if (selectedKegiatan?.kode_kegiatan) {
           const sourceKegiatan = await Kegiatan.findOne({
             where: {
               kode_kegiatan: selectedKegiatan.kode_kegiatan,
-              jenis_dokumen: "rpjmd",
+              jenis_dokumen: 'rpjmd',
               tahun,
             },
-            attributes: ["id"],
+            attributes: ['id'],
           });
           fallbackKegiatanId = sourceKegiatan?.id || null;
         }
@@ -457,51 +392,51 @@ const subKegiatanController = {
             where: {
               kegiatan_id: fallbackKegiatanId,
               tahun,
-              jenis_dokumen: "rpjmd",
+              jenis_dokumen: 'rpjmd',
             },
             attributes: [
-              "id",
-              "kode_sub_kegiatan",
-              "nama_sub_kegiatan",
-              "pagu_anggaran",
-              "nama_opd",
-              "nama_bidang_opd",
-              "sub_bidang_opd",
+              'id',
+              'kode_sub_kegiatan',
+              'nama_sub_kegiatan',
+              'pagu_anggaran',
+              'nama_opd',
+              'nama_bidang_opd',
+              'sub_bidang_opd',
             ],
             include: [
               {
                 model: Kegiatan,
-                as: "kegiatan",
+                as: 'kegiatan',
                 attributes: [
-                  "id",
-                  "kode_kegiatan",
-                  "nama_kegiatan",
-                  "total_pagu_anggaran",
-                  "opd_penanggung_jawab",
-                  "bidang_opd_penanggung_jawab",
+                  'id',
+                  'kode_kegiatan',
+                  'nama_kegiatan',
+                  'total_pagu_anggaran',
+                  'opd_penanggung_jawab',
+                  'bidang_opd_penanggung_jawab',
                 ],
                 include: [
                   {
                     model: Program,
-                    as: "program",
+                    as: 'program',
                     attributes: [
-                      "id",
-                      "kode_program",
-                      "nama_program",
-                      "total_pagu_anggaran",
-                      "opd_penanggung_jawab",
-                      "bidang_opd_penanggung_jawab",
+                      'id',
+                      'kode_program',
+                      'nama_program',
+                      'total_pagu_anggaran',
+                      'opd_penanggung_jawab',
+                      'bidang_opd_penanggung_jawab',
                     ],
                     include: [
                       {
                         model: Sasaran,
-                        as: "sasaran",
-                        attributes: ["id", "nomor", "isi_sasaran", "tujuan_id"],
+                        as: 'sasaran',
+                        attributes: ['id', 'nomor', 'isi_sasaran', 'tujuan_id'],
                         include: [
                           {
                             model: Tujuan,
-                            as: "Tujuan",
-                            attributes: ["id", "no_tujuan", "isi_tujuan"],
+                            as: 'Tujuan',
+                            attributes: ['id', 'no_tujuan', 'isi_tujuan'],
                           },
                         ],
                       },
@@ -510,7 +445,7 @@ const subKegiatanController = {
                 ],
               },
             ],
-            order: [["kode_sub_kegiatan", "ASC"]],
+            order: [['kode_sub_kegiatan', 'ASC']],
             limit: safeLimit,
             offset,
           });
@@ -520,98 +455,73 @@ const subKegiatanController = {
         }
       }
 
-      return listResponse(
-        res,
-        200,
-        "Daftar SubKegiatan ditemukan",
-        rows,
-        {
-          totalItems: count,
-          totalPages: Math.ceil(count / safeLimit),
-          currentPage,
-        }
-      );
+      return listResponse(res, 200, 'Daftar SubKegiatan ditemukan', rows, {
+        totalItems: count,
+        totalPages: Math.ceil(count / safeLimit),
+        currentPage,
+      });
     } catch (err) {
-      console.error("Error list SubKegiatan:", err);
-      return errorResponse(
-        res,
-        500,
-        "Gagal mengambil sub-kegiatan",
-        err.message
-      );
+      console.error('Error list SubKegiatan:', err);
+      return errorResponse(res, 500, 'Gagal mengambil sub-kegiatan', err.message);
     }
   },
 
   async getById(req, res) {
-  try {
-    const sub = await SubKegiatan.findByPk(req.params.id, {
-      include: [
-        {
-          model: Kegiatan,
-          as: "kegiatan",
-          include: {
-            model: Program,
-            as: "program",
+    try {
+      const sub = await SubKegiatan.findByPk(req.params.id, {
+        include: [
+          {
+            model: Kegiatan,
+            as: 'kegiatan',
             include: {
-              model: OpdPenanggungJawab,
-              as: "opd",
+              model: Program,
+              as: 'program',
+              include: {
+                model: OpdPenanggungJawab,
+                as: 'opd',
+              },
             },
           },
-        },
-        {
-          model: MasterSubKegiatan,
-          as: "masterSubKegiatan",
-          include: {
-            model: MasterKegiatan,
-            as: "masterKegiatan",
+          {
+            model: MasterSubKegiatan,
+            as: 'masterSubKegiatan',
+            include: {
+              model: MasterKegiatan,
+              as: 'masterKegiatan',
+            },
           },
-        },
-      ],
-    });
+        ],
+      });
 
-    if (!sub) {
-      return errorResponse(res, 404, "Sub-kegiatan tidak ditemukan");
+      if (!sub) {
+        return errorResponse(res, 404, 'Sub-kegiatan tidak ditemukan');
+      }
+
+      const plain = sub.get({ plain: true });
+
+      plain.master_kegiatan_id = plain.masterSubKegiatan?.master_kegiatan_id || null;
+
+      plain.master_program_id = plain.masterSubKegiatan?.masterKegiatan?.master_program_id || null;
+
+      return successResponse(res, 200, 'Detail sub-kegiatan ditemukan', plain);
+    } catch (err) {
+      return errorResponse(res, 500, 'Gagal mengambil detail sub-kegiatan', err);
     }
-
-    const plain = sub.get({ plain: true });
-
-    plain.master_kegiatan_id =
-      plain.masterSubKegiatan?.master_kegiatan_id || null;
-
-    plain.master_program_id =
-      plain.masterSubKegiatan?.masterKegiatan?.master_program_id || null;
-
-    return successResponse(
-      res,
-      200,
-      "Detail sub-kegiatan ditemukan",
-      plain
-    );
-  } catch (err) {
-    return errorResponse(
-      res,
-      500,
-      "Gagal mengambil detail sub-kegiatan",
-      err
-    );
-  }
   },
-  
 
   async update(req, res) {
     try {
       const errors = validationResult(req);
-      if (!errors.isEmpty())
-        return errorResponse(res, 400, "Validasi gagal", errors.array());
+      if (!errors.isEmpty()) return errorResponse(res, 400, 'Validasi gagal', errors.array());
 
       const sub = await SubKegiatan.findByPk(req.params.id, {
         include: {
           model: Kegiatan,
-          as: "kegiatan",
-          include: { model: Program, as: "program" },
+          as: 'kegiatan',
+          include: { model: Program, as: 'program' },
         },
       });
-      if (!sub) return errorResponse(res, 404, "Sub-kegiatan tidak ditemukan");
+      if (!sub) return errorResponse(res, 404, 'Sub-kegiatan tidak ditemukan');
 
       const {
         kegiatan_id,
@@ -626,15 +536,15 @@ const subKegiatanController = {
       } = req.body;
 
       const periode = await getPeriodeFromTahun(tahun);
-      if (!periode) return errorResponse(res, 400, "Periode tidak ditemukan");
+      if (!periode) return errorResponse(res, 400, 'Periode tidak ditemukan');
       const periode_id = periode.id;
 
       const kegiatan = await Kegiatan.findByPk(kegiatan_id, {
-        include: { model: Program, as: "program" },
+        include: { model: Program, as: 'program' },
       });
-      if (!kegiatan) return errorResponse(res, 404, "Kegiatan tidak ditemukan");
+      if (!kegiatan) return errorResponse(res, 404, 'Kegiatan tidak ditemukan');
       if (kegiatan.periode_id !== periode_id)
-        return errorResponse(res, 400, "Periode kegiatan tidak sesuai.");
+        return errorResponse(res, 400, 'Periode kegiatan tidak sesuai.');
 
       const dup = await SubKegiatan.findOne({
         where: {
@@ -646,16 +556,10 @@ const subKegiatanController = {
           id: { [Op.ne]: sub.id },
         },
       });
-      if (dup)
-        return errorResponse(
-          res,
-          409,
-          "Kode atau nama sub-kegiatan sudah digunakan."
-        );
+      if (dup) return errorResponse(res, 409, 'Kode atau nama sub-kegiatan sudah digunakan.');
 
       const modeEffective =
-        req.operationalMode ??
-        (await getEffectiveOperationalModeForSubKegiatan());
+        req.operationalMode ?? (await getEffectiveOperationalModeForSubKegiatan());
       const prep = await prepareSubKegiatanMasterWrite({
         body: req.body,
         existing: sub,
@@ -663,8 +567,8 @@ const subKegiatanController = {
       });
       if (!prep.ok) {
         return structuredErrorResponse(res, prep.status || 400, {
-          code: prep.code || "ENFORCEMENT_ERROR",
-          message: prep.message || "Validasi master / mode operasional gagal",
+          code: prep.code || 'ENFORCEMENT_ERROR',
+          message: prep.message || 'Validasi master / mode operasional gagal',
           field: null,
           details: prep.details,
         });
@@ -676,21 +580,21 @@ const subKegiatanController = {
       const hierErrUpd = await masterHierarchyCrossCheck(res, prep, req.body);
       if (hierErrUpd) return hierErrUpd;
 
-      console.log("[ENFORCEMENT]", {
+      console.log('[ENFORCEMENT]', {
         mode: modeEffective,
-        entity: "sub_kegiatan",
-        action: "update",
+        entity: 'sub_kegiatan',
+        action: 'update',
         isMasterPayload: isMasterPayload(req.body),
       });
 
       const masterFields =
-        prep.input_mode === "MASTER"
+        prep.input_mode === 'MASTER'
           ? {
               master_sub_kegiatan_id: prep.merged.master_sub_kegiatan_id,
               regulasi_versi_id: prep.merged.regulasi_versi_id,
-              input_mode: "MASTER",
+              input_mode: 'MASTER',
             }
-          : { input_mode: "LEGACY" };
+          : { input_mode: 'LEGACY' };
 
       const oldPagu = sub.pagu_anggaran;
       await sub.update({
@@ -699,9 +603,7 @@ const subKegiatanController = {
         kode_sub_kegiatan: kode_sub_kegiatan.trim(),
         nama_sub_kegiatan: nama_sub_kegiatan.trim(),
         pagu_anggaran:
-          typeof pagu_anggaran === "string"
-            ? parseInt(pagu_anggaran.trim())
-            : pagu_anggaran,
+          typeof pagu_anggaran === 'string' ? parseInt(pagu_anggaran.trim()) : pagu_anggaran,
         nama_opd: nama_opd.trim(),
         nama_bidang_opd: nama_bidang_opd.trim(),
         sub_bidang_opd: sub_bidang_opd.trim(),
@@ -721,18 +623,10 @@ const subKegiatanController = {
 
       const fresh = await SubKegiatan.findByPk(sub.id);
       const meta =
-        prep.transitionWarning != null
-          ? { enforcementWarning: prep.transitionWarning }
-          : undefined;
-      return successResponse(
-        res,
-        200,
-        "Sub-kegiatan berhasil diperbarui",
-        fresh,
-        meta,
-      );
+        prep.transitionWarning != null ? { enforcementWarning: prep.transitionWarning } : undefined;
+      return successResponse(res, 200, 'Sub-kegiatan berhasil diperbarui', fresh, meta);
     } catch (err) {
-      return errorResponse(res, 500, "Gagal memperbarui sub-kegiatan", err);
+      return errorResponse(res, 500, 'Gagal memperbarui sub-kegiatan', err);
     }
   },
 
@@ -741,20 +635,18 @@ const subKegiatanController = {
       const sub = await SubKegiatan.findByPk(req.params.id, {
         include: {
           model: Kegiatan,
-          as: "kegiatan",
-          include: { model: Program, as: "program" },
+          as: 'kegiatan',
+          include: { model: Program, as: 'program' },
         },
       });
-      if (!sub) return errorResponse(res, 404, "Sub-kegiatan tidak ditemukan");
+      if (!sub) return errorResponse(res, 404, 'Sub-kegiatan tidak ditemukan');
 
       const indikatorRows = await IndikatorSubKegiatan.findAll({
         where: { sub_kegiatan_id: sub.id },
-        attributes: ["kode_indikator"],
+        attributes: ['kode_indikator'],
       });
 
-      const prefixes = [
-        ...new Set(indikatorRows.map((r) => r.kode_indikator).filter(Boolean)),
-      ];
+      const prefixes = [...new Set(indikatorRows.map((r) => r.kode_indikator).filter(Boolean))];
 
       await sub.destroy();
 
@@ -763,9 +655,9 @@ const subKegiatanController = {
 
       queuePaguPrefixes(prefixes);
 
-      return successResponse(res, 200, "Sub-kegiatan berhasil dihapus");
+      return successResponse(res, 200, 'Sub-kegiatan berhasil dihapus');
     } catch (err) {
-      return errorResponse(res, 500, "Gagal menghapus sub-kegiatan", err);
+      return errorResponse(res, 500, 'Gagal menghapus sub-kegiatan', err);
     }
   },
 };

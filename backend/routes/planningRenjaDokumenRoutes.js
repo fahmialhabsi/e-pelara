@@ -11,9 +11,11 @@ const exportCtrl = require('../controllers/planningDocumentExportController');
 const schemas = require('../middlewares/planningDomainSchemas');
 const requireChangeReason = require('../middlewares/requireChangeReason');
 const autoGenCtrl = require('../controllers/renjaAutoGenerateBabController');
+const enrichCtrl = require('../controllers/renjaEnrichBabController');
 
 const READ_ROLES = ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA'];
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMINISTRATOR', 'PELAKSANA'];
+const REVIEW_ROLES = ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS'];
 
 router.get('/dashboard-v2', verifyToken, allowRoles(READ_ROLES), dashCtrl.renjaDashboardV2);
 
@@ -56,10 +58,23 @@ router.get(
 router.get('/dokumen/:id', verifyToken, allowRoles(READ_ROLES), ctrl.getDokumenById);
 router.get('/dokumen/:id/export', verifyToken, allowRoles(READ_ROLES), govCtrl.exportDocument);
 router.post(
+  '/dokumen/:id/enrich-bab',
+  verifyToken,
+  allowRoles(['admin', 'operator', 'superadmin', 'SUPER_ADMIN', 'ADMIN', 'OPERATOR']),
+  enrichCtrl.enrichBabWithAI,
+);
+
+router.post(
   '/dokumen/:id/auto-generate-bab',
   verifyToken,
   allowRoles(WRITE_ROLES),
   autoGenCtrl.autoGenerateBab,
+);
+router.post(
+  '/dokumen/:id/bridge-lakip',
+  verifyToken,
+  allowRoles(WRITE_ROLES),
+  autoGenCtrl.bridgeLakip,
 );
 router.get(
   '/dokumen/:id/validate-official',
@@ -179,7 +194,7 @@ router.post(
 router.post(
   '/v2/:id/review',
   verifyToken,
-  allowRoles(WRITE_ROLES),
+  allowRoles(REVIEW_ROLES),
   requireChangeReason,
   (req, _res, next) => {
     req.params.action = 'review';
@@ -190,7 +205,7 @@ router.post(
 router.post(
   '/v2/:id/approve',
   verifyToken,
-  allowRoles(WRITE_ROLES),
+  allowRoles(REVIEW_ROLES),
   requireChangeReason,
   (req, _res, next) => {
     req.params.action = 'approve';
@@ -199,9 +214,20 @@ router.post(
   govCtrl.workflowAction,
 );
 router.post(
+  '/v2/:id/reject',
+  verifyToken,
+  allowRoles(REVIEW_ROLES),
+  requireChangeReason,
+  (req, _res, next) => {
+    req.params.action = 'reject';
+    next();
+  },
+  govCtrl.workflowAction,
+);
+router.post(
   '/v2/:id/publish',
   verifyToken,
-  allowRoles(WRITE_ROLES),
+  allowRoles(REVIEW_ROLES),
   requireChangeReason,
   (req, _res, next) => {
     req.params.action = 'publish';

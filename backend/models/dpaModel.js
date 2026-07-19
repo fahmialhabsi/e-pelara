@@ -1,17 +1,17 @@
-"use strict";
-const { Model } = require("sequelize");
+'use strict';
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class Dpa extends Model {
     static associate(models) {
       Dpa.belongsTo(models.PeriodeRpjmd, {
-        foreignKey: "periode_id",
-        as: "periode",
+        foreignKey: 'periode_id',
+        as: 'periode',
       });
 
       Dpa.belongsTo(models.Rka, {
-        foreignKey: "rka_id",
-        as: "rka",
+        foreignKey: 'rka_id',
+        as: 'rka',
       });
     }
   }
@@ -57,10 +57,15 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
       approval_status: {
-        type: DataTypes.ENUM("DRAFT", "SUBMITTED", "APPROVED", "REJECTED"),
+        type: DataTypes.ENUM('DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'),
         allowNull: false,
-        defaultValue: "DRAFT",
+        defaultValue: 'DRAFT',
       },
+      opd_id: { type: DataTypes.INTEGER, allowNull: true },
+      opd_penanggung_jawab: { type: DataTypes.STRING(255), allowNull: true },
+      kode_program: { type: DataTypes.STRING(50), allowNull: true },
+      kode_kegiatan: { type: DataTypes.STRING(50), allowNull: true },
+      kode_sub_kegiatan: { type: DataTypes.STRING(50), allowNull: true },
       // Referensi kode rekening Permendagri 90 (nullable — backward compatible)
       kode_rekening: {
         type: DataTypes.STRING(30),
@@ -76,7 +81,7 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.DECIMAL(18, 2),
         allowNull: false,
         defaultValue: 0,
-        comment: "Cross-check LRA (bukan sumber utama; utama dari BKU)",
+        comment: 'Cross-check LRA (bukan sumber utama; utama dari BKU)',
       },
       change_reason_text: { type: DataTypes.TEXT, allowNull: true },
       change_reason_file: { type: DataTypes.STRING(255), allowNull: true },
@@ -100,13 +105,13 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       sequelize,
-      modelName: "Dpa",
-      tableName: "dpa",
+      modelName: 'Dpa',
+      tableName: 'dpa',
       underscored: true,
       timestamps: true,
-      createdAt: "created_at",
-      updatedAt: "updated_at",
-    }
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+    },
   );
 
   return Dpa;

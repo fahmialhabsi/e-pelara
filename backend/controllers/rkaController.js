@@ -11,8 +11,11 @@ const budgetCascadeValidator = require('../services/budgetCascadeValidator');
 
 // Import modul modular yang baru kita bangun
 const rkaCalculationHelper = require('../helpers/rkaCalculationHelper');
+const { buildRkaResponse } = require('../helpers/rkaResponseBuilder');
 const rkaValidationService = require('../services/rkaValidationService');
 const rkaRevisiService = require('../services/rkaRevisiService');
+const { loadRka } = require('../helpers/rkaLoadHelper');
+const { saveRka } = require('../helpers/rkaSaveHelper');
 
 module.exports = {
   /**
@@ -49,27 +52,17 @@ module.exports = {
   async getById(req, res) {
     try {
       const { id } = req.params;
-      const data = await Rka.findByPk(id, {
-        include: [{ model: RkaRincianBelanja, as: 'rincianBelanja' }],
-        order: [[{ model: RkaRincianBelanja, as: 'rincianBelanja' }, 'urutan', 'ASC']],
-      });
+      const data = await loadRka(id);
 
       if (!data)
         return res.status(404).json({ success: false, error: 'Dokumen RKA tidak ditemukan.' });
 
-      const json = data.toJSON();
+      const response = buildRkaResponse(data);
 
-      // Deserialisasi data string JSON koefisien_array dari DB kembali menjadi array Object untuk frontend
-      json.rincian_belanja = (json.rincianBelanja || []).map((item) => ({
-        ...item,
-        koefisien_array:
-          typeof item.koefisien_array === 'string'
-            ? JSON.parse(item.koefisien_array)
-            : item.koefisien_array,
-      }));
-      delete json.rincianBelanja;
-
-      return res.json({ success: true, data: json });
+      return res.json({
+        success: true,
+        data: response,
+      });
     } catch (error) {
       return res.status(500).json({ success: false, error: error.message });
     }
@@ -98,38 +91,33 @@ module.exports = {
         totalAnggaranSubKegiatan,
       );
 
-      // 4. Validasi Baseline RPJMD
-      const rp = await assertEffectiveRpjmdId(RPJMD, rpjmd_id, null);
-      if (!rp.ok) return res.status(400).json({ success: false, error: rp.msg });
-
+      // 4. Validasi Baseline RPJMD — opsional (tabel rpjmd terpisah dari periode_rpjmds)
+      let rpjmdId = null;
+      if (rpjmd_id != null && Number.isFinite(Number(rpjmd_id))) {
+        rpjmdId = Number(rpjmd_id);
+      }
       // Injeksi nilai kalkulasi bersih server-side ke payload utama
       rkaPayload.anggaran = totalAnggaranSubKegiatan;
-      rkaPayload.rpjmd_id = rp.id;
+      rkaPayload.rpjmd_id = rpjmdId;
       rkaPayload.kode_unik_sub_kegiatan = `${rkaPayload.tahun}-${rkaPayload.opd_id}-${rkaPayload.sub_kegiatan}-${rkaPayload.tahapan || 'APBD_INDUK'}`;
 
-      // Validasi konsistensi cascading bawaan sistem
-      await budgetCascadeValidator.validateFullChain({
-        payload: { ...rkaPayload, rincian_belanja: processedRincian, rpjmd_id: rp.id },
-      });
+      // Validasi cascading dilewati untuk RKA karena renja_id merujuk ke renja_item
+      // bukan renja dokumen — cascade chain berbeda dari modul lain
 
       // 5. Eksekusi Penyimpanan Database Parent
-      const created = await Rka.create({
-        ...rkaPayload,
-        version: 1,
-        is_active_version: true,
-        approval_status: 'DRAFT',
-        change_reason_text: change_reason_text || null,
-        change_reason_file: change_reason_file || null,
-      });
+      const created = await saveRka(
+        {
+          ...rkaPayload,
+          version: 1,
+          is_active_version: true,
+          approval_status: 'DRAFT',
+          change_reason_text: change_reason_text || null,
+          change_reason_file: change_reason_file || null,
+        },
+        processedRincian,
+      );
 
-      // 6. Bulk Create Item Anak Rincian Belanja
-      if (processedRincian.length) {
-        await RkaRincianBelanja.bulkCreate(
-          processedRincian.map((item) => ({ ...item, rka_id: created.id })),
-        );
-      }
-
-      // 7. Audit Log Trail Creation
+      // 6. Audit Log Trail Creation
       const uid = req.user?.id ?? req.user?.userId ?? null;
       const { old_value, new_value } = auditValuesFromRows(null, created);
       await writePlanningAudit({
@@ -169,7 +157,8 @@ module.exports = {
       );
 
       const validatedValue = rkaValidationService.validatePayload(payload, true);
-      const oldRow = await Rka.findByPk(id);
+
+      const oldRow = await loadRka(id);
       if (!oldRow)
         return res.status(404).json({ success: false, error: 'Dokumen RKA tidak ditemukan.' });
 
@@ -217,7 +206,7 @@ module.exports = {
       }
 
       // Audit Trail Log Update
-      const updatedRow = await Rka.findByPk(id);
+      const updatedRow = await loadRka(id);
       const { old_value, new_value } = auditValuesFromRows(oldRow, updatedRow);
       await writePlanningAudit({
         module_name: 'rka',
@@ -275,7 +264,7 @@ module.exports = {
   async destroy(req, res) {
     try {
       const { id } = req.params;
-      const oldRow = await Rka.findByPk(id);
+      const oldRow = await loadRka(id);
       if (!oldRow) return res.status(404).json({ success: false, error: 'Data tidak ditemukan.' });
 
       const uid = req.user?.id ?? req.user?.userId ?? null;

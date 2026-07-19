@@ -46,8 +46,11 @@ import RenjaExportPage from './features/renja/pages/RenjaExportPage';
 import RenjaReadonlyDetailPage from './features/renja/pages/RenjaReadonlyDetailPage';
 import RkaDashboard from './features/rka/pages/RkaDashboard';
 import RkaFormPage from './features/rka/pages/RkaFormPage';
+import TapdSettingPage from './features/rka/pages/TapdSettingPage';
 import DpaDashboard from './features/dpa/pages/DpaDashboard';
 import DpaFormPage from './features/dpa/pages/DpaFormPage';
+import DpaPergeseranPage from './features/dpa/pages/DpaPergeseranPage';
+import DpaPerubahanPage from './features/dpa/pages/DpaPerubahanPage';
 import PengkegDashboard from './features/pengkeg/pages/PengkegDashboard';
 import MonevDashboard from './features/monev/pages/MonevDashboard';
 import LpkDispangDashboard from './features/lpk-dispang/pages/LpkDispangDashboard';
@@ -458,6 +461,7 @@ function InnerApp() {
                 </DokumenTahunGuard>
               }
             />
+            <Route path="tapd-setting" element={<TapdSettingPage />} />
             <Route
               path="rka/form/:id"
               element={
@@ -478,6 +482,12 @@ function InnerApp() {
                 </DokumenTahunGuard>
               }
             />
+            <Route path="dpa/:dpa_id/pergeseran"
+              element={<DpaPergeseranPage />}
+            />
+            <Route
+              path="dpa/:dpa_id/perubahan"
+              element={<DpaPerubahanPage />} />
             <Route
               path="dpa/form/:id"
               element={

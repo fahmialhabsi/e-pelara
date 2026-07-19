@@ -1,34 +1,34 @@
 // src/hooks/templatesUseRenstra/useKebijakanRenstraForm.js
-import { useCallback, useEffect, useState } from "react";
-import * as Yup from "yup";
-import api from "@/services/api";
-import { App } from "antd";
-import { useRenstraFormTemplate } from "./useRenstraFormTemplate";
+import { useCallback, useEffect, useState } from 'react';
+import * as Yup from 'yup';
+import api from '@/services/api';
+import { App } from 'antd';
+import { useRenstraFormTemplate } from './useRenstraFormTemplate';
 
 const schema = Yup.object().shape({
-  strategi_id: Yup.number().required("Strategi Renstra wajib dipilih"),
-  rpjmd_arah_id: Yup.number().required("Arah Kebijakan RPJMD wajib dipilih"),
+  strategi_id: Yup.number().required('Strategi Renstra wajib dipilih'),
+  rpjmd_arah_id: Yup.number().required('Arah Kebijakan RPJMD wajib dipilih'),
   kode_kebjkn: Yup.string().nullable(),
-  deskripsi: Yup.string().required("Isi Kebijakan wajib diisi"),
-  prioritas: Yup.string().required("Prioritas wajib dipilih"),
+  deskripsi: Yup.string().required('Isi Kebijakan wajib diisi'),
+  prioritas: Yup.string().required('Prioritas wajib dipilih'),
   no_arah_rpjmd: Yup.string().nullable(),
   isi_arah_rpjmd: Yup.string().nullable(),
   jenisDokumen: Yup.string().nullable(),
   tahun: Yup.string().nullable(),
-  renstra_id: Yup.number().required("Renstra ID tidak ditemukan"),
+  renstra_id: Yup.number().required('Renstra ID tidak ditemukan'),
 });
 
 const defaultValues = {
-  strategi_id: "",
-  rpjmd_arah_id: "",
-  kode_kebjkn: "",
-  deskripsi: "",
+  strategi_id: '',
+  rpjmd_arah_id: '',
+  kode_kebjkn: '',
+  deskripsi: '',
   prioritas: null,
-  no_arah_rpjmd: "",
-  isi_arah_rpjmd: "",
-  jenisDokumen: "",
-  tahun: "",
-  renstra_id: "",
+  no_arah_rpjmd: '',
+  isi_arah_rpjmd: '',
+  jenisDokumen: '',
+  tahun: '',
+  renstra_id: '',
 };
 
 const generatePayload = (formData) => ({
@@ -58,38 +58,37 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
   } = useRenstraFormTemplate({
     initialData,
     renstraAktif,
-    endpoint: "/renstra-kebijakan",
+    endpoint: '/renstra-kebijakan',
     schema,
     defaultValues,
     generatePayload,
-    queryKeys: ["renstra-kebijakan"],
-    redirectPath: "/renstra/kebijakan",
+    queryKeys: ['renstra-kebijakan'],
+    redirectPath: '/renstra/kebijakan',
     fetchOptions: {
-      "renstra-strategi": () =>
-        api.get("/renstra-strategi").then((res) => res.data?.data || []),
+      'renstra-strategi': () => api.get('/renstra-strategi').then((res) => res.data?.data || []),
     },
     onMutationSuccess: (data) => setMutationResultData(data),
   });
 
   const { setValue, watch, reset } = form;
 
-  const selectedStrategiId = watch("strategi_id");
-  const selectedArahId = watch("rpjmd_arah_id");
+  const selectedStrategiId = watch('strategi_id');
+  const selectedArahId = watch('rpjmd_arah_id');
   const normalizeId = (value) =>
-    value === undefined || value === null || value === "" ? "" : String(value);
+    value === undefined || value === null || value === '' ? '' : String(value);
 
   useEffect(() => {
     const loadArahKebijakan = async () => {
       if (!selectedStrategiId) {
         setArahKebijakanFiltered([]);
-        setValue("rpjmd_arah_id", "");
+        setValue('rpjmd_arah_id', '');
         return;
       }
 
       try {
-        const res = await api.get("/arah-kebijakan", {
+        const res = await api.get('/arah-kebijakan', {
           params: {
-            jenis_dokumen: "rpjmd",
+            jenis_dokumen: 'rpjmd',
             tahun: initialData?.tahun || renstraAktif?.tahun_mulai,
             page: 1,
             limit: 1000,
@@ -98,13 +97,13 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
         });
 
         setArahKebijakanFiltered(res.data?.data || []);
-        setValue("rpjmd_arah_id", "");
-        setValue("no_arah_rpjmd", "");
-        setValue("isi_arah_rpjmd", "");
-        setValue("kode_kebjkn", "");
-        setValue("deskripsi", "");
+        setValue('rpjmd_arah_id', '');
+        setValue('no_arah_rpjmd', '');
+        setValue('isi_arah_rpjmd', '');
+        setValue('kode_kebjkn', '');
+        setValue('deskripsi', '');
       } catch (err) {
-        console.error("Gagal load arah kebijakan filtered:", err);
+        console.error('Gagal load arah kebijakan filtered:', err);
         setArahKebijakanFiltered([]);
       }
     };
@@ -116,13 +115,13 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
     if (!initialData) {
       reset({
         ...defaultValues,
-        renstra_id: renstraAktif?.id || "",
-        kode_kebjkn: "",
+        renstra_id: renstraAktif?.id || '',
+        kode_kebjkn: '',
       });
     } else {
       reset(initialData);
       if (initialData.kode_kebjkn) {
-        setValue("kode_kebjkn", initialData.kode_kebjkn);
+        setValue('kode_kebjkn', initialData.kode_kebjkn);
       }
     }
   }, [initialData, renstraAktif?.id, reset, setValue]);
@@ -130,77 +129,108 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
   useEffect(() => {
     const selectedId = selectedArahId;
     const renstraId = initialData?.renstra_id || renstraAktif?.id;
-    const arahOptions = dropdowns?.["arah-kebijakan"] || [];
+    const arahOptions =
+      arahKebijakanFiltered.length > 0
+        ? arahKebijakanFiltered
+        : dropdowns?.['arah-kebijakan'] || [];
 
     if (!selectedId) {
-      setValue("kode_kebjkn", "");
+      setValue('kode_kebjkn', '');
       return;
     }
 
-    const selected = arahOptions.find(
-      (item) => normalizeId(item.id) === normalizeId(selectedId),
-    );
+    const selected = arahOptions.find((item) => normalizeId(item.id) === normalizeId(selectedId));
 
     if (selected) {
-      setValue("no_arah_rpjmd", selected.kode_arah || "");
-      setValue("isi_arah_rpjmd", selected.deskripsi || "");
-      setValue("deskripsi", selected.deskripsi || "");
-      setValue("jenisDokumen", selected.jenis_dokumen || "");
-      setValue("tahun", selected.tahun || "");
+      setValue('no_arah_rpjmd', selected.kode_arah || '');
+      setValue('isi_arah_rpjmd', selected.deskripsi || '');
+      setValue('deskripsi', selected.deskripsi || '');
+      setValue('jenisDokumen', selected.jenis_dokumen || '');
+      setValue('tahun', selected.tahun || '');
+      // AI generate deskripsi kebijakan
+      if (selected.deskripsi) {
+        const namaOpd = renstraAktif?.nama_opd ?? 'OPD';
+        const strategi = watch('strategi_id') || '';
+        api
+          .post('/renstra-kebijakan/generate-kebijakan', {
+            namaOpd,
+            arahKebijakanRpjmd: selected.deskripsi,
+            sasaranRenstra: '',
+            strategi,
+          })
+          .then((res) => {
+            if (res.data?.kebijakan)
+              setValue('deskripsi', res.data.kebijakan, { shouldDirty: true });
+          })
+          .catch(() => {});
+      }
     }
 
     if (initialData || !renstraId) return;
 
     const triggerAutoKode = async () => {
       try {
-        const { data } = await api.get("/renstra-kebijakan/generate-kode-kebijakan", {
-          params: { arah_kebijakan_id: selectedId, renstra_id: renstraId },
+        const { data } = await api.get('/renstra-kebijakan/generate-kode-kebijakan', {
+          params: {
+            arah_kebijakan_id: selectedId,
+            renstra_id: renstraId,
+            strategi_id: watch('strategi_id'),
+          },
         });
-        setValue("kode_kebjkn", data?.kode_otomatis || "");
+        setValue('kode_kebjkn', data?.kode_otomatis || '');
       } catch (err) {
-        console.error("Error kode otomatis:", err);
-        message.error("Gagal menghasilkan kode kebijakan otomatis.");
-        setValue("kode_kebjkn", "");
+        console.error('Error kode otomatis:', err);
+        message.error('Gagal menghasilkan kode kebijakan otomatis.');
+        setValue('kode_kebjkn', '');
       }
     };
 
     triggerAutoKode();
-  }, [selectedArahId, dropdowns?.["arah-kebijakan"], initialData, message, renstraAktif?.id, setValue]);
+  }, [
+    selectedArahId,
+    dropdowns?.['arah-kebijakan'],
+    arahKebijakanFiltered,
+    initialData,
+    message,
+    renstraAktif?.id,
+    renstraAktif?.nama_opd,
+    setValue,
+  ]);
 
   const handleArahKebijakanChange = useCallback(
     (value) => {
-      const selected = dropdowns?.["arah-kebijakan"]?.find(
+      const selected = dropdowns?.['arah-kebijakan']?.find(
         (item) => normalizeId(item.id) === normalizeId(value),
       );
 
       if (selected) {
-        setValue("no_arah_rpjmd", selected.kode_arah || "");
-        setValue("isi_arah_rpjmd", selected.deskripsi || "");
-        setValue("kode_kebjkn", selected.kode_arah || "");
-        setValue("deskripsi", selected.deskripsi || "");
-        setValue("jenisDokumen", selected.jenis_dokumen || "");
-        setValue("tahun", selected.tahun || "");
+        setValue('no_arah_rpjmd', selected.kode_arah || '');
+        setValue('isi_arah_rpjmd', selected.deskripsi || '');
+        setValue('kode_kebjkn', selected.kode_arah || '');
+        setValue('deskripsi', selected.deskripsi || '');
+        setValue('jenisDokumen', selected.jenis_dokumen || '');
+        setValue('tahun', selected.tahun || '');
       } else {
-        setValue("no_arah_rpjmd", "");
-        setValue("isi_arah_rpjmd", "");
-        setValue("jenisDokumen", "");
-        setValue("tahun", "");
-        setValue("kode_kebjkn", "");
-        setValue("deskripsi", "");
+        setValue('no_arah_rpjmd', '');
+        setValue('isi_arah_rpjmd', '');
+        setValue('jenisDokumen', '');
+        setValue('tahun', '');
+        setValue('kode_kebjkn', '');
+        setValue('deskripsi', '');
       }
     },
     [dropdowns, setValue],
   );
 
   const handleStrategiChange = (value) => {
-    setValue("strategi_id", value);
+    setValue('strategi_id', value);
   };
 
   const totalLoading = isSubmitting || isDropdownsLoading;
 
   const dropdownsFinal = {
     ...dropdowns,
-    "arah-kebijakan": arahKebijakanFiltered,
+    'arah-kebijakan': arahKebijakanFiltered,
   };
 
   return {

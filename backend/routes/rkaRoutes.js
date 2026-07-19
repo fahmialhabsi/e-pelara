@@ -6,7 +6,15 @@ const verifyToken = require('../middlewares/verifyToken');
 const allowRoles = require('../middlewares/allowRoles');
 const guardApproved = require('../middlewares/guardApproved');
 const requireChangeReason = require('../middlewares/requireChangeReason');
-const { exportExcel, exportWord, exportPdf } = require('../controllers/rkaExportController');
+const {
+  exportExcel,
+  exportWord,
+  exportPdf,
+  exportPdfBelanja,
+} = require('../controllers/rkaExportController');
+const { generateIndikatorRka } = require('../services/rkaGenerateService');
+const upload = require('../middlewares/upload');
+const { importPdf } = require('../controllers/rkaImportController');
 
 // 1. Ambil semua dokumen RKA (Mendukung filter query ?tahapan=...)
 router.get(
@@ -39,6 +47,15 @@ router.post(
   allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
   requireChangeReason,
   RkaController.create,
+);
+
+// 4b. Import RKA otomatis dari PDF "Cetak RKA Rincian Belanja" Aplikasi SIPD
+router.post(
+  '/import-pdf',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
+  upload.single('file'),
+  importPdf,
 );
 
 // 5. Update Rincian Belanja pada Tahapan Berjalan
@@ -94,6 +111,29 @@ router.get(
   verifyToken,
   allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
   exportPdf,
+);
+
+router.get(
+  '/:id/export-pdf-belanja',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  exportPdfBelanja,
+);
+
+// Generate Indikator & Tolok Ukur Kinerja via AI
+router.post(
+  '/generate-indikator',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PELAKSANA']),
+  async (req, res) => {
+    try {
+      const result = await generateIndikatorRka(req.body);
+      res.json({ success: true, data: result });
+    } catch (e) {
+      console.error('[rkaGenerate]', e.message);
+      res.status(500).json({ success: false, message: e.message });
+    }
+  },
 );
 
 module.exports = router;

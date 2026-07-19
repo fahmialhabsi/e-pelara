@@ -58,6 +58,13 @@ const RenjaItemModal = ({ show, onHide, onSave, editData, rkpdDokumenId, urutan 
       .finally(() => setLoadingRkpd(false));
   }, [show, rkpdDokumenId]);
 
+  // Auto-select sub kegiatan jika hanya 1 item
+  useEffect(() => {
+    if (subKegiatanList.length === 1 && !selectedRkpdItem) {
+      handlePilihSubKegiatan(subKegiatanList[0]);
+    }
+  }, [subKegiatanList]);
+
   // Reset saat buka
   useEffect(() => {
     if (!show) return;

@@ -1,14 +1,10 @@
 // backend/controllers/masterReferensiController.js
-"use strict";
+'use strict';
 
-const {
-  MasterProgram,
-  MasterKegiatan,
-  MasterSubKegiatan,
-} = require("../models");
+const { MasterProgram, MasterKegiatan, MasterSubKegiatan } = require('../models');
 
 // ✅ DEFAULT DATASET (KUNCI UTAMA)
-const DEFAULT_DATASET_KEY = "kepmendagri_provinsi_900_2024";
+const DEFAULT_DATASET_KEY = 'kepmendagri_provinsi_900_2024';
 
 /**
  * Helper ambil dataset_key dari query
@@ -31,8 +27,8 @@ exports.getMasterProgram = async (req, res) => {
         dataset_key: datasetKey,
         is_active: true,
       },
-      attributes: ["id", "kode_program_full", "nama_program"],
-      order: [["kode_program_full", "ASC"]],
+      attributes: ['id', 'kode_program_full', 'nama_program'],
+      order: [['kode_program_full', 'ASC']],
     });
 
     return res.json({
@@ -42,10 +38,10 @@ exports.getMasterProgram = async (req, res) => {
       data,
     });
   } catch (err) {
-    console.error("getMasterProgram error:", err);
+    console.error('getMasterProgram error:', err);
     return res.status(500).json({
       success: false,
-      message: "Gagal mengambil master program",
+      message: 'Gagal mengambil master program',
     });
   }
 };
@@ -67,7 +63,7 @@ exports.getMasterKegiatan = async (req, res) => {
         dataset_key: datasetKey,
         total: 0,
         data: [],
-        message: "program_id wajib diisi",
+        message: 'program_id wajib diisi',
       });
     }
 
@@ -77,8 +73,8 @@ exports.getMasterKegiatan = async (req, res) => {
         master_program_id: program_id,
         is_active: true,
       },
-      attributes: ["id", "kode_kegiatan_full", "nama_kegiatan"],
-      order: [["kode_kegiatan_full", "ASC"]],
+      attributes: ['id', 'kode_kegiatan_full', 'nama_kegiatan'],
+      order: [['kode_kegiatan_full', 'ASC']],
     });
 
     return res.json({
@@ -88,14 +84,14 @@ exports.getMasterKegiatan = async (req, res) => {
       data,
     });
   } catch (err) {
-    console.error("getMasterKegiatan error:", err);
+    console.error('getMasterKegiatan error:', err);
     const datasetKey = getDatasetKey(req);
     return res.status(500).json({
       success: false,
       dataset_key: datasetKey,
       total: 0,
       data: [],
-      message: "Gagal mengambil master kegiatan",
+      message: 'Gagal mengambil master kegiatan',
     });
   }
 };
@@ -117,7 +113,7 @@ exports.getMasterSubKegiatan = async (req, res) => {
         dataset_key: datasetKey,
         total: 0,
         data: [],
-        message: "kegiatan_id wajib diisi",
+        message: 'kegiatan_id wajib diisi',
       });
     }
 
@@ -128,12 +124,13 @@ exports.getMasterSubKegiatan = async (req, res) => {
         is_active: true,
       },
       attributes: [
-        "id",
-        "kode_sub_kegiatan_full",
-        "nama_sub_kegiatan",
-        "regulasi_versi_id",
+        'id',
+        'kode_sub_kegiatan_full',
+        'nama_sub_kegiatan',
+        'kinerja',
+        'regulasi_versi_id',
       ],
-      order: [["kode_sub_kegiatan_full", "ASC"]],
+      order: [['kode_sub_kegiatan_full', 'ASC']],
     });
 
     return res.json({
@@ -143,14 +140,62 @@ exports.getMasterSubKegiatan = async (req, res) => {
       data,
     });
   } catch (err) {
-    console.error("getMasterSubKegiatan error:", err);
+    console.error('getMasterSubKegiatan error:', err);
     const datasetKey = getDatasetKey(req);
     return res.status(500).json({
       success: false,
       dataset_key: datasetKey,
       total: 0,
       data: [],
-      message: "Gagal mengambil master sub kegiatan",
+      message: 'Gagal mengambil master sub kegiatan',
+    });
+  }
+};
+
+/**
+ * ===============================
+ * GET /master-sub-kegiatan/by-kode?kode_sub_kegiatan=
+ * Lookup langsung by kode (tanpa perlu tahu kegiatan_id lebih dulu) — dipakai
+ * untuk auto-fill baris "Hasil" di form RKA saat data sudah ada kodenya
+ * (mis. hasil import PDF/edit dokumen lama), bukan lewat cascading picker.
+ * ===============================
+ */
+exports.getMasterSubKegiatanByKode = async (req, res) => {
+  try {
+    const datasetKey = getDatasetKey(req);
+    const { kode_sub_kegiatan } = req.query;
+
+    if (!kode_sub_kegiatan) {
+      return res.status(400).json({
+        success: false,
+        dataset_key: datasetKey,
+        data: null,
+        message: 'kode_sub_kegiatan wajib diisi',
+      });
+    }
+
+    const data = await MasterSubKegiatan.findOne({
+      where: {
+        dataset_key: datasetKey,
+        kode_sub_kegiatan_full: kode_sub_kegiatan,
+        is_active: true,
+      },
+      attributes: ['id', 'kode_sub_kegiatan_full', 'nama_sub_kegiatan', 'kinerja'],
+    });
+
+    return res.json({
+      success: true,
+      dataset_key: datasetKey,
+      data,
+    });
+  } catch (err) {
+    console.error('getMasterSubKegiatanByKode error:', err);
+    const datasetKey = getDatasetKey(req);
+    return res.status(500).json({
+      success: false,
+      dataset_key: datasetKey,
+      data: null,
+      message: 'Gagal mengambil master sub kegiatan by kode',
     });
   }
 };

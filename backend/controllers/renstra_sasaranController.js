@@ -112,6 +112,7 @@ exports.findAll = async (req, res) => {
           attributes: ['id', 'nomor', 'isi_sasaran'],
         },
       ],
+      order: [['nomor', 'ASC']],
     });
     res.json({
       message: 'success',
@@ -359,5 +360,34 @@ exports.delete = async (req, res) => {
       message: 'failed',
       error: err.message,
     });
+  }
+};
+
+exports.generateIndikatorSasaran = async (req, res) => {
+  try {
+    const { namaOpd, sasaranRenstra, tahunMulai } = req.body;
+    if (!namaOpd || !sasaranRenstra) {
+      return res.status(400).json({ message: 'namaOpd dan sasaranRenstra wajib diisi' });
+    }
+    const { generateIndikatorSasaranRenstra } = require('../services/renstraAIService');
+    const hasil = await generateIndikatorSasaranRenstra({ namaOpd, sasaranRenstra, tahunMulai });
+    return res.json({ success: true, indikator: hasil });
+  } catch (err) {
+    console.error('[generateIndikatorSasaran]', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+exports.generateSasaran = async (req, res) => {
+  try {
+    const { namaOpd, sasaranRpjmd, tujuanRenstra } = req.body;
+    if (!namaOpd || !sasaranRpjmd) {
+      return res.status(400).json({ message: 'namaOpd dan sasaranRpjmd wajib diisi' });
+    }
+    const { generateSasaranRenstra } = require('../services/renstraAIService');
+    const hasil = await generateSasaranRenstra({ namaOpd, sasaranRpjmd, tujuanRenstra });
+    return res.json({ success: true, sasaran: hasil });
+  } catch (err) {
+    console.error('[generateSasaran]', err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };

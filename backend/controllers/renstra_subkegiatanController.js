@@ -3,12 +3,12 @@ const {
   RenstraProgram,
   RenstraKegiatan,
   SubKegiatan,
+  MasterSubKegiatan,
+  MasterIndikator,
   Kegiatan,
-} = require("../models");
-const { Op } = require("sequelize");
-const {
-  programWhereForRenstraOpdQuery,
-} = require("../helpers/renstraOpdProgramFilter");
+} = require('../models');
+const { Op } = require('sequelize');
+const { programWhereForRenstraOpdQuery } = require('../helpers/renstraOpdProgramFilter');
 
 const toInt = (v) => {
   const n = parseInt(v, 10);
@@ -25,32 +25,31 @@ const extractSubkegiatanData = (body) => ({
 });
 
 const mergeOpdFromSubKegiatan = (data, sub) => {
-  const empty = (v) => v == null || String(v).trim() === "";
+  const empty = (v) => v == null || String(v).trim() === '';
   if (empty(data.sub_bidang_opd) && sub.sub_bidang_opd != null)
     data.sub_bidang_opd = sub.sub_bidang_opd;
-  if (empty(data.nama_opd) && sub.nama_opd != null)
-    data.nama_opd = sub.nama_opd;
+  if (empty(data.nama_opd) && sub.nama_opd != null) data.nama_opd = sub.nama_opd;
   if (empty(data.nama_bidang_opd) && sub.nama_bidang_opd != null)
     data.nama_bidang_opd = sub.nama_bidang_opd;
 };
 
 /** Contoh: "02.09.01.1.01" vs "2.09.01.1.01" di master `kegiatan`. */
 function variantsKodeKegiatan(k) {
-  const s = k == null ? "" : String(k).trim();
+  const s = k == null ? '' : String(k).trim();
   if (!s) return [];
-  const stripped = s.replace(/^0+/, "");
+  const stripped = s.replace(/^0+/, '');
   const set = new Set([s]);
   if (stripped && stripped !== s) set.add(stripped);
   return [...set];
 }
 
 const subIncludeAttrs = [
-  "id",
-  "kode_sub_kegiatan",
-  "nama_sub_kegiatan",
-  "sub_bidang_opd",
-  "nama_opd",
-  "nama_bidang_opd",
+  'id',
+  'kode_sub_kegiatan',
+  'nama_sub_kegiatan',
+  'sub_bidang_opd',
+  'nama_opd',
+  'nama_bidang_opd',
 ];
 
 async function findSubKegiatanRowsForKegiatanIds(kegiatanIds) {
@@ -60,12 +59,12 @@ async function findSubKegiatanRowsForKegiatanIds(kegiatanIds) {
     include: [
       {
         model: Kegiatan,
-        as: "kegiatan",
-        attributes: ["id", "kode_kegiatan", "nama_kegiatan"],
+        as: 'kegiatan',
+        attributes: ['id', 'kode_kegiatan', 'nama_kegiatan'],
         required: true,
       },
     ],
-    order: [["id", "ASC"]],
+    order: [['id', 'ASC']],
     attributes: subIncludeAttrs,
   });
 }
@@ -77,100 +76,87 @@ async function findSubKegiatanRowsForKodeVariants(kode) {
     include: [
       {
         model: Kegiatan,
-        as: "kegiatan",
-        attributes: ["id", "kode_kegiatan", "nama_kegiatan"],
+        as: 'kegiatan',
+        attributes: ['id', 'kode_kegiatan', 'nama_kegiatan'],
         where: { kode_kegiatan: { [Op.in]: vars } },
         required: true,
       },
     ],
-    order: [["id", "ASC"]],
+    order: [['id', 'ASC']],
     attributes: subIncludeAttrs,
   });
 }
 
-async function validateSubkegiatanChain({
-  renstra_program_id,
-  kegiatan_id,
-  sub_kegiatan_id,
-  }) {
-    const programRenstra = await RenstraProgram.findByPk(renstra_program_id);
+async function validateSubkegiatanChain({ renstra_program_id, kegiatan_id, sub_kegiatan_id }) {
+  const programRenstra = await RenstraProgram.findByPk(renstra_program_id);
 
-    if (!programRenstra) {
-      return {
-        ok: false,
-        status: 404,
-        error: "PROGRAM_RENSTRA_NOT_FOUND",
-        message: "Program Renstra tidak ditemukan.",
-      };
-    }
-
-    const renstraKegiatan = await RenstraKegiatan.findByPk(kegiatan_id);
-
-    if (!renstraKegiatan) {
-      return {
-        ok: false,
-        status: 404,
-        error: "RENSTRA_KEGIATAN_NOT_FOUND",
-        message: "Kegiatan Renstra tidak ditemukan.",
-      };
-    }
-
-    if (Number(renstraKegiatan.program_id) !== Number(renstra_program_id)) {
-      return {
-        ok: false,
-        status: 400,
-        error: "CHAIN_MISMATCH",
-        message:
-          "Kegiatan Renstra tidak berada di bawah Program Renstra yang dipilih.",
-      };
-    }
-
-    const subKegiatan = await SubKegiatan.findByPk(sub_kegiatan_id);
-
-    if (!subKegiatan) {
-      return {
-        ok: false,
-        status: 404,
-        error: "SUB_KEGIATAN_NOT_FOUND",
-        message: "Sub Kegiatan RPJMD tidak ditemukan.",
-      };
-    }
-
-    if (
-      Number(subKegiatan.kegiatan_id) !==
-      Number(renstraKegiatan.rpjmd_kegiatan_id)
-    ) {
-      return {
-        ok: false,
-        status: 400,
-        error: "CHAIN_MISMATCH",
-        message:
-          "Sub Kegiatan RPJMD tidak berada di bawah Kegiatan RPJMD milik Kegiatan Renstra yang dipilih.",
-      };
-    }
-
+  if (!programRenstra) {
     return {
-      ok: true,
-      programRenstra,
-      renstraKegiatan,
-      subKegiatan,
+      ok: false,
+      status: 404,
+      error: 'PROGRAM_RENSTRA_NOT_FOUND',
+      message: 'Program Renstra tidak ditemukan.',
     };
   }
+
+  const renstraKegiatan = await RenstraKegiatan.findByPk(kegiatan_id);
+
+  if (!renstraKegiatan) {
+    return {
+      ok: false,
+      status: 404,
+      error: 'RENSTRA_KEGIATAN_NOT_FOUND',
+      message: 'Kegiatan Renstra tidak ditemukan.',
+    };
+  }
+
+  if (Number(renstraKegiatan.program_id) !== Number(renstra_program_id)) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'CHAIN_MISMATCH',
+      message: 'Kegiatan Renstra tidak berada di bawah Program Renstra yang dipilih.',
+    };
+  }
+
+  const subKegiatan = await SubKegiatan.findByPk(sub_kegiatan_id);
+
+  if (!subKegiatan) {
+    return {
+      ok: false,
+      status: 404,
+      error: 'SUB_KEGIATAN_NOT_FOUND',
+      message: 'Sub Kegiatan RPJMD tidak ditemukan.',
+    };
+  }
+
+  if (Number(subKegiatan.kegiatan_id) !== Number(renstraKegiatan.rpjmd_kegiatan_id)) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'CHAIN_MISMATCH',
+      message:
+        'Sub Kegiatan RPJMD tidak berada di bawah Kegiatan RPJMD milik Kegiatan Renstra yang dipilih.',
+    };
+  }
+
+  return {
+    ok: true,
+    programRenstra,
+    renstraKegiatan,
+    subKegiatan,
+  };
+}
 
 // CREATE
 exports.create = async (req, res) => {
   try {
     const data = extractSubkegiatanData(req.body);
 
-    if (
-      !data.renstra_program_id ||
-      !data.kegiatan_id ||
-      !data.sub_kegiatan_id
-    ) {
+    if (!data.renstra_program_id || !data.kegiatan_id || !data.sub_kegiatan_id) {
       return res.status(400).json({
-        error: "REQUIRED_FIELDS_MISSING",
-        message:
-          "Field renstra_program_id, kegiatan_id, dan sub_kegiatan_id wajib diisi.",
+        error: 'REQUIRED_FIELDS_MISSING',
+        message: 'Field renstra_program_id, kegiatan_id, dan sub_kegiatan_id wajib diisi.',
       });
     }
 
@@ -193,8 +179,9 @@ exports.create = async (req, res) => {
 
     if (duplicate) {
       return res.status(409).json({
-        error: "DUPLICATE_RENSTRA_SUBKEGIATAN",
-        message: "Sub Kegiatan Renstra yang dipilih sudah ada pada Kegiatan Renstra ini. Silakan pilih sub kegiatan lain.",
+        error: 'DUPLICATE_RENSTRA_SUBKEGIATAN',
+        message:
+          'Sub Kegiatan Renstra yang dipilih sudah ada pada Kegiatan Renstra ini. Silakan pilih sub kegiatan lain.',
       });
     }
 
@@ -205,14 +192,14 @@ exports.create = async (req, res) => {
     const newSubkegiatan = await RenstraSubkegiatan.create(data);
 
     return res.status(201).json({
-      message: "Subkegiatan berhasil ditambahkan",
+      message: 'Subkegiatan berhasil ditambahkan',
       data: newSubkegiatan,
     });
   } catch (err) {
-    console.error("CREATE ERROR:", err);
+    console.error('CREATE ERROR:', err);
     return res.status(500).json({
-      error: "INTERNAL_SERVER_ERROR",
-      message: "Gagal menyimpan Sub Kegiatan Renstra.",
+      error: 'INTERNAL_SERVER_ERROR',
+      message: 'Gagal menyimpan Sub Kegiatan Renstra.',
     });
   }
 };
@@ -236,7 +223,7 @@ exports.findAll = async (req, res) => {
       const programWhere = await programWhereForRenstraOpdQuery(renstra_id);
       const programs = await RenstraProgram.findAll({
         where: programWhere,
-        attributes: ["id"],
+        attributes: ['id'],
       });
 
       if (!programs.length) {
@@ -248,41 +235,69 @@ exports.findAll = async (req, res) => {
 
     let rows = await RenstraSubkegiatan.findAll({
       where: whereClause,
-      order: [["id", "ASC"]],
+      order: [['kode_sub_kegiatan', 'ASC']],
       attributes: [
-        "id",
-        "renstra_program_id",
-        "kegiatan_id",
-        "sub_kegiatan_id",
-        "kode_sub_kegiatan",
-        "nama_sub_kegiatan",
-        "sub_bidang_opd",
-        "nama_opd",
-        "nama_bidang_opd",
-        "created_at",
-        "updated_at",
+        'id',
+        'renstra_program_id',
+        'kegiatan_id',
+        'sub_kegiatan_id',
+        'kode_sub_kegiatan',
+        'nama_sub_kegiatan',
+        'sub_bidang_opd',
+        'nama_opd',
+        'nama_bidang_opd',
+        'created_at',
+        'updated_at',
       ],
       include: [
         {
           model: RenstraKegiatan,
-          as: "kegiatan",
-          attributes: ["id", "kode_kegiatan", "nama_kegiatan"],
+          as: 'kegiatan',
+          attributes: ['id', 'kode_kegiatan', 'nama_kegiatan'],
           required: false,
+        },
+        {
+          model: SubKegiatan,
+          as: 'subKegiatan',
+          attributes: ['id', 'kode_sub_kegiatan', 'master_sub_kegiatan_id'],
+          required: false,
+          include: [
+            {
+              model: MasterSubKegiatan,
+              as: 'masterSubKegiatan',
+              attributes: [
+                'id',
+                'kode_sub_kegiatan',
+                'nama_sub_kegiatan',
+                'kinerja',
+                'indikator',
+                'satuan',
+              ],
+              required: false,
+              include: [
+                {
+                  model: MasterIndikator,
+                  as: 'masterIndikators',
+                  attributes: ['id', 'urutan', 'indikator', 'satuan', 'kinerja'],
+                  required: false,
+                },
+              ],
+            },
+          ],
         },
       ],
     });
 
-    if (unique === "true") {
+    if (unique === 'true') {
       rows = rows.filter(
         (item, index, self) =>
-          index ===
-          self.findIndex((t) => t.sub_kegiatan_id === item.sub_kegiatan_id)
+          index === self.findIndex((t) => t.sub_kegiatan_id === item.sub_kegiatan_id),
       );
     }
 
     return res.status(200).json({ data: rows });
   } catch (error) {
-    console.error("FIND ALL ERROR:", error);
+    console.error('FIND ALL ERROR:', error);
     return res.status(500).json({ message: error.message });
   }
 };
@@ -292,38 +307,38 @@ exports.findOne = async (req, res) => {
   try {
     const data = await RenstraSubkegiatan.findByPk(req.params.id, {
       attributes: [
-        "id",
-        "renstra_program_id",
-        "kegiatan_id",
-        "sub_kegiatan_id",
-        "kode_sub_kegiatan",
-        "nama_sub_kegiatan",
-        "sub_bidang_opd",
-        "nama_opd",
-        "nama_bidang_opd",
+        'id',
+        'renstra_program_id',
+        'kegiatan_id',
+        'sub_kegiatan_id',
+        'kode_sub_kegiatan',
+        'nama_sub_kegiatan',
+        'sub_bidang_opd',
+        'nama_opd',
+        'nama_bidang_opd',
       ],
       include: [
         {
           model: RenstraProgram,
-          as: "program",
-          attributes: ["id", "kode_program", "nama_program"],
+          as: 'program',
+          attributes: ['id', 'kode_program', 'nama_program'],
         },
         {
           model: RenstraKegiatan,
-          as: "kegiatan",
-          attributes: ["id", "kode_kegiatan", "nama_kegiatan"],
+          as: 'kegiatan',
+          attributes: ['id', 'kode_kegiatan', 'nama_kegiatan'],
         },
         {
           model: SubKegiatan,
-          as: "subKegiatan",
-          attributes: ["id", "kode_sub_kegiatan", "nama_sub_kegiatan"],
+          as: 'subKegiatan',
+          attributes: ['id', 'kode_sub_kegiatan', 'nama_sub_kegiatan'],
         },
       ],
     });
-    if (!data) return res.status(404).json({ message: "Data tidak ditemukan" });
-    return res.json({ message: "Data ditemukan", data });
+    if (!data) return res.status(404).json({ message: 'Data tidak ditemukan' });
+    return res.json({ message: 'Data ditemukan', data });
   } catch (err) {
-    console.error("FIND ONE ERROR:", err);
+    console.error('FIND ONE ERROR:', err);
     return res.status(500).json({ error: err.message });
   }
 };
@@ -336,7 +351,7 @@ exports.findByKodeKegiatan = async (req, res) => {
 
     if (!kode_kegiatan && !renstraKegiatanId) {
       return res.status(400).json({
-        message: "kode_kegiatan atau renstra_kegiatan_id wajib diisi",
+        message: 'kode_kegiatan atau renstra_kegiatan_id wajib diisi',
       });
     }
 
@@ -344,7 +359,7 @@ exports.findByKodeKegiatan = async (req, res) => {
 
     if (renstraKegiatanId) {
       const rk = await RenstraKegiatan.findByPk(renstraKegiatanId, {
-        attributes: ["id", "rpjmd_kegiatan_id", "kode_kegiatan"],
+        attributes: ['id', 'rpjmd_kegiatan_id', 'kode_kegiatan'],
       });
       if (rk?.rpjmd_kegiatan_id) {
         rows = await findSubKegiatanRowsForKegiatanIds([rk.rpjmd_kegiatan_id]);
@@ -376,11 +391,11 @@ exports.findByKodeKegiatan = async (req, res) => {
     }));
 
     if (!data.length) {
-      return res.status(404).json({ message: "Data tidak ditemukan" });
+      return res.status(404).json({ message: 'Data tidak ditemukan' });
     }
     return res.status(200).json({ data });
   } catch (error) {
-    console.error("FIND BY KODE KEGIATAN ERROR:", error);
+    console.error('FIND BY KODE KEGIATAN ERROR:', error);
     return res.status(500).json({ message: error.message });
   }
 };
@@ -392,15 +407,13 @@ exports.update = async (req, res) => {
     const existing = await RenstraSubkegiatan.findByPk(id);
 
     if (!existing) {
-      return res.status(404).json({ message: "Data tidak ditemukan" });
+      return res.status(404).json({ message: 'Data tidak ditemukan' });
     }
 
     const data = {
-      renstra_program_id:
-        toInt(req.body.renstra_program_id) ?? existing.renstra_program_id,
+      renstra_program_id: toInt(req.body.renstra_program_id) ?? existing.renstra_program_id,
       kegiatan_id: toInt(req.body.kegiatan_id) ?? existing.kegiatan_id,
-      sub_kegiatan_id:
-        toInt(req.body.sub_kegiatan_id) ?? existing.sub_kegiatan_id,
+      sub_kegiatan_id: toInt(req.body.sub_kegiatan_id) ?? existing.sub_kegiatan_id,
       sub_bidang_opd: req.body.sub_bidang_opd ?? existing.sub_bidang_opd,
       nama_opd: req.body.nama_opd ?? existing.nama_opd,
       nama_bidang_opd: req.body.nama_bidang_opd ?? existing.nama_bidang_opd,
@@ -426,8 +439,8 @@ exports.update = async (req, res) => {
 
     if (duplicate) {
       return res.status(409).json({
-        error: "DUPLICATE_RENSTRA_SUBKEGIATAN",
-        message: "Sub Kegiatan Renstra ini sudah pernah ditambahkan.",
+        error: 'DUPLICATE_RENSTRA_SUBKEGIATAN',
+        message: 'Sub Kegiatan Renstra ini sudah pernah ditambahkan.',
       });
     }
 
@@ -438,14 +451,14 @@ exports.update = async (req, res) => {
     await existing.update(data);
 
     return res.json({
-      message: "Subkegiatan berhasil diperbarui",
+      message: 'Subkegiatan berhasil diperbarui',
       data: existing,
     });
   } catch (err) {
-    console.error("UPDATE ERROR:", err);
+    console.error('UPDATE ERROR:', err);
     return res.status(500).json({
-      error: "INTERNAL_SERVER_ERROR",
-      message: "Gagal memperbarui Sub Kegiatan Renstra.",
+      error: 'INTERNAL_SERVER_ERROR',
+      message: 'Gagal memperbarui Sub Kegiatan Renstra.',
     });
   }
 };
@@ -455,23 +468,79 @@ exports.delete = async (req, res) => {
   try {
     const id = req.params.id;
     const deleted = await RenstraSubkegiatan.destroy({ where: { id } });
-    if (!deleted)
-      return res.status(404).json({ message: "Data tidak ditemukan" });
-    return res.json({ message: "Subkegiatan berhasil dihapus" });
+    if (!deleted) return res.status(404).json({ message: 'Data tidak ditemukan' });
+    return res.json({ message: 'Subkegiatan berhasil dihapus' });
   } catch (err) {
-    console.error("DELETE ERROR:", err);
+    console.error('DELETE ERROR:', err);
     return res.status(500).json({ error: err.message });
   }
 };
 
 // GENERATE from SubKegiatan (versi tanpa renstra_opd_id)
+exports.generateIndikatorSubKegiatan = async (req, res) => {
+  try {
+    const { namaOpd, subKegiatanRenstra, tahunMulai } = req.body;
+    if (!namaOpd || !subKegiatanRenstra) {
+      return res.status(400).json({ message: 'namaOpd dan subKegiatanRenstra wajib diisi' });
+    }
+    const { generateIndikatorSubKegiatanRenstra } = require('../services/renstraAIService');
+    const hasil = await generateIndikatorSubKegiatanRenstra({
+      namaOpd,
+      subKegiatanRenstra,
+      tahunMulai,
+    });
+    return res.json({ success: true, indikator: hasil });
+  } catch (err) {
+    console.error('[generateIndikatorSubKegiatan]', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.generateDefinisiMetodeSubKegiatan = async (req, res) => {
+  try {
+    const {
+      namaOpd,
+      subKegiatanRenstra,
+      namaIndikator,
+      satuan,
+      baseline,
+      targetTahun1,
+      targetTahun2,
+      targetTahun3,
+      targetTahun4,
+      targetTahun5,
+    } = req.body;
+    if (!namaOpd || !subKegiatanRenstra || !namaIndikator) {
+      return res
+        .status(400)
+        .json({ message: 'namaOpd, subKegiatanRenstra, dan namaIndikator wajib diisi' });
+    }
+    const { generateDefinisiMetodeSubKegiatan } = require('../services/renstraAIService');
+    const hasil = await generateDefinisiMetodeSubKegiatan({
+      namaOpd,
+      subKegiatanRenstra,
+      namaIndikator,
+      satuan,
+      baseline,
+      targetTahun1,
+      targetTahun2,
+      targetTahun3,
+      targetTahun4,
+      targetTahun5,
+    });
+    return res.json({ success: true, hasil });
+  } catch (err) {
+    console.error('[generateDefinisiMetodeSubKegiatan]', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
 exports.generateFromSubKegiatan = async (req, res) => {
   try {
     const { kegiatan_id, renstra_program_id } = req.body;
 
     if (!kegiatan_id || !renstra_program_id) {
       return res.status(400).json({
-        error: "Field kegiatan_id dan renstra_program_id wajib diisi",
+        error: 'Field kegiatan_id dan renstra_program_id wajib diisi',
       });
     }
 
@@ -480,7 +549,7 @@ exports.generateFromSubKegiatan = async (req, res) => {
     });
 
     if (!subKegiatanList || subKegiatanList.length === 0) {
-      return res.status(404).json({ error: "SubKegiatan tidak ditemukan" });
+      return res.status(404).json({ error: 'SubKegiatan tidak ditemukan' });
     }
 
     const createdList = [];
@@ -522,14 +591,14 @@ exports.generateFromSubKegiatan = async (req, res) => {
     });
 
     return res.status(201).json({
-      message: "Subkegiatan berhasil digenerate dari data SubKegiatan",
+      message: 'Subkegiatan berhasil digenerate dari data SubKegiatan',
       count: result.length,
       data: result,
     });
   } catch (error) {
-    console.error("GENERATE ERROR:", error);
+    console.error('GENERATE ERROR:', error);
     return res.status(500).json({
-      error: "Terjadi kesalahan saat generate subkegiatan",
+      error: 'Terjadi kesalahan saat generate subkegiatan',
     });
   }
 };

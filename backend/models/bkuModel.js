@@ -39,7 +39,7 @@ module.exports = (sequelize, DataTypes) => {
       kode_akun: { type: DataTypes.STRING(30), allowNull: true },
       dpa_id: { type: DataTypes.INTEGER, allowNull: true },
       jurnal_id: { type: DataTypes.INTEGER, allowNull: true },
-      sigap_spj_id: { type: DataTypes.INTEGER, allowNull: true },
+      sigap_spj_id: { type: DataTypes.STRING(36), allowNull: true },
       sigap_bku_id: { type: DataTypes.INTEGER, allowNull: true },
       bendahara_id: { type: DataTypes.INTEGER, allowNull: true },
       status_validasi: {

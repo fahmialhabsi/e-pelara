@@ -1,9 +1,9 @@
-"use strict";
+'use strict';
 
-const { Op } = require("sequelize");
-const { normalizeName, normalizeCode } = require("../utils/nameNormalizer");
-const { blendedNameSimilarity } = require("../utils/stringSimilarity");
-const { buildConfidence } = require("../utils/confidenceScoring");
+const { Op } = require('sequelize');
+const { normalizeName, normalizeCode } = require('../utils/nameNormalizer');
+const { blendedNameSimilarity } = require('../utils/stringSimilarity');
+const { buildConfidence } = require('../utils/confidenceScoring');
 
 const SQL_RENJA_RENSTRA_MAPPING_CANDIDATES = `
 SELECT
@@ -61,34 +61,36 @@ function evaluateCodeAndNameMatch({
 }) {
   const itemCodeNorm = normalizeCode(itemCode);
   const candCodeNorm = normalizeCode(candidateCode);
-  const itemNameRaw = String(itemName || "").trim();
-  const candNameRaw = String(candidateName || "").trim();
+  const itemNameRaw = String(itemName || '').trim();
+  const candNameRaw = String(candidateName || '').trim();
   const itemNameNorm = normalizeName(itemName);
   const candNameNorm = normalizeName(candidateName);
 
   if (itemCodeNorm && candCodeNorm && itemCodeNorm === candCodeNorm) {
-    return buildMatch("code_exact", codeExactScore, "Kode identik");
+    return buildMatch('code_exact', codeExactScore, 'Kode identik');
   }
 
   if (itemNameRaw && candNameRaw && itemNameRaw.toLowerCase() === candNameRaw.toLowerCase()) {
-    return buildMatch("name_exact", nameExactScore, "Nama identik");
+    return buildMatch('name_exact', nameExactScore, 'Nama identik');
   }
 
   if (itemNameNorm && candNameNorm && itemNameNorm === candNameNorm) {
-    return buildMatch("normalized_name", normalizedExactScore, "Nama normalisasi identik");
+    return buildMatch('normalized_name', normalizedExactScore, 'Nama normalisasi identik');
   }
 
   const fuzzy = blendedNameSimilarity(itemNameRaw, candNameRaw);
   if (fuzzy >= fuzzyMinGate) {
-    return buildMatch("fuzzy_name", fuzzy * 0.82, "Kemiripan nama fuzzy");
+    return buildMatch('fuzzy_name', fuzzy * 0.82, 'Kemiripan nama fuzzy');
   }
 
-  return buildMatch("manual_required", 0.2, "Tidak ada padanan kuat");
+  return buildMatch('manual_required', 0.2, 'Tidak ada padanan kuat');
 }
 
 function pickBestCandidate(candidates = [], minScore = 0.4) {
   if (!Array.isArray(candidates) || !candidates.length) return null;
-  const sorted = [...candidates].sort((a, b) => Number(b.match_score || 0) - Number(a.match_score || 0));
+  const sorted = [...candidates].sort(
+    (a, b) => Number(b.match_score || 0) - Number(a.match_score || 0),
+  );
   const best = sorted[0];
   if (Number(best.match_score || 0) < minScore) return null;
   return {
@@ -97,10 +99,18 @@ function pickBestCandidate(candidates = [], minScore = 0.4) {
   };
 }
 
+function extractCodeFromText(text) {
+  const m = String(text || '')
+    .trim()
+    .match(/^(\d+(?:\.\d+)*)\.?\s*-\s*(.+)$/);
+  if (!m) return { code: null, name: String(text || '').trim() };
+  return { code: m[1], name: m[2].trim() };
+}
+
 async function loadRenstraReference(db, renjaDokumenId) {
   const { RenjaDokumen, RenstraProgram, RenstraKegiatan, RenstraSubkegiatan } = db;
   const doc = await RenjaDokumen.findByPk(renjaDokumenId);
-  if (!doc) throw new Error("Dokumen RENJA tidak ditemukan.");
+  if (!doc) throw new Error('Dokumen RENJA tidak ditemukan.');
 
   const renstraPrograms = await RenstraProgram.findAll({
     where: { renstra_id: doc.renstra_pd_dokumen_id },
@@ -130,9 +140,10 @@ async function loadRenstraReference(db, renjaDokumenId) {
 }
 
 function suggestProgram(item, renstraPrograms = []) {
+  const parsed = extractCodeFromText(item.program);
   const candidates = renstraPrograms.map((rp) => {
     const evalResult = evaluateCodeAndNameMatch({
-      itemCode: item.kode_program,
+      itemCode: item.kode_program || parsed.code,
       itemName: item.program,
       candidateCode: rp.kode_program,
       candidateName: rp.nama_program,
@@ -151,9 +162,10 @@ function suggestProgram(item, renstraPrograms = []) {
 }
 
 function suggestKegiatan(item, renstraKegiatan = []) {
+  const parsed = extractCodeFromText(item.kegiatan);
   const candidates = renstraKegiatan.map((rk) => {
     const evalResult = evaluateCodeAndNameMatch({
-      itemCode: item.kode_kegiatan,
+      itemCode: item.kode_kegiatan || parsed.code,
       itemName: item.kegiatan,
       candidateCode: rk.kode_kegiatan,
       candidateName: rk.nama_kegiatan,
@@ -163,6 +175,7 @@ function suggestKegiatan(item, renstraKegiatan = []) {
     });
     return {
       renstra_kegiatan_id: Number(rk.id),
+      kegiatan_id: rk.rpjmd_kegiatan_id ? Number(rk.rpjmd_kegiatan_id) : null,
       match_type: evalResult.method,
       match_score: evalResult.score,
       reason: evalResult.reason,
@@ -174,9 +187,10 @@ function suggestKegiatan(item, renstraKegiatan = []) {
 }
 
 function suggestSubKegiatan(item, renstraSub = []) {
+  const parsed = extractCodeFromText(item.sub_kegiatan);
   const candidates = renstraSub.map((rs) => {
     const evalResult = evaluateCodeAndNameMatch({
-      itemCode: item.kode_sub_kegiatan,
+      itemCode: item.kode_sub_kegiatan || parsed.code,
       itemName: item.sub_kegiatan,
       candidateCode: rs.kode_sub_kegiatan,
       candidateName: rs.nama_sub_kegiatan,
@@ -186,6 +200,7 @@ function suggestSubKegiatan(item, renstraSub = []) {
     });
     return {
       renstra_subkegiatan_id: Number(rs.id),
+      sub_kegiatan_id: rs.sub_kegiatan_id ? Number(rs.sub_kegiatan_id) : null,
       match_type: evalResult.method,
       match_score: evalResult.score,
       reason: evalResult.reason,
@@ -200,10 +215,10 @@ function buildProgramSuggestionResult(item, programPick, kegiatanPick, subPick) 
   if (!programPick?.best) {
     return {
       renja_item_id: Number(item.id),
-      suggestion_type: "mapping_program",
-      suggested_match_type: "manual_required",
+      suggestion_type: 'mapping_program',
+      suggested_match_type: 'manual_required',
       suggestion_score: 0.2,
-      suggestion_reason: "Item belum memiliki padanan RENSTRA yang cukup kuat.",
+      suggestion_reason: 'Item belum memiliki padanan RENSTRA yang cukup kuat.',
       source_context_json: {
         renja_item: {
           kode_program: item.kode_program,
@@ -225,13 +240,15 @@ function buildProgramSuggestionResult(item, programPick, kegiatanPick, subPick) 
 
   return {
     renja_item_id: Number(item.id),
-    suggestion_type: "mapping_program",
-    suggested_entity_type: "renstra_program",
+    suggestion_type: 'mapping_program',
+    suggested_entity_type: 'renstra_program',
     suggested_entity_id: Number(programPick.best.renstra_program_id),
     suggested_program_id: programPick.best.program_id || null,
     suggested_source_renstra_program_id: Number(programPick.best.renstra_program_id),
     suggested_source_renstra_kegiatan_id: kegiatanPick?.best?.renstra_kegiatan_id || null,
     suggested_source_renstra_subkegiatan_id: subPick?.best?.renstra_subkegiatan_id || null,
+    suggested_kegiatan_id: kegiatanPick?.best?.kegiatan_id || null,
+    suggested_sub_kegiatan_id: subPick?.best?.sub_kegiatan_id || null,
     suggested_match_type: programPick.best.match_type,
     suggestion_score: confidence.score,
     suggestion_confidence: confidence.confidence,
@@ -242,7 +259,7 @@ function buildProgramSuggestionResult(item, programPick, kegiatanPick, subPick) 
       subPick?.best ? `Sub kegiatan: ${subPick.best.reason}` : null,
     ]
       .filter(Boolean)
-      .join("; "),
+      .join('; '),
     source_context_json: {
       renja_item: {
         id: Number(item.id),
@@ -264,7 +281,10 @@ async function generateProgramMappingSuggestions(db, renjaDokumenId, opts = {}) 
   const { RenjaItem } = db;
   const includeMapped = Boolean(opts.includeMapped);
 
-  const { renstraPrograms, renstraKegiatan, renstraSub } = await loadRenstraReference(db, renjaDokumenId);
+  const { renstraPrograms, renstraKegiatan, renstraSub } = await loadRenstraReference(
+    db,
+    renjaDokumenId,
+  );
   const where = {
     renja_dokumen_id: Number(renjaDokumenId),
   };
@@ -274,7 +294,7 @@ async function generateProgramMappingSuggestions(db, renjaDokumenId, opts = {}) 
 
   const items = await RenjaItem.findAll({
     where,
-    order: [["id", "ASC"]],
+    order: [['id', 'ASC']],
     raw: true,
   });
 
@@ -298,7 +318,69 @@ async function generateProgramMappingSuggestions(db, renjaDokumenId, opts = {}) 
   return results;
 }
 
+async function applyProgramMappingSuggestions(db, renjaDokumenId, opts = {}) {
+  const { RenjaItem } = db;
+  const onlyAutoApply = opts.onlyAutoApply !== false;
+
+  const suggestions = await generateProgramMappingSuggestions(db, renjaDokumenId, opts);
+  const applied = [];
+  const skipped = [];
+
+  for (const s of suggestions) {
+    if (s.suggested_match_type === 'manual_required' || !s.suggested_source_renstra_program_id) {
+      skipped.push({ renja_item_id: s.renja_item_id, reason: 'manual_required' });
+      continue;
+    }
+    if (onlyAutoApply && !s.can_auto_apply) {
+      skipped.push({
+        renja_item_id: s.renja_item_id,
+        reason: 'low_confidence',
+        score: s.suggestion_score,
+      });
+      continue;
+    }
+
+    let resolvedIndikatorRenstraId = null;
+    if (s.suggested_source_renstra_subkegiatan_id) {
+      const ir = await db.IndikatorRenstra.findOne({
+        where: {
+          stage: 'sub_kegiatan',
+          ref_id: s.suggested_source_renstra_subkegiatan_id,
+        },
+      });
+      resolvedIndikatorRenstraId = ir ? ir.id : null;
+    }
+
+    await RenjaItem.update(
+      {
+        source_renstra_program_id: s.suggested_source_renstra_program_id,
+        source_renstra_kegiatan_id: s.suggested_source_renstra_kegiatan_id,
+        source_renstra_subkegiatan_id: s.suggested_source_renstra_subkegiatan_id,
+        source_indikator_renstra_id: resolvedIndikatorRenstraId,
+        program_id: s.suggested_program_id,
+        kegiatan_id: s.suggested_kegiatan_id,
+        sub_kegiatan_id: s.suggested_sub_kegiatan_id,
+      },
+      { where: { id: s.renja_item_id } },
+    );
+    applied.push({
+      renja_item_id: s.renja_item_id,
+      score: s.suggestion_score,
+      match_type: s.suggested_match_type,
+    });
+  }
+
+  return {
+    total: suggestions.length,
+    applied_count: applied.length,
+    skipped_count: skipped.length,
+    applied,
+    skipped,
+  };
+}
+
 module.exports = {
+  applyProgramMappingSuggestions,
   SQL_RENJA_RENSTRA_MAPPING_CANDIDATES,
   SQL_RENSTRA_KEGIATAN_CANDIDATES,
   SQL_RENSTRA_SUBKEGIATAN_CANDIDATES,
@@ -308,4 +390,3 @@ module.exports = {
   suggestSubKegiatan,
   generateProgramMappingSuggestions,
 };
-

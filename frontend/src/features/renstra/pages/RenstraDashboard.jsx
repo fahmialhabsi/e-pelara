@@ -254,7 +254,7 @@ const RenstraDashboard = () => {
             <p className="text-muted mt-1 mb-3 small">
               Silakan buat dan aktifkan Renstra OPD terlebih dahulu.
             </p>
-            <button className="btn btn-warning btn-sm" onClick={() => navigate('/renstra/opd')}>
+            <button className="btn btn-warning btn-sm" onClick={() => navigate('/renstra-opd/new')}>
               Buat Renstra OPD
             </button>
           </CardBody>

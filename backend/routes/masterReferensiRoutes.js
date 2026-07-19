@@ -9,5 +9,6 @@ const controller = require("../controllers/masterReferensiController");
 router.get("/master-program", controller.getMasterProgram);
 router.get("/master-kegiatan", controller.getMasterKegiatan);
 router.get("/master-sub-kegiatan", controller.getMasterSubKegiatan);
+router.get("/master-sub-kegiatan/by-kode", controller.getMasterSubKegiatanByKode);
 
 module.exports = router;

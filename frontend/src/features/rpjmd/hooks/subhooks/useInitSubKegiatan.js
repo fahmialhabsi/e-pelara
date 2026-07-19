@@ -1,17 +1,17 @@
 // src/features/rpjmd/hooks/subhooks/useInitSubKegiatan.js
-import api from "@/services/api";
+import api from '@/services/api';
 
 export default async function initSubKegiatan(
   existingData,
   init,
   setFormData,
-  handleProgramChange
+  handleProgramChange,
 ) {
   if (!existingData) return;
 
-  console.group("📦 initSubKegiatan");
-  console.log("🔍 existingData:", existingData);
-  console.log("📌 init:", init);
+  console.group('📦 initSubKegiatan');
+  console.log('🔍 existingData:', existingData);
+  console.log('📌 init:', init);
 
   let filled = { ...init };
 
@@ -25,17 +25,14 @@ export default async function initSubKegiatan(
         filled.program_id = kegiatan.program_id;
 
         filled.nama_opd =
-          kegiatan.program?.opd_penanggung_jawab ||
-          kegiatan.opd_penanggung_jawab ||
-          filled.nama_opd;
+          kegiatan.opd?.nama_opd || kegiatan.program?.opd?.nama_opd || filled.nama_opd;
 
-        filled.nama_bidang_opd =
-          kegiatan.bidang_opd_penanggung_jawab || filled.nama_bidang_opd;
+        filled.nama_bidang_opd = kegiatan.bidang_opd_penanggung_jawab || filled.nama_bidang_opd;
 
-        console.log("🧩 filled setelah ambil kegiatan:", filled);
+        console.log('🧩 filled setelah ambil kegiatan:', filled);
       }
     } catch (err) {
-      console.error("❌ Gagal ambil data kegiatan:", err);
+      console.error('❌ Gagal ambil data kegiatan:', err);
     }
   }
 

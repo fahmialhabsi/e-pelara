@@ -1,4 +1,4 @@
-const { Rka, RkaRincianBelanja } = require('../models');
+const { Rka, RkaRincianBelanja, Tapd } = require('../models');
 const rkaEngine = require('../services/rkaEngine');
 const ExcelJS = require('exceljs');
 const docx = require('docx');
@@ -22,6 +22,24 @@ const {
 const formatRupiah = (val) => {
   if (val === null || val === undefined) return '0';
   return Number(val).toLocaleString('id-ID');
+};
+
+// Helper: Kolom "Koefisien" harus menampilkan ekspresi lengkap (mis. "4 Orang / Jam",
+// "4 Orang x 1 Jam") — bukan cuma angka hasil kali (mis. "4") — supaya jelas asal
+// angkanya bagi pemeriksa (Inspektorat/BPK). Format: "vol1 satuan1 x vol2 satuan2 ...".
+const formatKoefisienDisplay = (koefisienArrayRaw, fallbackVolume) => {
+  let arr = [];
+  try {
+    arr = typeof koefisienArrayRaw === 'string' ? JSON.parse(koefisienArrayRaw) : koefisienArrayRaw;
+  } catch {
+    arr = [];
+  }
+  if (!Array.isArray(arr) || arr.length === 0) {
+    return Number(fallbackVolume || 0).toLocaleString('id-ID');
+  }
+  return arr
+    .map((k) => `${Number(k.volume || 0).toLocaleString('id-ID')} ${k.satuan || ''}`.trim())
+    .join(' x ');
 };
 
 const getExportTotals = (engineResult) => ({
@@ -53,7 +71,7 @@ module.exports = {
   async exportExcel(req, res) {
     try {
       const { id } = req.params;
-      const { rka } = await fetchExportData(id);
+      const { rka, rincian } = await fetchExportData(id);
       const engineResult = await rkaEngine.recalculateWithValidation(id);
       const {
         totalBelanja,
@@ -226,7 +244,7 @@ module.exports = {
       wsRingkasan.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
 
       wsRingkasan.getCell('A4').value = 'Urusan Pemerintahan :';
-      wsRingkasan.getCell('B4').value = rka.urusan || '-';
+      wsRingkasan.getCell('B4').value = `${rka.kode_urusan || (rka.kode_program ? rka.kode_program.split('.')[0] : '')} ${rka.urusan || '-'}`.trim();
       wsRingkasan.getCell('A5').value = 'Organisasi :';
       wsRingkasan.getCell('B5').value = opdName;
       ['A4', 'A5'].forEach((cell) => {
@@ -537,7 +555,7 @@ module.exports = {
       const belanja221 = totalBelanja;
       const lokasiKegiatan = detailRows && detailRows[0] ? detailRows[0].lokasi || '-' : '-';
       const metaRows = [
-        ['Urusan Pemerintahan', rka.urusan || '-'],
+        ['Urusan Pemerintahan', `${rka.kode_urusan || (rka.kode_program ? rka.kode_program.split('.')[0] : '')} ${rka.urusan || '-'}`.trim()],
         ['Organisasi', opdName],
         ['Program', rka.program || '-'],
         ['Kegiatan', rka.kegiatan || '-'],
@@ -658,13 +676,33 @@ module.exports = {
         ws221.getRow(rowNum).values = [
           item.kode_rekening || '-',
           item.uraian || item.nama_rekening || '-',
-          item.volume !== null && item.volume !== undefined ? Number(item.volume) : 0,
+          formatKoefisienDisplay(item.koefisien_array, item.volume),
           item.satuan || '-',
           item.harga_satuan ? Number(item.harga_satuan) : 0,
           item.ppn ? `${item.ppn}%` : '0%',
-          item.jumlah ? Number(item.jumlah) : 0,
+          {
+            richText: [
+              {
+                text: `Subtotal : ${formatRupiah(Number(item.jumlah || 0))}\n`,
+              },
+              {
+                text: `PPN ${Number(item.ppn || 0)}% : ${formatRupiah(Number(item.nilai_ppn || 0))}\n`,
+              },
+              {
+                text: `TOTAL : ${formatRupiah(Number(item.total_setelah_ppn || item.jumlah || 0))}`,
+                font: {
+                  bold: true,
+                },
+              },
+            ],
+          },
         ];
         ws221.getRow(rowNum).font = fontArial;
+        ws221.getCell(`G${rowNum}`).alignment = {
+          vertical: 'top',
+          horizontal: 'right',
+          wrapText: true,
+        };
         ws221.getRow(rowNum).eachCell((c) => {
           c.border = borderAll;
           const colLetter = c.address.replace(/[0-9]/g, '');
@@ -749,10 +787,8 @@ module.exports = {
       const ws31 = workbook.addWorksheet('RKA-SKPD 3.1');
       ws31.views = [{ showGridLines: true }];
 
-      ws31.getCell('A1').value =
-        `Urusan Pemerintahan : ${rka.urusan || '1.07 Urusan Pemerintahan Bidang Perhubungan'}`;
-      ws31.getCell('A2').value =
-        `Bidang Urusan       : ${rka.bidang_urusan || '1.07.01 Bidang Urusan Perhubungan'}`;
+      ws31.getCell('A1').value = `Urusan Pemerintahan : ${rka.kode_urusan || (rka.kode_program ? rka.kode_program.split('.')[0] : '')} ${rka.urusan || ''}`;
+      ws31.getCell('A2').value = `Bidang Urusan       : ${rka.kode_bidang_urusan || rka.kode_program || ''} ${rka.bidang_urusan || ''}`;
       ws31.getCell('A3').value = `Program             : ${rka.program}`;
       ws31.getCell('A4').value = `Kegiatan            : ${rka.kegiatan}`;
       ws31.getCell('A5').value = `Sub-Kegiatan        : ${rka.sub_kegiatan}`;
@@ -794,10 +830,8 @@ module.exports = {
       const ws32 = workbook.addWorksheet('RKA-SKPD 3.2');
       ws32.views = [{ showGridLines: true }];
 
-      ws32.getCell('A1').value =
-        `Urusan Pemerintahan : ${rka.urusan || '1.07 Urusan Pemerintahan Bidang Perhubungan'}`;
-      ws32.getCell('A2').value =
-        `Bidang Urusan       : ${rka.bidang_urusan || '1.07.01 Bidang Urusan Perhubungan'}`;
+      ws32.getCell('A1').value = `Urusan Pemerintahan : ${rka.kode_urusan || (rka.kode_program ? rka.kode_program.split('.')[0] : '')} ${rka.urusan || ''}`;
+      ws32.getCell('A2').value = `Bidang Urusan       : ${rka.kode_bidang_urusan || rka.kode_program || ''} ${rka.bidang_urusan || ''}`;
       ws32.getCell('A3').value = `Program             : ${rka.program}`;
       ws32.getCell('A4').value = `Kegiatan            : ${rka.kegiatan}`;
       ws32.getCell('A5').value = `Sub-Kegiatan        : ${rka.sub_kegiatan}`;
@@ -1557,7 +1591,7 @@ module.exports = {
               }),
               new TableCell({
                 borders: wordBorder,
-                children: [cellPara(item.volume || 0, false, AlignmentType.CENTER)],
+                children: [cellPara(formatKoefisienDisplay(item.koefisien_array, item.volume), false, AlignmentType.CENTER)],
               }),
               new TableCell({
                 borders: wordBorder,
@@ -1573,7 +1607,17 @@ module.exports = {
               }),
               new TableCell({
                 borders: wordBorder,
-                children: [cellPara(formatRupiah(item.jumlah), false, AlignmentType.RIGHT)],
+                children: [
+                  cellPara(
+                    [
+                      `Subtotal : ${formatRupiah(item.jumlah || 0)}`,
+                      `PPN ${item.ppn || 0}% : ${formatRupiah(item.nilai_ppn || 0)}`,
+                      `TOTAL : ${formatRupiah(item.total_setelah_ppn || item.jumlah || 0)}`,
+                    ].join('\n'),
+                    false,
+                    AlignmentType.RIGHT,
+                  ),
+                ],
               }),
             ],
           }),
@@ -1656,13 +1700,13 @@ module.exports = {
           new Paragraph({
             children: [
               new TextRun({ text: `Urusan Pemerintahan : `, bold: true }),
-              new TextRun({ text: `${rka.urusan || '-'}` }),
+              new TextRun({ text: `${rka.kode_urusan || (rka.kode_program ? rka.kode_program.split('.')[0] : '-')} ${rka.urusan || ''}` }),
             ],
           }),
           new Paragraph({
             children: [
               new TextRun({ text: `Bidang Urusan        : `, bold: true }),
-              new TextRun({ text: `${rka.bidang_urusan || '-'}` }),
+              new TextRun({ text: `${rka.kode_bidang_urusan || rka.kode_program || '-'} ${rka.bidang_urusan || ''}` }),
             ],
           }),
           new Paragraph({
@@ -1728,13 +1772,331 @@ module.exports = {
   },
 
   // ==========================================
+  // 3B. EXPORT PDF BELANJA SKPD (FORMULIR RKA-BELANJA SKPD SAJA)
+  // ==========================================
+  async exportPdfBelanja(req, res) {
+    let browser;
+    try {
+      const { id } = req.params;
+      // Ambil data TAPD dari query string (JSON encoded)
+      const { rka, rincian } = await fetchExportData(id);
+
+      const tapdData = await Tapd.findAll({
+        where: { tahun: Number(rka.tahun) },
+        order: [['urutan', 'ASC']],
+      });
+      const tapdList = tapdData.map((t) => ({
+        nama: t.nama,
+        nip: t.nip,
+        jabatan: t.jabatan,
+        tanggal_pembahasan: t.tanggal_pembahasan || '',
+        catatan: t.catatan || '',
+      }));
+      const engineResult = await rkaEngine.recalculateWithValidation(id);
+      const {
+        totalBelanja,
+        totalBelanjaOperasi,
+        totalBelanjaModal,
+        totalBelanjaTidakTerduga,
+        totalBelanjaTransfer,
+        total,
+      } = getExportTotals(engineResult);
+      const detailRows = engineResult.rows;
+      const opdName = rka.opd_penanggung_jawab || 'DINAS PANGAN PROVINSI';
+
+      if (!detailRows || detailRows.length === 0) {
+        return res.status(400).json({ success: false, message: 'Tidak ada data rincian belanja' });
+      }
+
+      // Reuse buildHierarki dari exportPdf — definisikan ulang di sini
+      const formatRp = (val) => `Rp. ${Number(val).toLocaleString('id-ID')},00`;
+
+      const subtotals = {};
+      detailRows.forEach((item) => {
+        const segments = item.kode_rekening.split('.');
+        for (let i = 1; i <= segments.length; i++) {
+          const prefix = segments.slice(0, i).join('.');
+          subtotals[prefix] = (subtotals[prefix] || 0) + Number(item.jumlah || 0);
+        }
+      });
+
+      const labelStatis = {
+        5: 'BELANJA DAERAH',
+        5.1: 'BELANJA OPERASI',
+        5.2: 'BELANJA MODAL',
+        5.3: 'BELANJA TIDAK TERDUGA',
+        5.4: 'BELANJA TRANSFER',
+        '5.1.02': 'Belanja Barang dan Jasa',
+        '5.1.02.01': 'Belanja Barang',
+        '5.1.02.01.01': 'Belanja Barang Pakai Habis',
+      };
+
+      const grouped = {};
+      const kodeOrder = [];
+      detailRows.forEach((item) => {
+        const kode = item.kode_rekening;
+        if (!grouped[kode]) {
+          grouped[kode] = [];
+          kodeOrder.push(kode);
+        }
+        grouped[kode].push(item);
+      });
+
+      const renderedPrefixes = new Set();
+      let rincianHtml = '';
+
+      kodeOrder.forEach((kode) => {
+        const items = grouped[kode];
+        const segments = kode.split('.');
+
+        for (let i = 1; i <= segments.length; i++) {
+          const prefix = segments.slice(0, i).join('.');
+          if (renderedPrefixes.has(prefix)) continue;
+          renderedPrefixes.add(prefix);
+          const isLeaf = i === segments.length;
+          const isTopLevel = i <= 2;
+
+          if (!isLeaf) {
+            const label = labelStatis[prefix] || prefix;
+            const bg = isTopLevel ? '#f2f2f2' : '#fff';
+            const fw = isTopLevel ? 'bold' : 'normal';
+            const indent = (i - 1) * 12;
+            rincianHtml += `<tr style="background-color:${bg};">
+              <td style="border:1px solid #000;padding:4px;font-weight:${fw};">${prefix}</td>
+              <td colspan="5" style="border:1px solid #000;padding:4px;padding-left:${indent + 4}px;font-weight:${fw};">${label}</td>
+              <td style="border:1px solid #000;padding:4px;text-align:right;font-weight:${fw};">${formatRp(subtotals[prefix] || 0)}</td></tr>`;
+          } else {
+            const namaLeaf = items[0].nama_rekening || items[0].uraian || prefix;
+            rincianHtml += `<tr>
+              <td style="border:1px solid #000;padding:4px;font-weight:bold;">${prefix}</td>
+              <td colspan="5" style="border:1px solid #000;padding:4px;font-weight:bold;">${namaLeaf}</td>
+              <td style="border:1px solid #000;padding:4px;text-align:right;font-weight:bold;">${formatRp(subtotals[prefix] || 0)}</td></tr>`;
+
+            const grupSumber = {};
+            const sumberOrder = [];
+            items.forEach((it) => {
+              const sd = it.sumber_dana || 'PAD';
+              if (!grupSumber[sd]) {
+                grupSumber[sd] = [];
+                sumberOrder.push(sd);
+              }
+              grupSumber[sd].push(it);
+            });
+
+            sumberOrder.forEach((sd) => {
+              const grupItems = grupSumber[sd];
+              const subtotalGrup = grupItems.reduce((s, it) => s + Number(it.jumlah || 0), 0);
+              rincianHtml += `<tr>
+                <td style="border:1px solid #000;padding:4px;"></td>
+                <td colspan="5" style="border:1px solid #000;padding:4px;">
+                  <strong>[ # ] ${namaLeaf}</strong><br>
+                  <span style="padding-left:12px;">Sumber Dana : ${sd}</span>
+                </td>
+                <td style="border:1px solid #000;padding:4px;text-align:right;">${formatRp(subtotalGrup)}</td></tr>`;
+
+              const namaGrup = grupItems[0].nama_rekening || namaLeaf;
+              rincianHtml += `<tr>
+                <td style="border:1px solid #000;padding:4px;"></td>
+                <td colspan="5" style="border:1px solid #000;padding:4px;">[ - ] ${namaGrup}</td>
+                <td style="border:1px solid #000;padding:4px;text-align:right;">${formatRp(subtotalGrup)}</td></tr>`;
+
+              grupItems.forEach((it) => {
+                rincianHtml += `<tr>
+                  <td style="border:1px solid #000;padding:4px;"></td>
+                  <td style="border:1px solid #000;padding:4px;color:#c00000;padding-left:24px;">
+                    ${it.uraian || '-'}<br>
+                    <span style="color:#555;font-size:10px;">Spesifikasi : ${it.spesifikasi || '-'}</span>
+                  </td>
+                  <td style="border:1px solid #000;padding:4px;text-align:center;">${formatKoefisienDisplay(it.koefisien_array, it.volume)}</td>
+                  <td style="border:1px solid #000;padding:4px;text-align:center;">${it.satuan || '-'}</td>
+                  <td style="border:1px solid #000;padding:4px;text-align:right;color:#c00000;">${Number(it.harga_satuan || 0).toLocaleString('id-ID')},00</td>
+                  <td style="border:1px solid #000;padding:4px;text-align:center;">0 %</td>
+                  <td
+                    style="
+                        border:1px solid #000;
+                        padding:4px;
+                        text-align:right;
+                        white-space:pre-line;
+                        "
+                    >
+                    Subtotal : ${formatRp(it.jumlah || 0)}
+                    <br>
+                    PPN ${it.ppn || 0}% :
+                    ${formatRp(it.nilai_ppn || 0)}
+                    <br>
+                    <b>
+                    TOTAL :
+                    ${formatRp(it.total_setelah_ppn || it.jumlah || 0)}
+                    </b>
+                  </td>
+                </tr>`;
+              });
+            });
+          }
+        }
+      });
+
+      // Baris TAPD
+      const tapdRows =
+        tapdList.length > 0
+          ? tapdList
+              .map(
+                (t, i) => `<tr>
+            <td style="border:1px solid #000;padding:4px;text-align:center;">${i + 1}</td>
+            <td style="border:1px solid #000;padding:4px;">${t.nama || ''}</td>
+            <td style="border:1px solid #000;padding:4px;">${t.nip || ''}</td>
+            <td style="border:1px solid #000;padding:4px;">${t.jabatan || ''}</td>
+            <td style="border:1px solid #000;padding:4px;text-align:center;"></td>
+          </tr>`,
+              )
+              .join('')
+          : `<tr><td colspan="5" style="border:1px solid #000;padding:4px;text-align:center;color:#999;">— Belum diisi —</td></tr>`;
+
+      const htmlBelanja = `<!DOCTYPE html><html><head><meta charset="utf-8">
+        <style>
+          body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#333;}
+          table{width:100%;border-collapse:collapse;margin-top:8px;font-size:11px;}
+          th,td{border:1px solid #000;padding:5px;text-align:left;}
+          th{background-color:#BDD7EE;text-align:center;font-weight:bold;}
+          .right{text-align:right;} .center{text-align:center;} .bold{font-weight:bold;}
+          .header-form{text-align:center;font-size:13px;font-weight:bold;margin-bottom:10px;}
+          .meta td{border:none;padding:2px;}
+          .footer-sign{float:right;margin-top:30px;text-align:center;width:260px;font-weight:bold;}
+          .clear{clear:both;}
+        </style></head><body>
+        <div style="text-align:right;font-weight:bold;margin-bottom:4px;">
+          Formulir RKA-BELANJA SKPD
+        </div>
+        <div class="header-form">
+          RENCANA KERJA DAN ANGGARAN<br>SATUAN KERJA PERANGKAT DAERAH<br>
+          Rincian Anggaran Belanja Menurut Program, Kegiatan dan Sub Kegiatan
+        </div>
+        <table class="meta" style="border:none;margin-bottom:8px;">
+          <tr><td style="width:22%;font-weight:bold;">Urusan Pemerintahan</td><td>: ${rka.kode_urusan || (rka.kode_program ? rka.kode_program.split('.')[0] : '-')} ${rka.urusan || ''}</td></tr>
+          <tr><td style="font-weight:bold;">Bidang Urusan</td><td>: ${rka.kode_bidang_urusan || rka.kode_program || '-'} ${rka.bidang_urusan || ''}</td></tr>
+          <tr><td style="font-weight:bold;">Unit Organisasi</td><td>: ${opdName}</td></tr>
+          <tr><td style="font-weight:bold;">Sub Unit Organisasi</td><td>: -</td></tr>
+          <tr><td style="font-weight:bold;">Program</td><td>: ${rka.kode_program || ''} ${rka.program || '-'}</td></tr>
+          <tr><td style="font-weight:bold;">Kegiatan</td><td>: ${rka.kode_kegiatan || ''} ${rka.kegiatan || '-'}</td></tr>
+          <tr><td style="font-weight:bold;">Sub Kegiatan</td><td>: ${rka.kode_sub_kegiatan || ''} ${rka.sub_kegiatan || '-'}</td></tr>
+          <tr><td style="font-weight:bold;">SPM</td><td>: -</td></tr>
+          <tr><td style="font-weight:bold;">Jenis Layanan</td><td>: -</td></tr>
+          <tr><td style="font-weight:bold;">Sumber Pendanaan</td><td>: ${rincian[0]?.sumber_dana || 'PAD'}</td></tr>
+          <tr><td style="font-weight:bold;">Lokasi</td><td>: ${rka.lokasi || '-'}</td></tr>
+          <tr><td style="font-weight:bold;">Waktu Pelaksanaan</td><td>: ${rka.waktu_mulai || 'Januari'} s.d ${rka.waktu_selesai || 'Desember'}</td></tr>
+          <tr><td style="font-weight:bold;">Kelompok Sasaran</td><td>: Provinsi Maluku Utara</td></tr>
+          <tr><td style="font-weight:bold;">Alokasi ${Number(rka.tahun) - 1}</td><td>: Rp. 0,00</td></tr>
+          <tr><td style="font-weight:bold;">Alokasi ${rka.tahun}</td><td>: ${formatRp(totalBelanja)}</td></tr>
+          <tr><td style="font-weight:bold;">Alokasi ${Number(rka.tahun) + 1}</td><td>: Rp. 0,00</td></tr>
+        </table>
+
+        <div class="bold" style="margin:8px 0 4px;">Indikator dan Tolak Ukur Kinerja Kegiatan</div>
+        <table style="margin-bottom:12px;">
+          <thead><tr><th style="width:25%;">Indikator</th><th style="width:55%;">Tolok Ukur Kinerja</th><th style="width:20%;">Target Kinerja</th></tr></thead>
+          <tbody>
+            <tr><td class="bold">Capaian Program</td><td>${rka.capaian_program || '-'}</td><td class="center">${rka.target_capaian || '-'} ${rka.satuan_capaian || '%'}</td></tr>
+            <tr><td class="bold">Masukan</td><td>${rka.masukan || 'Dana yang dibutuhkan'}</td><td class="right">${formatRp(totalBelanja)}</td></tr>
+            <tr><td class="bold">Keluaran</td><td>${rka.keluaran || rka.indikator || '-'}</td><td class="center">${rka.target_keluaran || rka.target || '-'} ${rka.satuan_keluaran || ''}</td></tr>
+            <tr><td class="bold">Hasil</td><td>${rka.hasil || '-'}</td><td class="center">${rka.target_hasil || '-'} ${rka.satuan_hasil || '%'}</td></tr>
+          </tbody>
+        </table>
+
+        <div class="bold" style="margin:8px 0 4px;">Rincian Anggaran Belanja Kegiatan Satuan Kerja Perangkat Daerah</div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width:15%;">Kode Rekening</th>
+              <th style="width:35%;">Uraian</th>
+              <th style="width:12%;">Koefisien</th>
+              <th style="width:10%;">Satuan</th>
+              <th style="width:12%;">Harga</th>
+              <th style="width:6%;">PPN</th>
+              <th style="width:10%;">Jumlah (Rp)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rincianHtml}
+            <tr class="bold" style="background-color:#e2efda;">
+              <td colspan="6" class="center">JUMLAH TOTAL</td>
+              <td class="right">${formatRp(total)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="margin-top:20px;display:table;width:100%;table-layout:fixed;">
+          <div style="display:table-row;">
+
+            <!-- Kiri: Pembahasan + TAPD -->
+            <div style="display:table-cell;width:65%;vertical-align:top;padding-right:8px;">
+              <div style="margin-bottom:8px;">
+                <div class="bold" style="margin-bottom:4px;">Pembahasan :</div>
+                <div>Tanggal : ${tapdList[0]?.tanggal_pembahasan || '________________________'}</div>
+                <div style="margin-top:6px;">Catatan :</div>
+                <div style="border:1px solid #ccc;min-height:30px;padding:4px;margin-top:4px;font-size:10px;">
+                  ${tapdList[0]?.catatan || '&nbsp;'}
+                </div>
+              </div>
+              <div class="bold" style="margin:10px 0 4px;">Tim Anggaran Pemerintahan Daerah</div>
+              <table style="width:100%;border-collapse:collapse;font-size:10px;box-sizing:border-box;">
+                <thead>
+                  <tr>
+                    <th style="border:1px solid #000;padding:3px;width:5%;text-align:center;">No</th>
+                    <th style="border:1px solid #000;padding:3px;width:35%;">Nama</th>
+                    <th style="border:1px solid #000;padding:3px;width:25%;">NIP</th>
+                    <th style="border:1px solid #000;padding:3px;width:20%;">Jabatan</th>
+                    <th style="border:1px solid #000;padding:3px;width:15%;text-align:center;">Tanda Tangan</th>
+                  </tr>
+                </thead>
+                <tbody>${tapdRows}</tbody>
+              </table>
+            </div>
+
+            <!-- Kanan: TTD Kepala -->
+            <div style="display:table-cell;width:35%;vertical-align:top;text-align:center;font-weight:bold;padding-left:12px;">
+              Sofifi, _________ ${rka.tahun}<br>
+              Kepala ${opdName}<br><br><br><br><br>
+              ${rka.nama_kepala || 'Dheny Tjan, SH., M.Si'}<br>
+              NIP. ${rka.nip_kepala || '197507302001121001'}
+            </div>
+
+          </div>
+        </div>
+      </body></html>`;
+
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      });
+      const page = await browser.newPage();
+      await page.setContent(htmlBelanja, { waitUntil: 'networkidle0' });
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        landscape: true,
+        printBackground: true,
+        margin: { top: '15px', bottom: '15px', left: '15px', right: '15px' },
+      });
+      await browser.close();
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename=RKA_BELANJA_${id}_${rka.tahun}.pdf`,
+      );
+      res.send(pdfBuffer);
+    } catch (error) {
+      if (browser) await browser.close();
+      res.status(500).json({ success: false, message: error.message });
+    }
+  },
+
+  // ==========================================
   // 3. EXPORT PDF (MURNI MENGGUNAKAN PUPPETEER)
   // ==========================================
   async exportPdf(req, res) {
     let browser;
     try {
       const { id } = req.params;
-      const { rka } = await fetchExportData(id);
+      const { rka, rincian } = await fetchExportData(id);
       const engineResult = await rkaEngine.recalculateWithValidation(id);
       const {
         totalBelanja,
@@ -1749,21 +2111,166 @@ module.exports = {
 
       const opdName = rka.opd_penanggung_jawab || 'DINAS PANGAN PROVINSI';
 
-      let rincianHtmlRows = detailRows
-        .map((item) => {
-          return `
-          <tr>
-            <td class="center">${item.kode_rekening || '-'}</td>
-            <td>${item.uraian || item.nama_rekening || '-'}</td>
-            <td class="center">${item.volume || 0}</td>
-            <td class="center">${item.satuan || '-'}</td>
-            <td class="right">${formatRupiah(item.harga_satuan)}</td>
-            <td class="center">${item.ppn ? item.ppn + '%' : '0%'}</td>
-            <td class="right">${formatRupiah(item.jumlah)}</td>
-          </tr>
-        `;
-        })
-        .join('');
+      // Build hierarki kode rekening sesuai format SIPD
+      // Build hierarki kode rekening sesuai format SIPD
+      // Struktur: 5 → 5.1 → 5.1.02 → 5.1.02.01 → 5.1.02.01.01 → 5.1.02.01.01.0024 → [#] grup → [-] sub → item merah
+      const buildHierarki = (rows) => {
+        const formatRp = (val) => `Rp. ${Number(val).toLocaleString('id-ID')},00`;
+
+        // Hitung subtotal per prefix kode rekening
+        const subtotals = {};
+        rows.forEach((item) => {
+          const segments = item.kode_rekening.split('.');
+          for (let i = 1; i <= segments.length; i++) {
+            const prefix = segments.slice(0, i).join('.');
+            subtotals[prefix] = (subtotals[prefix] || 0) + Number(item.jumlah || 0);
+          }
+        });
+
+        // Kumpulkan nama rekening per prefix dari item pertama yang mengandung prefix tsb
+        const namaPerPrefix = {};
+        rows.forEach((item) => {
+          const kode = item.kode_rekening;
+          const segments = kode.split('.');
+          for (let i = 1; i <= segments.length; i++) {
+            const prefix = segments.slice(0, i).join('.');
+            if (!namaPerPrefix[prefix]) {
+              // Level leaf: pakai nama_rekening; level induk: akan diisi saat item pertama yang mengandung prefix ini ditemukan
+              namaPerPrefix[prefix] =
+                i === segments.length
+                  ? item.nama_rekening || item.uraian || prefix
+                  : item[`nama_level_${i}`] || '';
+            }
+          }
+        });
+
+        // Kelompokkan item per kode rekening leaf (misal 5.1.02.01.01.0024)
+        const grouped = {};
+        const kodeOrder = [];
+        rows.forEach((item) => {
+          const kode = item.kode_rekening;
+          if (!grouped[kode]) {
+            grouped[kode] = [];
+            kodeOrder.push(kode);
+          }
+          grouped[kode].push(item);
+        });
+
+        // Label statis untuk level induk standar Permendagri 77
+        const labelStatis = {
+          5: 'BELANJA DAERAH',
+          5.1: 'BELANJA OPERASI',
+          5.2: 'BELANJA MODAL',
+          5.3: 'BELANJA TIDAK TERDUGA',
+          5.4: 'BELANJA TRANSFER',
+          '5.1.02': 'Belanja Barang dan Jasa',
+          '5.1.02.01': 'Belanja Barang',
+          '5.1.02.01.01': 'Belanja Barang Pakai Habis',
+        };
+
+        let html = '';
+        const renderedPrefixes = new Set();
+
+        kodeOrder.forEach((kode) => {
+          const items = grouped[kode];
+          const segments = kode.split('.');
+
+          // --- Render baris header untuk setiap level prefix yang belum dirender ---
+          for (let i = 1; i <= segments.length; i++) {
+            const prefix = segments.slice(0, i).join('.');
+            if (renderedPrefixes.has(prefix)) continue;
+            renderedPrefixes.add(prefix);
+
+            const isLeaf = i === segments.length;
+            const isTopLevel = i <= 2;
+
+            if (!isLeaf) {
+              // Baris induk: 5 / 5.1 / 5.1.02 / 5.1.02.01 / 5.1.02.01.01
+              const label = labelStatis[prefix] || namaPerPrefix[prefix] || prefix;
+              const bg = isTopLevel ? '#f2f2f2' : '#fff';
+              const fw = isTopLevel ? 'bold' : 'normal';
+              const indent = (i - 1) * 12;
+              html += `
+                <tr style="background-color:${bg};">
+                  <td style="border:1px solid #000;padding:4px;font-weight:${fw};">${prefix}</td>
+                  <td colspan="5" style="border:1px solid #000;padding:4px;padding-left:${indent + 4}px;font-weight:${fw};">${label}</td>
+                  <td style="border:1px solid #000;padding:4px;text-align:right;font-weight:${fw};">${formatRp(subtotals[prefix] || 0)}</td>
+                </tr>`;
+            } else {
+              // Baris leaf: 5.1.02.01.01.0024
+              const namaLeaf = items[0].nama_rekening || items[0].uraian || prefix;
+              html += `
+                <tr>
+                  <td style="border:1px solid #000;padding:4px;font-weight:bold;">${prefix}</td>
+                  <td colspan="5" style="border:1px solid #000;padding:4px;font-weight:bold;">${namaLeaf}</td>
+                  <td style="border:1px solid #000;padding:4px;text-align:right;font-weight:bold;">${formatRp(subtotals[prefix] || 0)}</td>
+                </tr>`;
+
+              // --- Render grup [#] per sumber_dana dalam kode rekening yang sama ---
+              // Kelompokkan items dalam kode ini per sumber_dana
+              const grupSumber = {};
+              const sumberOrder = [];
+              items.forEach((it) => {
+                const sd = it.sumber_dana || 'PAD';
+                if (!grupSumber[sd]) {
+                  grupSumber[sd] = [];
+                  sumberOrder.push(sd);
+                }
+                grupSumber[sd].push(it);
+              });
+
+              sumberOrder.forEach((sd) => {
+                const grupItems = grupSumber[sd];
+                const subtotalGrup = grupItems.reduce((s, it) => s + Number(it.jumlah || 0), 0);
+
+                // Baris [#] header grup sumber dana
+                html += `
+                  <tr>
+                    <td style="border:1px solid #000;padding:4px;"></td>
+                    <td colspan="5" style="border:1px solid #000;padding:4px;">
+                      <strong>[ # ] ${namaLeaf}</strong><br>
+                      <span style="padding-left:12px;">Sumber Dana : ${sd}</span>
+                    </td>
+                    <td style="border:1px solid #000;padding:4px;text-align:right;">${formatRp(subtotalGrup)}</td>
+                  </tr>`;
+
+                // [ - ] sub-grup: gunakan nama_rekening sebagai judul grup uraian
+                // semua item dalam grup ini tampil sebagai baris detail merah
+                const namaGrup = grupItems[0].nama_rekening || namaLeaf;
+                const subtotalSub = grupItems.reduce((s, it) => s + Number(it.jumlah || 0), 0);
+
+                html += `
+                    <tr>
+                      <td style="border:1px solid #000;padding:4px;"></td>
+                      <td colspan="5" style="border:1px solid #000;padding:4px;">[ - ] ${namaGrup}</td>
+                      <td style="border:1px solid #000;padding:4px;text-align:right;">${formatRp(subtotalSub)}</td>
+                    </tr>`;
+
+                // Baris item detail (merah) — satu baris per row di rka_rincian_belanja
+                grupItems.forEach((it) => {
+                  html += `
+                      <tr>
+                        <td style="border:1px solid #000;padding:4px;"></td>
+                        <td style="border:1px solid #000;padding:4px;color:#c00000;padding-left:24px;">
+                          ${it.uraian || '-'}<br>
+                          <span style="color:#555;font-size:10px;">Spesifikasi : ${it.spesifikasi || '-'}</span>
+                        </td>
+                        <td style="border:1px solid #000;padding:4px;text-align:center;">${formatKoefisienDisplay(it.koefisien_array, it.volume)}</td>
+                        <td style="border:1px solid #000;padding:4px;text-align:center;">${it.satuan || '-'}</td>
+                        <td style="border:1px solid #000;padding:4px;text-align:right;color:#c00000;">${Number(it.harga_satuan || 0).toLocaleString('id-ID')},00</td>
+                        <td style="border:1px solid #000;padding:4px;text-align:center;">0 %</td>
+                        <td style="border:1px solid #000;padding:4px;text-align:right;">${formatRp(it.jumlah || 0)}</td>
+                      </tr>`;
+                });
+              });
+            }
+          }
+        });
+
+        return html;
+      };
+
+      let rincianHtmlRows = buildHierarki(detailRows);
 
       // Validate detailRows exists
       if (!detailRows || detailRows.length === 0) {
@@ -2045,18 +2552,26 @@ module.exports = {
               SATUAN KERJA PERANGKAT DAERAH (FORMULIR RKA-SKPD 2.2.1)
             </div>
 
-            <div style="line-height: 1.5; margin-bottom: 15px; font-size: 11px;">
+            <div style="line-height: 1.6; margin-bottom: 10px; font-size: 11px;">
               <table style="width: 100%; border: none;">
-                <tr style="border: none;"><td style="width: 18%; border: none; font-weight: bold; padding:2px;">Urusan Pemerintahan</td><td style="border: none; padding:2px;">: ${rka.urusan || '-'}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Bidang Urusan</td><td style="border: none; padding:2px;">: ${rka.bidang_urusan || '-'}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Program</td><td style="border: none; padding:2px;">: ${rka.program}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Kegiatan</td><td style="border: none; padding:2px;">: ${rka.kegiatan}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Sub-Kegiatan</td><td style="border: none; padding:2px;">: ${rka.sub_kegiatan}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Organisasi</td><td style="border: none; padding:2px;">: ${opdName}</td></tr>
+                <tr style="border: none;"><td style="width: 22%; border: none; font-weight: bold; padding:2px;">Urusan Pemerintahan</td><td style="border: none; padding:2px;">: ${rka.kode_urusan || (rka.kode_program ? rka.kode_program.split('.')[0] : '-')} ${rka.urusan || ''}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Bidang Urusan</td><td style="border: none; padding:2px;">: ${rka.kode_bidang_urusan || rka.kode_program || '-'} ${rka.bidang_urusan || ''}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Unit Organisasi</td><td style="border: none; padding:2px;">: ${opdName}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Sub Unit Organisasi</td><td style="border: none; padding:2px;">: -</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Program</td><td style="border: none; padding:2px;">: ${rka.kode_program || ''} ${rka.program}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Kegiatan</td><td style="border: none; padding:2px;">: ${rka.kode_kegiatan || ''} ${rka.kegiatan}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Sub Kegiatan</td><td style="border: none; padding:2px;">: ${rka.kode_sub_kegiatan || ''} ${rka.sub_kegiatan}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Sumber Pendanaan</td><td style="border: none; padding:2px;">: ${rincian[0]?.sumber_dana || 'PAD'}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Lokasi</td><td style="border: none; padding:2px;">: ${rka.lokasi || '-'}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Waktu Pelaksanaan</td><td style="border: none; padding:2px;">: ${rka.waktu_mulai || 'Januari'} s.d ${rka.waktu_selesai || 'Desember'}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Kelompok Sasaran</td><td style="border: none; padding:2px;">: Provinsi Maluku Utara</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Alokasi ${Number(rka.tahun) - 1}</td><td style="border: none; padding:2px;">: Rp. 0,00</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Alokasi ${rka.tahun}</td><td style="border: none; padding:2px;">: Rp. ${Number(totalBelanja).toLocaleString('id-ID')},00</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Alokasi ${Number(rka.tahun) + 1}</td><td style="border: none; padding:2px;">: Rp. 0,00</td></tr>
               </table>
             </div>
 
-            <p class="bold" style="margin-top: 10px; margin-bottom: 3px; font-size: 11px;">Indikator & Tolok Ukur Kinerja Sub-Kegiatan</p>
+            <p class="bold" style="margin-top: 10px; margin-bottom: 3px; font-size: 11px;">Indikator dan Tolak Ukur Kinerja Kegiatan</p>
             <table style="margin-bottom: 15px;">
               <thead>
                 <tr style="background-color: #f2f2f2;">
@@ -2066,9 +2581,10 @@ module.exports = {
                 </tr>
               </thead>
               <tbody>
-                <tr><td class="bold">Masukan (Input)</td><td>Dana yang dibutuhkan</td><td class="right">Rp ${formatRupiah(totalBelanja)}</td></tr>
-                <tr><td class="bold">Keluaran (Output)</td><td>[Output Target Sub-Kegiatan]</td><td class="center">[Volume]</td></tr>
-                <tr><td class="bold">Hasil (Outcome)</td><td>[Dampak/Manfaat Sub-Kegiatan]</td><td class="center">[Target %]</td></tr>
+                <tr><td class="bold">Capaian Program</td><td>${rka.capaian_program || '-'}</td><td class="center">${rka.target_capaian || '-'} ${rka.satuan_capaian || '%'}</td></tr>
+                <tr><td class="bold">Masukan</td><td>${rka.masukan || 'Dana yang dibutuhkan'}</td><td class="right">${formatRupiah(totalBelanja)}</td></tr>
+                <tr><td class="bold">Keluaran</td><td>${rka.keluaran || rka.indikator || '-'}</td><td class="center">${rka.target_keluaran || rka.target || '-'} ${rka.satuan_keluaran || ''}</td></tr>
+                <tr><td class="bold">Hasil</td><td>${rka.hasil || '-'}</td><td class="center">${rka.target_hasil || '-'} ${rka.satuan_hasil || '%'}</td></tr>
               </tbody>
             </table>
 
@@ -2110,8 +2626,8 @@ module.exports = {
 
             <div style="line-height: 1.5; margin-bottom: 15px; font-size: 11px;">
               <table style="width: 100%; border: none;">
-                <tr style="border: none;"><td style="width: 18%; border: none; font-weight: bold; padding:2px;">Urusan Pemerintahan</td><td style="border: none; padding:2px;">: ${rka.urusan || '1.07 Urusan Pemerintahan Bidang Perhubungan'}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Bidang Urusan</td><td style="border: none; padding:2px;">: ${rka.bidang_urusan || '1.07.01 Bidang Urusan Perhubungan'}</td></tr>
+                <tr style="border: none;"><td style="width: 18%; border: none; font-weight: bold; padding:2px;">Urusan Pemerintahan</td><td style="border: none; padding:2px;">: ${rka.kode_urusan || (rka.kode_program ? rka.kode_program.split('.')[0] : '-')} ${rka.urusan || ''}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Bidang Urusan</td><td style="border: none; padding:2px;">: ${rka.kode_bidang_urusan || rka.kode_program || '-'} ${rka.bidang_urusan || ''}</td></tr>
                 <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Program</td><td style="border: none; padding:2px;">: ${rka.program}</td></tr>
                 <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Kegiatan</td><td style="border: none; padding:2px;">: ${rka.kegiatan}</td></tr>
                 <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Sub-Kegiatan</td><td style="border: none; padding:2px;">: ${rka.sub_kegiatan}</td></tr>
@@ -2158,8 +2674,8 @@ module.exports = {
 
             <div style="line-height: 1.5; margin-bottom: 15px; font-size: 11px;">
               <table style="width: 100%; border: none;">
-                <tr style="border: none;"><td style="width: 18%; border: none; font-weight: bold; padding:2px;">Urusan Pemerintahan</td><td style="border: none; padding:2px;">: ${rka.urusan || '1.07 Urusan Pemerintahan Bidang Perhubungan'}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Bidang Urusan</td><td style="border: none; padding:2px;">: ${rka.bidang_urusan || '1.07.01 Bidang Urusan Perhubungan'}</td></tr>
+                <tr style="border: none;"><td style="width: 18%; border: none; font-weight: bold; padding:2px;">Urusan Pemerintahan</td><td style="border: none; padding:2px;">: ${rka.kode_urusan || (rka.kode_program ? rka.kode_program.split('.')[0] : '-')} ${rka.urusan || ''}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Bidang Urusan</td><td style="border: none; padding:2px;">: ${rka.kode_bidang_urusan || rka.kode_program || '-'} ${rka.bidang_urusan || ''}</td></tr>
                 <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Program</td><td style="border: none; padding:2px;">: ${rka.program}</td></tr>
                 <tr style="border: none;"><td style="border: none; padding:2px;">Kegiatan</td><td style="border: none; padding:2px;">: ${rka.kegiatan}</td></tr>
                 <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Sub-Kegiatan</td><td style="border: none; padding:2px;">: ${rka.sub_kegiatan}</td></tr>

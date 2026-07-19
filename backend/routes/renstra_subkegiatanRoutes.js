@@ -1,53 +1,51 @@
-const express = require("express");
-const controller = require("../controllers/renstra_subkegiatanController");
-const verifyToken = require("../middlewares/verifyToken");
-const allowRoles = require("../middlewares/allowRoles");
+const express = require('express');
+const controller = require('../controllers/renstra_subkegiatanController');
+const verifyToken = require('../middlewares/verifyToken');
+const allowRoles = require('../middlewares/allowRoles');
 const router = express.Router();
 
-router.post(
-  "/",
+router.post('/', verifyToken, allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']), controller.create);
+
+router.get(
+  '/sub-kegiatan/by-kode-kegiatan',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  controller.create
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  controller.findByKodeKegiatan,
 );
 
 router.get(
-  "/sub-kegiatan/by-kode-kegiatan",
+  '/',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  controller.findByKodeKegiatan
-);
-
-router.get(
-  "/",
-  verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  controller.findAll
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  controller.findAll,
 );
 
 router.post(
-  "/generate-from-subkegiatan",
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  controller.generateFromSubKegiatan
+  '/generate-from-subkegiatan',
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  controller.generateFromSubKegiatan,
 );
 
 router.get(
-  "/:id",
+  '/:id',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  controller.findOne
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  controller.findOne,
 );
-router.put(
-  "/:id",
+router.put('/:id', verifyToken, allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']), controller.update);
+router.delete('/:id', verifyToken, allowRoles(['SUPER_ADMIN']), controller.delete);
+
+router.post(
+  '/generate-indikator',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  controller.update
-);
-router.delete(
-  "/:id",
-  verifyToken,
-  allowRoles(["SUPER_ADMIN"]),
-  controller.delete
+  allowRoles(['SUPER_ADMIN', 'ADMIN', 'OPERATOR']),
+  controller.generateIndikatorSubKegiatan,
 );
 
+router.post(
+  '/generate-definisi-metode',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMIN', 'OPERATOR']),
+  controller.generateDefinisiMetodeSubKegiatan,
+);
 module.exports = router;

@@ -1,16 +1,16 @@
 // hooks/templatesUseRenstra/useKegiatanRenstraForm.js
-import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
-import * as yup from "yup";
-import { yupResolver } from "@hookform/resolvers/yup";
-import api from "@/services/api";
+import { useState, useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import * as yup from 'yup';
+import { yupResolver } from '@hookform/resolvers/yup';
+import api from '@/services/api';
 
 const schema = yup.object({
-  program_renstra_id: yup.number().required("Program Renstra wajib dipilih"),
-  kode_kegiatan: yup.string().required("Kode kegiatan wajib diisi"),
-  nama_kegiatan: yup.string().required("Nama kegiatan wajib diisi"),
+  program_renstra_id: yup.number().required('Program Renstra wajib dipilih'),
+  kode_kegiatan: yup.string().required('Kode kegiatan wajib diisi'),
+  nama_kegiatan: yup.string().required('Nama kegiatan wajib diisi'),
   renstra_id: yup.number().nullable(),
-  kegiatan_id: yup.number().required("Kegiatan wajib dipilih"),
+  kegiatan_id: yup.number().required('Kegiatan wajib dipilih'),
   bidang_opd: yup.string(),
 });
 
@@ -18,18 +18,18 @@ const schema = yup.object({
 function programRenstraIdFromRow(row) {
   if (!row) return undefined;
   const v = row.program_renstra_id ?? row.program_id;
-  return v != null && v !== "" ? Number(v) : undefined;
+  return v != null && v !== '' ? Number(v) : undefined;
 }
 
 /** Teks bidang + OPD dari baris program (tanpa " - " kosong). */
 function bidangDisplayFromProgramRow(p) {
-  if (!p) return "";
-  const b = (p.bidang_opd_penanggung_jawab || "").trim();
-  const o = (p.opd_penanggung_jawab || "").trim();
+  if (!p) return '';
+  const b = (p.bidang_opd_penanggung_jawab || '').trim();
+  const o = (p.opd_penanggung_jawab || '').trim();
   if (b && o) return `${b} - ${o}`;
   if (b) return b;
   if (o) return o;
-  return "";
+  return '';
 }
 
 /**
@@ -41,14 +41,12 @@ function resolveBidangOpdForForm({ programRow, initialData, selectedProgramId })
   if (fromProgram) return fromProgram;
   const savedPrId = programRenstraIdFromRow(initialData);
   const sameProgram =
-    initialData?.id != null &&
-    savedPrId != null &&
-    Number(selectedProgramId) === Number(savedPrId);
+    initialData?.id != null && savedPrId != null && Number(selectedProgramId) === Number(savedPrId);
   if (sameProgram && initialData?.bidang_opd != null) {
     const saved = String(initialData.bidang_opd).trim();
     if (saved) return saved;
   }
-  return "";
+  return '';
 }
 
 /** Referensi stabil untuk mode tambah — jangan pakai default `= {}` di parameter (identitas berubah tiap render → loop useEffect). */
@@ -56,10 +54,11 @@ export const EMPTY_KEGIATAN_INITIAL_DATA = Object.freeze({});
 
 export function useKegiatanRenstraForm(
   initialData = EMPTY_KEGIATAN_INITIAL_DATA,
-  renstraAktif = {}
+  renstraAktif = {},
 ) {
   const [programOptions, setProgramOptions] = useState([]);
   const [kegiatanOptions, setKegiatanOptions] = useState([]);
+  const [bidangOpdOptions, setBidangOpdOptions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -67,22 +66,48 @@ export function useKegiatanRenstraForm(
     defaultValues: {
       program_renstra_id: undefined,
       rpjmd_kegiatan_id: undefined,
-      kode_kegiatan: "",
-      nama_kegiatan: "",
+      kode_kegiatan: '',
+      nama_kegiatan: '',
       renstra_id: renstraAktif?.id || undefined,
-      bidang_opd: "",
+      bidang_opd: '',
       ...initialData,
     },
     resolver: yupResolver(schema),
   });
 
   const { watch, setValue, reset } = form;
-  const selectedProgramId = watch("program_renstra_id");
+  const selectedProgramId = watch('program_renstra_id');
 
-  const loadKegiatanByProgram = async (
-    rpjmdProgramId,
-    selectedRenstraProgramId
-  ) => {
+  useEffect(() => {
+    const namaOpd = renstraAktif?.nama_opd;
+    if (!namaOpd) {
+      setBidangOpdOptions([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get('/opd-penanggung-jawab');
+        const raw = res.data?.data ?? res.data;
+        const rows = Array.isArray(raw) ? raw : [];
+        const filtered = rows.filter(
+          (r) => (r.nama_opd || '').trim().toLowerCase() === namaOpd.trim().toLowerCase(),
+        );
+        const unique = Array.from(
+          new Set(filtered.map((r) => (r.nama_bidang_opd || '').trim()).filter(Boolean)),
+        );
+        if (!cancelled) setBidangOpdOptions(unique);
+      } catch (err) {
+        console.error('Gagal load daftar bidang OPD:', err);
+        if (!cancelled) setBidangOpdOptions([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [renstraAktif?.nama_opd]);
+
+  const loadKegiatanByProgram = async (rpjmdProgramId, selectedRenstraProgramId) => {
     if (!rpjmdProgramId) {
       setKegiatanOptions([]);
       return;
@@ -90,33 +115,27 @@ export function useKegiatanRenstraForm(
 
     setIsLoading(true);
     try {
-      const res = await api.get(
-        `/renstra-kegiatan/by-program/${rpjmdProgramId}`
-      );
+      const res = await api.get(`/renstra-kegiatan/by-program/${rpjmdProgramId}`);
       const raw = res.data?.data ?? res.data;
       const rows = Array.isArray(raw) ? raw : [];
       const options = rows.map((k) => ({
         id: k.id ?? k.value ?? k.kegiatan_rpjmd_id,
         value: k.value ?? k.kegiatan_rpjmd_id ?? k.id,
-        label:
-          k.label ||
-          `${k.kode_kegiatan ?? ""} - ${k.nama_kegiatan ?? ""}`.trim(),
+        label: k.label || `${k.kode_kegiatan ?? ''} - ${k.nama_kegiatan ?? ''}`.trim(),
         kode_kegiatan: k.kode_kegiatan,
         nama_kegiatan: k.nama_kegiatan,
-        bidang_opd: k.bidang_opd ?? "",
+        bidang_opd: k.bidang_opd ?? '',
         rpjmd_program_id: k.rpjmd_program_id,
       }));
       // Edit: jika kode tidak ada di hasil API (format beda / data lama), sisipkan opsi dari record
       if (initialData?.id && initialData.kode_kegiatan) {
         const kodeNorm = String(initialData.kode_kegiatan).trim();
-        const ada = options.some(
-          (o) => String(o.kode_kegiatan ?? "").trim() === kodeNorm
-        );
+        const ada = options.some((o) => String(o.kode_kegiatan ?? '').trim() === kodeNorm);
         if (!ada) {
           const nama =
-            (initialData.nama_kegiatan || "").trim() ||
-            (initialData.kegiatan_rpjmd?.nama_kegiatan || "").trim() ||
-            "";
+            (initialData.nama_kegiatan || '').trim() ||
+            (initialData.kegiatan_rpjmd?.nama_kegiatan || '').trim() ||
+            '';
           options.unshift({
             value: initialData.rpjmd_kegiatan_id ?? kodeNorm,
             kode_kegiatan: initialData.kode_kegiatan,
@@ -132,41 +151,34 @@ export function useKegiatanRenstraForm(
       let selected;
       const savedPrId = programRenstraIdFromRow(initialData);
       const sameProgramAsRecord =
-        savedPrId != null &&
-        Number(selectedRenstraProgramId) === Number(savedPrId);
+        savedPrId != null && Number(selectedRenstraProgramId) === Number(savedPrId);
       if (sameProgramAsRecord && initialData?.rpjmd_kegiatan_id != null) {
         selected = options.find(
-          (opt) => Number(opt.value) === Number(initialData.rpjmd_kegiatan_id)
+          (opt) => Number(opt.value) === Number(initialData.rpjmd_kegiatan_id),
         );
       }
-      if (
-        !selected &&
-        sameProgramAsRecord &&
-        initialData?.kode_kegiatan
-      ) {
-        selected = options.find(
-          (opt) => opt.kode_kegiatan === initialData.kode_kegiatan
-        );
+      if (!selected && sameProgramAsRecord && initialData?.kode_kegiatan) {
+        selected = options.find((opt) => opt.kode_kegiatan === initialData.kode_kegiatan);
       }
       if (!selected && options.length > 0 && !initialData?.id) {
         selected = options[0];
       }
 
       if (selected) {
-        setValue("rpjmd_kegiatan_id", selected.value);
-        setValue("kode_kegiatan", selected.kode_kegiatan);
-        setValue("nama_kegiatan", selected.nama_kegiatan);
+        setValue('rpjmd_kegiatan_id', selected.value);
+        setValue('kode_kegiatan', selected.kode_kegiatan);
+        setValue('nama_kegiatan', selected.nama_kegiatan);
       } else if (initialData?.id) {
-        setValue("kode_kegiatan", initialData.kode_kegiatan ?? "");
+        setValue('kode_kegiatan', initialData.kode_kegiatan ?? '');
         setValue(
-          "nama_kegiatan",
-          (initialData.nama_kegiatan || "").trim() ||
-            (initialData.kegiatan_rpjmd?.nama_kegiatan || "").trim() ||
-            ""
+          'nama_kegiatan',
+          (initialData.nama_kegiatan || '').trim() ||
+            (initialData.kegiatan_rpjmd?.nama_kegiatan || '').trim() ||
+            '',
         );
       }
     } catch (err) {
-      console.error("Gagal load kegiatan:", err);
+      console.error('Gagal load kegiatan:', err);
       setKegiatanOptions([]);
     } finally {
       setIsLoading(false);
@@ -177,16 +189,14 @@ export function useKegiatanRenstraForm(
     reset({
       program_renstra_id: programRenstraIdFromRow(initialData),
       rpjmd_kegiatan_id:
-        initialData.rpjmd_kegiatan_id != null
-          ? Number(initialData.rpjmd_kegiatan_id)
-          : undefined,
-      kode_kegiatan: initialData.kode_kegiatan ?? "",
+        initialData.rpjmd_kegiatan_id != null ? Number(initialData.rpjmd_kegiatan_id) : undefined,
+      kode_kegiatan: initialData.kode_kegiatan ?? '',
       nama_kegiatan:
-        (initialData.nama_kegiatan || "").trim() ||
-        (initialData.kegiatan_rpjmd?.nama_kegiatan || "").trim() ||
-        "",
+        (initialData.nama_kegiatan || '').trim() ||
+        (initialData.kegiatan_rpjmd?.nama_kegiatan || '').trim() ||
+        '',
       renstra_id: initialData.renstra_id ?? renstraAktif?.id ?? undefined,
-      bidang_opd: initialData.bidang_opd ?? "",
+      bidang_opd: initialData.bidang_opd ?? '',
     });
   }, [
     initialData?.id,
@@ -207,18 +217,14 @@ export function useKegiatanRenstraForm(
     async function initForm() {
       setIsLoading(true);
       try {
-        const res = await api.get("/renstra-program");
+        const res = await api.get('/renstra-program');
         const raw = res.data?.data ?? res.data;
         const all = Array.isArray(raw) ? raw : [];
         const rid = renstraAktif?.id ?? initialData?.renstra_id;
-        let programs = rid
-          ? all.filter((p) => Number(p.renstra_id) === Number(rid))
-          : all;
+        let programs = rid ? all.filter((p) => Number(p.renstra_id) === Number(rid)) : all;
 
         const targetPrId = programRenstraIdFromRow(initialData);
-        let defaultProgram = programs.find(
-          (p) => Number(p.id) === Number(targetPrId)
-        );
+        let defaultProgram = programs.find((p) => Number(p.id) === Number(targetPrId));
 
         if (
           initialData?.id &&
@@ -239,9 +245,7 @@ export function useKegiatanRenstraForm(
             },
             ...programs,
           ];
-          defaultProgram = programs.find(
-            (p) => Number(p.id) === Number(targetPrId)
-          );
+          defaultProgram = programs.find((p) => Number(p.id) === Number(targetPrId));
         }
 
         if (cancelled) return;
@@ -252,22 +256,19 @@ export function useKegiatanRenstraForm(
         }
 
         if (defaultProgram) {
-          setValue("program_renstra_id", Number(defaultProgram.id));
+          setValue('program_renstra_id', Number(defaultProgram.id));
+          setValue('renstra_id', defaultProgram.renstra_id || renstraAktif?.id || undefined);
           setValue(
-            "renstra_id",
-            defaultProgram.renstra_id || renstraAktif?.id || undefined
-          );
-          setValue(
-            "bidang_opd",
+            'bidang_opd',
             resolveBidangOpdForForm({
               programRow: defaultProgram,
               initialData,
               selectedProgramId: defaultProgram.id,
-            })
+            }),
           );
         }
       } catch (err) {
-        console.error("Gagal inisialisasi form:", err);
+        console.error('Gagal inisialisasi form:', err);
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -290,21 +291,18 @@ export function useKegiatanRenstraForm(
   useEffect(() => {
     if (!selectedProgramId || !programOptions.length) return;
 
-    const selectedProgram = programOptions.find(
-      (p) => Number(p.id) === Number(selectedProgramId)
-    );
+    const selectedProgram = programOptions.find((p) => Number(p.id) === Number(selectedProgramId));
     if (!selectedProgram) return;
 
     setValue(
-      "bidang_opd",
+      'bidang_opd',
       resolveBidangOpdForForm({
         programRow: selectedProgram,
         initialData,
         selectedProgramId: selectedProgram.id,
-      })
+      }),
     );
-    const rpjmdPid =
-      selectedProgram.rpjmd_program_id ?? selectedProgram.id;
+    const rpjmdPid = selectedProgram.rpjmd_program_id ?? selectedProgram.id;
     loadKegiatanByProgram(rpjmdPid, selectedProgram.id);
   }, [
     selectedProgramId,
@@ -321,19 +319,23 @@ export function useKegiatanRenstraForm(
   const onSubmit = async (data, message) => {
     setIsSubmitting(true);
     try {
-      await api.post("/renstra-kegiatan", {
+      const payload = {
         program_renstra_id: data.program_renstra_id,
         kegiatan_id: data.kegiatan_id,
         kode_kegiatan: data.kode_kegiatan,
         nama_kegiatan: data.nama_kegiatan,
         renstra_id: data.renstra_id,
         bidang_opd: data.bidang_opd,
-      });
-      message?.success("Data berhasil disimpan");
+      };
+      if (initialData?.id) {
+        await api.put(`/renstra-kegiatan/${initialData.id}`, payload);
+      } else {
+        await api.post('/renstra-kegiatan', payload);
+      }
+      message?.success('Data berhasil disimpan');
     } catch (err) {
-      console.error("Gagal submit:", err);
-      const msg =
-        err.response?.data?.error || "Gagal menyimpan data, silakan coba lagi";
+      console.error('Gagal submit:', err);
+      const msg = err.response?.data?.error || 'Gagal menyimpan data, silakan coba lagi';
       message?.error(msg);
     } finally {
       setIsSubmitting(false);
@@ -344,6 +346,7 @@ export function useKegiatanRenstraForm(
     form,
     programOptions,
     kegiatanOptions,
+    bidangOpdOptions,
     isLoading,
     isSubmitting,
     onSubmit,

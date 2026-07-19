@@ -331,6 +331,9 @@ const renjaRoutes = require('./routes/renjaRoutes');
 
 // USE RKA
 const rkaRoutes = require('./routes/rkaRoutes');
+const tapdRoutes = require('./routes/tapdRoutes');
+const dpaPergeseranRoutes = require('./routes/dpaPergeseranRoutes');
+const masterSubBidangOpdRoutes = require('./routes/masterSubBidangOpdRoutes');
 
 // USE DPA
 const dpaRoutes = require('./routes/dpaRoutes');
@@ -515,6 +518,9 @@ app.use('/api/planning', planningDocumentRoutes);
 
 // USE RKA
 app.use('/api/rka', rkaRoutes);
+app.use('/api/tapd', tapdRoutes);
+app.use('/api/dpa', dpaPergeseranRoutes);
+app.use('/api/master-sub-bidang-opd', masterSubBidangOpdRoutes);
 
 // USE DPA
 app.use('/api/dpa', dpaRoutes);

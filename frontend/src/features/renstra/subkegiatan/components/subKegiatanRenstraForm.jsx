@@ -1,14 +1,10 @@
-import React, { useEffect } from "react";
-import { Card, Button, Form, Input, Spin, Alert } from "antd";
-import { useNavigate } from "react-router-dom";
-import { Controller } from "react-hook-form";
-import { useSubkegiatanRenstraForm } from "@/hooks/templatesUseRenstra/useSubkegiatanRenstraForm";
+import React, { useEffect } from 'react';
+import { Card, Button, Form, Input, Select, Spin, Alert } from 'antd';
+import { useNavigate } from 'react-router-dom';
+import { Controller } from 'react-hook-form';
+import { useSubkegiatanRenstraForm } from '@/hooks/templatesUseRenstra/useSubkegiatanRenstraForm';
 
-export default function SubkegiatanRenstraForm({
-  initialData = {},
-  renstraAktif = {},
-  onSuccess,
-}) {
+export default function SubkegiatanRenstraForm({ initialData = {}, renstraAktif = {}, onSuccess }) {
   const navigate = useNavigate();
 
   const {
@@ -18,6 +14,8 @@ export default function SubkegiatanRenstraForm({
     error,
     kegiatanOptions,
     subKegiatanOptions,
+    subBidangOptions,
+    bidangOpdOptions,
     onSubmit,
     setValue,
   } = useSubkegiatanRenstraForm(initialData, renstraAktif, onSuccess);
@@ -30,64 +28,50 @@ export default function SubkegiatanRenstraForm({
     formState: { errors },
   } = form;
 
-  const toSelectValue = (v) => (v != null && v !== "" ? String(v) : "");
+  const toSelectValue = (v) => (v != null && v !== '' ? String(v) : '');
 
   // Autofill OPD dari renstra aktif hanya saat tambah — edit pakai nilai record (initialData)
   useEffect(() => {
     if (initialData?.id) return;
     if (renstraAktif?.nama_opd) {
-      setValue("nama_opd", renstraAktif.nama_opd);
+      setValue('nama_opd', renstraAktif.nama_opd);
     }
     if (renstraAktif?.bidang_opd) {
-      setValue("nama_bidang_opd", renstraAktif.bidang_opd);
+      setValue('nama_bidang_opd', renstraAktif.bidang_opd);
     }
     if (renstraAktif?.sub_bidang_opd) {
-      setValue("sub_bidang_opd", renstraAktif.sub_bidang_opd);
+      setValue('sub_bidang_opd', renstraAktif.sub_bidang_opd);
     }
   }, [initialData?.id, renstraAktif, setValue]);
 
   if (isLoading) return <Spin tip="Memuat data..." fullscreen />;
 
   if (!renstraAktif) {
-  return (
-    <Card>
-      <p>Renstra belum dipilih.</p>
-    </Card>
-  );
-}
+    return (
+      <Card>
+        <p>Renstra belum dipilih.</p>
+      </Card>
+    );
+  }
 
   return (
     <Card
-      key={initialData?.id ?? "new"}
-      title={initialData?.id ? "Edit Sub Kegiatan Renstra" : "Tambah Sub Kegiatan Renstra"}
+      key={initialData?.id ?? 'new'}
+      title={initialData?.id ? 'Edit Sub Kegiatan Renstra' : 'Tambah Sub Kegiatan Renstra'}
     >
       {/* Navigasi */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <Button onClick={() => navigate("/dashboard-renstra")}>
-          🔙 Kembali
-        </Button>
-        <Button onClick={() => navigate("/renstra/subkegiatan")}>
-          📄 Daftar Sub Kegiatan
-        </Button>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <Button onClick={() => navigate('/dashboard-renstra')}>🔙 Kembali</Button>
+        <Button onClick={() => navigate('/renstra/subkegiatan')}>📄 Daftar Sub Kegiatan</Button>
       </div>
 
-      {error && (
-        <Alert
-          message={error}
-          type="error"
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
-      )}
+      {error && <Alert message={error} type="error" showIcon style={{ marginBottom: 16 }} />}
 
-      <form
-        onSubmit={handleSubmit(onSubmit)}
-        style={{ maxWidth: 640 }}
-      >
+      <form onSubmit={handleSubmit(onSubmit)} style={{ maxWidth: 640 }}>
         {/* Kegiatan */}
         <Form.Item
           label="Kegiatan"
-          validateStatus={errors.kegiatan_id ? "error" : ""}
+          validateStatus={errors.kegiatan_id ? 'error' : ''}
           help={errors.kegiatan_id?.message}
           required
         >
@@ -100,35 +84,27 @@ export default function SubkegiatanRenstraForm({
                 value={toSelectValue(field.value)}
                 onChange={(e) => {
                   const raw = e.target.value;
-                  const v = raw === "" ? null : Number(raw);
+                  const v = raw === '' ? null : Number(raw);
                   field.onChange(v);
-                  setValue("sub_kegiatan_id", null, { shouldValidate: true });
-                  setValue("kode_sub_kegiatan", "");
-                  setValue("nama_sub_kegiatan", "");
-                  const keg = kegiatanOptions.find(
-                    (k) => Number(k.value) === Number(v)
-                  );
+                  setValue('sub_kegiatan_id', null, { shouldValidate: true });
+                  setValue('kode_sub_kegiatan', '');
+                  setValue('nama_sub_kegiatan', '');
+                  const keg = kegiatanOptions.find((k) => Number(k.value) === Number(v));
                   setValue(
-                    "renstra_program_id",
-                    v == null ? null : keg?.renstra_program_id ?? null,
-                    { shouldValidate: true }
+                    'renstra_program_id',
+                    v == null ? null : (keg?.renstra_program_id ?? null),
+                    { shouldValidate: true },
                   );
                   if (!initialData?.id) {
-                    setValue(
-                      "sub_bidang_opd",
-                      renstraAktif?.sub_bidang_opd || ""
-                    );
-                    setValue("nama_opd", renstraAktif?.nama_opd || "");
-                    setValue(
-                      "nama_bidang_opd",
-                      renstraAktif?.bidang_opd || ""
-                    );
+                    setValue('sub_bidang_opd', renstraAktif?.sub_bidang_opd || '');
+                    setValue('nama_opd', renstraAktif?.nama_opd || '');
+                    setValue('nama_bidang_opd', renstraAktif?.bidang_opd || '');
                   }
                 }}
                 style={{
-                  width: "100%",
-                  padding: "4px 8px",
-                  border: "1px solid #d9d9d9",
+                  width: '100%',
+                  padding: '4px 8px',
+                  border: '1px solid #d9d9d9',
                   borderRadius: 6,
                   fontSize: 14,
                 }}
@@ -147,7 +123,7 @@ export default function SubkegiatanRenstraForm({
         {/* Sub Kegiatan */}
         <Form.Item
           label="Sub Kegiatan"
-          validateStatus={errors.sub_kegiatan_id ? "error" : ""}
+          validateStatus={errors.sub_kegiatan_id ? 'error' : ''}
           help={errors.sub_kegiatan_id?.message}
           required
         >
@@ -160,39 +136,36 @@ export default function SubkegiatanRenstraForm({
                 value={toSelectValue(field.value)}
                 onChange={(e) => {
                   const raw = e.target.value;
-                  const v = raw === "" ? null : Number(raw);
-                  
+                  const v = raw === '' ? null : Number(raw);
+
                   field.onChange(v);
 
-                  setValue("sub_kegiatan_id", v, {
+                  setValue('sub_kegiatan_id', v, {
                     shouldDirty: true,
                     shouldTouch: true,
                     shouldValidate: true,
                   });
 
                   if (v == null) return;
-                  const sub = subKegiatanOptions.find(
-                    (s) => Number(s.value) === Number(v)
-                  );
+                  const sub = subKegiatanOptions.find((s) => Number(s.value) === Number(v));
                   if (!sub) return;
-                  setValue("kode_sub_kegiatan", sub.kode_sub_kegiatan);
-                  setValue("nama_sub_kegiatan", sub.nama_sub_kegiatan);
+                  setValue('kode_sub_kegiatan', sub.kode_sub_kegiatan);
+                  setValue('nama_sub_kegiatan', sub.nama_sub_kegiatan);
                   setValue(
-                    "sub_bidang_opd",
-                    sub.sub_bidang_opd || renstraAktif?.sub_bidang_opd || ""
+                    'sub_bidang_opd',
+                    sub.sub_bidang_opd || renstraAktif?.sub_bidang_opd || '',
                   );
-                  setValue("nama_opd", sub.nama_opd || renstraAktif?.nama_opd || "");
+                  setValue('nama_opd', sub.nama_opd || renstraAktif?.nama_opd || '');
                   setValue(
-                    "nama_bidang_opd",
-                    sub.nama_bidang_opd || renstraAktif?.bidang_opd || ""
+                    'nama_bidang_opd',
+                    sub.nama_bidang_opd || renstraAktif?.bidang_opd || '',
                   );
-                  
                 }}
                 disabled={!subKegiatanOptions.length}
                 style={{
-                  width: "100%",
-                  padding: "4px 8px",
-                  border: "1px solid #d9d9d9",
+                  width: '100%',
+                  padding: '4px 8px',
+                  border: '1px solid #d9d9d9',
                   borderRadius: 6,
                   fontSize: 14,
                 }}
@@ -210,23 +183,23 @@ export default function SubkegiatanRenstraForm({
 
         {/* Kode Sub Kegiatan */}
         <Form.Item label="Kode Sub Kegiatan">
-  <Input
-    {...register("kode_sub_kegiatan")}
-    value={watch("kode_sub_kegiatan") || ""}
-    readOnly
-    style={{ background: "#fafafa" }}
-  />
-</Form.Item>
+          <Input
+            {...register('kode_sub_kegiatan')}
+            value={watch('kode_sub_kegiatan') || ''}
+            readOnly
+            style={{ background: '#fafafa' }}
+          />
+        </Form.Item>
 
         {/* Nama Sub Kegiatan */}
         <Form.Item label="Nama Sub Kegiatan">
-  <Input
-    {...register("nama_sub_kegiatan")}
-    value={watch("nama_sub_kegiatan") || ""}
-    readOnly
-    style={{ background: "#fafafa" }}
-  />
-</Form.Item>
+          <Input
+            {...register('nama_sub_kegiatan')}
+            value={watch('nama_sub_kegiatan') || ''}
+            readOnly
+            style={{ background: '#fafafa' }}
+          />
+        </Form.Item>
 
         {/* Nama OPD — terisi dari pilihan sub kegiatan / renstra aktif */}
         <Form.Item label="Nama OPD">
@@ -236,9 +209,9 @@ export default function SubkegiatanRenstraForm({
             render={({ field }) => (
               <Input
                 {...field}
-                value={field.value ?? ""}
+                value={field.value ?? ''}
                 readOnly
-                style={{ background: "#fafafa" }}
+                style={{ background: '#fafafa' }}
               />
             )}
           />
@@ -249,12 +222,22 @@ export default function SubkegiatanRenstraForm({
             name="nama_bidang_opd"
             control={control}
             render={({ field }) => (
-              <Input
-                {...field}
-                value={field.value ?? ""}
-                readOnly
-                style={{ background: "#fafafa" }}
-              />
+              <Select
+                value={field.value || undefined}
+                onChange={(val) => {
+                  field.onChange(val);
+                  setValue('sub_bidang_opd', '', { shouldDirty: true });
+                }}
+                placeholder="Pilih Bidang OPD"
+                allowClear
+                style={{ width: '100%' }}
+              >
+                {bidangOpdOptions.map((b) => (
+                  <Select.Option key={b} value={b}>
+                    {b}
+                  </Select.Option>
+                ))}
+              </Select>
             )}
           />
         </Form.Item>
@@ -264,12 +247,19 @@ export default function SubkegiatanRenstraForm({
             name="sub_bidang_opd"
             control={control}
             render={({ field }) => (
-              <Input
-                {...field}
-                value={field.value ?? ""}
-                readOnly
-                style={{ background: "#fafafa" }}
-              />
+              <Select
+                value={field.value || undefined}
+                onChange={(val) => field.onChange(val)}
+                placeholder="Pilih Sub Bidang OPD"
+                allowClear
+                style={{ width: '100%' }}
+              >
+                {subBidangOptions.map((b) => (
+                  <Select.Option key={b} value={b}>
+                    {b}
+                  </Select.Option>
+                ))}
+              </Select>
             )}
           />
         </Form.Item>
@@ -277,19 +267,14 @@ export default function SubkegiatanRenstraForm({
         {/* Hidden Fields */}
         <input
           type="hidden"
-          {...register("renstra_program_id", {
-            setValueAs: (v) => (v === "" ? null : Number(v)),
+          {...register('renstra_program_id', {
+            setValueAs: (v) => (v === '' ? null : Number(v)),
           })}
         />
 
         <div style={{ marginTop: 24 }}>
-          <Button
-            type="primary"
-            htmlType="submit"
-            loading={isSubmitting}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? "Menyimpan..." : initialData?.id ? "Update" : "Simpan"}
+          <Button type="primary" htmlType="submit" loading={isSubmitting} disabled={isSubmitting}>
+            {isSubmitting ? 'Menyimpan...' : initialData?.id ? 'Update' : 'Simpan'}
           </Button>
           <Alert
             type="info"

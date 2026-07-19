@@ -4,7 +4,8 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Button, Spin, Alert, Input, Typography } from 'antd';
+import { Button, Spin, Alert, Input, Typography, Table, InputNumber } from 'antd';
+import api from '../../../services/api';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import { toast } from 'react-toastify';
 import FormDPA from '../components/FormDPA';
@@ -168,6 +169,54 @@ const DpaFormPage = () => {
     loadExisting();
   }, [isNew, tahun, periode_id, loadExisting]);
 
+  const BULAN_NAMA = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'Mei',
+    'Jun',
+    'Jul',
+    'Agu',
+    'Sep',
+    'Okt',
+    'Nov',
+    'Des',
+  ];
+  const [realisasiBulanan, setRealisasiBulanan] = useState(
+    Array.from({ length: 12 }, (_, i) => ({ bulan: i + 1, jumlah: 0 })),
+  );
+  const [savingRealisasi, setSavingRealisasi] = useState(false);
+
+  useEffect(() => {
+    if (!isNew && id) {
+      api
+        .get(`/dpa/${id}/realisasi-bulanan`)
+        .then((res) => {
+          const data = res.data?.data || [];
+          setRealisasiBulanan(
+            Array.from({ length: 12 }, (_, i) => {
+              const found = data.find((d) => d.bulan === i + 1);
+              return { bulan: i + 1, jumlah: found ? Number(found.jumlah) : 0 };
+            }),
+          );
+        })
+        .catch(() => {});
+    }
+  }, [id, isNew]);
+
+  const handleSaveRealisasi = async () => {
+    setSavingRealisasi(true);
+    try {
+      await api.post(`/dpa/${id}/realisasi-bulanan`, { items: realisasiBulanan });
+      toast.success('Rencana realisasi bulanan berhasil disimpan');
+    } catch {
+      toast.error('Gagal menyimpan realisasi bulanan');
+    } finally {
+      setSavingRealisasi(false);
+    }
+  };
+
   const handleSubmit = async (formValues) => {
     const payload = buildPayload(formValues);
     if (!payload.periode_id || Number.isNaN(payload.periode_id)) {
@@ -176,12 +225,8 @@ const DpaFormPage = () => {
     }
     const rt = changeReasonText.trim();
     const rf = changeReasonFile.trim();
-    if (!rt && !rf) {
-      toast.error(
-        isNew
-          ? 'Isi alasan pencatatan (teks) atau referensi berkas (wajib untuk audit CREATE).'
-          : 'Isi alasan perubahan (teks) atau referensi berkas dasar perubahan.',
-      );
+    if (!isNew && !rt && !rf) {
+      toast.error('Isi alasan perubahan (teks) atau referensi berkas dasar perubahan.');
       return;
     }
     setSaving(true);
@@ -322,6 +367,99 @@ const DpaFormPage = () => {
         </div>
       </div>
 
+      {!isNew && (
+        <div
+          style={{
+            marginTop: 20,
+            background: '#fff',
+            border: '1px solid #f0f0f0',
+            borderRadius: 8,
+            padding: 20,
+          }}
+        >
+          <Text strong style={{ fontSize: 14 }}>
+            📅 Rencana Realisasi Belanja per Bulan
+          </Text>
+          <p style={{ color: '#888', fontSize: 12, margin: '4px 0 12px' }}>
+            Input rencana penarikan dana tiap bulan. Total harus sesuai pagu anggaran.
+          </p>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr>
+                {BULAN_NAMA.map((b) => (
+                  <th
+                    key={b}
+                    style={{
+                      border: '1px solid #d9d9d9',
+                      padding: '6px 4px',
+                      background: '#BDD7EE',
+                      textAlign: 'center',
+                      fontSize: 12,
+                    }}
+                  >
+                    {b}
+                  </th>
+                ))}
+                <th
+                  style={{
+                    border: '1px solid #d9d9d9',
+                    padding: '6px 4px',
+                    background: '#BDD7EE',
+                    textAlign: 'center',
+                    fontSize: 12,
+                  }}
+                >
+                  Total
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                {realisasiBulanan.map((r) => (
+                  <td
+                    key={r.bulan}
+                    style={{ border: '1px solid #d9d9d9', padding: '4px 2px', textAlign: 'center' }}
+                  >
+                    <InputNumber
+                      size="small"
+                      min={0}
+                      style={{ width: '100%', fontSize: 11 }}
+                      value={r.jumlah}
+                      formatter={(v) => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}
+                      parser={(v) => v.replace(/\./g, '')}
+                      onChange={(val) =>
+                        setRealisasiBulanan((prev) =>
+                          prev.map((x) => (x.bulan === r.bulan ? { ...x, jumlah: val || 0 } : x)),
+                        )
+                      }
+                    />
+                  </td>
+                ))}
+                <td
+                  style={{
+                    border: '1px solid #d9d9d9',
+                    padding: '4px 6px',
+                    textAlign: 'right',
+                    fontWeight: 'bold',
+                    background: '#e2efda',
+                  }}
+                >
+                  Rp {realisasiBulanan.reduce((s, r) => s + r.jumlah, 0).toLocaleString('id-ID')}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <Button
+            type="primary"
+            size="small"
+            loading={savingRealisasi}
+            onClick={handleSaveRealisasi}
+            style={{ marginTop: 10 }}
+          >
+            💾 Simpan Rencana Realisasi
+          </Button>
+        </div>
+      )}
       {!isNew && (
         <div style={{ marginTop: 20 }}>
           <PlanningAuditSection

@@ -68,6 +68,9 @@ const RkpdV2DokumenDetailPage = () => {
   const [logs, setLogs] = useState([]);
   const [logLoading, setLogLoading] = useState(false);
 
+  const [step, setStep] = useState(1);
+  const [itemSearch, setItemSearch] = useState('');
+
   const load = useCallback(async () => {
     setLoading(true);
     setErr('');
@@ -179,7 +182,7 @@ const RkpdV2DokumenDetailPage = () => {
     if (!can) return;
     const rt = itemReasonText.trim();
     const rf = itemReasonFile.trim();
-    if (!rt && !rf) {
+    if (editingItem && !rt && !rf) {
       toast.error('Isi alasan perubahan item (teks) atau referensi berkas.');
       return;
     }
@@ -359,155 +362,243 @@ const RkpdV2DokumenDetailPage = () => {
         </div>
       </div>
 
-      <Card className="mb-3 shadow-sm">
-        <CardBody>
-          <h6 className="fw-bold">Metadata</h6>
-          <Form.Group className="mb-2">
-            <Form.Label className="small">Judul</Form.Label>
-            <Form.Control
-              value={judul}
-              onChange={(e) => setJudul(e.target.value)}
-              disabled={!can}
-            />
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label className="small">Nama OPD</Form.Label>
-            <Form.Control
-              value={namaOpd}
-              onChange={(e) => setNamaOpd(e.target.value)}
-              disabled={!can}
-              placeholder="Dinas Pangan …"
-            />
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label className="small">
-              BAB II — Analisis Kondisi <span className="text-danger">*</span>
-            </Form.Label>
-            <Form.Control
-              as="textarea"
-              rows={4}
-              value={textBab2}
-              onChange={(e) => setTextBab2(e.target.value)}
-              disabled={!can}
-              placeholder="Narasi analisis kondisi daerah minimal 20 karakter..."
-            />
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label className="small">Status</Form.Label>
-            <Form.Select value={status} onChange={(e) => setStatus(e.target.value)} disabled={!can}>
-              <option value="draft">draft</option>
-              <option value="review">review</option>
-              <option value="final">final</option>
-            </Form.Select>
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label className="small">Alasan perubahan (wajib salah satu)</Form.Label>
-            <Form.Control
-              as="textarea"
-              rows={2}
-              value={metaReasonText}
-              onChange={(e) => setMetaReasonText(e.target.value)}
-              disabled={!can}
-              placeholder="Ringkasan alasan"
-            />
-          </Form.Group>
-          <Form.Group className="mb-2">
-            <Form.Label className="small">Referensi berkas</Form.Label>
-            <Form.Control
-              value={metaReasonFile}
-              onChange={(e) => setMetaReasonFile(e.target.value)}
-              disabled={!can}
-              placeholder="path / URL / nama berkas"
-            />
-          </Form.Group>
-          {can && (
-            <Button size="sm" onClick={saveMeta} disabled={savingMeta}>
-              {savingMeta ? <Spinner size="sm" /> : 'Simpan metadata'}
+      <div className="d-flex align-items-center justify-content-between mb-3 p-2 bg-light border rounded">
+        <div className="d-flex gap-2">
+          {[
+            { n: 1, label: 'Metadata' },
+            { n: 2, label: 'Item Baris' },
+            { n: 3, label: 'Review & Ekspor' },
+          ].map((s) => (
+            <Button
+              key={s.n}
+              size="sm"
+              variant={step === s.n ? 'primary' : 'outline-secondary'}
+              onClick={() => setStep(s.n)}
+            >
+              {s.n}. {s.label}
             </Button>
-          )}
-        </CardBody>
-      </Card>
-
-      <div className="mb-3">
-        <PlanningAuditSection
-          documentType="rkpd_dokumen"
-          documentId={Number(id)}
-          auditRows={auditRows}
-          auditLoading={false}
-          allowRestore={canRestorePlanningDocumentVersion(user?.role)}
-          onVersionRestored={() => {
-            load();
-            loadAudit();
-          }}
-        />
+          ))}
+        </div>
+        <div className="d-flex gap-2">
+          <Button
+            size="sm"
+            variant="outline-secondary"
+            disabled={step === 1}
+            onClick={() => setStep((v) => Math.max(1, v - 1))}
+          >
+            ← Sebelumnya
+          </Button>
+          <Button
+            size="sm"
+            variant="outline-secondary"
+            disabled={step === 3}
+            onClick={() => setStep((v) => Math.min(3, v + 1))}
+          >
+            Selanjutnya →
+          </Button>
+        </div>
       </div>
 
-      <Card className="shadow-sm">
-        <CardBody>
-          <div className="d-flex justify-content-between align-items-center mb-2">
-            <h6 className="fw-bold mb-0">Item baris (rkpd_item)</h6>
+      {step === 1 && (
+        <Card className="mb-3 shadow-sm">
+          <CardBody>
+            <h6 className="fw-bold">Metadata</h6>
+            <Form.Group className="mb-2">
+              <Form.Label className="small">Judul</Form.Label>
+              <Form.Control
+                value={judul}
+                onChange={(e) => setJudul(e.target.value)}
+                disabled={!can}
+              />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label className="small">Nama OPD</Form.Label>
+              <Form.Control
+                value={namaOpd}
+                onChange={(e) => setNamaOpd(e.target.value)}
+                disabled={!can}
+                placeholder="Dinas Pangan …"
+              />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label className="small">
+                BAB II — Analisis Kondisi <span className="text-danger">*</span>
+              </Form.Label>
+              <Form.Control
+                as="textarea"
+                rows={4}
+                value={textBab2}
+                onChange={(e) => setTextBab2(e.target.value)}
+                disabled={!can}
+                placeholder="Narasi analisis kondisi daerah minimal 20 karakter..."
+              />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label className="small">Status</Form.Label>
+              <Form.Select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                disabled={!can}
+              >
+                <option value="draft">draft</option>
+                <option value="review">review</option>
+                <option value="final">final</option>
+              </Form.Select>
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label className="small">Alasan perubahan (wajib salah satu)</Form.Label>
+              <Form.Control
+                as="textarea"
+                rows={2}
+                value={metaReasonText}
+                onChange={(e) => setMetaReasonText(e.target.value)}
+                disabled={!can}
+                placeholder="Ringkasan alasan"
+              />
+            </Form.Group>
+            <Form.Group className="mb-2">
+              <Form.Label className="small">Referensi berkas</Form.Label>
+              <Form.Control
+                value={metaReasonFile}
+                onChange={(e) => setMetaReasonFile(e.target.value)}
+                disabled={!can}
+                placeholder="path / URL / nama berkas"
+              />
+            </Form.Group>
             {can && (
-              <Button size="sm" variant="primary" onClick={openAddItem}>
-                + Tambah item
+              <Button size="sm" onClick={saveMeta} disabled={savingMeta}>
+                {savingMeta ? <Spinner size="sm" /> : 'Simpan metadata'}
               </Button>
             )}
-          </div>
-          <div className="table-responsive">
-            <Table striped bordered hover size="sm">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Program</th>
-                  <th>Kegiatan</th>
-                  <th>Sub</th>
-                  <th>Pagu</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {items.length === 0 ? (
+          </CardBody>
+        </Card>
+      )}
+
+      {step === 2 && (
+        <Card className="shadow-sm mb-3">
+          <CardBody>
+            <div className="d-flex justify-content-between align-items-center mb-2">
+              <h6 className="fw-bold mb-0">Item baris (rkpd_item)</h6>
+              {can && (
+                <Button size="sm" variant="primary" onClick={openAddItem}>
+                  + Tambah item
+                </Button>
+              )}
+            </div>
+            <Form.Control
+              className="mb-2"
+              size="sm"
+              placeholder="Cari program / kegiatan / sub kegiatan..."
+              value={itemSearch}
+              onChange={(e) => setItemSearch(e.target.value)}
+            />
+            <div className="table-responsive">
+              <Table striped bordered hover size="sm">
+                <thead>
                   <tr>
-                    <td colSpan={6} className="text-muted small">
-                      Belum ada item. Tambah minimal satu untuk validasi final.
-                    </td>
+                    <th>#</th>
+                    <th>Program</th>
+                    <th>Kegiatan</th>
+                    <th>Sub</th>
+                    <th>Pagu</th>
+                    <th />
                   </tr>
-                ) : (
-                  items.map((row) => (
-                    <tr key={row.id}>
-                      <td>{row.urutan}</td>
-                      <td>{row.program}</td>
-                      <td>{row.kegiatan}</td>
-                      <td>{row.sub_kegiatan}</td>
-                      <td>{row.pagu}</td>
-                      <td>
-                        {can && (
-                          <Button
-                            size="sm"
-                            variant="outline-primary"
-                            onClick={() => openEditItem(row)}
-                          >
-                            Edit
-                          </Button>
-                        )}
-                        {can && (
-                          <Button
-                            size="sm"
-                            variant="outline-danger"
-                            className="ms-1"
-                            onClick={() => handleDeleteItem(row)}
-                          >
-                            Hapus
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </Table>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const q = itemSearch.trim().toLowerCase();
+                    const filteredItems = q
+                      ? items.filter((row) =>
+                          [row.program, row.kegiatan, row.sub_kegiatan]
+                            .filter(Boolean)
+                            .some((v) => String(v).toLowerCase().includes(q)),
+                        )
+                      : items;
+
+                    if (filteredItems.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={6} className="text-muted small">
+                            {items.length === 0
+                              ? 'Belum ada item. Tambah minimal satu untuk validasi final.'
+                              : 'Tidak ada item yang cocok dengan pencarian.'}
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return filteredItems.map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.urutan}</td>
+                        <td>{row.program}</td>
+                        <td>{row.kegiatan}</td>
+                        <td>{row.sub_kegiatan}</td>
+                        <td>{row.pagu}</td>
+                        <td>
+                          {can && (
+                            <Button
+                              size="sm"
+                              variant="outline-primary"
+                              onClick={() => openEditItem(row)}
+                            >
+                              Edit
+                            </Button>
+                          )}
+                          {can && (
+                            <Button
+                              size="sm"
+                              variant="outline-danger"
+                              className="ms-1"
+                              onClick={() => handleDeleteItem(row)}
+                            >
+                              Hapus
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ));
+                  })()}
+                </tbody>
+              </Table>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {step === 3 && (
+        <>
+          <Card className="mb-3 shadow-sm">
+            <CardBody>
+              <h6 className="fw-bold">Ringkasan Dokumen</h6>
+              <ul className="small mb-0">
+                <li>Judul: {doc.judul}</li>
+                <li>Nama OPD: {doc.nama_opd || '-'}</li>
+                <li>Status: {doc.status}</li>
+                <li>Jumlah item baris: {items.length}</li>
+              </ul>
+              <div className="small text-muted mt-2">
+                Gunakan tombol "Cek prasyarat ekspor" dan "Dokumen resmi" di bagian atas halaman
+                untuk memvalidasi dan mengekspor dokumen ini.
+              </div>
+            </CardBody>
+          </Card>
+
+          <div className="mb-3">
+            <PlanningAuditSection
+              documentType="rkpd_dokumen"
+              documentId={Number(id)}
+              auditRows={auditRows}
+              auditLoading={false}
+              allowRestore={canRestorePlanningDocumentVersion(user?.role)}
+              onVersionRestored={() => {
+                load();
+                loadAudit();
+              }}
+              defaultExpanded={false}
+            />
           </div>
-        </CardBody>
-      </Card>
+        </>
+      )}
 
       <RkpdItemModal
         show={itemModal}
@@ -515,7 +606,7 @@ const RkpdV2DokumenDetailPage = () => {
         doc={doc}
         editingItem={editingItem}
         onSaved={async (form, reasonText, reasonFile) => {
-          if (!reasonText?.trim() && !reasonFile?.trim()) {
+          if (editingItem && !reasonText?.trim() && !reasonFile?.trim()) {
             toast.error('Isi alasan perubahan item (teks) atau referensi berkas.');
             return;
           }
