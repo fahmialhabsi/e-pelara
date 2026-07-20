@@ -263,16 +263,30 @@ module.exports = {
           subtotals[prefix] = (subtotals[prefix] || 0) + Number(item.jumlah || 0);
         });
       });
-      const labelStatis = {
-        5: 'BELANJA DAERAH',
-        5.1: 'BELANJA OPERASI',
-        5.2: 'BELANJA MODAL',
-        5.3: 'BELANJA TIDAK TERDUGA',
-        5.4: 'BELANJA TRANSFER',
-        '5.1.02': 'Belanja Barang dan Jasa',
-        '5.1.02.01': 'Belanja Barang',
-        '5.1.02.01.01': 'Belanja Barang Pakai Habis',
-      };
+      // Nama akun tiap level kode rekening diambil dari tabel referensi
+      // master_kode_rekening_belanja (bukan daftar hardcode) — lihat komentar sama di
+      // rkaExportController.js & dpaPergeseranController.js. Kode NON-LEAF di tabel itu
+      // disimpan dgn titik di akhir (mis. "5.1.02.02."), kode LEAF tidak pakai titik.
+      const { MasterKodeRekeningBelanja } = require('../models');
+      const allPrefixesDpa = new Set();
+      rincian.forEach((item) => {
+        const segments = String(item.kode_rekening || '').split('.');
+        for (let i = 1; i <= segments.length; i++) {
+          allPrefixesDpa.add(segments.slice(0, i).join('.'));
+        }
+      });
+      const lookupCodesDpa = [...allPrefixesDpa].flatMap((p) => [p, `${p}.`]);
+      const masterRowsDpa = lookupCodesDpa.length
+        ? await MasterKodeRekeningBelanja.findAll({
+            where: { kode_rekening: lookupCodesDpa },
+            attributes: ['kode_rekening', 'uraian'],
+          })
+        : [];
+      const labelStatis = new Map();
+      masterRowsDpa.forEach((r) => {
+        const bare = r.kode_rekening.endsWith('.') ? r.kode_rekening.slice(0, -1) : r.kode_rekening;
+        if (!labelStatis.has(bare)) labelStatis.set(bare, r.uraian);
+      });
       const grouped = {};
       const kodeOrder = [];
       rincian.forEach((item) => {
@@ -295,7 +309,7 @@ module.exports = {
           const isLeaf = i === segs.length,
             isTop = i <= 2;
           if (!isLeaf) {
-            rincianHtml += `<tr style="background:${isTop ? '#f2f2f2' : '#fff'}"><td style="border:1px solid #000;padding:3px;font-weight:${isTop ? 'bold' : 'normal'}">${prefix}</td><td colspan="7" style="border:1px solid #000;padding:3px;padding-left:${(i - 1) * 10 + 3}px;font-weight:${isTop ? 'bold' : 'normal'}">${labelStatis[prefix] || prefix}</td><td style="border:1px solid #000;padding:3px;text-align:right;font-weight:${isTop ? 'bold' : 'normal'}">${formatRp(subtotals[prefix] || 0)}</td></tr>`;
+            rincianHtml += `<tr style="background:${isTop ? '#f2f2f2' : '#fff'}"><td style="border:1px solid #000;padding:3px;font-weight:${isTop ? 'bold' : 'normal'}">${prefix}</td><td colspan="7" style="border:1px solid #000;padding:3px;padding-left:${(i - 1) * 10 + 3}px;font-weight:${isTop ? 'bold' : 'normal'}">${labelStatis.get(prefix) || prefix}</td><td style="border:1px solid #000;padding:3px;text-align:right;font-weight:${isTop ? 'bold' : 'normal'}">${formatRp(subtotals[prefix] || 0)}</td></tr>`;
           } else {
             const namaLeaf = items[0].nama_rekening || kode;
             rincianHtml += `<tr><td style="border:1px solid #000;padding:3px;font-weight:bold">${kode}</td><td colspan="7" style="border:1px solid #000;padding:3px;font-weight:bold">${namaLeaf}</td><td style="border:1px solid #000;padding:3px;text-align:right;font-weight:bold">${formatRp(subtotals[kode] || 0)}</td></tr>`;
@@ -447,16 +461,30 @@ module.exports = {
           subtotals[prefix] = (subtotals[prefix] || 0) + Number(item.jumlah || 0);
         });
       });
-      const labelStatis = {
-        5: 'BELANJA DAERAH',
-        5.1: 'BELANJA OPERASI',
-        5.2: 'BELANJA MODAL',
-        5.3: 'BELANJA TIDAK TERDUGA',
-        5.4: 'BELANJA TRANSFER',
-        '5.1.02': 'Belanja Barang dan Jasa',
-        '5.1.02.01': 'Belanja Barang',
-        '5.1.02.01.01': 'Belanja Barang Pakai Habis',
-      };
+      // Nama akun tiap level kode rekening diambil dari tabel referensi
+      // master_kode_rekening_belanja (bukan daftar hardcode) — lihat komentar sama di
+      // rkaExportController.js & dpaPergeseranController.js. Kode NON-LEAF di tabel itu
+      // disimpan dgn titik di akhir (mis. "5.1.02.02."), kode LEAF tidak pakai titik.
+      const { MasterKodeRekeningBelanja } = require('../models');
+      const allPrefixesDpaSebelum = new Set();
+      rincian.forEach((item) => {
+        const segments = String(item.kode_rekening || '').split('.');
+        for (let i = 1; i <= segments.length; i++) {
+          allPrefixesDpaSebelum.add(segments.slice(0, i).join('.'));
+        }
+      });
+      const lookupCodesDpaSebelum = [...allPrefixesDpaSebelum].flatMap((p) => [p, `${p}.`]);
+      const masterRowsDpaSebelum = lookupCodesDpaSebelum.length
+        ? await MasterKodeRekeningBelanja.findAll({
+            where: { kode_rekening: lookupCodesDpaSebelum },
+            attributes: ['kode_rekening', 'uraian'],
+          })
+        : [];
+      const labelStatis = new Map();
+      masterRowsDpaSebelum.forEach((r) => {
+        const bare = r.kode_rekening.endsWith('.') ? r.kode_rekening.slice(0, -1) : r.kode_rekening;
+        if (!labelStatis.has(bare)) labelStatis.set(bare, r.uraian);
+      });
       const grouped = {};
       const kodeOrder = [];
       rincian.forEach((item) => {
@@ -479,7 +507,7 @@ module.exports = {
           const isLeaf = i === segs.length,
             isTop = i <= 2;
           if (!isLeaf) {
-            rincianHtml += `<tr style="background:${isTop ? '#f2f2f2' : '#fff'}"><td style="border:1px solid #000;padding:3px;font-weight:${isTop ? 'bold' : 'normal'}">${prefix}</td><td colspan="7" style="border:1px solid #000;padding:3px;padding-left:${(i - 1) * 10 + 3}px;font-weight:${isTop ? 'bold' : 'normal'}">${labelStatis[prefix] || prefix}</td><td style="border:1px solid #000;padding:3px;text-align:right;font-weight:${isTop ? 'bold' : 'normal'}">${formatRp(subtotals[prefix] || 0)}</td></tr>`;
+            rincianHtml += `<tr style="background:${isTop ? '#f2f2f2' : '#fff'}"><td style="border:1px solid #000;padding:3px;font-weight:${isTop ? 'bold' : 'normal'}">${prefix}</td><td colspan="7" style="border:1px solid #000;padding:3px;padding-left:${(i - 1) * 10 + 3}px;font-weight:${isTop ? 'bold' : 'normal'}">${labelStatis.get(prefix) || prefix}</td><td style="border:1px solid #000;padding:3px;text-align:right;font-weight:${isTop ? 'bold' : 'normal'}">${formatRp(subtotals[prefix] || 0)}</td></tr>`;
           } else {
             const namaLeaf = items[0].nama_rekening || kode;
             rincianHtml += `<tr><td style="border:1px solid #000;padding:3px;font-weight:bold">${kode}</td><td colspan="7" style="border:1px solid #000;padding:3px;font-weight:bold">${namaLeaf}</td><td style="border:1px solid #000;padding:3px;text-align:right;font-weight:bold">${formatRp(subtotals[kode] || 0)}</td></tr>`;

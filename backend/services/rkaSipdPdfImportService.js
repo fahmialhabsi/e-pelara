@@ -146,7 +146,11 @@ function parseHeader(rawText) {
   const sumberPendanaanRaw = grabField(text, 'Sumber Pendanaan');
   const sumberDanaDefault = mapSumberDana(sumberPendanaanRaw);
   const lokasiRaw = grabField(text, 'Lokasi');
-  const lokasi = lokasiRaw && lokasiRaw !== '-' ? lokasiRaw : null;
+  // clampLen: sub kegiatan bernama sangat panjang bisa bikin pdf-parse memecah baris
+  // label header secara tidak wajar (lihat komentar normalizeWrappedLabels), sehingga
+  // grabField menangkap value jauh lebih panjang dari field aslinya di PDF — potong
+  // ke batas kolom DB drpd gagal INSERT ("Data too long for column ...").
+  const lokasi = lokasiRaw && lokasiRaw !== '-' ? clampLen(lokasiRaw, 255) : null;
   const waktu = parseWaktu(grabField(text, 'Waktu Pelaksanaan'));
 
   const alokasiMatch = text.match(new RegExp(`Alokasi ${tahun}\\s*:\\s*Rp\\.\\s*([\\d.,]+)`));
@@ -162,24 +166,28 @@ function parseHeader(rawText) {
   // tertangkap sebelum ketemu literal "Keluaran" penutup.
   const keluaranMatch = text.match(/Keluaran\s*\n?:\s*([\s\S]+?)\n(\d+(?:[.,]\d+)?)\s*([\s\S]*?)Keluaran/);
   const keluaran = keluaranMatch ? keluaranMatch[1].replace(/\s+/g, ' ').trim() : null;
-  const targetKeluaran = keluaranMatch ? keluaranMatch[2] : null;
-  const satuanKeluaran = keluaranMatch ? keluaranMatch[3].replace(/\s+/g, ' ').trim() : null;
+  const targetKeluaran = keluaranMatch ? clampLen(keluaranMatch[2], 100) : null;
+  const satuanKeluaran = keluaranMatch
+    ? clampLen(keluaranMatch[3].replace(/\s+/g, ' ').trim(), 50)
+    : null;
 
   const hasilMatch = text.match(/Hasil:\s*(-{1,2})Hasil/);
   const hasil = hasilMatch ? '-' : null;
 
+  // Batas kolom DB persis (lihat models/rkaModel.js) — clamp defensif spy varian PDF
+  // dgn nama Program/Kegiatan/Sub Kegiatan sangat panjang tidak menggagalkan INSERT.
   return {
     tahun,
-    urusan: urusan.nama || null,
-    kode_urusan: urusan.kode || null,
-    bidang_urusan: bidangUrusan.nama || null,
-    kode_bidang_urusan: bidangUrusan.kode || null,
-    program: program.nama,
-    kode_program: program.kode,
-    kegiatan: kegiatan.nama,
-    kode_kegiatan: kegiatan.kode,
-    sub_kegiatan: subKegiatan.nama,
-    kode_sub_kegiatan: subKegiatan.kode,
+    urusan: clampLen(urusan.nama, 255) || null,
+    kode_urusan: clampLen(urusan.kode, 10) || null,
+    bidang_urusan: clampLen(bidangUrusan.nama, 255) || null,
+    kode_bidang_urusan: clampLen(bidangUrusan.kode, 10) || null,
+    program: clampLen(program.nama, 255),
+    kode_program: clampLen(program.kode, 50),
+    kegiatan: clampLen(kegiatan.nama, 255),
+    kode_kegiatan: clampLen(kegiatan.kode, 50),
+    sub_kegiatan: clampLen(subKegiatan.nama, 255),
+    kode_sub_kegiatan: clampLen(subKegiatan.kode, 50),
     jenis_dokumen: 'RKA',
     capaian_program: capaianProgram,
     keluaran,
@@ -240,10 +248,17 @@ function detectNumColumns(rawItems) {
   const koefCandidates = rawItems.filter((it) => it.str.trim() === 'Koefisien');
   if (koefCandidates.length === 0) return null;
   const headerY = koefCandidates[0].y;
-  const tol = 4;
-  const headerItems = rawItems.filter(
-    (it) => Math.abs(it.y - headerY) <= tol && NUM_COLUMN_HEADER_LABELS.includes(it.str.trim()),
-  );
+  // Varian render SIPD lain: "Harga (Rp)" pecah jadi glyph "Harga" tersendiri (baseline-nya
+  // sedikit lebih tinggi drpd Koefisien/Satuan/PPN/Jumlah, ~7pt) — tanpa toleransi Y yg lebih
+  // longgar & penerimaan "Harga" sbg label yg sah, deteksi ini gagal (<10 label ketemu) dan
+  // JATUH KE DEFAULT_NUM_COLUMNS yg dikalibrasi utk PDF lain, bikin kolom Jumlah/Koefisien
+  // salah geser & sel "0,00" nyasar antar kolom.
+  const tol = 8;
+  const headerItems = rawItems.filter((it) => {
+    if (Math.abs(it.y - headerY) > tol) return false;
+    const s = it.str.trim();
+    return NUM_COLUMN_HEADER_LABELS.includes(s) || s === 'Harga';
+  });
   if (headerItems.length < 10) return null;
   const sorted = [...headerItems].sort((a, b) => a.x - b.x).slice(0, 10);
   const keys = [...NUM_COLUMN_KEYS_SEBELUM, ...NUM_COLUMN_KEYS_SESUDAH];
@@ -270,13 +285,23 @@ function nearestColumn(x, columns) {
   return best.key;
 }
 
+// Sel Koefisien/Satuan yang panjang bisa wrap 2-3 baris DI DALAM sel yang sama (mis.
+// "30 Orang x 2 Kali x 2" lalu lanjutannya "Hari" di baris berikutnya, ~5-6pt di
+// bawahnya) — jarak antar baris fisik BERBEDA berbeda dgn jarak antar baris tabel
+// sesungguhnya (~24-29pt di dokumen ini). Karena itu dibandingkan ke Y item TERAKHIR
+// yg masuk ke baris itu (bukan Y item pertama/anchorY tetap) — rantai wrap tetap
+// nyambung ke baris yg sama walau total rentangnya lebih besar dari `tol`, sementara
+// baris tabel berikutnya (jaraknya jauh lebih besar dari `tol`) tetap terpisah.
+// Tanpa ini, baris wrap terakhir (mis. "Hari"/"Kali") pecah jadi baris yatim
+// tersendiri yg bisa "mencuri" pencocokan anchor dari baris asli yg berisi data utuh.
 function clusterRows(items, tol) {
   const sorted = [...items].sort((a, b) => b.y - a.y || a.x - b.x);
   const rows = [];
   for (const it of sorted) {
-    let row = rows.find((r) => Math.abs(r.anchorY - it.y) <= tol);
-    if (!row) { row = { anchorY: it.y, items: [] }; rows.push(row); }
+    let row = rows.find((r) => Math.abs(r.lastY - it.y) <= tol);
+    if (!row) { row = { anchorY: it.y, lastY: it.y, items: [] }; rows.push(row); }
     row.items.push(it);
+    row.lastY = it.y;
   }
   rows.sort((a, b) => b.anchorY - a.anchorY);
   return rows;
@@ -309,7 +334,11 @@ function parseKoefisienExpr(expr, fallbackSatuan) {
       // Satuan akibat pembulatan desimal Rupiah terpecah antar-kolom di posisi X
       // yg berdekatan — satuan asli (Tahun/Orang/dll) tidak pernah diakhiri digit.
       const satuanClean = (m[2] || '').replace(/\s+\d+$/, '').trim();
-      out.push({ volume: toNumber(m[1]) || 1, satuan: satuanClean || fallbackSatuan || 'Paket' });
+      // toNumber(m[1]) BISA sah bernilai 0 (mis. "0 Orang x 2 Kali" pada RKA yang
+      // belum diisi anggarannya di SIPD) — JANGAN pakai `|| 1`, itu diam-diam
+      // mengubah 0 asli jadi 1 (0 falsy di JS) dan membuat hasil impor tidak lagi
+      // sama persis dengan PDF sumber.
+      out.push({ volume: toNumber(m[1]), satuan: satuanClean || fallbackSatuan || 'Paket' });
     }
     else if (p.trim()) out.push({ volume: 1, satuan: p.trim() });
   }
@@ -466,7 +495,11 @@ async function parseRincianBelanja(buffer, sumberDanaDefault) {
       if (anchor.kind === 'leaf' && anchor.row) {
         const c = anchor.row.cells;
         const jumlah = toNumber(c.jumlah_sesudah);
-        if (jumlah <= 0) continue; // baris kosong/tidak dipakai di RKA sumber
+        const jumlahSebelum = toNumber(c.jumlah_sebelum);
+        // Baris bernilai 0 di kedua sisi TETAP disimpan — ini kondisi sah untuk
+        // RKA/Sub Kegiatan yang belum diisi anggarannya di SIPD (Koefisien/Harga/
+        // Jumlah semua "0,00"). Melewatkannya akan membuat rincian_belanja kosong
+        // total dan hasil impor di e-PeLARA tidak sama dengan SIPD sumber.
         const hargaSatuan = toNumber(c.harga_sesudah);
         leafItems.push({
           urutan: urutan++,
@@ -479,6 +512,13 @@ async function parseRincianBelanja(buffer, sumberDanaDefault) {
           lokasi: null,
           keterangan: 'Diimpor otomatis dari PDF Cetak RKA SIPD.',
           koefisien_array: parseKoefisienExpr(c.koef_sesudah, c.satuan_sesudah),
+          // Sisi "Sebelum" — dipakai HANYA kalau import ini merepresentasikan tahapan
+          // revisi (Pergeseran/Perubahan) dan baris APBD_INDUK belum ada di sistem kita,
+          // untuk bootstrap baseline-nya. Diabaikan pada alur import APBD_INDUK biasa.
+          jumlah_sebelum: jumlahSebelum,
+          jumlah_sesudah: jumlah,
+          harga_satuan_sebelum: toNumber(c.harga_sebelum),
+          koefisien_array_sebelum: parseKoefisienExpr(c.koef_sebelum, c.satuan_sebelum),
         });
       }
     }
@@ -492,17 +532,28 @@ async function parseSipdRkaPdf(buffer) {
   const { text } = await pdfParse(buffer);
   const header = parseHeader(text);
 
+  // rincianBelanja bisa SAH kosong total: Sub Kegiatan yg di SIPD belum diisi rincian
+  // belanja SAMA SEKALI (Kode Rekening pun masih "-" di semua baris, bukan cuma
+  // Koefisien/Harga/Jumlah "0,00") — header (Program/Kegiatan/Sub Kegiatan/tahun,
+  // sudah divalidasi wajib ada di parseHeader di atas) tetap valid & harus tetap bisa
+  // diimpor dgn rincian_belanja kosong, spy hasilnya sama dgn SIPD sumber.
   const rincianBelanja = await parseRincianBelanja(buffer, header.sumber_dana_default);
-  if (rincianBelanja.length === 0) {
-    throw new Error('Tidak ditemukan rincian belanja (baris item) di PDF ini.');
-  }
 
+  // Konsisten dgn rkaCalculationHelper.processRincianBelanja: volume 0 di salah satu
+  // komponen koefisien membuat baris itu bernilai 0, bukan diperlakukan seolah 1.
   const totalRincian = rincianBelanja.reduce(
-    (s, r) => s + r.harga_satuan * r.koefisien_array.reduce((a, k) => a * (k.volume > 0 ? k.volume : 1), 1),
+    (s, r) => s + r.harga_satuan * r.koefisien_array.reduce((a, k) => a * Number(k.volume ?? 1), 1),
     0,
   );
 
   const { sumber_dana_default, alokasi, ...rkaFields } = header;
+
+  // PDF ini merepresentasikan tahapan revisi (Pergeseran/Perubahan) kalau ADA baris yang
+  // nilai "Sebelum"-nya beda dari "Sesudah" — dipakai controller untuk memutuskan apakah
+  // perlu bootstrap baseline APBD_INDUK dari kolom Sebelum sebelum meng-clone ke tahapan target.
+  const sudahDirevisi = rincianBelanja.some(
+    (r) => Number(r.jumlah_sebelum || 0) !== Number(r.jumlah_sesudah || 0),
+  );
 
   return {
     ...rkaFields,
@@ -512,6 +563,7 @@ async function parseSipdRkaPdf(buffer) {
       total_rincian_terhitung: totalRincian,
       selisih_vs_alokasi_pdf: alokasi != null ? Math.round((totalRincian - alokasi) * 100) / 100 : null,
       jumlah_baris_rincian: rincianBelanja.length,
+      sudah_direvisi: sudahDirevisi,
     },
   };
 }

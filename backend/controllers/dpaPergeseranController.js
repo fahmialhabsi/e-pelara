@@ -856,16 +856,34 @@ module.exports = {
       });
 
       // ==== 5. HTML: Formulir DPPA RINCIAN BELANJA SKPD (1 blok per sub kegiatan) ====
-      const labelStatis = {
-        5: 'BELANJA DAERAH',
-        5.1: 'BELANJA OPERASI',
-        5.2: 'BELANJA MODAL',
-        5.3: 'BELANJA TIDAK TERDUGA',
-        5.4: 'BELANJA TRANSFER',
-        '5.1.02': 'Belanja Barang dan Jasa',
-        '5.1.02.01': 'Belanja Barang',
-        '5.1.02.01.01': 'Belanja Barang Pakai Habis',
-      };
+      // Nama akun tiap level kode rekening (BELANJA DAERAH s.d. kelompok/jenis/objek) diambil
+      // dari tabel referensi master_kode_rekening_belanja — BUKAN daftar hardcode, karena
+      // daftar hardcode sebelumnya cuma mencakup segelintir kode (mis. hilang utk cabang
+      // "5.1.02.02 Belanja Jasa" dst) dan berakhir menampilkan kode mentah sbg Uraian.
+      // Sama seperti rkaExportController.js: kode NON-LEAF di tabel itu disimpan dgn titik
+      // di akhir (mis. "5.1.02.02."), sedangkan kode LEAF tidak pakai titik.
+      const { MasterKodeRekeningBelanja } = require('../models');
+      const allPrefixesDppa = new Set();
+      dataPerDpa.forEach(({ rincian }) => {
+        rincian.forEach((item) => {
+          const segments = String(item.kode_rekening || '').split('.');
+          for (let i = 1; i <= segments.length; i++) {
+            allPrefixesDppa.add(segments.slice(0, i).join('.'));
+          }
+        });
+      });
+      const lookupCodesDppa = [...allPrefixesDppa].flatMap((p) => [p, `${p}.`]);
+      const masterRowsDppa = lookupCodesDppa.length
+        ? await MasterKodeRekeningBelanja.findAll({
+            where: { kode_rekening: lookupCodesDppa },
+            attributes: ['kode_rekening', 'uraian'],
+          })
+        : [];
+      const labelStatis = new Map();
+      masterRowsDppa.forEach((r) => {
+        const bare = r.kode_rekening.endsWith('.') ? r.kode_rekening.slice(0, -1) : r.kode_rekening;
+        if (!labelStatis.has(bare)) labelStatis.set(bare, r.uraian);
+      });
       const namaBulan = [
         'Jan',
         'Feb',
@@ -896,7 +914,7 @@ module.exports = {
               renderedPrefixes.add(prefix);
             }
             const isTop = i <= 2;
-            const label = isLeaf ? item.nama_rekening : labelStatis[prefix] || prefix;
+            const label = isLeaf ? item.nama_rekening : labelStatis.get(prefix) || prefix;
             const subSebelum = rincian
               .filter((r) => r.kode_rekening.startsWith(prefix))
               .reduce((s, r) => s + r.jumlah_sebelum, 0);
