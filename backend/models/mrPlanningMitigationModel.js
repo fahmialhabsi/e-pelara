@@ -1,8 +1,8 @@
-"use strict";
+'use strict';
 
 module.exports = (sequelize, DataTypes) => {
   const MrPlanningMitigation = sequelize.define(
-    "MrPlanningMitigation",
+    'MrPlanningMitigation',
     {
       id: {
         type: DataTypes.INTEGER,
@@ -112,6 +112,12 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       is_active: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
+
+      is_latest: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: true,
@@ -280,9 +286,9 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       status_revisi: {
-        type: DataTypes.ENUM("draft", "verifikasi", "approved", "ditolak"),
+        type: DataTypes.ENUM('draft', 'verifikasi', 'approved', 'ditolak'),
         allowNull: false,
-        defaultValue: "draft",
+        defaultValue: 'draft',
       },
 
       alasan_revisi: {
@@ -354,13 +360,13 @@ module.exports = (sequelize, DataTypes) => {
       },
     },
     {
-      tableName: "mr_planning_mitigation",
+      tableName: 'mr_planning_mitigation',
       freezeTableName: true,
       underscored: true,
       timestamps: true,
-      createdAt: "created_at",
-      updatedAt: "updated_at",
-    }
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+    },
   );
 
   return MrPlanningMitigation;

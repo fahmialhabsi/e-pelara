@@ -81,6 +81,17 @@ const applyMrAssociations = (models = {}) => {
     MrCrossSystemLink,
 
     // =====================================================
+    // MODUL TLHP (Tindak Lanjut Temuan Inspektorat/BPK/BPKP)
+    // =====================================================
+    MrPlanningLhp,
+    MrPlanningTemuan,
+    MrPlanningTemuanHistory,
+    MrPlanningTemuanRekomendasi,
+    MrPlanningTindakLanjut,
+    MrPlanningTindakLanjutHistory,
+    MrPlanningTindakLanjutDocument,
+
+    // =====================================================
     // SUPPORTING MODELS
     // =====================================================
     User,
@@ -1091,6 +1102,181 @@ const applyMrAssociations = (models = {}) => {
     foreignKey: "owner_division_id",
     as: "owner_division",
     constraints: false,
+  });
+
+  // =====================================================
+  // 15. MODUL TLHP — LHP -> Temuan -> Rekomendasi -> Tindak Lanjut
+  // =====================================================
+
+  hasMany(MrPlanningContext, MrPlanningLhp, {
+    foreignKey: "context_id",
+    as: "lhps",
+    constraints: false,
+  });
+
+  belongsTo(MrPlanningLhp, MrPlanningContext, {
+    foreignKey: "context_id",
+    as: "context",
+    constraints: false,
+  });
+
+  belongsTo(MrPlanningLhp, MrReferenceItem, {
+    foreignKey: "entitas_pemeriksa_ref_id",
+    as: "entitas_pemeriksa_ref",
+  });
+
+  belongsTo(MrPlanningLhp, MrReferenceItem, {
+    foreignKey: "jenis_pemeriksaan_ref_id",
+    as: "jenis_pemeriksaan_ref",
+  });
+
+  // --- Temuan ---
+  hasMany(MrPlanningLhp, MrPlanningTemuan, {
+    foreignKey: "mr_planning_lhp_id",
+    as: "temuans",
+  });
+
+  belongsTo(MrPlanningTemuan, MrPlanningLhp, {
+    foreignKey: "mr_planning_lhp_id",
+    as: "lhp",
+  });
+
+  belongsTo(MrPlanningTemuan, MrReferenceItem, {
+    foreignKey: "entitas_pemeriksa_ref_id",
+    as: "entitas_pemeriksa_ref",
+  });
+
+  belongsTo(MrPlanningTemuan, MrReferenceItem, {
+    foreignKey: "kategori_temuan_ref_id",
+    as: "kategori_temuan_ref",
+  });
+
+  belongsTo(MrPlanningTemuan, MrReferenceItem, {
+    foreignKey: "unsur_spip_ref_id",
+    as: "unsur_spip_ref",
+  });
+
+  belongsTo(MrPlanningTemuan, MrPlanningRisk, {
+    foreignKey: "mr_planning_risk_id",
+    as: "risk",
+    constraints: false,
+  });
+
+  hasMany(MrPlanningRisk, MrPlanningTemuan, {
+    foreignKey: "mr_planning_risk_id",
+    as: "temuans",
+    constraints: false,
+  });
+
+  belongsTo(MrPlanningTemuan, MrCrossSystemLink, {
+    foreignKey: "cross_system_link_id",
+    as: "escalation_link",
+    constraints: false,
+  });
+
+  hasMany(MrPlanningTemuan, MrPlanningTemuanHistory, {
+    foreignKey: "mr_planning_temuan_id",
+    as: "histories",
+  });
+
+  belongsTo(MrPlanningTemuanHistory, MrPlanningTemuan, {
+    foreignKey: "mr_planning_temuan_id",
+    as: "temuan",
+  });
+
+  belongsTo(MrPlanningTemuanHistory, MrPlanningContext, {
+    foreignKey: "context_id",
+    as: "context",
+    constraints: false,
+  });
+
+  // --- Rekomendasi ---
+  hasMany(MrPlanningTemuan, MrPlanningTemuanRekomendasi, {
+    foreignKey: "mr_planning_temuan_id",
+    as: "rekomendasis",
+  });
+
+  belongsTo(MrPlanningTemuanRekomendasi, MrPlanningTemuan, {
+    foreignKey: "mr_planning_temuan_id",
+    as: "temuan",
+  });
+
+  hasMany(MrPlanningLhp, MrPlanningTemuanRekomendasi, {
+    foreignKey: "mr_planning_lhp_id",
+    as: "rekomendasis",
+  });
+
+  belongsTo(MrPlanningTemuanRekomendasi, MrPlanningLhp, {
+    foreignKey: "mr_planning_lhp_id",
+    as: "lhp",
+  });
+
+  belongsTo(MrPlanningTemuanRekomendasi, MrReferenceItem, {
+    foreignKey: "status_tindak_lanjut_ref_id",
+    as: "status_tindak_lanjut_ref",
+  });
+
+  // --- Tindak Lanjut ---
+  hasMany(MrPlanningTemuanRekomendasi, MrPlanningTindakLanjut, {
+    foreignKey: "mr_planning_temuan_rekomendasi_id",
+    as: "tindak_lanjuts",
+  });
+
+  belongsTo(MrPlanningTindakLanjut, MrPlanningTemuanRekomendasi, {
+    foreignKey: "mr_planning_temuan_rekomendasi_id",
+    as: "rekomendasi",
+  });
+
+  belongsTo(MrPlanningTindakLanjut, MrPlanningTemuan, {
+    foreignKey: "mr_planning_temuan_id",
+    as: "temuan",
+  });
+
+  belongsTo(MrPlanningTindakLanjut, MrPlanningLhp, {
+    foreignKey: "mr_planning_lhp_id",
+    as: "lhp",
+  });
+
+  belongsTo(MrPlanningTindakLanjut, MrReferenceItem, {
+    foreignKey: "status_tindak_lanjut_ref_id",
+    as: "status_tindak_lanjut_ref",
+  });
+
+  hasMany(MrPlanningTindakLanjut, MrPlanningTindakLanjutHistory, {
+    foreignKey: "mr_planning_tindak_lanjut_id",
+    as: "histories",
+  });
+
+  belongsTo(MrPlanningTindakLanjutHistory, MrPlanningTindakLanjut, {
+    foreignKey: "mr_planning_tindak_lanjut_id",
+    as: "tindak_lanjut",
+  });
+
+  belongsTo(MrPlanningTindakLanjutHistory, MrPlanningContext, {
+    foreignKey: "context_id",
+    as: "context",
+    constraints: false,
+  });
+
+  // --- Tindak Lanjut documents (mirrors mitigation documents wiring) ---
+  hasMany(MrPlanningTindakLanjut, MrPlanningTindakLanjutDocument, {
+    foreignKey: "mr_planning_tindak_lanjut_id",
+    as: "documents",
+  });
+
+  belongsTo(MrPlanningTindakLanjutDocument, MrPlanningTindakLanjut, {
+    foreignKey: "mr_planning_tindak_lanjut_id",
+    as: "tindak_lanjut",
+  });
+
+  hasMany(MrPlanningTemuanRekomendasi, MrPlanningTindakLanjutDocument, {
+    foreignKey: "mr_planning_temuan_rekomendasi_id",
+    as: "tindak_lanjut_documents",
+  });
+
+  hasMany(MrPlanningTemuan, MrPlanningTindakLanjutDocument, {
+    foreignKey: "mr_planning_temuan_id",
+    as: "tindak_lanjut_documents",
   });
 };
 

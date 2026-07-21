@@ -84,6 +84,7 @@ const PROPOSAL_SOURCE = {
   LAPORAN_KEUANGAN: 'LAPORAN_KEUANGAN',
   TINDAK_LANJUT_BPK: 'TINDAK_LANJUT_BPK',
   TINDAK_LANJUT_INSPEKTORAT: 'TINDAK_LANJUT_INSPEKTORAT',
+  TINDAK_LANJUT_BPKP: 'TINDAK_LANJUT_BPKP',
   PELAKSANAAN_KEGIATAN: 'PELAKSANAAN_KEGIATAN',
   PERTANGGUNGJAWABAN_KEUANGAN: 'PERTANGGUNGJAWABAN_KEUANGAN',
   SPIP_E_SIGAP: 'SPIP_E_SIGAP',
@@ -447,7 +448,8 @@ const buildProfessionalFindingRecommendation = ({
 const getRiskObjectDraft = ({ sourceCode, values }) => {
   if (
     sourceCode === PROPOSAL_SOURCE.TINDAK_LANJUT_BPK ||
-    sourceCode === PROPOSAL_SOURCE.TINDAK_LANJUT_INSPEKTORAT
+    sourceCode === PROPOSAL_SOURCE.TINDAK_LANJUT_INSPEKTORAT ||
+    sourceCode === PROPOSAL_SOURCE.TINDAK_LANJUT_BPKP
   ) {
     return (
       values.objek_risiko ||
@@ -500,6 +502,7 @@ const getProposalSourceReadableLabel = (sourceCode) => {
   const map = {
     [PROPOSAL_SOURCE.TINDAK_LANJUT_BPK]: 'tindak lanjut BPK',
     [PROPOSAL_SOURCE.TINDAK_LANJUT_INSPEKTORAT]: 'tindak lanjut Inspektorat',
+    [PROPOSAL_SOURCE.TINDAK_LANJUT_BPKP]: 'tindak lanjut BPKP',
     [PROPOSAL_SOURCE.PELAKSANAAN_KEGIATAN]: 'pelaksanaan kegiatan',
     [PROPOSAL_SOURCE.PERTANGGUNGJAWABAN_KEUANGAN]: 'pertanggungjawaban keuangan',
     [PROPOSAL_SOURCE.LAPORAN_KEUANGAN]: 'laporan keuangan',
@@ -639,7 +642,8 @@ const isNarrativeDraftReadyInput = (values = {}) => {
 
   if (
     sourceType === PROPOSAL_SOURCE.TINDAK_LANJUT_BPK ||
-    sourceType === PROPOSAL_SOURCE.TINDAK_LANJUT_INSPEKTORAT
+    sourceType === PROPOSAL_SOURCE.TINDAK_LANJUT_INSPEKTORAT ||
+    sourceType === PROPOSAL_SOURCE.TINDAK_LANJUT_BPKP
   ) {
     return Boolean(values.judul_temuan && values.ringkasan_temuan && values.status_tindak_lanjut);
   }
@@ -3472,10 +3476,11 @@ export default function MrPlanningRiskForm({ mode: propMode }) {
                 showIcon
                 style={{ marginBottom: 16 }}
                 message="Temuan belum terhubung ke master data."
-                description="Pada tahap berikutnya, user cukup memilih Temuan BPK/Inspektorat dari daftar. Nomor temuan, judul temuan, tahun pemeriksaan, ringkasan, dan rekomendasi akan terisi otomatis."
+                description="Isian ini juga bisa diisi otomatis lewat tombol &quot;Eskalasi ke Risk Register&quot; pada Modul Pengelolaan Tindak Lanjut Temuan (LHP/Temuan/Rekomendasi) untuk Temuan BPK/BPKP/Inspektorat yang sudah disetujui — nomor temuan, judul temuan, ringkasan, dan rekomendasi akan terisi otomatis dari sana."
               />
               {(selectedSourceCode === PROPOSAL_SOURCE.TINDAK_LANJUT_BPK ||
-                selectedSourceCode === PROPOSAL_SOURCE.TINDAK_LANJUT_INSPEKTORAT) && (
+                selectedSourceCode === PROPOSAL_SOURCE.TINDAK_LANJUT_INSPEKTORAT ||
+                selectedSourceCode === PROPOSAL_SOURCE.TINDAK_LANJUT_BPKP) && (
                 <Row gutter={16}>
                   <Col xs={24} md={8}>
                     <Form.Item

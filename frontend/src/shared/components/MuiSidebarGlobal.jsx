@@ -61,9 +61,26 @@ const menuItems = [
     path: '/mr/planning-report',
     roles: ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA'],
   },
+  {
+    label: 'MR Planning LHP (TLHP)',
+    icon: <FactCheckIcon />,
+    path: '/mr/planning-lhp',
+    roles: ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA'],
+  },
+  {
+    key: '/mr/tlhp-report',
+    label: 'Laporan Pemantauan TLHP',
+    path: '/mr/tlhp-report',
+    roles: ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA'],
+  },
   { label: 'Renja', icon: <FolderIcon />, path: '/dashboard-renja' },
   { label: 'RKA', icon: <DashboardIcon />, path: '/dashboard-rka' },
   { label: '⚙️ TAPD', icon: <DashboardIcon />, path: '/tapd-setting' },
+  {
+    label: '⚙️ Pejabat Penandatangan',
+    icon: <DashboardIcon />,
+    path: '/pejabat-penandatangan-setting',
+  },
   { label: 'DPA', icon: <DashboardIcon />, path: '/dashboard-dpa' },
   {
     label: 'Penatausahaan',

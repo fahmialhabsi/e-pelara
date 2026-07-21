@@ -1,8 +1,8 @@
-"use strict";
+'use strict';
 
 module.exports = (sequelize, DataTypes) => {
   const MrPlanningMonitoring = sequelize.define(
-    "MrPlanningMonitoring",
+    'MrPlanningMonitoring',
     {
       id: {
         type: DataTypes.INTEGER,
@@ -42,13 +42,7 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       periode_type: {
-        type: DataTypes.ENUM(
-          "bulanan",
-          "triwulan",
-          "semester",
-          "tahunan",
-          "adhoc"
-        ),
+        type: DataTypes.ENUM('bulanan', 'triwulan', 'semester', 'tahunan', 'adhoc'),
         allowNull: false,
       },
 
@@ -356,16 +350,16 @@ module.exports = (sequelize, DataTypes) => {
 
       status_revisi: {
         type: DataTypes.ENUM(
-          "draft",
-          "diajukan",
-          "diverifikasi",
-          "disetujui",
-          "ditolak",
-          "approved",
-          "rejected"
+          'draft',
+          'diajukan',
+          'diverifikasi',
+          'disetujui',
+          'ditolak',
+          'approved',
+          'rejected',
         ),
         allowNull: true,
-        defaultValue: "draft",
+        defaultValue: 'draft',
       },
 
       alasan_revisi: {
@@ -423,6 +417,17 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
 
+      is_active: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
+      is_latest: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
+
       // =====================================================
       // AUDIT
       // =====================================================
@@ -437,13 +442,13 @@ module.exports = (sequelize, DataTypes) => {
       },
     },
     {
-      tableName: "mr_planning_monitoring",
+      tableName: 'mr_planning_monitoring',
       freezeTableName: true,
       underscored: true,
       timestamps: true,
-      createdAt: "created_at",
-      updatedAt: "updated_at",
-    }
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+    },
   );
 
   return MrPlanningMonitoring;

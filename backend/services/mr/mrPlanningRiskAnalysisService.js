@@ -1,4 +1,4 @@
-"use strict";
+'use strict';
 
 /**
  * MR Planning Risk Analysis Service
@@ -21,86 +21,86 @@ const {
   MrReferenceGroup,
   MrReferenceItem,
   MrRiskMatrix,
-} = require("../../models");
+} = require('../../models');
 
 const ALLOWED_CREATE_UPDATE_FIELDS = new Set([
-  "existing_control_status_ref_id",
-  "existing_control_description",
-  "control_adequacy_ref_id",
-  "control_adequacy_note",
-  "inherent_likelihood_ref_id",
-  "inherent_impact_ref_id",
-  "residual_likelihood_ref_id",
-  "residual_impact_ref_id",
-  "selera_risiko_ref_id",
-  "analysis_note",
-  "rekomendasi",
-  "alasan_revisi",
+  'existing_control_status_ref_id',
+  'existing_control_description',
+  'control_adequacy_ref_id',
+  'control_adequacy_note',
+  'inherent_likelihood_ref_id',
+  'inherent_impact_ref_id',
+  'residual_likelihood_ref_id',
+  'residual_impact_ref_id',
+  'selera_risiko_ref_id',
+  'analysis_note',
+  'rekomendasi',
+  'alasan_revisi',
 ]);
 
 const BLOCKED_TECHNICAL_FIELDS = new Set([
-  "id",
-  "mr_planning_risk_id",
-  "mr_planning_context_id",
-  "periode_id",
-  "tahun",
-  "periode_type",
-  "periode_label",
-  "periode_awal",
-  "periode_akhir",
+  'id',
+  'mr_planning_risk_id',
+  'mr_planning_context_id',
+  'periode_id',
+  'tahun',
+  'periode_type',
+  'periode_label',
+  'periode_awal',
+  'periode_akhir',
 
-  "existing_control_status",
-  "control_adequacy_status",
+  'existing_control_status',
+  'control_adequacy_status',
 
-  "inherent_likelihood",
-  "inherent_impact",
-  "inherent_score",
-  "inherent_level_ref_id",
-  "inherent_level",
-  "inherent_color",
+  'inherent_likelihood',
+  'inherent_impact',
+  'inherent_score',
+  'inherent_level_ref_id',
+  'inherent_level',
+  'inherent_color',
 
-  "residual_likelihood",
-  "residual_impact",
-  "residual_score",
-  "residual_level_ref_id",
-  "residual_level",
-  "residual_color",
+  'residual_likelihood',
+  'residual_impact',
+  'residual_score',
+  'residual_level_ref_id',
+  'residual_level',
+  'residual_color',
 
-  "selera_risiko",
-  "appetite_threshold",
-  "is_above_appetite",
-  "matrix_code",
-  "metadata_json",
+  'selera_risiko',
+  'appetite_threshold',
+  'is_above_appetite',
+  'matrix_code',
+  'metadata_json',
 
-  "owner_user_id",
-  "owner_division_id",
+  'owner_user_id',
+  'owner_division_id',
 
-  "status_revisi",
-  "versi",
-  "last_revised_at",
-  "last_revised_by",
-  "dibuat_oleh",
-  "diverifikasi_oleh",
-  "disetujui_oleh",
-  "ditolak_oleh",
-  "dibuat_pada",
-  "diverifikasi_pada",
-  "disetujui_pada",
-  "ditolak_pada",
-  "is_active",
-  "is_latest",
-  "created_by",
-  "updated_by",
-  "created_at",
-  "updated_at",
+  'status_revisi',
+  'versi',
+  'last_revised_at',
+  'last_revised_by',
+  'dibuat_oleh',
+  'diverifikasi_oleh',
+  'disetujui_oleh',
+  'ditolak_oleh',
+  'dibuat_pada',
+  'diverifikasi_pada',
+  'disetujui_pada',
+  'ditolak_pada',
+  'is_active',
+  'is_latest',
+  'created_by',
+  'updated_by',
+  'created_at',
+  'updated_at',
 ]);
 
 class MrPlanningRiskAnalysisServiceError extends Error {
   constructor(message, options = {}) {
     super(message);
-    this.name = "MrPlanningRiskAnalysisServiceError";
+    this.name = 'MrPlanningRiskAnalysisServiceError';
     this.statusCode = options.statusCode || 400;
-    this.code = options.code || "MR_ANALYSIS_VALIDATION_ERROR";
+    this.code = options.code || 'MR_ANALYSIS_VALIDATION_ERROR';
     this.blocked = options.blocked !== undefined ? options.blocked : true;
     this.details = options.details || {};
   }
@@ -109,14 +109,14 @@ class MrPlanningRiskAnalysisServiceError extends Error {
 const throwValidation = (message, details = {}) => {
   throw new MrPlanningRiskAnalysisServiceError(message, {
     statusCode: 400,
-    code: "MR_ANALYSIS_VALIDATION_ERROR",
+    code: 'MR_ANALYSIS_VALIDATION_ERROR',
     blocked: true,
     details,
   });
 };
 
 const toNumber = (value, fallback = 0) => {
-  if (value === null || value === undefined || value === "") return fallback;
+  if (value === null || value === undefined || value === '') return fallback;
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : fallback;
 };
@@ -137,7 +137,7 @@ const pickAllowedFields = (body = {}) => {
   });
 
   if (blocked.length > 0) {
-    throwValidation("Field tidak diperbolehkan.", {
+    throwValidation('Field tidak diperbolehkan.', {
       fields: blocked,
     });
   }
@@ -151,7 +151,7 @@ const getReferenceItem = async (id, options = {}) => {
   const item = await MrReferenceItem.findByPk(id, options);
 
   if (!item) {
-    throwValidation("Reference item tidak ditemukan.", {
+    throwValidation('Reference item tidak ditemukan.', {
       reference_id: id,
     });
   }
@@ -164,7 +164,7 @@ const resolveReferenceLabel = async (id, options = {}) => {
     include: [
       {
         model: MrReferenceGroup,
-        as: "group",
+        as: 'group',
         required: false,
       },
     ],
@@ -172,7 +172,7 @@ const resolveReferenceLabel = async (id, options = {}) => {
   });
 
   if (!item) {
-    throwValidation("Reference item tidak ditemukan.", {
+    throwValidation('Reference item tidak ditemukan.', {
       reference_id: id,
     });
   }
@@ -193,17 +193,17 @@ const resolveReferenceLabel = async (id, options = {}) => {
   };
 };
 
-const ensureReferenceGroup = (ref, expectedGroups = [], fieldName = "reference") => {
+const ensureReferenceGroup = (ref, expectedGroups = [], fieldName = 'reference') => {
   const groups = Array.isArray(expectedGroups) ? expectedGroups : [expectedGroups];
 
   if (!ref) {
-    throwValidation("Reference item wajib diisi.", {
+    throwValidation('Reference item wajib diisi.', {
       field: fieldName,
     });
   }
 
   if (!ref.is_active) {
-    throwValidation("Reference item tidak aktif.", {
+    throwValidation('Reference item tidak aktif.', {
       field: fieldName,
       reference_id: ref.id,
       kode_item: ref.kode_item,
@@ -211,7 +211,7 @@ const ensureReferenceGroup = (ref, expectedGroups = [], fieldName = "reference")
   }
 
   if (!groups.includes(ref.kode_group)) {
-    throwValidation("Reference item tidak sesuai group yang diizinkan.", {
+    throwValidation('Reference item tidak sesuai group yang diizinkan.', {
       field: fieldName,
       reference_id: ref.id,
       kode_group: ref.kode_group,
@@ -229,27 +229,23 @@ const findRiskMatrix = async ({ likelihoodRefId, impactRefId }, options = {}) =>
     where: {
       likelihood_ref_id: likelihoodRefId,
       impact_ref_id: impactRefId,
-      matrix_code: "MR_5X5_DEFAULT",
+      matrix_code: 'MR_5X5_DEFAULT',
     },
     ...options,
   });
 
   if (!matrix) {
-    throwValidation("Risk matrix tidak ditemukan untuk kombinasi likelihood dan impact.", {
+    throwValidation('Risk matrix tidak ditemukan untuk kombinasi likelihood dan impact.', {
       likelihood_ref_id: likelihoodRefId,
       impact_ref_id: impactRefId,
-      matrix_code: "MR_5X5_DEFAULT",
+      matrix_code: 'MR_5X5_DEFAULT',
     });
   }
 
   return matrix;
 };
 
-const buildMatrixPayload = async ({
-  prefix,
-  likelihoodRefId,
-  impactRefId,
-}, options = {}) => {
+const buildMatrixPayload = async ({ prefix, likelihoodRefId, impactRefId }, options = {}) => {
   if (!likelihoodRefId || !impactRefId) {
     return {};
   }
@@ -257,24 +253,16 @@ const buildMatrixPayload = async ({
   const likelihoodRef = await resolveReferenceLabel(likelihoodRefId, options);
   const impactRef = await resolveReferenceLabel(impactRefId, options);
 
-  ensureReferenceGroup(
-    likelihoodRef,
-    "LIKELIHOOD",
-    `${prefix}_likelihood_ref_id`
-  );
+  ensureReferenceGroup(likelihoodRef, 'LIKELIHOOD', `${prefix}_likelihood_ref_id`);
 
-  ensureReferenceGroup(
-    impactRef,
-    "IMPACT",
-    `${prefix}_impact_ref_id`
-  );
+  ensureReferenceGroup(impactRef, 'IMPACT', `${prefix}_impact_ref_id`);
 
   const matrix = await findRiskMatrix(
     {
       likelihoodRefId,
       impactRefId,
     },
-    options
+    options,
   );
 
   return {
@@ -291,46 +279,25 @@ const resolveLabelsForPayload = async (payload = {}, options = {}) => {
   const resolved = { ...payload };
 
   if (payload.existing_control_status_ref_id) {
-    const ref = await resolveReferenceLabel(
-      payload.existing_control_status_ref_id,
-      options
-    );
+    const ref = await resolveReferenceLabel(payload.existing_control_status_ref_id, options);
 
-    ensureReferenceGroup(
-      ref,
-      "CONTROL_EFFECTIVENESS",
-      "existing_control_status_ref_id"
-    );
+    ensureReferenceGroup(ref, 'CONTROL_EFFECTIVENESS', 'existing_control_status_ref_id');
 
     resolved.existing_control_status = ref.label || null;
   }
 
   if (payload.control_adequacy_ref_id) {
-    const ref = await resolveReferenceLabel(
-      payload.control_adequacy_ref_id,
-      options
-    );
+    const ref = await resolveReferenceLabel(payload.control_adequacy_ref_id, options);
 
-    ensureReferenceGroup(
-      ref,
-      "CONTROL_EFFECTIVENESS",
-      "control_adequacy_ref_id"
-    );
+    ensureReferenceGroup(ref, 'CONTROL_EFFECTIVENESS', 'control_adequacy_ref_id');
 
     resolved.control_adequacy_status = ref.label || null;
   }
 
   if (payload.selera_risiko_ref_id) {
-    const ref = await resolveReferenceLabel(
-      payload.selera_risiko_ref_id,
-      options
-    );
+    const ref = await resolveReferenceLabel(payload.selera_risiko_ref_id, options);
 
-    ensureReferenceGroup(
-      ref,
-      "RISK_APPETITE",
-      "selera_risiko_ref_id"
-    );
+    ensureReferenceGroup(ref, 'RISK_APPETITE', 'selera_risiko_ref_id');
 
     resolved.selera_risiko = ref.label || null;
     resolved.appetite_threshold = toNumber(ref.nilai, 9);
@@ -347,12 +314,12 @@ const applyRiskMatrixCalculation = async (payload = {}, options = {}) => {
       calculated,
       await buildMatrixPayload(
         {
-          prefix: "inherent",
+          prefix: 'inherent',
           likelihoodRefId: payload.inherent_likelihood_ref_id,
           impactRefId: payload.inherent_impact_ref_id,
         },
-        options
-      )
+        options,
+      ),
     );
   }
 
@@ -361,12 +328,12 @@ const applyRiskMatrixCalculation = async (payload = {}, options = {}) => {
       calculated,
       await buildMatrixPayload(
         {
-          prefix: "residual",
+          prefix: 'residual',
           likelihoodRefId: payload.residual_likelihood_ref_id,
           impactRefId: payload.residual_impact_ref_id,
         },
-        options
-      )
+        options,
+      ),
     );
   }
 
@@ -375,7 +342,7 @@ const applyRiskMatrixCalculation = async (payload = {}, options = {}) => {
 
   calculated.appetite_threshold = appetiteThreshold;
   calculated.is_above_appetite = residualScore > appetiteThreshold;
-  calculated.matrix_code = "MR_5X5_DEFAULT";
+  calculated.matrix_code = 'MR_5X5_DEFAULT';
 
   return calculated;
 };
@@ -385,7 +352,7 @@ const getRiskWithContext = async (riskId, options = {}) => {
     include: [
       {
         model: MrPlanningContext,
-        as: "context",
+        as: 'context',
         required: false,
       },
     ],
@@ -393,7 +360,7 @@ const getRiskWithContext = async (riskId, options = {}) => {
   });
 
   if (!risk) {
-    throwValidation("MR Planning Risk tidak ditemukan.", {
+    throwValidation('MR Planning Risk tidak ditemukan.', {
       mr_planning_risk_id: riskId,
     });
   }
@@ -410,7 +377,7 @@ const buildSystemFieldsFromRisk = (risk, userId) => {
 
     periode_id: risk.periode_id || context?.periode_id || null,
     tahun: risk.tahun || context?.tahun || null,
-    periode_type: context?.periode_type || "tahunan",
+    periode_type: context?.periode_type || 'tahunan',
     periode_label: context?.periode_label || null,
     periode_awal: context?.periode_awal || null,
     periode_akhir: context?.periode_akhir || null,
@@ -418,7 +385,7 @@ const buildSystemFieldsFromRisk = (risk, userId) => {
     owner_user_id: risk.owner_user_id || context?.owner_user_id || userId || null,
     owner_division_id: risk.owner_division_id || context?.owner_division_id || null,
 
-    status_revisi: "draft",
+    status_revisi: 'draft',
     versi: 1,
     dibuat_oleh: userId || null,
     dibuat_pada: new Date(),
@@ -432,8 +399,8 @@ const buildSystemFieldsFromRisk = (risk, userId) => {
 const ensureDraftAnalysis = (analysis) => {
   if (!analysis) return;
 
-  if (analysis.status_revisi !== "draft") {
-    throwValidation("Risk Analysis hanya bisa diubah saat status draft.", {
+  if (analysis.status_revisi !== 'draft') {
+    throwValidation('Risk Analysis hanya bisa diubah saat status draft.', {
       current_status: analysis.status_revisi,
     });
   }
@@ -441,7 +408,7 @@ const ensureDraftAnalysis = (analysis) => {
 
 const createAnalysisFromRisk = async ({ riskId, body = {}, userId, transaction } = {}) => {
   if (!riskId) {
-    throwValidation("riskId wajib diisi.");
+    throwValidation('riskId wajib diisi.');
   }
 
   const allowedPayload = pickAllowedFields(body);
@@ -451,8 +418,7 @@ const createAnalysisFromRisk = async ({ riskId, body = {}, userId, transaction }
 
   const payloadWithAppetiteRef = {
     ...allowedPayload,
-    selera_risiko_ref_id:
-      allowedPayload.selera_risiko_ref_id || risk.selera_risiko_ref_id || null,
+    selera_risiko_ref_id: allowedPayload.selera_risiko_ref_id || risk.selera_risiko_ref_id || null,
   };
 
   const labelPayload = await resolveLabelsForPayload(payloadWithAppetiteRef, {
@@ -469,23 +435,23 @@ const createAnalysisFromRisk = async ({ riskId, body = {}, userId, transaction }
     transaction,
   });
 
+  await MrPlanningRiskAnalysis.update(
+    { is_latest: false },
+    { where: { mr_planning_risk_id: risk.id }, transaction },
+  );
+
   return MrPlanningRiskAnalysis.create(
     {
       ...systemPayload,
       ...calculatedPayload,
     },
-    { transaction }
+    { transaction },
   );
 };
 
-const updateDraftAnalysis = async ({
-  analysisId,
-  body = {},
-  userId,
-  transaction,
-} = {}) => {
+const updateDraftAnalysis = async ({ analysisId, body = {}, userId, transaction } = {}) => {
   if (!analysisId) {
-    throwValidation("analysisId wajib diisi.");
+    throwValidation('analysisId wajib diisi.');
   }
 
   const analysis = await MrPlanningRiskAnalysis.findByPk(analysisId, {
@@ -493,7 +459,7 @@ const updateDraftAnalysis = async ({
   });
 
   if (!analysis) {
-    throwValidation("MR Planning Risk Analysis tidak ditemukan.", {
+    throwValidation('MR Planning Risk Analysis tidak ditemukan.', {
       id: analysisId,
     });
   }
@@ -523,7 +489,7 @@ const updateDraftAnalysis = async ({
       last_revised_by: userId || null,
       updated_by: userId || null,
     },
-    { transaction }
+    { transaction },
   );
 
   return getAnalysisDetail(analysis.id, { transaction });
@@ -531,64 +497,64 @@ const updateDraftAnalysis = async ({
 
 const getAnalysisDetail = async (analysisId, options = {}) => {
   if (!analysisId) {
-    throwValidation("analysisId wajib diisi.");
+    throwValidation('analysisId wajib diisi.');
   }
 
   const analysis = await MrPlanningRiskAnalysis.findByPk(analysisId, {
     include: [
       {
         model: MrPlanningRisk,
-        as: "risk",
+        as: 'risk',
         required: false,
       },
       {
         model: MrPlanningContext,
-        as: "context",
+        as: 'context',
         required: false,
       },
       {
         model: MrReferenceItem,
-        as: "existing_control_status_ref",
+        as: 'existing_control_status_ref',
         required: false,
       },
       {
         model: MrReferenceItem,
-        as: "control_adequacy_ref",
+        as: 'control_adequacy_ref',
         required: false,
       },
       {
         model: MrReferenceItem,
-        as: "inherent_likelihood_ref",
+        as: 'inherent_likelihood_ref',
         required: false,
       },
       {
         model: MrReferenceItem,
-        as: "inherent_impact_ref",
+        as: 'inherent_impact_ref',
         required: false,
       },
       {
         model: MrReferenceItem,
-        as: "inherent_level_ref",
+        as: 'inherent_level_ref',
         required: false,
       },
       {
         model: MrReferenceItem,
-        as: "residual_likelihood_ref",
+        as: 'residual_likelihood_ref',
         required: false,
       },
       {
         model: MrReferenceItem,
-        as: "residual_impact_ref",
+        as: 'residual_impact_ref',
         required: false,
       },
       {
         model: MrReferenceItem,
-        as: "residual_level_ref",
+        as: 'residual_level_ref',
         required: false,
       },
       {
         model: MrReferenceItem,
-        as: "selera_risiko_ref",
+        as: 'selera_risiko_ref',
         required: false,
       },
     ],
@@ -596,7 +562,7 @@ const getAnalysisDetail = async (analysisId, options = {}) => {
   });
 
   if (!analysis) {
-    throwValidation("MR Planning Risk Analysis tidak ditemukan.", {
+    throwValidation('MR Planning Risk Analysis tidak ditemukan.', {
       id: analysisId,
     });
   }
@@ -606,7 +572,7 @@ const getAnalysisDetail = async (analysisId, options = {}) => {
 
 const getAnalysesByRisk = async (riskId, options = {}) => {
   if (!riskId) {
-    throwValidation("riskId wajib diisi.");
+    throwValidation('riskId wajib diisi.');
   }
 
   return MrPlanningRiskAnalysis.findAll({
@@ -615,8 +581,8 @@ const getAnalysesByRisk = async (riskId, options = {}) => {
       is_active: true,
     },
     order: [
-      ["is_latest", "DESC"],
-      ["id", "DESC"],
+      ['is_latest', 'DESC'],
+      ['id', 'DESC'],
     ],
     ...options,
   });

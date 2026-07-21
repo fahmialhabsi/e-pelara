@@ -199,6 +199,8 @@ const mrSensitiveLimiter = rateLimit({
 app.use('/api/mr-report', mrSensitiveLimiter);
 app.use('/api/mr-planning-risk', mrSensitiveLimiter);
 app.use('/api/mr-planning-monitoring', mrSensitiveLimiter);
+app.use('/api/mr-planning-tindak-lanjut', mrSensitiveLimiter);
+app.use('/api/mr-tlhp-report', mrSensitiveLimiter);
 
 // Morgan log ke file
 const accessLogStream = fs.createWriteStream(path.join(__dirname, 'combined.log'), { flags: 'a' });
@@ -319,6 +321,11 @@ const mrPlanningContextRoutes = require('./routes/mr_planningContextRoutes');
 const mrReferenceDropdownRoutes = require('./routes/mr_referenceDropdownRoutes');
 const mrPlanningReportRoutes = require('./routes/mr_planningReportRoutes');
 const mrNarrativeDraftRoutes = require('./routes/mr_NarrativeDraftRoutes');
+// Modul TLHP — Pengelolaan Tindak Lanjut Temuan Inspektorat/BPK/BPKP
+const mrPlanningLhpRoutes = require('./routes/mr_planningLhpRoutes');
+const mrPlanningTemuanRoutes = require('./routes/mr_planningTemuanRoutes');
+const mrPlanningTindakLanjutRoutes = require('./routes/mr_planningTindakLanjutRoutes');
+const mrPlanningTlhpReportRoutes = require('./routes/mr_planningTlhpReportRoutes');
 
 // USE RPKD
 const rkpdRoutes = require('./routes/rkpdRoutes');
@@ -332,6 +339,7 @@ const renjaRoutes = require('./routes/renjaRoutes');
 // USE RKA
 const rkaRoutes = require('./routes/rkaRoutes');
 const tapdRoutes = require('./routes/tapdRoutes');
+const pejabatPenandatanganRoutes = require('./routes/pejabatPenandatanganRoutes');
 const dpaPergeseranRoutes = require('./routes/dpaPergeseranRoutes');
 const masterSubBidangOpdRoutes = require('./routes/masterSubBidangOpdRoutes');
 
@@ -501,6 +509,12 @@ app.use('/api/mr-reference-items', mrReferenceDropdownRoutes);
 app.use('/api/mr-report', mrPlanningReportRoutes);
 app.use('/api/mr-planning-risk', mrNarrativeDraftRoutes);
 
+// USE MODUL TLHP — Pengelolaan Tindak Lanjut Temuan Inspektorat/BPK/BPKP
+app.use('/api/mr-planning-lhp', mrPlanningLhpRoutes);
+app.use('/api/mr-planning-temuan', mrPlanningTemuanRoutes);
+app.use('/api/mr-planning-tindak-lanjut', mrPlanningTindakLanjutRoutes);
+app.use('/api/mr-tlhp-report', mrPlanningTlhpReportRoutes);
+
 // USE RKPD
 app.use('/api/rkpd', rkpdRoutes);
 app.use('/api/rkpd-init', rkpdInitRoutes);
@@ -519,6 +533,7 @@ app.use('/api/planning', planningDocumentRoutes);
 // USE RKA
 app.use('/api/rka', rkaRoutes);
 app.use('/api/tapd', tapdRoutes);
+app.use('/api/pejabat-penandatangan', pejabatPenandatanganRoutes);
 app.use('/api/dpa', dpaPergeseranRoutes);
 app.use('/api/master-sub-bidang-opd', masterSubBidangOpdRoutes);
 

@@ -43,25 +43,9 @@ const getSourceEndpoint = (req) => {
   return req?.originalUrl || req?.url || null;
 };
 
-const MAX_CONCURRENT_HEAVY_EXPORT = 2;
-let heavyExportInFlight = 0;
-
-const runWithHeavyExportGuard = async (fn) => {
-  if (heavyExportInFlight >= MAX_CONCURRENT_HEAVY_EXPORT) {
-    const error = new Error("Antrian export sedang penuh. Coba beberapa saat lagi.");
-    error.status = 429;
-    error.statusCode = 429;
-    error.code = "MR_EXPORT_QUEUE_BUSY";
-    throw error;
-  }
-
-  heavyExportInFlight += 1;
-  try {
-    return await fn();
-  } finally {
-    heavyExportInFlight = Math.max(0, heavyExportInFlight - 1);
-  }
-};
+const {
+  runWithHeavyExportGuard,
+} = require("../services/mr/mrHeavyExportGuardService");
 
 const recordExportSuccessSafely = async ({
   req,

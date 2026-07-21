@@ -65,6 +65,7 @@ const PROPOSAL_SOURCE = {
   LAPORAN_KEUANGAN: "LAPORAN_KEUANGAN",
   TINDAK_LANJUT_BPK: "TINDAK_LANJUT_BPK",
   TINDAK_LANJUT_INSPEKTORAT: "TINDAK_LANJUT_INSPEKTORAT",
+  TINDAK_LANJUT_BPKP: "TINDAK_LANJUT_BPKP",
   PELAKSANAAN_KEGIATAN: "PELAKSANAAN_KEGIATAN",
   PERTANGGUNGJAWABAN_KEUANGAN: "PERTANGGUNGJAWABAN_KEUANGAN",
   SPIP_E_SIGAP: "SPIP_E_SIGAP",
@@ -77,6 +78,7 @@ const PROPOSAL_SOURCE_TO_STAGE = {
   LAPORAN_KEUANGAN: "lk",
   TINDAK_LANJUT_BPK: "temuan_bpk",
   TINDAK_LANJUT_INSPEKTORAT: "temuan_inspektorat",
+  TINDAK_LANJUT_BPKP: "temuan_bpkp",
   PELAKSANAAN_KEGIATAN: "pelaksanaan_kegiatan",
   PERTANGGUNGJAWABAN_KEUANGAN: "pertanggungjawaban_keuangan",
   SPIP_E_SIGAP: "spip_e_sigap",
@@ -89,6 +91,7 @@ const PROPOSAL_SOURCE_TO_DOCUMENT = {
   LAPORAN_KEUANGAN: "laporan_keuangan",
   TINDAK_LANJUT_BPK: "tindak_lanjut_bpk",
   TINDAK_LANJUT_INSPEKTORAT: "tindak_lanjut_inspektorat",
+  TINDAK_LANJUT_BPKP: "tindak_lanjut_bpkp",
   PELAKSANAAN_KEGIATAN: "pelaksanaan_kegiatan",
   PERTANGGUNGJAWABAN_KEUANGAN: "pertanggungjawaban_keuangan",
   SPIP_E_SIGAP: "spip_e_sigap",
@@ -658,6 +661,10 @@ const getRequiredFieldsByProposalSource = (sourceRef) => {
   }
 
   if (sourceCode === PROPOSAL_SOURCE.TINDAK_LANJUT_INSPEKTORAT) {
+    return [...base, "nomor_temuan", "judul_temuan"];
+  }
+
+  if (sourceCode === PROPOSAL_SOURCE.TINDAK_LANJUT_BPKP) {
     return [...base, "nomor_temuan", "judul_temuan"];
   }
 
@@ -1560,6 +1567,9 @@ const buildProposalObjectCode = ({ sourceRef, payload }) => {
 
     case PROPOSAL_SOURCE.TINDAK_LANJUT_INSPEKTORAT:
       return buildCode("INSPEKTORAT", payload.nomor_temuan, "TANPA-NOMOR");
+
+    case PROPOSAL_SOURCE.TINDAK_LANJUT_BPKP:
+      return buildCode("BPKP", payload.nomor_temuan, "TANPA-NOMOR");
 
     case PROPOSAL_SOURCE.LAKIP:
       return buildCode(

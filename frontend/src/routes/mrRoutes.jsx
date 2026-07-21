@@ -10,6 +10,16 @@ import MrPlanningMitigationForm from "@/pages/mr/MrPlanningMitigationForm";
 import MrPlanningMonitoringListPage from "@/pages/mr/MrPlanningMonitoringListPage";
 import MrModuleErrorBoundary from "@/features/mr/components/MrModuleErrorBoundary";
 
+// Modul TLHP — Pengelolaan Tindak Lanjut Temuan Inspektorat/BPK/BPKP
+import MrPlanningLhpListPage from "@/pages/mr/MrPlanningLhpListPage";
+import MrPlanningLhpForm from "@/pages/mr/MrPlanningLhpForm";
+import MrPlanningTemuanListPage from "@/pages/mr/MrPlanningTemuanListPage";
+import MrPlanningTemuanForm from "@/pages/mr/MrPlanningTemuanForm";
+import MrPlanningTemuanHistoryPage from "@/pages/mr/MrPlanningTemuanHistoryPage";
+import MrPlanningTindakLanjutListPage from "@/pages/mr/MrPlanningTindakLanjutListPage";
+import MrPlanningTindakLanjutForm from "@/pages/mr/MrPlanningTindakLanjutForm";
+import MrPlanningTlhpDashboardPage from "@/pages/mr/MrPlanningTlhpDashboardPage";
+
 const withMrBoundary = (element) => <MrModuleErrorBoundary>{element}</MrModuleErrorBoundary>;
 
 const MR_READ_ROLES = [
@@ -97,6 +107,65 @@ const mrRoutes = [
   {
     path: "/mr/planning-report",
     element: withMrBoundary(<MrPlanningReportPage />),
+    role: MR_READ_ROLES,
+  },
+
+  // =====================================================
+  // MODUL TLHP — Pengelolaan Tindak Lanjut Temuan Inspektorat/BPK/BPKP
+  // =====================================================
+  {
+    path: "/mr/planning-lhp",
+    element: withMrBoundary(<MrPlanningLhpListPage />),
+    role: MR_READ_ROLES,
+  },
+  {
+    path: "/mr/planning-lhp/create",
+    element: withMrBoundary(<MrPlanningLhpForm />),
+    role: MR_WRITE_ROLES,
+  },
+  {
+    path: "/mr/planning-lhp/edit/:id",
+    element: withMrBoundary(<MrPlanningLhpForm />),
+    role: MR_WRITE_ROLES,
+  },
+  {
+    path: "/mr/planning-lhp/:lhpId/temuan",
+    element: withMrBoundary(<MrPlanningTemuanListPage />),
+    role: MR_READ_ROLES,
+  },
+  {
+    path: "/mr/planning-lhp/:lhpId/temuan/create",
+    element: withMrBoundary(<MrPlanningTemuanForm />),
+    role: MR_WRITE_ROLES,
+  },
+  {
+    path: "/mr/planning-temuan/edit/:id",
+    element: withMrBoundary(<MrPlanningTemuanForm />),
+    role: MR_WRITE_ROLES,
+  },
+  {
+    path: "/mr/planning-temuan/:id/history",
+    element: withMrBoundary(<MrPlanningTemuanHistoryPage />),
+    role: MR_HISTORY_ROLES,
+  },
+  {
+    path: "/mr/planning-temuan/:temuanId/rekomendasi/:rekomendasiId/tindak-lanjut",
+    element: withMrBoundary(<MrPlanningTindakLanjutListPage />),
+    role: MR_READ_ROLES,
+  },
+  {
+    path: "/mr/planning-tindak-lanjut/create/:rekomendasiId",
+    element: withMrBoundary(<MrPlanningTindakLanjutForm />),
+    role: MR_WRITE_ROLES,
+  },
+  {
+    path: "/mr/planning-tindak-lanjut/edit/:id",
+    element: withMrBoundary(<MrPlanningTindakLanjutForm />),
+    role: MR_WRITE_ROLES,
+  },
+  {
+    path: "/mr/tlhp-report",
+    element: withMrBoundary(<MrPlanningTlhpDashboardPage />),
     role: MR_READ_ROLES,
   },
 ];
