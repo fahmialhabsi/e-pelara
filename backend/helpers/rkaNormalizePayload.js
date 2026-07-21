@@ -12,7 +12,9 @@ function normalizeRincianBelanja(rows = []) {
 
       koefisien_array: Array.isArray(item.koefisien_array)
         ? item.koefisien_array.map((k) => ({
-            volume: Number(k.volume || 1),
+            // `?? 1` (bukan `|| 1`): volume 0 itu sah (mis. impor RKA SIPD yang
+            // belum diisi anggarannya) — `|| 1` akan mengubahnya diam-diam jadi 1.
+            volume: Number(k.volume ?? 1),
             satuan: String(k.satuan || '').trim(),
           }))
         : [],

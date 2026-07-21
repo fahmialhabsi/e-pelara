@@ -25,14 +25,13 @@ import {
   PlusOutlined,
   MinusCircleOutlined,
   EditOutlined,
-  FilePdfOutlined,
-  PrinterOutlined,
   CaretRightOutlined,
   CaretDownOutlined,
   FolderOpenOutlined,
   FolderOutlined,
   FileTextOutlined,
   HolderOutlined,
+  BulbOutlined,
 } from '@ant-design/icons';
 import {
   getLevelKode,
@@ -54,6 +53,7 @@ import {
   getIndikatorKegiatanByKode,
   getMasterSubKegiatanByKode,
   generateRkaIndikator,
+  getNarasiRevisiRka,
 } from '../services/rkaApi';
 import {
   createDefaultKoefisien,
@@ -83,13 +83,6 @@ import canDropItem from '../utils/canDropItem';
 import reorderItem from '../utils/reorderItem';
 
 const { TextArea } = Input;
-
-// State modal TAPD untuk cetak RKA-BELANJA
-const TAPD_EMPTY = [
-  { nama: '', nip: '', jabatan: 'Ketua TAPD' },
-  { nama: '', nip: '', jabatan: 'Anggota' },
-  { nama: '', nip: '', jabatan: 'Anggota' },
-];
 const { Text } = Typography;
 
 const formatRupiah = (val) =>
@@ -297,9 +290,6 @@ const FieldLabel = ({ children, required }) => (
 
 const RkaFormPage = () => {
   const { id } = useParams();
-  const [modalTapd, setModalTapd] = useState(false);
-  const [tapdList, setTapdList] = useState(TAPD_EMPTY);
-  const [cetakLoading, setCetakLoading] = useState({ full: false, belanja: false });
   const navigate = useNavigate();
   const { user } = useAuth();
   const isNew = id === 'new' || !id;
@@ -342,9 +332,11 @@ const RkaFormPage = () => {
     anggaran: '',
     rincian_belanja: null,
     jenis_dokumen: 'RKA',
+    tahapan: 'APBD_INDUK',
   });
   const [changeReasonText, setChangeReasonText] = useState('');
   const [changeReasonFile, setChangeReasonFile] = useState('');
+  const [generatingNarasi, setGeneratingNarasi] = useState(false);
   const [auditRows, setAuditRows] = useState([]);
   const [opdOptions, setOpdOptions] = useState([]);
   const [renjaOptions, setRenjaOptions] = useState([]);
@@ -361,19 +353,6 @@ const RkaFormPage = () => {
   const [expandedRows, setExpandedRows] = useState({});
   const [draggingItem, setDraggingItem] = useState(null);
   const [dragOverKode, setDragOverKode] = useState(null);
-
-  useEffect(() => {
-    const tahun = form?.tahun || new Date().getFullYear();
-    api
-      .get(`/tapd?tahun=${tahun}`)
-      .then((res) => {
-        const data = res.data?.data || [];
-        if (data.length > 0) {
-          setTapdList(data.map((t) => ({ nama: t.nama, nip: t.nip, jabatan: t.jabatan })));
-        }
-      })
-      .catch(() => {});
-  }, [form?.tahun]);
 
   useEffect(() => {
     if (form.opd_id !== opdId) setOpdId(form.opd_id || '');
@@ -557,6 +536,7 @@ const RkaFormPage = () => {
         waktu_selesai: row.waktu_selesai ?? 'Desember',
         lokasi: row.lokasi ?? '',
         anggaran: row.anggaran != null ? row.anggaran : '',
+        tahapan: row.tahapan || 'APBD_INDUK',
 
         rincian_belanja: refreshHierarchy(
           buildHierarchy(
@@ -1168,6 +1148,27 @@ const RkaFormPage = () => {
     }));
   };
 
+  // Susun draf narasi alasan pergeseran/perubahan otomatis dari perbedaan item belanja
+  // & indikator terhadap tahapan sebelumnya — user tetap bisa mengedit hasilnya sebelum
+  // disimpan (bukan langsung dikirim tanpa direview).
+  const handleGenerateNarasi = async () => {
+    if (isNew || !id) return;
+    setGeneratingNarasi(true);
+    try {
+      const result = await getNarasiRevisiRka(id);
+      if (!result?.narasi) {
+        toast.warning('Belum ada perbedaan yang bisa dijadikan narasi.');
+        return;
+      }
+      setChangeReasonText(result.narasi);
+      toast.success('Draf narasi berhasil dibuat — silakan tinjau sebelum menyimpan.');
+    } catch (e) {
+      toast.error(e?.response?.data?.error || e.message || 'Gagal membuat narasi otomatis');
+    } finally {
+      setGeneratingNarasi(false);
+    }
+  };
+
   const handleSubmit = async () => {
     const payload = buildPayload(form);
     if (!payload.periode_id || Number.isNaN(payload.periode_id)) {
@@ -1296,52 +1297,6 @@ const RkaFormPage = () => {
     );
 
   const totalAnggaran = Number(form.anggaran) || 0;
-
-  const handleCetakFull = async () => {
-    setCetakLoading((s) => ({ ...s, full: true }));
-    try {
-      const resp = await api.get(`/rka/${id}/export-pdf`, { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `RKA_FULL_${id}_${form.tahun || ''}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Gagal cetak PDF RKA');
-    } finally {
-      setCetakLoading((s) => ({ ...s, full: false }));
-    }
-  };
-
-  const handleCetakBelanja = async () => {
-    const tapdParam = encodeURIComponent(JSON.stringify(tapdList));
-    setCetakLoading((s) => ({ ...s, belanja: true }));
-    try {
-      const resp = await api.get(`/rka/${id}/export-pdf-belanja?tapd=${tapdParam}`, {
-        responseType: 'blob',
-      });
-      const url = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
-      const a = document.createElement('a');
-      a.href = url;
-      const namaSubKeg = (form.sub_kegiatan?.nama_sub_kegiatan || form.sub_kegiatan || 'RKA')
-        .replace(/[^a-zA-Z0-9\s]/g, '')
-        .trim()
-        .replace(/\s+/g, '_')
-        .substring(0, 60);
-      a.download = `RKA_BELANJA_${namaSubKeg}_${form.tahun || ''}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Gagal cetak RKA-BELANJA');
-    } finally {
-      setCetakLoading((s) => ({ ...s, belanja: false }));
-    }
-  };
 
   const toggleExpand = (index) => {
     setExpandedRows((prev) => ({
@@ -2765,7 +2720,30 @@ const RkaFormPage = () => {
                   />
                 </div>
                 <div>
-                  <FieldLabel required>Ringkasan alasan pencatatan</FieldLabel>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: 4,
+                    }}
+                  >
+                    <FieldLabel required>Ringkasan alasan pencatatan</FieldLabel>
+                    {!isNew && form.tahapan !== 'APBD_INDUK' && (
+                      <Tooltip title="Susun draf narasi otomatis berdasarkan item belanja & indikator yang berubah terhadap tahapan sebelumnya — tetap bisa diedit sebelum disimpan">
+                        <Button
+                          size="small"
+                          type="link"
+                          icon={<BulbOutlined />}
+                          loading={generatingNarasi}
+                          onClick={handleGenerateNarasi}
+                          style={{ padding: 0, height: 'auto' }}
+                        >
+                          Buatkan Narasi Otomatis
+                        </Button>
+                      </Tooltip>
+                    )}
+                  </div>
                   <TextArea
                     rows={3}
                     value={changeReasonText}
@@ -2820,26 +2798,6 @@ const RkaFormPage = () => {
             <span style={{ color: '#bfbfbf' }}>Belum ada rincian belanja.</span>
           )}
         </div>
-        {!isNew && (
-          <>
-            <Button
-              icon={<PrinterOutlined />}
-              onClick={handleCetakFull}
-              loading={cetakLoading.full}
-              size="large"
-            >
-              Cetak Full RKA
-            </Button>
-            <Button
-              icon={<FilePdfOutlined />}
-              onClick={() => setModalTapd(true)}
-              size="large"
-              style={{ background: '#52c41a', borderColor: '#52c41a', color: '#fff' }}
-            >
-              Cetak RKA-BELANJA
-            </Button>
-          </>
-        )}
         <Button
           type="primary"
           icon={<SaveOutlined />}
@@ -2849,99 +2807,6 @@ const RkaFormPage = () => {
         >
           {isNew ? 'Simpan RKA Baru' : 'Perbarui RKA'}
         </Button>
-
-        <Modal
-          title="Input Tim Anggaran Pemerintahan Daerah (TAPD)"
-          open={modalTapd}
-          onCancel={() => setModalTapd(false)}
-          width={750}
-          footer={[
-            <Button key="batal" onClick={() => setModalTapd(false)}>
-              Batal
-            </Button>,
-            <Button
-              key="cetak"
-              type="primary"
-              icon={<FilePdfOutlined />}
-              loading={cetakLoading.belanja}
-              onClick={() => {
-                setModalTapd(false);
-                handleCetakBelanja();
-              }}
-            >
-              Cetak PDF
-            </Button>,
-          ]}
-        >
-          <p style={{ marginBottom: 12, color: '#555' }}>
-            Isi data TAPD yang akan tercetak di formulir RKA-BELANJA SKPD. Bisa dikosongkan jika
-            belum ada.
-          </p>
-          <Table
-            dataSource={tapdList.map((t, i) => ({ ...t, key: i }))}
-            pagination={false}
-            size="small"
-            columns={[
-              { title: 'No', dataIndex: 'key', width: 50, render: (v) => v + 1 },
-              {
-                title: 'Nama',
-                dataIndex: 'nama',
-                render: (v, _, i) => (
-                  <Input
-                    value={v}
-                    placeholder="Nama lengkap"
-                    onChange={(e) =>
-                      setTapdList((prev) =>
-                        prev.map((r, idx) => (idx === i ? { ...r, nama: e.target.value } : r)),
-                      )
-                    }
-                  />
-                ),
-              },
-              {
-                title: 'NIP',
-                dataIndex: 'nip',
-                width: 180,
-                render: (v, _, i) => (
-                  <Input
-                    value={v}
-                    placeholder="NIP"
-                    onChange={(e) =>
-                      setTapdList((prev) =>
-                        prev.map((r, idx) => (idx === i ? { ...r, nip: e.target.value } : r)),
-                      )
-                    }
-                  />
-                ),
-              },
-              {
-                title: 'Jabatan',
-                dataIndex: 'jabatan',
-                width: 160,
-                render: (v, _, i) => (
-                  <Input
-                    value={v}
-                    placeholder="Jabatan"
-                    onChange={(e) =>
-                      setTapdList((prev) =>
-                        prev.map((r, idx) => (idx === i ? { ...r, jabatan: e.target.value } : r)),
-                      )
-                    }
-                  />
-                ),
-              },
-            ]}
-          />
-          <Button
-            size="small"
-            style={{ marginTop: 10 }}
-            onClick={() =>
-              setTapdList((prev) => [...prev, { nama: '', nip: '', jabatan: 'Anggota' }])
-            }
-          >
-            + Tambah Anggota TAPD
-          </Button>
-        </Modal>
       </div>
 
       {!isNew && (

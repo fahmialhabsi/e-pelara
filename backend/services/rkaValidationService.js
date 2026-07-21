@@ -107,10 +107,21 @@ const rkaCreateSchema = Joi.object({
 });
 
 // Skema untuk Update
-const rkaUpdateSchema = rkaCreateSchema.fork(
-  ['tahun', 'periode_id', 'opd_id', 'program', 'kegiatan', 'sub_kegiatan'],
-  (schema) => schema.optional(),
-);
+const rkaUpdateSchema = rkaCreateSchema
+  .fork(
+    ['tahun', 'periode_id', 'opd_id', 'program', 'kegiatan', 'sub_kegiatan'],
+    (schema) => schema.optional(),
+  )
+  // PENTING: `tahapan` TIDAK BOLEH ikut mewarisi .default('APBD_INDUK') milik skema create.
+  // Form Edit RKA (RkaFormPage) tidak pernah mengirim field `tahapan` di payload-nya (baris
+  // ini bukan sesuatu yang diedit user), jadi kalau default itu tetap berlaku, setiap kali
+  // user menyimpan RKA yang tahapannya PERGESERAN_1/2/APBD_PERUBAHAN (hasil klon lewat tombol
+  // Pergeseran/Perubahan), field `tahapan`-nya akan diam-diam ditimpa balik ke APBD_INDUK —
+  // merusak riwayat tahapan & membuat perbandingan Sebelum/Sesudah di cetak formulir selalu
+  // 0 (karena compareTahapanHistory mengira RKA ini tidak punya tahapan sebelumnya).
+  .fork(['tahapan'], () =>
+    Joi.string().valid('APBD_INDUK', 'PERGESERAN_1', 'PERGESERAN_2', 'APBD_PERUBAHAN').optional(),
+  );
 
 /**
  * Memvalidasi payload mentah menggunakan Joi Schema

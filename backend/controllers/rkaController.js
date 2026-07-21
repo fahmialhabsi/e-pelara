@@ -237,7 +237,7 @@ module.exports = {
   async pemicuRevisi(req, res) {
     try {
       const { id } = req.params;
-      const { tahapan_tujuan } = req.body; // Contoh: 'PERGESERAN_1' atau 'APBD_PERUBAHAN'
+      const { tahapan_tujuan, change_reason_text, change_reason_file } = req.body; // Contoh tahapan_tujuan: 'PERGESERAN_1' atau 'APBD_PERUBAHAN'
       const uid = req.user?.id ?? req.user?.userId ?? null;
 
       if (!tahapan_tujuan) {
@@ -246,13 +246,46 @@ module.exports = {
           .json({ success: false, error: 'Tahapan tujuan revisi wajib ditentukan.' });
       }
 
+      const oldRow = await loadRka(id);
       const result = await rkaRevisiService.cloneRkaToNextTahapan({
         rkaId: Number(id),
         tahapanTujuan: tahapan_tujuan,
         userId: uid,
+        changeReasonText: change_reason_text,
+      });
+
+      const newRow = await loadRka(result.data.new_rka_id);
+      const { old_value, new_value } = auditValuesFromRows(oldRow, newRow);
+      await writePlanningAudit({
+        module_name: 'rka',
+        table_name: 'rka',
+        record_id: result.data.new_rka_id,
+        action_type: 'CREATE',
+        old_value,
+        new_value,
+        change_reason_text: change_reason_text || null,
+        change_reason_file: change_reason_file || null,
+        changed_by: uid,
+        version_before: oldRow?.version ?? null,
+        version_after: 1,
       });
 
       return res.status(201).json(result);
+    } catch (error) {
+      return res.status(error.status || 500).json({ success: false, error: error.message });
+    }
+  },
+
+  /**
+   * Menyusun draf narasi profesional alasan pergeseran/perubahan berdasarkan
+   * perbedaan item belanja & indikator kinerja terhadap tahapan sebelumnya.
+   * GET /api/rka/:id/narasi-revisi — hasilnya draf, tetap bisa diedit user di form.
+   */
+  async narasiRevisi(req, res) {
+    try {
+      const { id } = req.params;
+      const result = await rkaRevisiService.generateNarasiRevisi(Number(id));
+      return res.json({ success: true, data: result });
     } catch (error) {
       return res.status(error.status || 500).json({ success: false, error: error.message });
     }

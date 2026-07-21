@@ -11,10 +11,11 @@ const {
   exportWord,
   exportPdf,
   exportPdfBelanja,
+  exportPdfBatch,
 } = require('../controllers/rkaExportController');
 const { generateIndikatorRka } = require('../services/rkaGenerateService');
 const upload = require('../middlewares/upload');
-const { importPdf } = require('../controllers/rkaImportController');
+const { importPdf, importPdfBatch } = require('../controllers/rkaImportController');
 
 // 1. Ambil semua dokumen RKA (Mendukung filter query ?tahapan=...)
 router.get(
@@ -30,6 +31,16 @@ router.get(
   verifyToken,
   allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
   RkaController.getAudit,
+);
+
+// 2b. Cetak PDF gabungan utk beberapa RKA sekaligus (dicentang lebih dari satu di Dashboard) —
+// HARUS didaftarkan sebelum route '/:id' generik di bawah, supaya "export-pdf-batch" tidak
+// tertangkap sebagai parameter :id.
+router.get(
+  '/export-pdf-batch',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  exportPdfBatch,
 );
 
 // 3. Ambil Detail RKA Berdasarkan ID (Mata Anggaran & Koefisien Terurai)
@@ -49,13 +60,24 @@ router.post(
   RkaController.create,
 );
 
-// 4b. Import RKA otomatis dari PDF "Cetak RKA Rincian Belanja" Aplikasi SIPD
+// 4b. Import RKA otomatis dari PDF "Cetak RKA Rincian Belanja" Aplikasi SIPD (1 berkas)
 router.post(
   '/import-pdf',
   verifyToken,
   allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
   upload.single('file'),
   importPdf,
+);
+
+// 4c. Import banyak berkas PDF SIPD sekaligus — HARUS didaftarkan sebelum '/:id' generik
+// di bawah kalaupun tidak konflik nama, tapi ditaruh berdekatan dgn '/import-pdf' agar jelas
+// keduanya satu fitur (single vs batch import).
+router.post(
+  '/import-pdf-batch',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
+  upload.array('files', 30),
+  importPdfBatch,
 );
 
 // 5. Update Rincian Belanja pada Tahapan Berjalan
@@ -79,6 +101,14 @@ router.post(
   allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
   requireChangeReason, // Menuntut alasan mengapa anggaran ini digeser/diubah
   RkaController.pemicuRevisi,
+);
+
+// 5b. Draf narasi otomatis alasan pergeseran/perubahan (berbasis diff item & indikator)
+router.get(
+  '/:id/narasi-revisi',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
+  RkaController.narasiRevisi,
 );
 
 // 6. Hapus Dokumen RKA Permanen (Cascading ke Rincian Belanja)

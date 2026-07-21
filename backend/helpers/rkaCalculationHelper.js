@@ -42,10 +42,15 @@ function processRincianBelanja(rincianBelanjaArray = []) {
     // Hitung volume hasil
     // ===========================
 
+    // Volume 0 pada salah satu komponen koefisien itu SAH dan HARUS membuat total
+    // baris jadi 0 (mis. "0 Orang x 2 Kali" pada RKA yang belum diisi anggarannya
+    // di SIPD). Jangan pakai `|| 1`/`vol > 0 ? vol : 1` — itu diam-diam menganggap
+    // 0 sbg "netral" (dikalikan seolah 1), sehingga total ikut salah walau
+    // koefisiennya benar 0 (harga_satuan tetap ikut dikalikan penuh).
     const volumeHasil = koefisien.reduce((hasil, current) => {
-      const vol = Number(current.volume || 1);
+      const vol = Number(current.volume ?? 1);
 
-      return hasil * (vol > 0 ? vol : 1);
+      return hasil * vol;
     }, 1);
 
     // ===========================

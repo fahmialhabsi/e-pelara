@@ -32,10 +32,33 @@ export const deleteRka = async (id, body = {}) => {
   return res.data;
 };
 
-export const importRkaPdf = async (file) => {
+export const pemicuRevisiRka = async (id, tahapan_tujuan, change_reason_text) => {
+  const res = await api.post(`/rka/${id}/revisi`, { tahapan_tujuan, change_reason_text });
+  return res.data;
+};
+
+export const getNarasiRevisiRka = async (id) => {
+  const res = await api.get(`/rka/${id}/narasi-revisi`);
+  return res.data?.data || res.data;
+};
+
+export const importRkaPdf = async (file, tahapan = 'APBD_INDUK') => {
   const form = new FormData();
   form.append('file', file);
+  form.append('tahapan', tahapan);
   const res = await api.post('/rka/import-pdf', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return res.data;
+};
+
+// Import banyak berkas PDF SIPD sekaligus — backend memproses tiap berkas independen
+// (satu gagal tidak menghentikan yang lain) dan mengembalikan hasil per-berkas di `results`.
+export const importRkaPdfBatch = async (files, tahapan = 'APBD_INDUK') => {
+  const form = new FormData();
+  for (const file of files) form.append('files', file);
+  form.append('tahapan', tahapan);
+  const res = await api.post('/rka/import-pdf-batch', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return res.data;
@@ -70,6 +93,20 @@ export const getTapdByTahun = async (tahun) => {
 
 export const saveTapdBulk = async (tahun, items) => {
   const res = await api.post('/tapd/bulk', { tahun, items });
+  return res.data;
+};
+
+// =========================
+// Pejabat Penandatangan (Pengguna Anggaran, Kuasa Pengguna Anggaran, Kepala Dinas, Sekretaris)
+// =========================
+
+export const getPejabatPenandatanganByTahun = async (tahun) => {
+  const res = await api.get(`/pejabat-penandatangan?tahun=${tahun}`);
+  return res.data?.data || [];
+};
+
+export const savePejabatPenandatanganBulk = async (tahun, items) => {
+  const res = await api.post('/pejabat-penandatangan/bulk', { tahun, items });
   return res.data;
 };
 

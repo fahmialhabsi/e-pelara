@@ -74,8 +74,11 @@ function validateRincianBelanja(rows = []) {
       item.koefisien_array.forEach((k, idx) => {
         const volume = Number(k.volume);
 
-        if (!Number.isFinite(volume) || volume <= 0) {
-          errors.push(`Baris ${row}: volume koefisien ke-${idx + 1} harus lebih besar dari 0.`);
+        // Volume 0 sah (RKA yang belum diisi anggarannya di SIPD tampil "0,00" di
+        // semua kolom) — hanya nilai negatif/non-angka yang ditolak, konsisten dgn
+        // schema Joi rkaValidationService (`volume: Joi.number().min(0)`).
+        if (!Number.isFinite(volume) || volume < 0) {
+          errors.push(`Baris ${row}: volume koefisien ke-${idx + 1} tidak boleh minus.`);
         }
 
         if (!String(k.satuan || '').trim()) {

@@ -61,9 +61,11 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         allowNull: false,
       },
-      // Mengunci kombinasi unik per tahapan belanja
+      // Mengunci kombinasi unik per tahapan belanja. 400 (bukan 255 spt sub_kegiatan
+      // saja) supaya muat prefix tahun/opd_id + suffix tahapan terpanjang di atas
+      // panjang maksimal sub_kegiatan (255) — lihat migrasi 20260720120000.
       kode_unik_sub_kegiatan: {
-        type: DataTypes.STRING(150),
+        type: DataTypes.STRING(400),
         allowNull: false,
       },
       // Fitur Unggulan: State Machine Tahapan Anggaran pembentuk pergeseran/perubahan
