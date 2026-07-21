@@ -51,6 +51,10 @@ module.exports = (sequelize, DataTypes) => {
       indikator_kinerja: DataTypes.TEXT,
       target: DataTypes.STRING,
       realisasi: DataTypes.STRING,
+      // Realisasi anggaran (Rp) — hasil sync dari renstra_tabel_subkegiatan, bukan diisi manual.
+      pagu_anggaran: { type: DataTypes.DECIMAL(20, 2), defaultValue: 0 },
+      realisasi_anggaran: { type: DataTypes.DECIMAL(20, 2), defaultValue: 0 },
+      realisasi_anggaran_synced_at: { type: DataTypes.DATE, allowNull: true },
       evaluasi: DataTypes.TEXT,
       rekomendasi: DataTypes.TEXT,
       jenis_dokumen: DataTypes.STRING,

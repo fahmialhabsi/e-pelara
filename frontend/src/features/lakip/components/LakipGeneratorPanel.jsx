@@ -40,25 +40,6 @@ export default function LakipGeneratorPanel() {
     }
   };
 
-  const openPreview = () => {
-    const url = `${api.defaults.baseURL}/lakip-generator/preview?tahun=${tahun}&periode_id=${periodeId}`;
-    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-    // Buka di tab baru dengan token di header — pakai form POST trick
-    const form = document.createElement("form");
-    form.method  = "GET";
-    form.action  = url;
-    form.target  = "_blank";
-    document.body.appendChild(form);
-    // Tambahkan token via query jika backend mendukung (fallback)
-    const input = document.createElement("input");
-    input.type  = "hidden";
-    input.name  = "token";
-    input.value = token || "";
-    form.appendChild(input);
-    form.submit();
-    document.body.removeChild(form);
-  };
-
   const getToken = () =>
     localStorage.getItem("token") || sessionStorage.getItem("token") || "";
 
@@ -101,6 +82,43 @@ export default function LakipGeneratorPanel() {
   // Status capaian color
   const pctVariant = (pct) =>
     pct >= 100 ? "success" : pct >= 75 ? "warning" : "danger";
+
+  // Tabel mini indikator — dipakai berulang di tiap level (Sasaran/Program/Kegiatan)
+  const renderIndikatorMiniTable = (items) => (
+    <div className="table-responsive mb-2">
+      <table className="table table-sm table-bordered table-hover small mb-0">
+        <thead className="table-light">
+          <tr>
+            <th>Indikator Kinerja</th>
+            <th className="text-center" style={{ width: 90 }}>Target</th>
+            <th className="text-center" style={{ width: 90 }}>Realisasi</th>
+            <th className="text-center" style={{ width: 110 }}>Capaian</th>
+            <th className="text-center" style={{ width: 110 }}>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((ind) => (
+            <tr key={ind.id}>
+              <td>{ind.nama_indikator}</td>
+              <td className="text-center">{ind.target || "—"} {ind.satuan || ""}</td>
+              <td className="text-center">{ind.realisasi || "—"} {ind.satuan || ""}</td>
+              <td className="text-center">
+                <ProgressBar
+                  now={Math.min(ind.pct_capaian || 0, 100)}
+                  variant={pctVariant(ind.pct_capaian)}
+                  label={`${ind.pct_capaian}%`}
+                  style={{ height: "14px", minWidth: "80px" }}
+                />
+              </td>
+              <td className="text-center">
+                <Badge bg={pctVariant(ind.pct_capaian)} className="small">{ind.status_capaian}</Badge>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 
   return (
     <Card className="shadow-sm border-0">
@@ -232,42 +250,47 @@ export default function LakipGeneratorPanel() {
               </div>
             )}
 
-            {/* Tabel Indikator mini */}
-            {previewData.indikator?.length > 0 && (
-              <div className="table-responsive">
-                <table className="table table-sm table-bordered table-hover small">
-                  <thead className="table-primary">
-                    <tr>
-                      <th>Indikator Kinerja</th>
-                      <th className="text-center">Target</th>
-                      <th className="text-center">Realisasi</th>
-                      <th className="text-center">Capaian</th>
-                      <th className="text-center">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewData.indikator.map((ind) => (
-                      <tr key={ind.id}>
-                        <td>{ind.nama_indikator}</td>
-                        <td className="text-center">{ind.target || "—"} {ind.satuan || ""}</td>
-                        <td className="text-center">{ind.realisasi || "—"} {ind.satuan || ""}</td>
-                        <td className="text-center">
-                          <ProgressBar
-                            now={Math.min(ind.pct_capaian || 0, 100)}
-                            variant={pctVariant(ind.pct_capaian)}
-                            label={`${ind.pct_capaian}%`}
-                            style={{ height: "14px", minWidth: "80px" }}
-                          />
-                        </td>
-                        <td className="text-center">
-                          <Badge bg={pctVariant(ind.pct_capaian)} className="small">
-                            {ind.status_capaian}
-                          </Badge>
-                        </td>
-                      </tr>
+            {/* Hierarki Indikator: Tujuan -> Sasaran -> Program -> Kegiatan */}
+            {previewData.indikatorTree?.length > 0 && (
+              <div className="mb-2">
+                {previewData.indikatorTree.map((t) => (
+                  <div key={t.id} className="mb-3 pb-2 border-bottom">
+                    <div className="fw-bold" style={{ color: "#1e3a8a" }}>
+                      Tujuan {t.no_tujuan}: {t.isi_tujuan}
+                    </div>
+                    {t.sasaran.map((s) => (
+                      <div key={s.id} className="ms-3 mt-2">
+                        <div className="fw-semibold" style={{ color: "#1d4ed8" }}>
+                          Sasaran {s.nomor}: {s.isi_sasaran}
+                        </div>
+                        {s.indikator.length > 0 && renderIndikatorMiniTable(s.indikator)}
+                        {s.program.map((p) => (
+                          <div key={p.id} className="ms-3 mt-2">
+                            <div className="fw-semibold small" style={{ color: "#2563eb" }}>
+                              Program: {p.nama_program}
+                            </div>
+                            {p.indikator.length > 0 && renderIndikatorMiniTable(p.indikator)}
+                            {p.kegiatan.map((k) => (
+                              <div key={k.id} className="ms-3 mt-2">
+                                <div className="fw-semibold small" style={{ color: "#2563eb" }}>
+                                  Kegiatan: {k.nama_kegiatan}
+                                </div>
+                                {k.indikator.length > 0 && renderIndikatorMiniTable(k.indikator)}
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
                     ))}
-                  </tbody>
-                </table>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {previewData.indikatorOrphan?.length > 0 && (
+              <div className="mb-2">
+                <div className="fw-bold text-danger">Indikator Belum Terhubung ke Hierarki Renstra</div>
+                {renderIndikatorMiniTable(previewData.indikatorOrphan)}
               </div>
             )}
 

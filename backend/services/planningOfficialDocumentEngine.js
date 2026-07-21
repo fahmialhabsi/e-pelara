@@ -41,7 +41,7 @@ const { renderDocumentHeader } = require('../helpers/RenjaPdfHeaderHelper');
 const { RENJA_BAB4, RENJA_BAB4_TABLE } = require('../helpers/RenjaDocumentThemeHelper');
 const { buildRenjaBab4 } = require('../helpers/RenjaBab4StructureHelper');
 const { buildRenjaBab4Table } = require('../helpers/RenjaBab4TableHelper');
-const { PDF_THEME } = require('../helpers/RenjaPdfThemeHelper');
+const { PDF_THEME, RENJA_BAB4_HEADERS } = require('../helpers/RenjaPdfThemeHelper');
 
 function numId(v) {
   if (v == null || v === '') return '—';
@@ -795,7 +795,6 @@ async function buildRkpdOfficialPdf(db, dokumenId, options = {}) {
     pdf.moveDown(0.5);
     const headers = RENJA_BAB4_HEADERS;
     const rows = itemRowsForPdf(items);
-    const width = PDF_ITEM_COLS.reduce((a, b) => a + b, 0);
     const rowH = 30;
     const maxY = 720;
     let yStart = pdf.y;

@@ -2,6 +2,7 @@ const {
   Lakip,
   PeriodeRpjmd,
   RenstraProgram,
+  RenstraOPD,
   Rkpd,
   Renja,
   LkDispang,
@@ -39,7 +40,19 @@ module.exports = {
         where,
         include: [
           { model: PeriodeRpjmd, as: "periode" },
-          { model: RenstraProgram, as: "renstra_program" },
+          {
+            model: RenstraProgram,
+            as: "renstra_program",
+            required: true,
+            include: [
+              {
+                model: RenstraOPD,
+                as: "renstra",
+                where: { is_aktif: true },
+                required: true,
+              },
+            ],
+          },
           { model: Rkpd, as: "rkpd" },
           { model: Renja, as: "renja" },
           { model: LkDispang, as: "lk_dispang" },
@@ -60,7 +73,19 @@ module.exports = {
       const data = await Lakip.findByPk(id, {
         include: [
           { model: PeriodeRpjmd, as: "periode" },
-          { model: RenstraProgram, as: "renstra_program" },
+          {
+            model: RenstraProgram,
+            as: "renstra_program",
+            required: true,
+            include: [
+              {
+                model: RenstraOPD,
+                as: "renstra",
+                where: { is_aktif: true },
+                required: true,
+              },
+            ],
+          },
           { model: Rkpd, as: "rkpd" },
           { model: Renja, as: "renja" },
           { model: LkDispang, as: "lk_dispang" },

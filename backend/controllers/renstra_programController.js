@@ -110,8 +110,9 @@ exports.create = async (req, res) => {
       nama_program: nama_program.trim(),
       renstra_id: renstraIdNum,
       rpjmd_program_id: rpjmd_program_id.trim(),
-      rpjmd_arah_id,
-      renstra_kebijakan_id,
+      // Model RenstraProgram tidak punya kolom rpjmd_arah_id/renstra_kebijakan_id —
+      // kolom aslinya kebijakan_id (rpjmd_arah_id cuma helper filter di frontend).
+      kebijakan_id: normalizePositiveInt(renstra_kebijakan_id),
       opd_penanggung_jawab: opd_penanggung_jawab || '',
       bidang_opd_penanggung_jawab: bidang_opd_penanggung_jawab || '',
     });
@@ -198,6 +199,7 @@ exports.findOne = async (req, res) => {
         'rpjmd_program_id',
         'opd_penanggung_jawab',
         'bidang_opd_penanggung_jawab',
+        'kebijakan_id',
       ],
       include: [
         {
@@ -218,6 +220,8 @@ exports.findOne = async (req, res) => {
       rpjmd_program_id: data.rpjmd_program_id,
       opd_penanggung_jawab: data.opd_penanggung_jawab || '',
       bidang_opd_penanggung_jawab: data.bidang_opd_penanggung_jawab || '',
+      // Alias sesuai nama field yang dipakai form frontend (ProgramRenstraForm.jsx).
+      renstra_kebijakan_id: data.kebijakan_id,
       renstra: data.renstra,
     };
 
@@ -238,6 +242,7 @@ exports.update = async (req, res) => {
       rpjmd_program_id,
       opd_penanggung_jawab,
       bidang_opd_penanggung_jawab,
+      renstra_kebijakan_id,
     } = req.body;
 
     // ── Koersi tipe data ────────────────────────────────────────────────────
@@ -249,6 +254,9 @@ exports.update = async (req, res) => {
     }
 
     const renstraIdNum = renstra_id ? Number(renstra_id) : undefined;
+    // Nama field kolom DB adalah kebijakan_id, tapi form frontend mengirim
+    // renstra_kebijakan_id (lihat ProgramRenstraForm.jsx generatePayload).
+    const kebijakanIdNum = renstra_kebijakan_id ? Number(renstra_kebijakan_id) : undefined;
 
     // ── Validasi ringan ─────────────────────────────────────────────────────
     if (kode_program !== undefined && typeof kode_program !== 'string') {
@@ -263,6 +271,10 @@ exports.update = async (req, res) => {
       return res.status(400).json({ error: 'renstra_id harus berupa angka positif' });
     }
 
+    if (renstra_kebijakan_id !== undefined && (isNaN(kebijakanIdNum) || kebijakanIdNum <= 0)) {
+      return res.status(400).json({ error: 'renstra_kebijakan_id harus berupa angka positif' });
+    }
+
     if (typeof opd_penanggung_jawab !== 'string') {
       return res.status(400).json({ error: 'opd_penanggung_jawab harus berupa string' });
     }
@@ -270,6 +282,9 @@ exports.update = async (req, res) => {
     if (typeof bidang_opd_penanggung_jawab !== 'string') {
       return res.status(400).json({ error: 'bidang_opd_penanggung_jawab harus berupa string' });
     }
+
+    const existing = await RenstraProgram.findByPk(id);
+    if (!existing) return res.status(404).json({ message: 'Data not found' });
 
     const updatePayload = {
       opd_penanggung_jawab,
@@ -279,10 +294,11 @@ exports.update = async (req, res) => {
     if (nama_program !== undefined) updatePayload.nama_program = nama_program.trim();
     if (renstraIdNum !== undefined) updatePayload.renstra_id = renstraIdNum;
     if (rpjmd_program_id !== undefined) updatePayload.rpjmd_program_id = rpjmd_program_id.trim();
+    if (kebijakanIdNum !== undefined) updatePayload.kebijakan_id = kebijakanIdNum;
 
-    const [updated] = await RenstraProgram.update(updatePayload, { where: { id } });
-
-    if (!updated) return res.status(404).json({ message: 'Data not found' });
+    // Sequelize/MySQL melaporkan affectedCount=0 kalau nilai baru identik dengan
+    // yang lama — itu BUKAN berarti data tidak ada, jadi jangan dipakai untuk cek 404.
+    await RenstraProgram.update(updatePayload, { where: { id } });
 
     const updatedData = await RenstraProgram.findByPk(id, {
       attributes: [
@@ -293,10 +309,14 @@ exports.update = async (req, res) => {
         'rpjmd_program_id',
         'opd_penanggung_jawab',
         'bidang_opd_penanggung_jawab',
+        'kebijakan_id',
       ],
     });
 
-    res.json(updatedData);
+    res.json({
+      ...updatedData.toJSON(),
+      renstra_kebijakan_id: updatedData.kebijakan_id,
+    });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

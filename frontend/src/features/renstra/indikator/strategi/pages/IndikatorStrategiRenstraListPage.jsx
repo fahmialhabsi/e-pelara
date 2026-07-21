@@ -8,21 +8,32 @@ const IndikatorStrategiRenstraListPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["indikator-strategi-renstra"],
+  const { data: renstraAktif } = useQuery({
+    queryKey: ["renstra-opd-aktif"],
     queryFn: async () => {
-      const res = await api.get("/indikator-strategi-renstra");
-      return res.data;
+      const res = await api.get("/renstra-opd/aktif");
+      return res.data?.data || res.data;
+    },
+  });
+
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["indikator-strategi-renstra", renstraAktif?.id],
+    enabled: !!renstraAktif?.id,
+    queryFn: async () => {
+      const res = await api.get("/indikator-renstra", {
+        params: { stage: "strategi", renstra_id: renstraAktif?.id },
+      });
+      return res.data?.data || res.data;
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id) => {
-      await api.delete(`/indikator-strategi-renstra/${id}`);
+      await api.delete(`/indikator-renstra/${id}`);
     },
     onSuccess: () => {
       message.success("Data berhasil dihapus");
-      queryClient.invalidateQueries(["indikator-strategi-renstra"]);
+      queryClient.invalidateQueries({ queryKey: ["indikator-strategi-renstra"] });
     },
     onError: () => {
       message.error("Gagal menghapus data");
@@ -30,31 +41,17 @@ const IndikatorStrategiRenstraListPage = () => {
   });
 
   const columns = [
-    {
-      title: "No",
-      dataIndex: "kode_indikator",
-    },
-    {
-      title: "Nama Indikator",
-      dataIndex: "nama_indikator",
-    },
-    {
-      title: "Satuan",
-      dataIndex: "satuan",
-    },
-    {
-      title: "Target (th. ke-1)",
-      dataIndex: "target_tahun_1",
-    },
+    { title: "No", dataIndex: "kode_indikator" },
+    { title: "Nama Indikator", dataIndex: "nama_indikator" },
+    { title: "Satuan", dataIndex: "satuan" },
+    { title: "Target (th. ke-1)", dataIndex: "target_tahun_1" },
     {
       title: "Aksi",
       render: (_, record) => (
         <>
           <Button
             type="link"
-            onClick={() =>
-              navigate(`/renstra/indikator-strategi/edit/${record.id}`)
-            }
+            onClick={() => navigate(`/renstra/indikator/strategi/edit/${record.id}`)}
           >
             ✏️ Edit
           </Button>
@@ -86,13 +83,14 @@ const IndikatorStrategiRenstraListPage = () => {
     return (
       <div style={{ padding: 24 }}>
         <Empty description="Belum ada data Indikator Strategi" />
-        <Button
-          type="primary"
-          onClick={() => navigate("/renstra/indikator-strategi/add")}
-          style={{ marginTop: 16 }}
-        >
-          ➕ Tambah Indikator Kebijakan
-        </Button>
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <Button onClick={() => navigate("/dashboard-renstra")}>
+            🔙 Kembali ke Dashboard
+          </Button>
+          <Button type="primary" onClick={() => navigate("/renstra/indikator/strategi/add")}>
+            ➕ Tambah Indikator Strategi
+          </Button>
+        </div>
       </div>
     );
 
@@ -108,11 +106,8 @@ const IndikatorStrategiRenstraListPage = () => {
         <Button onClick={() => navigate("/dashboard-renstra")}>
           🔙 Kembali ke Dashboard Renstra
         </Button>
-        <Button
-          type="primary"
-          onClick={() => navigate("/renstra/indikator-strategi/add")}
-        >
-          ➕ Tambah Indikator Kebijakan
+        <Button type="primary" onClick={() => navigate("/renstra/indikator/strategi/add")}>
+          ➕ Tambah Indikator Strategi
         </Button>
       </div>
       <Table dataSource={data} columns={columns} rowKey="id" bordered />

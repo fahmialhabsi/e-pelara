@@ -1,5 +1,16 @@
 import React, { useState } from 'react';
-import { Table, Button, Empty, Select, Popconfirm, Typography, Card, Tag, message } from 'antd';
+import {
+  Table,
+  Button,
+  Empty,
+  Select,
+  Popconfirm,
+  Typography,
+  Card,
+  Tag,
+  message,
+  InputNumber,
+} from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '@/services/api';
@@ -33,8 +44,25 @@ export default function RenstraTabelSubKegiatanListPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [searchParams] = useSearchParams();
-  const [selectedKebijakanId, setSelectedKebijakanId] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedKebijakanId, setSelectedKebijakanIdState] = useState(() => {
+    const parsed = Number(searchParams.get('arah_kebijakan_id'));
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  });
+  const [tahunSync, setTahunSync] = useState(2025);
+
+  const setSelectedKebijakanId = (value) => {
+    setSelectedKebijakanIdState(value || null);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value) next.set('arah_kebijakan_id', String(value));
+        else next.delete('arah_kebijakan_id');
+        return next;
+      },
+      { replace: true },
+    );
+  };
 
   const { data: renstraAktif } = useQuery({
     queryKey: ['renstra-opd-aktif'],
@@ -61,6 +89,24 @@ export default function RenstraTabelSubKegiatanListPage() {
     },
     onError: (error) => {
       message.error(error?.response?.data?.message || 'Gagal menghapus data sub kegiatan');
+    },
+  });
+
+  const syncRealisasiMutation = useMutation({
+    mutationFn: async (tahun) => api.post('/renstra-realisasi-anggaran/sync', { tahun }),
+    onSuccess: (res) => {
+      const { updated, skipped, tahun } = res.data || {};
+      message.success(
+        `Realisasi anggaran tahun ${tahun} disinkronkan: ${updated} sub kegiatan diperbarui, ${skipped} dilewati.`,
+      );
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
+    },
+    onError: (error) => {
+      message.error(
+        error?.response?.data?.error ||
+          error?.response?.data?.message ||
+          'Gagal sinkron realisasi anggaran',
+      );
     },
   });
 
@@ -184,6 +230,23 @@ export default function RenstraTabelSubKegiatanListPage() {
       align: 'right',
       render: (value) => (
         <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatNumberShort(value)}</span>
+      ),
+    },
+    {
+      title: 'Realisasi Akhir',
+      dataIndex: 'realisasi_akhir_renstra',
+      key: 'realisasi_akhir_renstra',
+      width: 150,
+      align: 'right',
+      render: (value, record) => (
+        <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+          {formatNumberShort(value)}
+          {record.persen_realisasi_anggaran !== undefined && (
+            <div style={{ fontSize: 11, color: '#8c8c8c' }}>
+              {formatNumber(record.persen_realisasi_anggaran)}%
+            </div>
+          )}
+        </span>
       ),
     },
     {
@@ -336,8 +399,21 @@ export default function RenstraTabelSubKegiatanListPage() {
         <Button onClick={() => handleExport('excel')}>Export Excel</Button>
         <Button onClick={() => handleExport('pdf')}>Export PDF</Button>
 
+        <InputNumber
+          value={tahunSync}
+          onChange={setTahunSync}
+          style={{ width: 100 }}
+          placeholder="Tahun"
+        />
+        <Button
+          loading={syncRealisasiMutation.isPending}
+          onClick={() => syncRealisasiMutation.mutate(tahunSync)}
+        >
+          Sinkronkan Realisasi Anggaran
+        </Button>
+
         <Text type="secondary" style={{ marginLeft: 8 }}>
-          Klik baris untuk melihat target dan pagu periode tahun ke-1 sampai ke-5.
+          Klik baris untuk melihat target, pagu, dan realisasi anggaran periode tahun ke-1 sampai ke-5.
         </Text>
       </div>
 

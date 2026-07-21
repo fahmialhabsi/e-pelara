@@ -53,6 +53,35 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: 0,
       },
 
+      realisasi_tahun_1: {
+        type: DataTypes.DECIMAL(18, 2),
+        defaultValue: 0,
+      },
+      realisasi_tahun_2: {
+        type: DataTypes.DECIMAL(18, 2),
+        defaultValue: 0,
+      },
+      realisasi_tahun_3: {
+        type: DataTypes.DECIMAL(18, 2),
+        defaultValue: 0,
+      },
+      realisasi_tahun_4: {
+        type: DataTypes.DECIMAL(18, 2),
+        defaultValue: 0,
+      },
+      realisasi_tahun_5: {
+        type: DataTypes.DECIMAL(18, 2),
+        defaultValue: 0,
+      },
+      realisasi_tahun_6: {
+        type: DataTypes.DECIMAL(18, 2),
+        defaultValue: 0,
+      },
+      realisasi_akhir_renstra: {
+        type: DataTypes.DECIMAL(20, 2),
+        defaultValue: 0,
+      },
+
       cached_at: {
         type: DataTypes.DATE,
         allowNull: false,

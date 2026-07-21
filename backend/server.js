@@ -494,6 +494,7 @@ app.use('/api/renstra-tabel-prioritas', renstra_tabelPrioritasRoutes);
 app.use('/api/renstra-rpjmd-mapping', renstraRpjmdMappingRoutes);
 app.use('/api/renstra-chain', renstraChainRoutes);
 app.use('/api/renstra-pagu-cache', require('./routes/renstra_pagu_cacheRoutes'));
+app.use('/api/renstra-realisasi-anggaran', require('./routes/renstra_realisasiAnggaranRoutes'));
 
 // USE MANAJEMEN RISIKO (MR)
 app.use('/api/mr-planning-risk', mrPlanningRiskRoutes);
@@ -560,6 +561,7 @@ app.use('/api/lk-dispang', lkDispangRoutes);
 
 // USE LAKIP
 app.use('/api/lakip', lakipRoutes);
+app.use('/api/lakip-realisasi-anggaran', require('./routes/lakipRealisasiAnggaranRoutes'));
 
 // USE APPROVAL WORKFLOW
 app.use('/api/approval', approvalRoutes);

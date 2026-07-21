@@ -47,7 +47,7 @@ export function TahunGrid({ record, prefix, label }) {
           >
             <div style={{ color: "#8c8c8c", fontSize: 11 }}>Th {i}</div>
             <div style={{ fontVariantNumeric: "tabular-nums" }}>
-              {prefix === "pagu"
+              {prefix === "pagu" || prefix === "realisasi"
                 ? formatRupiah(record[`${prefix}_tahun_${i}`])
                 : formatNumber(record[`${prefix}_tahun_${i}`])}
             </div>
@@ -103,6 +103,23 @@ export function StandardRenstraExpandedRow({ record, extraMeta = [] }) {
       </div>
       <TahunGrid record={record} prefix="target" label="Target per slot periode (th. ke-1 s/d ke-6)" />
       <TahunGrid record={record} prefix="pagu" label="Pagu per slot periode (th. ke-1 s/d ke-6, Rp)" />
+      {record.realisasi_akhir_renstra !== undefined && (
+        <>
+          <TahunGrid
+            record={record}
+            prefix="realisasi"
+            label="Realisasi Anggaran per slot periode (th. ke-1 s/d ke-6, Rp — sumber: Penatausahaan)"
+          />
+          <div style={{ fontSize: 12 }}>
+            <Text type="secondary">Capaian realisasi terhadap pagu akhir: </Text>
+            <Text strong>
+              {record.persen_realisasi_anggaran !== undefined
+                ? `${formatNumber(record.persen_realisasi_anggaran)}%`
+                : "—"}
+            </Text>
+          </div>
+        </>
+      )}
     </div>
   );
 }

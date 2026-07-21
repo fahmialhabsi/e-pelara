@@ -4,6 +4,7 @@ import { Table, Button, Space, Drawer } from "antd";
 import ApprovalStatusBadge from "../../../components/approval/ApprovalStatusBadge";
 import ApprovalActions from "../../../components/approval/ApprovalActions";
 import ApprovalTimeline from "../../../components/approval/ApprovalTimeline";
+import { formatRupiah } from "../../renstra/shared/components/RenstraTabelListCommon";
 
 const LakipTable = ({ data, onEdit, onDelete, onRefresh }) => {
   const [timelineDoc, setTimelineDoc] = useState(null);
@@ -17,6 +18,22 @@ const LakipTable = ({ data, onEdit, onDelete, onRefresh }) => {
     { title: "Indikator", dataIndex: "indikator_kinerja", key: "indikator_kinerja", ellipsis: true },
     { title: "Target", dataIndex: "target", key: "target", width: 90 },
     { title: "Realisasi", dataIndex: "realisasi", key: "realisasi", width: 90 },
+    {
+      title: "Pagu Anggaran",
+      dataIndex: "pagu_anggaran",
+      key: "pagu_anggaran",
+      width: 140,
+      align: "right",
+      render: (value) => formatRupiah(value),
+    },
+    {
+      title: "Realisasi Anggaran",
+      dataIndex: "realisasi_anggaran",
+      key: "realisasi_anggaran",
+      width: 140,
+      align: "right",
+      render: (value) => formatRupiah(value),
+    },
     {
       title: "Status",
       dataIndex: "approval_status",
@@ -62,7 +79,7 @@ const LakipTable = ({ data, onEdit, onDelete, onRefresh }) => {
 
   return (
     <>
-      <Table rowKey="id" dataSource={data} columns={columns} scroll={{ x: 900 }} pagination={{ pageSize: 10 }} />
+      <Table rowKey="id" dataSource={data} columns={columns} scroll={{ x: 1180 }} pagination={{ pageSize: 10 }} />
       <Drawer
         title={timelineDoc ? `Riwayat Approval — LAKIP #${timelineDoc.id}` : ""}
         open={!!timelineDoc}

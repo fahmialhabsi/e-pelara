@@ -27,6 +27,12 @@ import IndikatorTujuanRenstraEditPage from '@/features/renstra/indikator/tujuan/
 import IndikatorSasaranRenstraListPage from '@/features/renstra/indikator/sasaran/pages/IndikatorSasaranRenstraListPage';
 import IndikatorSasaranRenstraAddPage from '@/features/renstra/indikator/sasaran/pages/indikatorSasaranRenstraAddPage';
 import IndikatorSasaranRenstraEditPage from '@/features/renstra/indikator/sasaran/pages/indikatorSasaranRenstraEditPage';
+import IndikatorStrategiRenstraListPage from '@/features/renstra/indikator/strategi/pages/IndikatorStrategiRenstraListPage';
+import IndikatorStrategiRenstraAddPage from '@/features/renstra/indikator/strategi/pages/indikatorStrategiRenstraAddPage';
+import IndikatorStrategiRenstraEditPage from '@/features/renstra/indikator/strategi/pages/indikatorStrategiRenstraEditPage';
+import IndikatorKebijakanRenstraListPage from '@/features/renstra/indikator/kebijakan/pages/IndikatorKebijakanRenstraListPage';
+import IndikatorKebijakanRenstraAddPage from '@/features/renstra/indikator/kebijakan/pages/indikatorKebijakanRenstraAddPage';
+import IndikatorKebijakanRenstraEditPage from '@/features/renstra/indikator/kebijakan/pages/indikatorKebijakanRenstraEditPage';
 import IndikatorProgramRenstraListPage from '@/features/renstra/indikator/program/pages/IndikatorProgramRenstraListPage';
 import IndikatorProgramRenstraAddPage from '@/features/renstra/indikator/program/pages/indikatorProgramRenstraAddPage';
 import IndikatorProgramRenstraEditPage from '@/features/renstra/indikator/program/pages/indikatorProgramRenstraEditPage';
@@ -492,6 +498,38 @@ const routes = [
   {
     path: '/renstra/indikator/sasaran/edit/:id',
     element: <IndikatorSasaranRenstraEditPage />,
+    role: ['SUPER_ADMIN', 'ADMINISTRATOR'],
+  },
+  // 📊 Indikator Renstra - Strategi
+  {
+    path: '/renstra/indikator/strategi',
+    element: <IndikatorStrategiRenstraListPage />,
+    role: ['SUPER_ADMIN', 'ADMINISTRATOR'],
+  },
+  {
+    path: '/renstra/indikator/strategi/add',
+    element: <IndikatorStrategiRenstraAddPage />,
+    role: ['SUPER_ADMIN', 'ADMINISTRATOR'],
+  },
+  {
+    path: '/renstra/indikator/strategi/edit/:id',
+    element: <IndikatorStrategiRenstraEditPage />,
+    role: ['SUPER_ADMIN', 'ADMINISTRATOR'],
+  },
+  // 📊 Indikator Renstra - Kebijakan
+  {
+    path: '/renstra/indikator/kebijakan',
+    element: <IndikatorKebijakanRenstraListPage />,
+    role: ['SUPER_ADMIN', 'ADMINISTRATOR'],
+  },
+  {
+    path: '/renstra/indikator/kebijakan/add',
+    element: <IndikatorKebijakanRenstraAddPage />,
+    role: ['SUPER_ADMIN', 'ADMINISTRATOR'],
+  },
+  {
+    path: '/renstra/indikator/kebijakan/edit/:id',
+    element: <IndikatorKebijakanRenstraEditPage />,
     role: ['SUPER_ADMIN', 'ADMINISTRATOR'],
   },
   // 📊 Indikator Renstra - Program

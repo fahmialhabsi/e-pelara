@@ -8,21 +8,32 @@ const IndikatorKebijakanRenstraListPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["indikator-kebijakan-renstra"],
+  const { data: renstraAktif } = useQuery({
+    queryKey: ["renstra-opd-aktif"],
     queryFn: async () => {
-      const res = await api.get("/indikator-kebijakan-renstra");
-      return res.data;
+      const res = await api.get("/renstra-opd/aktif");
+      return res.data?.data || res.data;
+    },
+  });
+
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["indikator-kebijakan-renstra", renstraAktif?.id],
+    enabled: !!renstraAktif?.id,
+    queryFn: async () => {
+      const res = await api.get("/indikator-renstra", {
+        params: { stage: "kebijakan", renstra_id: renstraAktif?.id },
+      });
+      return res.data?.data || res.data;
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id) => {
-      await api.delete(`/indikator-kebijakan-renstra/${id}`);
+      await api.delete(`/indikator-renstra/${id}`);
     },
     onSuccess: () => {
       message.success("Data berhasil dihapus");
-      queryClient.invalidateQueries(["indikator-kebijakan-renstra"]);
+      queryClient.invalidateQueries({ queryKey: ["indikator-kebijakan-renstra"] });
     },
     onError: () => {
       message.error("Gagal menghapus data");
@@ -43,9 +54,7 @@ const IndikatorKebijakanRenstraListPage = () => {
         <>
           <Button
             type="link"
-            onClick={() =>
-              navigate(`/renstra/indikator-kebijakan/edit/${record.id}`)
-            }
+            onClick={() => navigate(`/renstra/indikator/kebijakan/edit/${record.id}`)}
           >
             ✏️ Edit
           </Button>
@@ -77,13 +86,14 @@ const IndikatorKebijakanRenstraListPage = () => {
     return (
       <div style={{ padding: 24 }}>
         <Empty description="Belum ada data Indikator Kebijakan" />
-        <Button
-          type="primary"
-          onClick={() => navigate("/renstra/indikator-kebijakan/add")}
-          style={{ marginTop: 16 }}
-        >
-          ➕ Tambah Indikator Kebijakan
-        </Button>
+        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+          <Button onClick={() => navigate("/dashboard-renstra")}>
+            🔙 Kembali ke Dashboard
+          </Button>
+          <Button type="primary" onClick={() => navigate("/renstra/indikator/kebijakan/add")}>
+            ➕ Tambah Indikator Kebijakan
+          </Button>
+        </div>
       </div>
     );
 
@@ -99,10 +109,7 @@ const IndikatorKebijakanRenstraListPage = () => {
         <Button onClick={() => navigate("/dashboard-renstra")}>
           🔙 Kembali ke Dashboard Renstra
         </Button>
-        <Button
-          type="primary"
-          onClick={() => navigate("/renstra/indikator-kebijakan/add")}
-        >
+        <Button type="primary" onClick={() => navigate("/renstra/indikator/kebijakan/add")}>
           ➕ Tambah Indikator Kebijakan
         </Button>
       </div>

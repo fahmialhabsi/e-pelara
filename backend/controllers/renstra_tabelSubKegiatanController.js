@@ -187,6 +187,24 @@ const applyPaguReadonly = (item) => {
       5,
   );
 
+  json.realisasi_tahun_1 = Number(json.realisasi_tahun_1 || 0);
+  json.realisasi_tahun_2 = Number(json.realisasi_tahun_2 || 0);
+  json.realisasi_tahun_3 = Number(json.realisasi_tahun_3 || 0);
+  json.realisasi_tahun_4 = Number(json.realisasi_tahun_4 || 0);
+  json.realisasi_tahun_5 = Number(json.realisasi_tahun_5 || 0);
+  json.realisasi_tahun_6 = 0;
+
+  json.realisasi_akhir_renstra =
+    json.realisasi_tahun_1 +
+    json.realisasi_tahun_2 +
+    json.realisasi_tahun_3 +
+    json.realisasi_tahun_4 +
+    json.realisasi_tahun_5;
+
+  json.persen_realisasi_anggaran = json.pagu_akhir_renstra
+    ? roundUp2((json.realisasi_akhir_renstra / json.pagu_akhir_renstra) * 100)
+    : 0;
+
   return json;
 };
 

@@ -27,6 +27,12 @@ async function collectLakipData(tahun, periode_id) {
     { replacements: { id: periode_id || 1 } }
   );
 
+  // 1b. OPD aktif (Renstra) — Indikator Kinerja hanya diambil untuk OPD ini,
+  // jangan lintas OPD (tabel legacy `indikator` tidak punya kolom penghubung OPD).
+  const [[renstraAktif]] = await sequelize.query(
+    `SELECT id, tahun_mulai FROM renstra_opd WHERE is_aktif = 1 LIMIT 1`
+  );
+
   // 2. Visi
   const [[visi]] = await sequelize.query(
     `SELECT v.isi_visi FROM visi v
@@ -39,45 +45,113 @@ async function collectLakipData(tahun, periode_id) {
     `SELECT id, no_misi, isi_misi FROM misi ORDER BY no_misi ASC LIMIT 10`
   );
 
-  // 4. Tujuan
-  const [tujuanList] = await sequelize.query(
-    `SELECT id, misi_id, no_tujuan, isi_tujuan, indikator FROM tujuan ORDER BY id ASC`
-  );
+  // 4. Tujuan (Renstra OPD aktif)
+  const [tujuanList] = renstraAktif
+    ? await sequelize.query(
+        `SELECT id, misi_id, no_tujuan, isi_tujuan FROM renstra_tujuan
+         WHERE renstra_id = :renstraId ORDER BY id ASC`,
+        { replacements: { renstraId: renstraAktif.id } }
+      )
+    : [[]];
 
-  // 5. Sasaran
-  const [sasaranList] = await sequelize.query(
-    `SELECT id, tujuan_id, nomor, isi_sasaran FROM sasaran ORDER BY nomor ASC`
-  );
+  // 5. Sasaran (Renstra OPD aktif)
+  const [sasaranList] = renstraAktif
+    ? await sequelize.query(
+        `SELECT id, tujuan_id, nomor, isi_sasaran FROM renstra_sasaran
+         WHERE renstra_id = :renstraId ORDER BY nomor ASC`,
+        { replacements: { renstraId: renstraAktif.id } }
+      )
+    : [[]];
 
-  // 6. Indikator — filter by tahun jika ada
-  const tahunFilter = tahun ? ` AND tahun = :tahun` : "";
-  const [indikatorList] = await sequelize.query(
-    `SELECT id, sasaran_id, nama_indikator, satuan, jenis_indikator,
-            target_tahun_1 as target, capaian_tahun_1 as capaian,
-            kode_indikator, penanggung_jawab, tahun
-     FROM indikator
-     WHERE stage IN ('sasaran','program','kegiatan') ${tahunFilter}
-     ORDER BY id ASC`,
-    tahun ? { replacements: { tahun } } : undefined
-  );
+  // 5b. Strategi/Kebijakan/Program/Kegiatan (Renstra OPD aktif) — dipakai untuk
+  // merunut indikator ke rantai Tujuan->Sasaran->Program->Kegiatan, karena Program
+  // terhubung ke Sasaran lewat kebijakan_id->strategi_id->sasaran_id (tidak langsung).
+  const [strategiList, kebijakanList, programList, kegiatanList] = renstraAktif
+    ? await Promise.all([
+        sequelize
+          .query(`SELECT id, sasaran_id FROM renstra_strategi WHERE renstra_id = :renstraId`, {
+            replacements: { renstraId: renstraAktif.id },
+          })
+          .then(([r]) => r),
+        sequelize
+          .query(`SELECT id, strategi_id FROM renstra_kebijakan WHERE renstra_id = :renstraId`, {
+            replacements: { renstraId: renstraAktif.id },
+          })
+          .then(([r]) => r),
+        sequelize
+          .query(
+            `SELECT id, kebijakan_id, nama_program FROM renstra_program WHERE renstra_id = :renstraId`,
+            { replacements: { renstraId: renstraAktif.id } },
+          )
+          .then(([r]) => r),
+        sequelize
+          .query(
+            `SELECT id, program_id, nama_kegiatan FROM renstra_kegiatan WHERE renstra_id = :renstraId`,
+            { replacements: { renstraId: renstraAktif.id } },
+          )
+          .then(([r]) => r),
+      ])
+    : [[], [], [], []];
 
-  // 7. Realisasi terbaru per indikator
+  const strategiById = new Map(strategiList.map((s) => [s.id, s]));
+  const kebijakanById = new Map(kebijakanList.map((k) => [k.id, k]));
+  const programById = new Map(programList.map((p) => [p.id, p]));
+  const kegiatanById = new Map(kegiatanList.map((k) => [k.id, k]));
+  const sasaranById = new Map(sasaranList.map((s) => [s.id, s]));
+
+  function resolveSasaranIdFromProgram(programId) {
+    const program = programById.get(programId);
+    const kebijakan = program ? kebijakanById.get(program.kebijakan_id) : null;
+    const strategi = kebijakan ? strategiById.get(kebijakan.strategi_id) : null;
+    return strategi?.sasaran_id || null;
+  }
+
+  function resolveAncestry(stage, refId) {
+    let sasaranId = null;
+    let programId = null;
+    let kegiatanId = null;
+
+    if (stage === "sasaran") {
+      sasaranId = refId;
+    } else if (stage === "program") {
+      programId = refId;
+      sasaranId = resolveSasaranIdFromProgram(programId);
+    } else if (stage === "kegiatan") {
+      kegiatanId = refId;
+      programId = kegiatanById.get(kegiatanId)?.program_id || null;
+      sasaranId = resolveSasaranIdFromProgram(programId);
+    }
+
+    const tujuanId = sasaranId ? sasaranById.get(sasaranId)?.tujuan_id || null : null;
+    return { tujuanId, sasaranId, programId, kegiatanId };
+  }
+
+  // 6. Indikator Kinerja Renstra OPD aktif (sasaran/program/kegiatan)
+  const [indikatorList] = renstraAktif
+    ? await sequelize.query(
+        `SELECT id, ref_id, stage, nama_indikator, satuan, jenis_indikator, kode_indikator,
+                penanggung_jawab,
+                target_tahun_1, target_tahun_2, target_tahun_3,
+                target_tahun_4, target_tahun_5, target_tahun_6
+         FROM indikator_renstra
+         WHERE stage IN ('sasaran','program','kegiatan') AND renstra_id = :renstraId
+         ORDER BY id ASC`,
+        { replacements: { renstraId: renstraAktif.id } }
+      )
+    : [[]];
+
+  // 7. Realisasi tahun berjalan per indikator (dari Renstra OPD aktif)
   const indikatorIds = indikatorList.map((i) => i.id);
   let realisasiMap = {};
-  if (indikatorIds.length > 0) {
+  if (indikatorIds.length > 0 && tahun) {
     const [realisasiRows] = await sequelize.query(
-      `SELECT r1.indikator_id, r1.nilai_realisasi, r1.periode
-       FROM realisasi_indikator r1
-       INNER JOIN (
-         SELECT indikator_id, MAX(created_at) as max_created
-         FROM realisasi_indikator
-         WHERE indikator_id IN (:ids)
-         GROUP BY indikator_id
-       ) r2 ON r1.indikator_id = r2.indikator_id AND r1.created_at = r2.max_created`,
-      { replacements: { ids: indikatorIds } }
+      `SELECT indikator_renstra_id, nilai_realisasi
+       FROM realisasi_indikator_renstra
+       WHERE indikator_renstra_id IN (:ids) AND tahun = :tahun`,
+      { replacements: { ids: indikatorIds, tahun } }
     );
     for (const r of realisasiRows) {
-      realisasiMap[r.indikator_id] = r;
+      realisasiMap[r.indikator_renstra_id] = r;
     }
   }
 
@@ -91,15 +165,99 @@ async function collectLakipData(tahun, periode_id) {
     tahun ? { replacements: { tahun } } : undefined
   );
 
-  // 9. Agregasi anggaran dari DPA (realisasi diisi oleh dpaRealisasiRollupService dari BKU)
+  // 9. Agregasi anggaran — pagu dari DPA, realisasi dari Penatausahaan (OCR SIPD),
+  // konsisten dengan sumber yang dipakai renstraRealisasiAnggaranSyncService.js.
+  const dpaWhere = tahun ? "d.tahun = :tahun AND" : "";
   const [anggaranRows] = await sequelize.query(
     `SELECT
-       SUM(anggaran) as total_pagu,
-       SUM(realisasi) as total_realisasi
-     FROM dpa
-     ${tahun ? "WHERE tahun = :tahun" : ""}`,
+       (SELECT SUM(d.anggaran) FROM dpa d WHERE ${dpaWhere} d.is_active_version = 1) as total_pagu,
+       (SELECT SUM(p.jumlah) FROM penatausahaan p
+          INNER JOIN dpa d ON d.id = p.dpa_id
+          WHERE ${dpaWhere} d.is_active_version = 1) as total_realisasi`,
     tahun ? { replacements: { tahun } } : undefined
   );
+
+  // 10. Flatten indikator + resolusi ancestry, lalu susun jadi nested tree
+  // Tujuan -> Sasaran -> Program -> Kegiatan supaya jelas indikator itu milik siapa.
+  const indikatorFlat = indikatorList.map((ind) => {
+    const offset = renstraAktif && tahun
+      ? Math.min(Math.max(Number(tahun) - Number(renstraAktif.tahun_mulai) + 1, 1), 6)
+      : 1;
+    const target = parseFloat(ind[`target_tahun_${offset}`]) || 0;
+    const real = realisasiMap[ind.id];
+    const realisasi = real ? parseFloat(real.nilai_realisasi) : 0;
+    const pct = target > 0 ? Math.round((realisasi / target) * 100) : 0;
+    const statusCapaian = pct >= 100 ? "Tercapai" : pct >= 75 ? "Hampir Tercapai" : "Belum Tercapai";
+    const ancestry = resolveAncestry(ind.stage, ind.ref_id);
+    return {
+      id: ind.id,
+      stage: ind.stage,
+      nama_indikator: ind.nama_indikator,
+      satuan: ind.satuan,
+      kode_indikator: ind.kode_indikator,
+      penanggung_jawab: ind.penanggung_jawab,
+      target,
+      realisasi,
+      pct_capaian: pct,
+      status_capaian: statusCapaian,
+      narasi: generateNarasi(ind.nama_indikator, target, realisasi, pct, ind.satuan),
+      ...ancestry,
+    };
+  });
+
+  const placedIndikatorIds = new Set();
+  const indikatorTree = tujuanList.map((t) => {
+    const sasaranAnak = sasaranList.filter((s) => s.tujuan_id === t.id);
+    return {
+      id: t.id,
+      no_tujuan: t.no_tujuan,
+      isi_tujuan: t.isi_tujuan,
+      sasaran: sasaranAnak.map((s) => {
+        const indikatorSasaran = indikatorFlat.filter(
+          (i) => i.stage === "sasaran" && i.sasaranId === s.id,
+        );
+        indikatorSasaran.forEach((i) => placedIndikatorIds.add(i.id));
+
+        const programAnak = programList.filter((p) => resolveSasaranIdFromProgram(p.id) === s.id);
+
+        return {
+          id: s.id,
+          nomor: s.nomor,
+          isi_sasaran: s.isi_sasaran,
+          indikator: indikatorSasaran,
+          program: programAnak.map((p) => {
+            const indikatorProgram = indikatorFlat.filter(
+              (i) => i.stage === "program" && i.programId === p.id,
+            );
+            indikatorProgram.forEach((i) => placedIndikatorIds.add(i.id));
+
+            const kegiatanAnak = kegiatanList.filter((k) => k.program_id === p.id);
+
+            return {
+              id: p.id,
+              nama_program: p.nama_program,
+              indikator: indikatorProgram,
+              kegiatan: kegiatanAnak.map((k) => {
+                const indikatorKegiatan = indikatorFlat.filter(
+                  (i) => i.stage === "kegiatan" && i.kegiatanId === k.id,
+                );
+                indikatorKegiatan.forEach((i) => placedIndikatorIds.add(i.id));
+                return {
+                  id: k.id,
+                  nama_kegiatan: k.nama_kegiatan,
+                  indikator: indikatorKegiatan,
+                };
+              }),
+            };
+          }),
+        };
+      }),
+    };
+  });
+
+  // Indikator yang rantai ancestry-nya tidak lengkap (mis. program belum
+  // tersambung kebijakan/strategi) — jangan hilang diam-diam, tampilkan terpisah.
+  const indikatorOrphan = indikatorFlat.filter((i) => !placedIndikatorIds.has(i.id));
 
   return {
     meta: {
@@ -112,22 +270,9 @@ async function collectLakipData(tahun, periode_id) {
     misi: misiList,
     tujuan: tujuanList,
     sasaran: sasaranList,
-    indikator: indikatorList.map((ind) => {
-      const real = realisasiMap[ind.id];
-      const target = parseFloat(ind.target) || 0;
-      const realisasi = real ? parseFloat(real.nilai_realisasi) : 0;
-      const capaian = real ? parseFloat(real.capaian) : 0;
-      const pct = target > 0 ? Math.round((realisasi / target) * 100) : (capaian || 0);
-      const statusCapaian = pct >= 100 ? "Tercapai" : pct >= 75 ? "Hampir Tercapai" : "Belum Tercapai";
-      return {
-        ...ind,
-        target,
-        realisasi,
-        pct_capaian: pct,
-        status_capaian: statusCapaian,
-        narasi: generateNarasi(ind.nama_indikator, target, realisasi, pct, ind.satuan),
-      };
-    }),
+    indikator: indikatorFlat,
+    indikatorTree,
+    indikatorOrphan,
     lakipEntries,
     anggaran: {
       total_pagu:      parseFloat(anggaranRows[0]?.total_pagu) || 0,
@@ -164,29 +309,74 @@ function formatRp(n) {
 
 // ── HTML Template Generator ───────────────────────────────────────────────
 function buildHtml(data) {
-  const { meta, visi, misi, tujuan, sasaran, indikator, lakipEntries, anggaran } = data;
+  const { meta, visi, misi, tujuan, sasaran, indikator, indikatorTree, indikatorOrphan, lakipEntries, anggaran } = data;
   const tahun = meta.tahun;
   const opd   = meta.opd;
 
   // Header warna sesuai status capaian
   const pctColor = (pct) => pct >= 100 ? "#16a34a" : pct >= 75 ? "#d97706" : "#dc2626";
 
-  // Baris indikator
-  const indRows = indikator.length
-    ? indikator.map((ind, i) => `
+  // Baris + tabel indikator, dipakai berulang di tiap level (Sasaran/Program/Kegiatan)
+  const indikatorRowsHtml = (items) =>
+    items.length
+      ? items.map((ind) => `
+          <tr>
+            <td>${escH(ind.nama_indikator)}</td>
+            <td class="center">${escH(ind.satuan || "-")}</td>
+            <td class="center">${ind.target || "-"}</td>
+            <td class="center">${ind.realisasi || "-"}</td>
+            <td class="center" style="color:${pctColor(ind.pct_capaian)}; font-weight:bold">${ind.pct_capaian}%</td>
+            <td class="center"><span class="badge badge-${ind.pct_capaian >= 100 ? "green" : ind.pct_capaian >= 75 ? "yellow" : "red"}">${ind.status_capaian}</span></td>
+          </tr>
+          <tr class="narasi-row">
+            <td colspan="6"><em>Analisis: ${escH(ind.narasi)}</em></td>
+          </tr>`).join("")
+      : `<tr><td colspan="6" class="center text-muted">Belum ada indikator</td></tr>`;
+
+  const indikatorTableHtml = (items) => `
+    <table>
+      <thead>
         <tr>
-          <td class="center">${i + 1}</td>
-          <td>${escH(ind.nama_indikator)}</td>
-          <td class="center">${escH(ind.satuan || "-")}</td>
-          <td class="center">${ind.target || "-"}</td>
-          <td class="center">${ind.realisasi || "-"}</td>
-          <td class="center" style="color:${pctColor(ind.pct_capaian)}; font-weight:bold">${ind.pct_capaian}%</td>
-          <td class="center"><span class="badge badge-${ind.pct_capaian >= 100 ? "green" : ind.pct_capaian >= 75 ? "yellow" : "red"}">${ind.status_capaian}</span></td>
+          <th style="width:32%">Indikator Kinerja</th>
+          <th style="width:10%">Satuan</th>
+          <th style="width:12%">Target</th>
+          <th style="width:12%">Realisasi</th>
+          <th style="width:12%">Capaian</th>
+          <th style="width:22%">Status</th>
         </tr>
-        <tr class="narasi-row">
-          <td colspan="7"><em>Analisis: ${escH(ind.narasi)}</em></td>
-        </tr>`).join("")
-    : `<tr><td colspan="7" class="center text-muted">Belum ada data indikator untuk tahun ${tahun}</td></tr>`;
+      </thead>
+      <tbody>${indikatorRowsHtml(items)}</tbody>
+    </table>`;
+
+  // Nested Tujuan -> Sasaran -> Program -> Kegiatan, supaya jelas indikator milik siapa.
+  const indikatorHierarkiHtml = (indikatorTree && indikatorTree.length)
+    ? indikatorTree.map((t) => `
+        <div class="tujuan-block">
+          <h4 class="hierarchy-title tujuan-title">Tujuan ${escH(t.no_tujuan || "")}: ${escH(t.isi_tujuan || "-")}</h4>
+          ${t.sasaran.map((s) => `
+            <div class="sasaran-block">
+              <h5 class="hierarchy-title sasaran-title">Sasaran ${escH(s.nomor || "")}: ${escH(s.isi_sasaran || "-")}</h5>
+              ${indikatorTableHtml(s.indikator)}
+              ${s.program.map((p) => `
+                <div class="program-block">
+                  <h6 class="hierarchy-title program-title">Program: ${escH(p.nama_program || "-")}</h6>
+                  ${indikatorTableHtml(p.indikator)}
+                  ${p.kegiatan.map((k) => `
+                    <div class="kegiatan-block">
+                      <h6 class="hierarchy-title kegiatan-title">Kegiatan: ${escH(k.nama_kegiatan || "-")}</h6>
+                      ${indikatorTableHtml(k.indikator)}
+                    </div>`).join("")}
+                </div>`).join("")}
+            </div>`).join("")}
+        </div>`).join("")
+    : `<p class="text-muted">Belum ada data Tujuan/Sasaran/Program/Kegiatan untuk OPD aktif.</p>`;
+
+  const indikatorOrphanHtml = (indikatorOrphan && indikatorOrphan.length)
+    ? `<div class="orphan-block">
+         <h4 class="hierarchy-title">Indikator Belum Terhubung ke Hierarki Renstra</h4>
+         ${indikatorTableHtml(indikatorOrphan)}
+       </div>`
+    : "";
 
   // Baris LAKIP entries (program/kegiatan)
   const lakipRows = lakipEntries.length
@@ -407,6 +597,29 @@ function buildHtml(data) {
       margin-bottom: 8px;
       background: #f0f9ff;
     }
+
+    /* ── Hierarki Indikator (Tujuan > Sasaran > Program > Kegiatan) ── */
+    .hierarchy-title { margin: 10px 0 6px; color: #1e3a8a; }
+    h4.hierarchy-title { font-size: 11.5pt; }
+    h5.hierarchy-title { font-size: 11pt; color: #1d4ed8; }
+    h6.hierarchy-title { font-size: 10.5pt; color: #2563eb; }
+    .tujuan-block { margin-bottom: 20px; }
+    .sasaran-block {
+      margin: 8px 0 14px 12px;
+      padding-left: 10px;
+      border-left: 2px solid #93c5fd;
+    }
+    .program-block {
+      margin: 6px 0 10px 16px;
+      padding-left: 10px;
+      border-left: 2px dashed #bfdbfe;
+    }
+    .kegiatan-block {
+      margin: 6px 0 10px 16px;
+      padding-left: 10px;
+      border-left: 2px dotted #dbeafe;
+    }
+    .orphan-block { margin-top: 20px; }
     ul { padding-left: 20px; }
     li { margin-bottom: 6px; }
     .exec-summary {
@@ -570,20 +783,11 @@ function buildHtml(data) {
       ${sasaranHtml}
 
       <h3 class="sub-title">Capaian Indikator Kinerja Tahun ${escH(tahun)}</h3>
-      <table>
-        <thead>
-          <tr>
-            <th style="width:4%">No</th>
-            <th style="width:28%">Indikator Kinerja</th>
-            <th style="width:8%">Satuan</th>
-            <th style="width:10%">Target</th>
-            <th style="width:10%">Realisasi</th>
-            <th style="width:10%">Capaian</th>
-            <th style="width:14%">Status</th>
-          </tr>
-        </thead>
-        <tbody>${indRows}</tbody>
-      </table>
+      <p class="text-muted small">
+        Indikator dikelompokkan mengikuti hierarki Renstra OPD aktif: Tujuan → Sasaran → Program → Kegiatan.
+      </p>
+      ${indikatorHierarkiHtml}
+      ${indikatorOrphanHtml}
     </div>
 
     <!-- ═══════════════ PROGRAM / KEGIATAN ═══════════════ -->

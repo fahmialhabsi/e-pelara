@@ -35,6 +35,8 @@ const inputActions = [
       { label: '📋 Semua Indikator', to: '/renstra/indikator' },
       { label: 'Indikator Tujuan', to: '/renstra/indikator/tujuan' },
       { label: 'Indikator Sasaran', to: '/renstra/indikator/sasaran' },
+      { label: 'Indikator Strategi', to: '/renstra/indikator/strategi' },
+      { label: 'Indikator Kebijakan', to: '/renstra/indikator/kebijakan' },
       { label: 'Indikator Program', to: '/renstra/indikator/program' },
       { label: 'Indikator Kegiatan', to: '/renstra/indikator/kegiatan' },
       { label: 'Indikator Sub Kegiatan', to: '/renstra/indikator/subkegiatan' },
