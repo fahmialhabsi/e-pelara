@@ -47,8 +47,10 @@ import RenjaReadonlyDetailPage from './features/renja/pages/RenjaReadonlyDetailP
 import RkaDashboard from './features/rka/pages/RkaDashboard';
 import RkaFormPage from './features/rka/pages/RkaFormPage';
 import TapdSettingPage from './features/rka/pages/TapdSettingPage';
+import PejabatSettingPage from './features/rka/pages/PejabatSettingPage';
 import DpaDashboard from './features/dpa/pages/DpaDashboard';
 import DpaFormPage from './features/dpa/pages/DpaFormPage';
+import PenatausahaanDashboard from './features/penatausahaan/pages/PenatausahaanDashboard';
 import DpaPergeseranPage from './features/dpa/pages/DpaPergeseranPage';
 import DpaPerubahanPage from './features/dpa/pages/DpaPerubahanPage';
 import PengkegDashboard from './features/pengkeg/pages/PengkegDashboard';
@@ -462,6 +464,7 @@ function InnerApp() {
               }
             />
             <Route path="tapd-setting" element={<TapdSettingPage />} />
+            <Route path="pejabat-penandatangan-setting" element={<PejabatSettingPage />} />
             <Route
               path="rka/form/:id"
               element={
@@ -482,6 +485,7 @@ function InnerApp() {
                 </DokumenTahunGuard>
               }
             />
+            <Route path="dashboard-penatausahaan" element={<PenatausahaanDashboard />} />
             <Route path="dpa/:dpa_id/pergeseran"
               element={<DpaPergeseranPage />}
             />

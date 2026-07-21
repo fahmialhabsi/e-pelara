@@ -1,5 +1,6 @@
-const { Rka, RkaRincianBelanja, Tapd } = require('../models');
+const { Rka, RkaRincianBelanja, Tapd, PejabatPenandatangan, MasterKodeRekeningBelanja } = require('../models');
 const rkaEngine = require('../services/rkaEngine');
+const { compareTahapanHistory } = require('../services/rkaRevisiService');
 const ExcelJS = require('exceljs');
 const docx = require('docx');
 const puppeteer = require('puppeteer');
@@ -64,6 +65,322 @@ async function fetchExportData(id) {
   return { rka, rincian };
 }
 
+// Pejabat Penandatangan RKA (diisi lewat menu Setting Pejabat Penandatangan) — dipakai
+// mengganti placeholder "[Nama Pengguna Anggaran]" / nama hardcode di seluruh formulir cetak.
+// Return objek per-role dengan fallback teks "belum diisi" (bukan nama orang sungguhan)
+// supaya jelas kalau datanya memang belum di-setting, bukan seolah-olah data asli.
+async function fetchPejabatByTahun(tahun) {
+  const rows = await PejabatPenandatangan.findAll({ where: { tahun: Number(tahun) } });
+  const byRole = {};
+  for (const row of rows) {
+    byRole[row.role] = { nama: row.nama || '', nip: row.nip || '', jabatan: row.jabatan || '' };
+  }
+  const EMPTY = { nama: '[Belum diisi — lengkapi di menu Setting Pejabat Penandatangan]', nip: '', jabatan: '' };
+  return {
+    penggunaAnggaran: byRole.PENGGUNA_ANGGARAN || EMPTY,
+    kuasaPenggunaAnggaran: byRole.KUASA_PENGGUNA_ANGGARAN || EMPTY,
+    kepalaDinas: byRole.KEPALA_DINAS || EMPTY,
+    sekretaris: byRole.SEKRETARIS || EMPTY,
+  };
+}
+
+// Formulir RKA-BELANJA SKPD (Rincian Anggaran Belanja Menurut Program, Kegiatan dan Sub
+// Kegiatan — Permendagri 77/2020) dengan kolom Sebelum/Sesudah/Bertambah-(Berkurang) +
+// TAPD. Dipakai oleh DUA endpoint (exportPdfBelanja yg berdiri sendiri, dan exportPdf saat
+// user memilih formulir ini dari dropdown Cetak) — disatukan di sini supaya keduanya selalu
+// menampilkan formulir yang identik, tidak ada versi "lama" yang belum sinkron.
+// Terima data yang SUDAH di-fetch oleh pemanggil (bukan fetch ulang) supaya exportPdf tidak
+// query database dua kali untuk hal yang sama.
+async function buildFormulirBelanjaBodyHtml({ rka, rincian, comparison, tapdList, opdName, pejabat }) {
+  const formatRp = (val) => `Rp. ${Number(val).toLocaleString('id-ID')},00`;
+  const formatDelta = (val) => {
+    const n = Number(val) || 0;
+    return `${n < 0 ? '-' : ''}Rp. ${Math.abs(n).toLocaleString('id-ID')},00`;
+  };
+
+  const subtotalsSebelum = {};
+  const subtotalsSesudah = {};
+  comparison.items.forEach((item) => {
+    const segments = String(item.kode_rekening).split('.');
+    for (let i = 1; i <= segments.length; i++) {
+      const prefix = segments.slice(0, i).join('.');
+      subtotalsSebelum[prefix] = (subtotalsSebelum[prefix] || 0) + Number(item.jumlah_sebelum || 0);
+      subtotalsSesudah[prefix] = (subtotalsSesudah[prefix] || 0) + Number(item.jumlah_sesudah || 0);
+    }
+  });
+
+  const grouped = {};
+  const kodeOrder = [];
+  comparison.items.forEach((item) => {
+    const kode = item.kode_rekening;
+    if (!grouped[kode]) {
+      grouped[kode] = [];
+      kodeOrder.push(kode);
+    }
+    grouped[kode].push(item);
+  });
+
+  // Nama akun untuk setiap level kode rekening (BELANJA DAERAH s.d. kelompok/jenis/objek)
+  // diambil dari tabel referensi master_kode_rekening_belanja, bukan daftar hardcode —
+  // di tabel itu kode NON-LEAF disimpan dengan titik di akhir (mis. "5.1.02.02."),
+  // sedangkan kode LEAF tidak pakai titik (mis. "5.1.02.02.01.0003").
+  const allPrefixes = new Set();
+  kodeOrder.forEach((kode) => {
+    const segments = kode.split('.');
+    for (let i = 1; i <= segments.length; i++) {
+      allPrefixes.add(segments.slice(0, i).join('.'));
+    }
+  });
+  const lookupCodes = [...allPrefixes].flatMap((p) => [p, `${p}.`]);
+  const masterRows = lookupCodes.length
+    ? await MasterKodeRekeningBelanja.findAll({
+        where: { kode_rekening: lookupCodes },
+        attributes: ['kode_rekening', 'uraian'],
+      })
+    : [];
+  const labelMap = new Map();
+  masterRows.forEach((r) => {
+    const bare = r.kode_rekening.endsWith('.') ? r.kode_rekening.slice(0, -1) : r.kode_rekening;
+    if (!labelMap.has(bare)) labelMap.set(bare, r.uraian);
+  });
+
+  const renderedPrefixes = new Set();
+  let rincianHtml = '';
+  const B = 'border:1px solid #000;padding:4px;'; // singkatan style sel tabel
+
+  kodeOrder.forEach((kode) => {
+    const items = grouped[kode];
+    const segments = kode.split('.');
+
+    for (let i = 1; i <= segments.length; i++) {
+      const prefix = segments.slice(0, i).join('.');
+      if (renderedPrefixes.has(prefix)) continue;
+      renderedPrefixes.add(prefix);
+      const isLeaf = i === segments.length;
+      const isTopLevel = i <= 2;
+      const deltaPrefix = (subtotalsSesudah[prefix] || 0) - (subtotalsSebelum[prefix] || 0);
+
+      if (!isLeaf) {
+        const label = labelMap.get(prefix) || prefix;
+        const bg = isTopLevel ? '#f2f2f2' : '#fff';
+        const fw = isTopLevel ? 'bold' : 'normal';
+        rincianHtml += `<tr style="background-color:${bg};">
+          <td style="${B}font-weight:${fw};">${prefix}</td>
+          <td colspan="5" style="${B}font-weight:${fw};">${label}</td>
+          <td style="${B}text-align:right;font-weight:${fw};">${formatRp(subtotalsSebelum[prefix] || 0)}</td>
+          <td colspan="4" style="${B}"></td>
+          <td style="${B}text-align:right;font-weight:${fw};">${formatRp(subtotalsSesudah[prefix] || 0)}</td>
+          <td style="${B}text-align:right;font-weight:${fw};">${formatDelta(deltaPrefix)}</td>
+        </tr>`;
+      } else {
+        const namaLeaf = items[0].nama_rekening || items[0].uraian || prefix;
+        rincianHtml += `<tr>
+          <td style="${B}font-weight:bold;">${prefix}</td>
+          <td colspan="5" style="${B}font-weight:bold;">${namaLeaf}</td>
+          <td style="${B}text-align:right;font-weight:bold;">${formatRp(subtotalsSebelum[prefix] || 0)}</td>
+          <td colspan="4" style="${B}"></td>
+          <td style="${B}text-align:right;font-weight:bold;">${formatRp(subtotalsSesudah[prefix] || 0)}</td>
+          <td style="${B}text-align:right;font-weight:bold;">${formatDelta(deltaPrefix)}</td>
+        </tr>`;
+
+        const grupSumber = {};
+        const sumberOrder = [];
+        items.forEach((it) => {
+          const sd = it.sumber_dana || 'PAD';
+          if (!grupSumber[sd]) {
+            grupSumber[sd] = [];
+            sumberOrder.push(sd);
+          }
+          grupSumber[sd].push(it);
+        });
+
+        sumberOrder.forEach((sd) => {
+          const grupItems = grupSumber[sd];
+          const grupSebelum = grupItems.reduce((s, it) => s + Number(it.jumlah_sebelum || 0), 0);
+          const grupSesudah = grupItems.reduce((s, it) => s + Number(it.jumlah_sesudah || 0), 0);
+          const grupDelta = grupSesudah - grupSebelum;
+          rincianHtml += `<tr>
+            <td style="${B}"></td>
+            <td colspan="5" style="${B}"><strong>[ # ] ${namaLeaf}</strong><br><span style="padding-left:12px;">Sumber Dana : ${sd}</span></td>
+            <td style="${B}text-align:right;">${formatRp(grupSebelum)}</td>
+            <td colspan="4" style="${B}"></td>
+            <td style="${B}text-align:right;">${formatRp(grupSesudah)}</td>
+            <td style="${B}text-align:right;">${formatDelta(grupDelta)}</td>
+          </tr>`;
+
+          const namaGrup = grupItems[0].nama_rekening || namaLeaf;
+          rincianHtml += `<tr>
+            <td style="${B}"></td>
+            <td colspan="5" style="${B}">[ - ] ${namaGrup}</td>
+            <td style="${B}text-align:right;">${formatRp(grupSebelum)}</td>
+            <td colspan="4" style="${B}"></td>
+            <td style="${B}text-align:right;">${formatRp(grupSesudah)}</td>
+            <td style="${B}text-align:right;">${formatDelta(grupDelta)}</td>
+          </tr>`;
+
+          grupItems.forEach((it) => {
+            rincianHtml += `<tr>
+              <td style="${B}"></td>
+              <td style="${B}color:#c00000;padding-left:24px;">${it.uraian || '-'}<br><span style="color:#555;font-size:10px;">Spesifikasi : ${it.spesifikasi || '-'}</span></td>
+              <td style="${B}text-align:center;">${formatKoefisienDisplay(it.koefisien_array_sebelum, null)}</td>
+              <td style="${B}text-align:center;">${it.satuan_sebelum || '-'}</td>
+              <td style="${B}text-align:right;">${Number(it.harga_satuan_sebelum || 0).toLocaleString('id-ID')},00</td>
+              <td style="${B}text-align:center;">-</td>
+              <td style="${B}text-align:right;">${formatRp(it.jumlah_sebelum || 0)}</td>
+              <td style="${B}text-align:center;">${formatKoefisienDisplay(it.koefisien_array_sesudah, null)}</td>
+              <td style="${B}text-align:center;">${it.satuan_sesudah || '-'}</td>
+              <td style="${B}text-align:right;">${Number(it.harga_satuan_sesudah || 0).toLocaleString('id-ID')},00</td>
+              <td style="${B}text-align:center;">-</td>
+              <td style="${B}text-align:right;">${formatRp(it.jumlah_sesudah || 0)}</td>
+              <td style="${B}text-align:right;">${formatDelta(it.bertambah_berkurang)}</td>
+            </tr>`;
+          });
+        });
+      }
+    }
+  });
+
+  const tapdRows =
+    tapdList.length > 0
+      ? tapdList
+          .map(
+            (t, i) => `<tr>
+        <td style="border:1px solid #000;padding:4px;text-align:center;">${i + 1}</td>
+        <td style="border:1px solid #000;padding:4px;">${t.nama || ''}</td>
+        <td style="border:1px solid #000;padding:4px;">${t.nip || ''}</td>
+        <td style="border:1px solid #000;padding:4px;">${t.jabatan || ''}</td>
+        <td style="border:1px solid #000;padding:4px;text-align:center;"></td>
+      </tr>`,
+          )
+          .join('')
+      : `<tr><td colspan="5" style="border:1px solid #000;padding:4px;text-align:center;color:#999;">— Belum diisi —</td></tr>`;
+
+  return `
+    <div style="text-align:right;font-weight:bold;margin-bottom:4px;">
+      Formulir RKA-BELANJA SKPD
+    </div>
+    <div class="header-form">
+      RENCANA KERJA DAN ANGGARAN<br>SATUAN KERJA PERANGKAT DAERAH<br>
+      Rincian Anggaran Belanja Menurut Program, Kegiatan dan Sub Kegiatan
+    </div>
+    <table class="meta" style="border:none;margin-bottom:8px;">
+      <tr><td style="width:22%;font-weight:bold;">Urusan Pemerintahan</td><td>: ${rka.kode_urusan || (rka.kode_program ? rka.kode_program.split('.')[0] : '-')} ${rka.urusan || ''}</td></tr>
+      <tr><td style="font-weight:bold;">Bidang Urusan</td><td>: ${rka.kode_bidang_urusan || rka.kode_program || '-'} ${rka.bidang_urusan || ''}</td></tr>
+      <tr><td style="font-weight:bold;">Unit Organisasi</td><td>: ${opdName}</td></tr>
+      <tr><td style="font-weight:bold;">Sub Unit Organisasi</td><td>: -</td></tr>
+      <tr><td style="font-weight:bold;">Program</td><td>: ${rka.kode_program || ''} ${rka.program || '-'}</td></tr>
+      <tr><td style="font-weight:bold;">Kegiatan</td><td>: ${rka.kode_kegiatan || ''} ${rka.kegiatan || '-'}</td></tr>
+      <tr><td style="font-weight:bold;">Sub Kegiatan</td><td>: ${rka.kode_sub_kegiatan || ''} ${rka.sub_kegiatan || '-'}</td></tr>
+      <tr><td style="font-weight:bold;">SPM</td><td>: -</td></tr>
+      <tr><td style="font-weight:bold;">Jenis Layanan</td><td>: -</td></tr>
+      <tr><td style="font-weight:bold;">Sumber Pendanaan</td><td>: ${rincian[0]?.sumber_dana || 'PAD'}</td></tr>
+      <tr><td style="font-weight:bold;">Lokasi</td><td>: ${rka.lokasi || '-'}</td></tr>
+      <tr><td style="font-weight:bold;">Waktu Pelaksanaan</td><td>: ${rka.waktu_mulai || 'Januari'} s.d ${rka.waktu_selesai || 'Desember'}</td></tr>
+      <tr><td style="font-weight:bold;">Kelompok Sasaran</td><td>: Provinsi Maluku Utara</td></tr>
+      <tr><td style="font-weight:bold;">Alokasi ${Number(rka.tahun) - 1}</td><td>: Rp. 0,00</td></tr>
+      <tr><td style="font-weight:bold;">Alokasi ${rka.tahun}</td><td>: ${formatRp(comparison.totalSesudah)}</td></tr>
+      <tr><td style="font-weight:bold;">Alokasi ${Number(rka.tahun) + 1}</td><td>: Rp. 0,00</td></tr>
+    </table>
+
+    <div class="bold" style="margin:8px 0 4px;">Indikator dan Tolak Ukur Kinerja Kegiatan</div>
+    <table style="margin-bottom:12px;">
+      <thead>
+        <tr>
+          <th colspan="3" style="width:50%;">Sebelum</th>
+          <th colspan="3" style="width:50%;">Sesudah</th>
+        </tr>
+        <tr>
+          <th style="width:14%;">Indikator</th><th style="width:22%;">Tolok Ukur Kinerja</th><th style="width:14%;">Target Kinerja</th>
+          <th style="width:14%;">Indikator</th><th style="width:22%;">Tolok Ukur Kinerja</th><th style="width:14%;">Target Kinerja</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="bold">Capaian Program</td><td>${comparison.priorHeader.capaian_program || '-'}</td><td class="center">${comparison.priorHeader.target_capaian || '-'} ${comparison.priorHeader.satuan_capaian || '%'}</td>
+          <td class="bold">Capaian Program</td><td>${rka.capaian_program || '-'}</td><td class="center">${rka.target_capaian || '-'} ${rka.satuan_capaian || '%'}</td>
+        </tr>
+        <tr>
+          <td class="bold">Masukan</td><td>${comparison.priorHeader.masukan || 'Dana yang dibutuhkan'}</td><td class="right">${formatRp(comparison.totalSebelum)}</td>
+          <td class="bold">Masukan</td><td>${rka.masukan || 'Dana yang dibutuhkan'}</td><td class="right">${formatRp(comparison.totalSesudah)}</td>
+        </tr>
+        <tr>
+          <td class="bold">Keluaran</td><td>${comparison.priorHeader.keluaran || rka.indikator || '-'}</td><td class="center">${comparison.priorHeader.target_keluaran || rka.target || '-'} ${comparison.priorHeader.satuan_keluaran || ''}</td>
+          <td class="bold">Keluaran</td><td>${rka.keluaran || rka.indikator || '-'}</td><td class="center">${rka.target_keluaran || rka.target || '-'} ${rka.satuan_keluaran || ''}</td>
+        </tr>
+        <tr>
+          <td class="bold">Hasil</td><td>${comparison.priorHeader.hasil || '-'}</td><td class="center">${comparison.priorHeader.target_hasil || '-'} ${comparison.priorHeader.satuan_hasil || '%'}</td>
+          <td class="bold">Hasil</td><td>${rka.hasil || '-'}</td><td class="center">${rka.target_hasil || '-'} ${rka.satuan_hasil || '%'}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="bold" style="margin:8px 0 4px;">Rincian Anggaran Belanja Kegiatan Satuan Kerja Perangkat Daerah</div>
+    <table>
+      <thead>
+        <tr>
+          <th rowspan="2" style="width:11%;">Kode Rekening</th>
+          <th rowspan="2" style="width:20%;">Uraian</th>
+          <th colspan="5" style="width:28%;">Rincian Perhitungan Sebelum</th>
+          <th colspan="5" style="width:28%;">Rincian Perhitungan Sesudah</th>
+          <th rowspan="2" style="width:13%;">Bertambah / (Berkurang) (Rp)</th>
+        </tr>
+        <tr>
+          <th style="width:5%;">Koefisien</th><th style="width:5%;">Satuan</th><th style="width:6%;">Harga (Rp)</th><th style="width:3%;">PPN</th><th style="width:9%;">Jumlah (Rp)</th>
+          <th style="width:5%;">Koefisien</th><th style="width:5%;">Satuan</th><th style="width:6%;">Harga (Rp)</th><th style="width:3%;">PPN</th><th style="width:9%;">Jumlah (Rp)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rincianHtml}
+        <tr class="bold" style="background-color:#e2efda;">
+          <td colspan="6" class="center">JUMLAH TOTAL SEBELUM</td>
+          <td class="right">${formatRp(comparison.totalSebelum)}</td>
+          <td colspan="4" class="center">JUMLAH TOTAL SESUDAH</td>
+          <td class="right">${formatRp(comparison.totalSesudah)}</td>
+          <td class="right">${formatDelta(comparison.bertambahBerkurang)}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="margin-top:20px;display:table;width:100%;table-layout:fixed;">
+      <div style="display:table-row;">
+
+        <!-- Kiri: Pembahasan + TAPD -->
+        <div style="display:table-cell;width:65%;vertical-align:top;padding-right:8px;">
+          <div style="margin-bottom:8px;">
+            <div class="bold" style="margin-bottom:4px;">Pembahasan :</div>
+            <div>Tanggal : ${tapdList[0]?.tanggal_pembahasan || '________________________'}</div>
+            <div style="margin-top:6px;">Catatan :</div>
+            <div style="border:1px solid #ccc;min-height:30px;padding:4px;margin-top:4px;font-size:10px;">
+              ${tapdList[0]?.catatan || '&nbsp;'}
+            </div>
+          </div>
+          <div class="bold" style="margin:10px 0 4px;">Tim Anggaran Pemerintahan Daerah</div>
+          <table style="width:100%;border-collapse:collapse;font-size:10px;box-sizing:border-box;">
+            <thead>
+              <tr>
+                <th style="border:1px solid #000;padding:3px;width:5%;text-align:center;">No</th>
+                <th style="border:1px solid #000;padding:3px;width:35%;">Nama</th>
+                <th style="border:1px solid #000;padding:3px;width:25%;">NIP</th>
+                <th style="border:1px solid #000;padding:3px;width:20%;">Jabatan</th>
+                <th style="border:1px solid #000;padding:3px;width:15%;text-align:center;">Tanda Tangan</th>
+              </tr>
+            </thead>
+            <tbody>${tapdRows}</tbody>
+          </table>
+        </div>
+
+        <!-- Kanan: TTD Kepala -->
+        <div style="display:table-cell;width:35%;vertical-align:top;text-align:center;font-weight:bold;padding-left:12px;">
+          Sofifi, _________ ${rka.tahun}<br>
+          Kepala ${opdName}<br><br><br><br><br>
+          ${pejabat.kepalaDinas.nama}<br>
+          NIP. ${pejabat.kepalaDinas.nip}
+        </div>
+
+      </div>
+    </div>`;
+}
+
 module.exports = {
   // ==========================================
   // 1. EXPORT EXCEL (USING EXCELJS)
@@ -81,6 +398,7 @@ module.exports = {
         totalBelanjaTransfer,
       } = getExportTotals(engineResult);
       const detailRows = engineResult.rows;
+      const pejabat = await fetchPejabatByTahun(rka.tahun);
       const workbook = new ExcelJS.Workbook();
 
       const fontArial = { name: 'Arial', size: 10 };
@@ -165,11 +483,11 @@ module.exports = {
       wsCover.getCell('A9').value = 'Pengguna Anggaran :';
       wsCover.getCell('A9').font = fontArialBold;
       wsCover.getCell('A10').value = 'a. Nama';
-      wsCover.getCell('B10').value = ': [Nama Pengguna Anggaran]';
+      wsCover.getCell('B10').value = `: ${pejabat.penggunaAnggaran.nama}`;
       wsCover.getCell('A11').value = 'b. NIP';
-      wsCover.getCell('B11').value = ': [NIP Pengguna Anggaran]';
+      wsCover.getCell('B11').value = `: ${pejabat.penggunaAnggaran.nip}`;
       wsCover.getCell('A12').value = 'c. Jabatan';
-      wsCover.getCell('B12').value = ': [Jabatan Pengguna Anggaran]';
+      wsCover.getCell('B12').value = `: ${pejabat.penggunaAnggaran.jabatan}`;
       ['A10', 'A11', 'A12'].forEach((cell) => {
         wsCover.getCell(cell).font = fontArial;
         wsCover.getCell(cell).alignment = { horizontal: 'left', vertical: 'middle' };
@@ -195,21 +513,16 @@ module.exports = {
           kode: 'RKA-SKPD',
           nama: 'Ringkasan Anggaran Pendapatan, Belanja dan Pembiayaan Satuan Kerja Perangkat Daerah',
         },
-        { kode: 'RKA-SKPD 1', nama: 'Rincian Anggaran Pendapatan Satuan Kerja Perangkat Daerah' },
+        { kode: 'RKA-PENDAPATAN SKPD', nama: 'Rincian Anggaran Pendapatan Satuan Kerja Perangkat Daerah' },
         {
-          kode: 'RKA-SKPD 2.1',
-          nama: 'Rincian Anggaran Belanja Operasi, Belanja Modal, Belanja Tidak Terduga, dan Belanja Transfer Satuan Kerja Perangkat Daerah',
+          kode: 'REKAPITULASI RKA-BELANJA SKPD',
+          nama: 'Rekapitulasi Anggaran Belanja Berdasarkan Program dan Kegiatan Satuan Kerja Perangkat Daerah',
         },
         {
-          kode: 'RKA-SKPD 2.2',
-          nama: 'Rekapitulasi Rincian Anggaran Belanja menurut Program, Kegiatan dan Sub Kegiatan Satuan Kerja Perangkat Daerah',
-        },
-        {
-          kode: 'RKA-SKPD 2.2.1',
+          kode: 'RKA-BELANJA SKPD',
           nama: 'Rincian Anggaran Belanja menurut Program, Kegiatan dan Sub Kegiatan Satuan Kerja Perangkat Daerah',
         },
-        { kode: 'RKA-SKPD 3.1', nama: 'Rincian Penerimaan Pembiayaan Daerah' },
-        { kode: 'RKA-SKPD 3.2', nama: 'Rincian Pengeluaran Pembiayaan Daerah' },
+        { kode: 'RKA-PEMBIAYAAN SKPD', nama: 'Rincian Anggaran Pembiayaan Satuan Kerja Perangkat Daerah (jika ada)' },
       ];
 
       matriksForm.forEach((f, idx) => {
@@ -543,7 +856,7 @@ module.exports = {
       ws221.views = [{ showGridLines: true }];
 
       ws221.mergeCells('E1:G1');
-      ws221.getCell('E1').value = 'Formulir RKA-SKPD 2.2.1';
+      ws221.getCell('E1').value = 'Formulir RKA-BELANJA SKPD';
       ws221.getCell('E1').font = fontArialBold;
       ws221.getCell('E1').alignment = { horizontal: 'right', vertical: 'middle' };
 
@@ -892,6 +1205,8 @@ module.exports = {
     try {
       const { id } = req.params;
       const { rka } = await fetchExportData(id);
+      const opdName = rka.opd_penanggung_jawab || 'DINAS PANGAN PROVINSI';
+      const pejabat = await fetchPejabatByTahun(rka.tahun);
       const engineResult = await rkaEngine.recalculateWithValidation(id);
       const {
         totalBelanja,
@@ -949,26 +1264,23 @@ module.exports = {
         }),
       ];
 
+      // Penamaan resmi sesuai Permendagri 77/2020 & cetakan SIPD (bukan lagi kode SIPD lama
+      // "RKA-SKPD 1/2.1/2.2/2.2.1/3.1/3.2").
       const listFormulir = [
         {
           k: 'RKA-SKPD',
           n: 'Ringkasan Anggaran Pendapatan, Belanja dan Pembiayaan Satuan Kerja Perangkat Daerah',
         },
-        { k: 'RKA-SKPD 1', n: 'Rincian Anggaran Pendapatan Satuan Kerja Perangkat Daerah' },
+        { k: 'RKA-PENDAPATAN SKPD', n: 'Rincian Anggaran Pendapatan Satuan Kerja Perangkat Daerah' },
         {
-          k: 'RKA-SKPD 2.1',
-          n: 'Rincian Anggaran Belanja Operasi, Belanja Modal, Belanja Tidak Terduga, dan Belanja Transfer Satuan Kerja Perangkat Daerah',
+          k: 'REKAPITULASI RKA-BELANJA SKPD',
+          n: 'Rekapitulasi Anggaran Belanja Berdasarkan Program dan Kegiatan Satuan Kerja Perangkat Daerah',
         },
         {
-          k: 'RKA-SKPD 2.2',
-          n: 'Rekapitulasi Rincian Anggaran Belanja menurut Program, Kegiatan dan Sub Kegiatan Satuan Kerja Perangkat Daerah',
-        },
-        {
-          k: 'RKA-SKPD 2.2.1',
+          k: 'RKA-BELANJA SKPD',
           n: 'Rincian Anggaran Belanja menurut Program, Kegiatan dan Sub Kegiatan Satuan Kerja Perangkat Daerah',
         },
-        { k: 'RKA-SKPD 3.1', n: 'Rincian Penerimaan Pembiayaan Daerah' },
-        { k: 'RKA-SKPD 3.2', n: 'Rincian Pengeluaran Pembiayaan Daerah' },
+        { k: 'RKA-PEMBIAYAAN SKPD', n: 'Rincian Anggaran Pembiayaan Satuan Kerja Perangkat Daerah (jika ada)' },
       ];
 
       listFormulir.forEach((item) => {
@@ -1018,18 +1330,18 @@ module.exports = {
           }),
           new Paragraph({
             children: [
-              new TextRun({ text: 'a. Nama\t: [Nama Pengguna Anggaran]', font: 'Times New Roman' }),
+              new TextRun({ text: `a. Nama\t: ${pejabat.penggunaAnggaran.nama}`, font: 'Times New Roman' }),
             ],
           }),
           new Paragraph({
             children: [
-              new TextRun({ text: 'b. NIP\t\t: [NIP Pengguna Anggaran]', font: 'Times New Roman' }),
+              new TextRun({ text: `b. NIP\t\t: ${pejabat.penggunaAnggaran.nip}`, font: 'Times New Roman' }),
             ],
           }),
           new Paragraph({
             children: [
               new TextRun({
-                text: 'c. Jabatan\t: [Jabatan Pengguna Anggaran]',
+                text: `c. Jabatan\t: ${pejabat.penggunaAnggaran.jabatan}`,
                 font: 'Times New Roman',
               }),
             ],
@@ -1122,7 +1434,7 @@ module.exports = {
           new Paragraph({
             children: [
               new TextRun({
-                text: 'Kepala SKPD / Pengguna Anggaran\n\n\n\n( _______________________ )',
+                text: `Kepala SKPD / Pengguna Anggaran\n\n\n\n${pejabat.kepalaDinas.nama}\nNIP. ${pejabat.kepalaDinas.nip}`,
                 font: 'Times New Roman',
                 bold: true,
               }),
@@ -1220,7 +1532,7 @@ module.exports = {
       sections.push({
         children: [
           textPara('RINCIAN ANGGARAN PENDAPATAN SATUAN KERJA PERANGKAT DAERAH', true),
-          textPara('FORMULIR RKA-SKPD 1', true),
+          textPara('FORMULIR RKA-PENDAPATAN SKPD', true),
           new Paragraph({ text: '' }),
           new WordTable({
             width: { size: 100, type: WidthType.PERCENTAGE },
@@ -1230,7 +1542,7 @@ module.exports = {
           new Paragraph({
             children: [
               new TextRun({
-                text: 'Ternate, 02 Juni 2026\nKepala SKPD / Pengguna Anggaran\n\n\n\n( _______________________ )',
+                text: `Ternate, 02 Juni 2026\nKepala SKPD / Pengguna Anggaran\n\n\n\n${pejabat.kepalaDinas.nama}\nNIP. ${pejabat.kepalaDinas.nip}`,
                 font: 'Times New Roman',
                 bold: true,
               }),
@@ -1387,7 +1699,7 @@ module.exports = {
             'RINCIAN ANGGARAN BELANJA OPERASI, BELANJA MODAL, BELANJA TIDAK TERDUGA, DAN BELANJA TRANSFER',
             true,
           ),
-          textPara('SATUAN KERJA PERANGKAT DAERAH (FORMULIR RKA-SKPD 2.1)', true),
+          textPara('SATUAN KERJA PERANGKAT DAERAH', true),
           new Paragraph({ text: '' }),
           new WordTable({
             width: { size: 100, type: WidthType.PERCENTAGE },
@@ -1397,7 +1709,7 @@ module.exports = {
           new Paragraph({
             children: [
               new TextRun({
-                text: 'Ternate, 02 Juni 2026\nKepala SKPD / Pengguna Anggaran\n\n\n\n( _______________________ )',
+                text: `Ternate, 02 Juni 2026\nKepala SKPD / Pengguna Anggaran\n\n\n\n${pejabat.kepalaDinas.nama}\nNIP. ${pejabat.kepalaDinas.nip}`,
                 font: 'Times New Roman',
                 bold: true,
               }),
@@ -1411,40 +1723,10 @@ module.exports = {
       // --- SECTION 2C: RKA-SKPD 2.2 (REKAPITULASI PROGRAM DAN KEGIATAN) ---
       const rekapData22 = [
         {
-          k: '1.01',
-          u: 'PROGRAM PENUNJANG URUSAN PEMERINTAHAN DAERAH',
-          l: 'Kota Sofifi',
-          t: '100%',
-          n1: '0',
-          n: formatRupiah(totalBelanja),
-          nmju: '0',
-          b: true,
-        },
-        {
-          k: '1.01.01',
-          u: '  Kegiatan Administrasi Keuangan Perangkat Daerah',
-          l: 'Kota Sofifi',
-          t: '1 Layanan',
-          n1: '0',
-          n: formatRupiah(totalBelanja),
-          nmju: '0',
-          b: false,
-        },
-        {
-          k: '1.01.01.2.02',
-          u: '    Sub-Kegiatan Penyediaan Gaji dan Tunjangan ASN',
-          l: 'Kota Sofifi',
-          t: '12 Bulan',
-          n1: '0',
-          n: formatRupiah(totalBelanja),
-          nmju: '0',
-          b: false,
-        },
-        {
-          k: '',
-          u: 'JUMLAH TOTAL',
-          l: '',
-          t: '',
+          k: rka.kode_program || '-',
+          u: `${rka.program || '-'} / ${rka.kegiatan || '-'} / ${rka.sub_kegiatan || '-'}`,
+          l: rka.lokasi || 'Daerah',
+          t: rka.target || '-',
           n1: '0',
           n: formatRupiah(totalBelanja),
           nmju: '0',
@@ -1531,10 +1813,10 @@ module.exports = {
       sections.push({
         children: [
           textPara(
-            'REKAPITULASI ANGGARAN BELANJA BERDASARKAN PROGRAM, KEGIATAN, DAN SUB-KEGIATAN',
+            'REKAPITULASI ANGGARAN BELANJA BERDASARKAN PROGRAM DAN KEGIATAN',
             true,
           ),
-          textPara('SATUAN KERJA PERANGKAT DAERAH (FORMULIR RKA-SKPD 2.2)', true),
+          textPara('SATUAN KERJA PERANGKAT DAERAH (REKAPITULASI RKA-BELANJA SKPD)', true),
           new Paragraph({ text: '' }),
           new WordTable({
             width: { size: 100, type: WidthType.PERCENTAGE },
@@ -1544,7 +1826,7 @@ module.exports = {
           new Paragraph({
             children: [
               new TextRun({
-                text: 'Ternate, 02 Juni 2026\nKepala SKPD / Pengguna Anggaran\n\n\n\n( _______________________ )',
+                text: `Ternate, 02 Juni 2026\nKepala SKPD / Pengguna Anggaran\n\n\n\n${pejabat.kepalaDinas.nama}\nNIP. ${pejabat.kepalaDinas.nip}`,
                 font: 'Times New Roman',
                 bold: true,
               }),
@@ -1694,7 +1976,7 @@ module.exports = {
       sections.push({
         children: [
           textPara('RINCIAN RENCANA KERJA DAN ANGGARAN SATUAN KERJA PERANGKAT DAERAH', true),
-          textPara('(FORMULIR RKA-SKPD 2.2.1)', true),
+          textPara('(FORMULIR RKA-BELANJA SKPD)', true),
           new Paragraph({ text: '' }),
 
           new Paragraph({
@@ -1736,17 +2018,17 @@ module.exports = {
           new Paragraph({ text: '' }),
 
           textPara('Indikator & Tolok Ukur Kinerja Sub-Kegiatan', true),
-          new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: indikatorRowsWord }),
+          new WordTable({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: indikatorRowsWord }),
           new Paragraph({ text: '' }),
 
           textPara('Rincian Anggaran Belanja Berdasarkan Kelompok Belanja Sub-Kegiatan', true),
-          new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: rincianRows }),
+          new WordTable({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: rincianRows }),
           new Paragraph({ text: '' }),
 
           new Paragraph({
             children: [
               new TextRun({
-                text: 'Ternate, 02 Juni 2026\nKepala SKPD / Pengguna Anggaran\n\n\n\n( _______________________ )',
+                text: `Ternate, 02 Juni 2026\nKepala SKPD / Pengguna Anggaran\n\n\n\n${pejabat.kepalaDinas.nama}\nNIP. ${pejabat.kepalaDinas.nip}`,
                 font: 'Times New Roman',
                 bold: true,
               }),
@@ -1757,14 +2039,218 @@ module.exports = {
         ],
       });
 
-      const doc = new Document({ sections });
+      // --- SECTION 4: RKA-SKPD 3.1 (RINCIAN PENERIMAAN PEMBIAYAAN) ---
+      const pembiayaanHeaderRows = () => [
+        new Paragraph({
+          children: [
+            new TextRun({ text: `Urusan Pemerintahan : `, bold: true }),
+            new TextRun({ text: `${rka.kode_urusan || (rka.kode_program ? rka.kode_program.split('.')[0] : '-')} ${rka.urusan || ''}` }),
+          ],
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({ text: `Bidang Urusan        : `, bold: true }),
+            new TextRun({ text: `${rka.kode_bidang_urusan || rka.kode_program || '-'} ${rka.bidang_urusan || ''}` }),
+          ],
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({ text: `Program              : `, bold: true }),
+            new TextRun({ text: `${rka.program || '-'}` }),
+          ],
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({ text: `Kegiatan             : `, bold: true }),
+            new TextRun({ text: `${rka.kegiatan || '-'}` }),
+          ],
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({ text: `Sub-Kegiatan         : `, bold: true }),
+            new TextRun({ text: `${rka.sub_kegiatan || '-'}` }),
+          ],
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({ text: `Organisasi           : `, bold: true }),
+            new TextRun({ text: `${opdName}` }),
+          ],
+        }),
+        new Paragraph({ text: '' }),
+      ];
+
+      const penerimaanRowsList31 = [
+        new TableRow({
+          children: ['Kode Rekening', 'Uraian', 'Jumlah (Rp)'].map(
+            (h) =>
+              new TableCell({
+                borders: wordBorder,
+                shading: { fill: 'F2F2F2' },
+                children: [cellPara(h, true, AlignmentType.CENTER)],
+              }),
+          ),
+        }),
+        new TableRow({
+          children: [
+            new TableCell({ borders: wordBorder, children: [cellPara('6', true, AlignmentType.CENTER)] }),
+            new TableCell({ borders: wordBorder, children: [cellPara('PENERIMAAN PEMBIAYAAN', true)] }),
+            new TableCell({ borders: wordBorder, children: [cellPara('0', true, AlignmentType.RIGHT)] }),
+          ],
+        }),
+        new TableRow({
+          children: [
+            new TableCell({ borders: wordBorder, children: [cellPara('6.1', false, AlignmentType.CENTER)] }),
+            new TableCell({
+              borders: wordBorder,
+              children: [cellPara('  SISA LEBIH PERHITUNGAN ANGGARAN TAHUN SEBELUMNYA (SiLPA)')],
+            }),
+            new TableCell({ borders: wordBorder, children: [cellPara('0', false, AlignmentType.RIGHT)] }),
+          ],
+        }),
+        new TableRow({
+          children: [
+            new TableCell({
+              borders: wordBorder,
+              columnSpan: 2,
+              children: [cellPara('JUMLAH PENERIMAAN PEMBIAYAAN', true, AlignmentType.CENTER)],
+            }),
+            new TableCell({ borders: wordBorder, children: [cellPara('0', true, AlignmentType.RIGHT)] }),
+          ],
+        }),
+      ];
+
+      const sectionPembiayaan31 = {
+        children: [
+          textPara('RENCANA KERJA DAN ANGGARAN', true),
+          textPara('SATUAN KERJA PERANGKAT DAERAH (RKA-PEMBIAYAAN SKPD — Penerimaan Pembiayaan)', true),
+          new Paragraph({ text: '' }),
+          ...pembiayaanHeaderRows(),
+          textPara('Rincian Rencana Anggaran Penerimaan Pembiayaan', true),
+          new WordTable({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: penerimaanRowsList31,
+          }),
+          new Paragraph({ text: '' }),
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: 'Sofifi, _________ 2026\nMengesahkan,\nPejabat Pengelola Keuangan Daerah\n\n\n\n( _______________________ )',
+                font: 'Times New Roman',
+                bold: true,
+              }),
+            ],
+            alignment: AlignmentType.RIGHT,
+          }),
+          new Paragraph({ children: [new PageBreak()] }),
+        ],
+      };
+
+      // --- SECTION 5: RKA-SKPD 3.2 (RINCIAN PENGELUARAN PEMBIAYAAN) ---
+      const pengeluaranRowsList32 = [
+        new TableRow({
+          children: ['Kode Rekening', 'Uraian', 'Jumlah (Rp)'].map(
+            (h) =>
+              new TableCell({
+                borders: wordBorder,
+                shading: { fill: 'F2F2F2' },
+                children: [cellPara(h, true, AlignmentType.CENTER)],
+              }),
+          ),
+        }),
+        new TableRow({
+          children: [
+            new TableCell({ borders: wordBorder, children: [cellPara('6.2', true, AlignmentType.CENTER)] }),
+            new TableCell({ borders: wordBorder, children: [cellPara('PENGELUARAN PEMBIAYAAN', true)] }),
+            new TableCell({ borders: wordBorder, children: [cellPara('0', true, AlignmentType.RIGHT)] }),
+          ],
+        }),
+        ...[
+          ['6.2.1', '  Pembentukan Dana Cadangan'],
+          ['6.2.2', '  Penyertaan Modal Daerah'],
+          ['6.2.3', '  Pembayaran Cicilan Pokok Utang yang Jatuh Tempo'],
+          ['6.2.4', '  Pemberian Pinjaman Daerah'],
+        ].map(
+          ([k, u]) =>
+            new TableRow({
+              children: [
+                new TableCell({ borders: wordBorder, children: [cellPara(k, false, AlignmentType.CENTER)] }),
+                new TableCell({ borders: wordBorder, children: [cellPara(u)] }),
+                new TableCell({ borders: wordBorder, children: [cellPara('0', false, AlignmentType.RIGHT)] }),
+              ],
+            }),
+        ),
+        new TableRow({
+          children: [
+            new TableCell({
+              borders: wordBorder,
+              columnSpan: 2,
+              children: [cellPara('JUMLAH PENGELUARAN PEMBIAYAAN', true, AlignmentType.CENTER)],
+            }),
+            new TableCell({ borders: wordBorder, children: [cellPara('0', true, AlignmentType.RIGHT)] }),
+          ],
+        }),
+      ];
+
+      const sectionPembiayaan32 = {
+        children: [
+          textPara('RENCANA KERJA DAN ANGGARAN', true),
+          textPara('SATUAN KERJA PERANGKAT DAERAH (RKA-PEMBIAYAAN SKPD — Pengeluaran Pembiayaan)', true),
+          new Paragraph({ text: '' }),
+          ...pembiayaanHeaderRows(),
+          textPara('Rincian Rencana Anggaran Pengeluaran Pembiayaan', true),
+          new WordTable({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            rows: pengeluaranRowsList32,
+          }),
+          new Paragraph({ text: '' }),
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: 'Sofifi, _________ 2026\nMengesahkan,\nPejabat Pengelola Keuangan Daerah\n\n\n\n( _______________________ )',
+                font: 'Times New Roman',
+                bold: true,
+              }),
+            ],
+            alignment: AlignmentType.RIGHT,
+          }),
+        ],
+      };
+
+      sections.push(sectionPembiayaan31, sectionPembiayaan32);
+
+      // sections[0] = cover, [1]=RKA-SKPD, [2]=RKA-PENDAPATAN SKPD, [3]=RKA-SKPD 2.1 (bukan
+      // formulir resmi tersendiri, hanya bagian dokumen lengkap), [4]=REKAPITULASI RKA-BELANJA
+      // SKPD, [5]=RKA-BELANJA SKPD, [6]+[7]=RKA-PEMBIAYAAN SKPD (penerimaan+pengeluaran
+      // digabung, sesuai satu formulir resmi di lampiran Permendagri 77/2020, bukan 3.1/3.2
+      // terpisah seperti versi lama) — dipisah agar bisa dicetak satu-satu.
+      const formulirSectionsMap = {
+        'RKA-SKPD': sections[1],
+        'RKA-PENDAPATAN SKPD': sections[2],
+        'REKAPITULASI RKA-BELANJA SKPD': sections[4],
+        'RKA-BELANJA SKPD': sections[5],
+        'RKA-PEMBIAYAAN SKPD': { children: [...sections[6].children, ...sections[7].children] },
+      };
+      const formulirRequestedWord = req.query.formulir;
+      const singleFormulirWord = formulirRequestedWord && formulirSectionsMap[formulirRequestedWord];
+      const finalSections = singleFormulirWord
+        ? [{ children: formulirSectionsMap[formulirRequestedWord].children }]
+        : sections;
+
+      const doc = new Document({ sections: finalSections });
       const b64string = await docx.Packer.toBase64String(doc);
 
+      const formulirSlugWord = singleFormulirWord
+        ? `_${formulirRequestedWord.replace(/[.\s]/g, '')}`
+        : '';
       res.setHeader(
         'Content-Type',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       );
-      res.setHeader('Content-Disposition', `attachment; filename=RKA_${id}_${rka.tahun}.docx`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename=RKA_${id}_${rka.tahun}${formulirSlugWord}.docx`,
+      );
       res.send(Buffer.from(b64string, 'base64'));
     } catch (error) {
       res.status(500).json({ success: false, message: error.message });
@@ -1793,14 +2279,6 @@ module.exports = {
         catatan: t.catatan || '',
       }));
       const engineResult = await rkaEngine.recalculateWithValidation(id);
-      const {
-        totalBelanja,
-        totalBelanjaOperasi,
-        totalBelanjaModal,
-        totalBelanjaTidakTerduga,
-        totalBelanjaTransfer,
-        total,
-      } = getExportTotals(engineResult);
       const detailRows = engineResult.rows;
       const opdName = rka.opd_penanggung_jawab || 'DINAS PANGAN PROVINSI';
 
@@ -1808,150 +2286,12 @@ module.exports = {
         return res.status(400).json({ success: false, message: 'Tidak ada data rincian belanja' });
       }
 
-      // Reuse buildHierarki dari exportPdf — definisikan ulang di sini
-      const formatRp = (val) => `Rp. ${Number(val).toLocaleString('id-ID')},00`;
+      // Perbandingan Sebelum/Sesudah/Bertambah-(Berkurang) terhadap tahapan sebelumnya
+      // (kosong/nol kalau RKA masih di APBD_INDUK — belum pernah digeser/diubah)
+      const comparison = await compareTahapanHistory(Number(id));
+      const pejabat = await fetchPejabatByTahun(rka.tahun);
 
-      const subtotals = {};
-      detailRows.forEach((item) => {
-        const segments = item.kode_rekening.split('.');
-        for (let i = 1; i <= segments.length; i++) {
-          const prefix = segments.slice(0, i).join('.');
-          subtotals[prefix] = (subtotals[prefix] || 0) + Number(item.jumlah || 0);
-        }
-      });
-
-      const labelStatis = {
-        5: 'BELANJA DAERAH',
-        5.1: 'BELANJA OPERASI',
-        5.2: 'BELANJA MODAL',
-        5.3: 'BELANJA TIDAK TERDUGA',
-        5.4: 'BELANJA TRANSFER',
-        '5.1.02': 'Belanja Barang dan Jasa',
-        '5.1.02.01': 'Belanja Barang',
-        '5.1.02.01.01': 'Belanja Barang Pakai Habis',
-      };
-
-      const grouped = {};
-      const kodeOrder = [];
-      detailRows.forEach((item) => {
-        const kode = item.kode_rekening;
-        if (!grouped[kode]) {
-          grouped[kode] = [];
-          kodeOrder.push(kode);
-        }
-        grouped[kode].push(item);
-      });
-
-      const renderedPrefixes = new Set();
-      let rincianHtml = '';
-
-      kodeOrder.forEach((kode) => {
-        const items = grouped[kode];
-        const segments = kode.split('.');
-
-        for (let i = 1; i <= segments.length; i++) {
-          const prefix = segments.slice(0, i).join('.');
-          if (renderedPrefixes.has(prefix)) continue;
-          renderedPrefixes.add(prefix);
-          const isLeaf = i === segments.length;
-          const isTopLevel = i <= 2;
-
-          if (!isLeaf) {
-            const label = labelStatis[prefix] || prefix;
-            const bg = isTopLevel ? '#f2f2f2' : '#fff';
-            const fw = isTopLevel ? 'bold' : 'normal';
-            const indent = (i - 1) * 12;
-            rincianHtml += `<tr style="background-color:${bg};">
-              <td style="border:1px solid #000;padding:4px;font-weight:${fw};">${prefix}</td>
-              <td colspan="5" style="border:1px solid #000;padding:4px;padding-left:${indent + 4}px;font-weight:${fw};">${label}</td>
-              <td style="border:1px solid #000;padding:4px;text-align:right;font-weight:${fw};">${formatRp(subtotals[prefix] || 0)}</td></tr>`;
-          } else {
-            const namaLeaf = items[0].nama_rekening || items[0].uraian || prefix;
-            rincianHtml += `<tr>
-              <td style="border:1px solid #000;padding:4px;font-weight:bold;">${prefix}</td>
-              <td colspan="5" style="border:1px solid #000;padding:4px;font-weight:bold;">${namaLeaf}</td>
-              <td style="border:1px solid #000;padding:4px;text-align:right;font-weight:bold;">${formatRp(subtotals[prefix] || 0)}</td></tr>`;
-
-            const grupSumber = {};
-            const sumberOrder = [];
-            items.forEach((it) => {
-              const sd = it.sumber_dana || 'PAD';
-              if (!grupSumber[sd]) {
-                grupSumber[sd] = [];
-                sumberOrder.push(sd);
-              }
-              grupSumber[sd].push(it);
-            });
-
-            sumberOrder.forEach((sd) => {
-              const grupItems = grupSumber[sd];
-              const subtotalGrup = grupItems.reduce((s, it) => s + Number(it.jumlah || 0), 0);
-              rincianHtml += `<tr>
-                <td style="border:1px solid #000;padding:4px;"></td>
-                <td colspan="5" style="border:1px solid #000;padding:4px;">
-                  <strong>[ # ] ${namaLeaf}</strong><br>
-                  <span style="padding-left:12px;">Sumber Dana : ${sd}</span>
-                </td>
-                <td style="border:1px solid #000;padding:4px;text-align:right;">${formatRp(subtotalGrup)}</td></tr>`;
-
-              const namaGrup = grupItems[0].nama_rekening || namaLeaf;
-              rincianHtml += `<tr>
-                <td style="border:1px solid #000;padding:4px;"></td>
-                <td colspan="5" style="border:1px solid #000;padding:4px;">[ - ] ${namaGrup}</td>
-                <td style="border:1px solid #000;padding:4px;text-align:right;">${formatRp(subtotalGrup)}</td></tr>`;
-
-              grupItems.forEach((it) => {
-                rincianHtml += `<tr>
-                  <td style="border:1px solid #000;padding:4px;"></td>
-                  <td style="border:1px solid #000;padding:4px;color:#c00000;padding-left:24px;">
-                    ${it.uraian || '-'}<br>
-                    <span style="color:#555;font-size:10px;">Spesifikasi : ${it.spesifikasi || '-'}</span>
-                  </td>
-                  <td style="border:1px solid #000;padding:4px;text-align:center;">${formatKoefisienDisplay(it.koefisien_array, it.volume)}</td>
-                  <td style="border:1px solid #000;padding:4px;text-align:center;">${it.satuan || '-'}</td>
-                  <td style="border:1px solid #000;padding:4px;text-align:right;color:#c00000;">${Number(it.harga_satuan || 0).toLocaleString('id-ID')},00</td>
-                  <td style="border:1px solid #000;padding:4px;text-align:center;">0 %</td>
-                  <td
-                    style="
-                        border:1px solid #000;
-                        padding:4px;
-                        text-align:right;
-                        white-space:pre-line;
-                        "
-                    >
-                    Subtotal : ${formatRp(it.jumlah || 0)}
-                    <br>
-                    PPN ${it.ppn || 0}% :
-                    ${formatRp(it.nilai_ppn || 0)}
-                    <br>
-                    <b>
-                    TOTAL :
-                    ${formatRp(it.total_setelah_ppn || it.jumlah || 0)}
-                    </b>
-                  </td>
-                </tr>`;
-              });
-            });
-          }
-        }
-      });
-
-      // Baris TAPD
-      const tapdRows =
-        tapdList.length > 0
-          ? tapdList
-              .map(
-                (t, i) => `<tr>
-            <td style="border:1px solid #000;padding:4px;text-align:center;">${i + 1}</td>
-            <td style="border:1px solid #000;padding:4px;">${t.nama || ''}</td>
-            <td style="border:1px solid #000;padding:4px;">${t.nip || ''}</td>
-            <td style="border:1px solid #000;padding:4px;">${t.jabatan || ''}</td>
-            <td style="border:1px solid #000;padding:4px;text-align:center;"></td>
-          </tr>`,
-              )
-              .join('')
-          : `<tr><td colspan="5" style="border:1px solid #000;padding:4px;text-align:center;color:#999;">— Belum diisi —</td></tr>`;
-
+      const bodyHtml = await buildFormulirBelanjaBodyHtml({ rka, rincian, comparison, tapdList, opdName, pejabat });
       const htmlBelanja = `<!DOCTYPE html><html><head><meta charset="utf-8">
         <style>
           body{font-family:Arial,sans-serif;font-size:11px;margin:20px;color:#333;}
@@ -1963,105 +2303,7 @@ module.exports = {
           .meta td{border:none;padding:2px;}
           .footer-sign{float:right;margin-top:30px;text-align:center;width:260px;font-weight:bold;}
           .clear{clear:both;}
-        </style></head><body>
-        <div style="text-align:right;font-weight:bold;margin-bottom:4px;">
-          Formulir RKA-BELANJA SKPD
-        </div>
-        <div class="header-form">
-          RENCANA KERJA DAN ANGGARAN<br>SATUAN KERJA PERANGKAT DAERAH<br>
-          Rincian Anggaran Belanja Menurut Program, Kegiatan dan Sub Kegiatan
-        </div>
-        <table class="meta" style="border:none;margin-bottom:8px;">
-          <tr><td style="width:22%;font-weight:bold;">Urusan Pemerintahan</td><td>: ${rka.kode_urusan || (rka.kode_program ? rka.kode_program.split('.')[0] : '-')} ${rka.urusan || ''}</td></tr>
-          <tr><td style="font-weight:bold;">Bidang Urusan</td><td>: ${rka.kode_bidang_urusan || rka.kode_program || '-'} ${rka.bidang_urusan || ''}</td></tr>
-          <tr><td style="font-weight:bold;">Unit Organisasi</td><td>: ${opdName}</td></tr>
-          <tr><td style="font-weight:bold;">Sub Unit Organisasi</td><td>: -</td></tr>
-          <tr><td style="font-weight:bold;">Program</td><td>: ${rka.kode_program || ''} ${rka.program || '-'}</td></tr>
-          <tr><td style="font-weight:bold;">Kegiatan</td><td>: ${rka.kode_kegiatan || ''} ${rka.kegiatan || '-'}</td></tr>
-          <tr><td style="font-weight:bold;">Sub Kegiatan</td><td>: ${rka.kode_sub_kegiatan || ''} ${rka.sub_kegiatan || '-'}</td></tr>
-          <tr><td style="font-weight:bold;">SPM</td><td>: -</td></tr>
-          <tr><td style="font-weight:bold;">Jenis Layanan</td><td>: -</td></tr>
-          <tr><td style="font-weight:bold;">Sumber Pendanaan</td><td>: ${rincian[0]?.sumber_dana || 'PAD'}</td></tr>
-          <tr><td style="font-weight:bold;">Lokasi</td><td>: ${rka.lokasi || '-'}</td></tr>
-          <tr><td style="font-weight:bold;">Waktu Pelaksanaan</td><td>: ${rka.waktu_mulai || 'Januari'} s.d ${rka.waktu_selesai || 'Desember'}</td></tr>
-          <tr><td style="font-weight:bold;">Kelompok Sasaran</td><td>: Provinsi Maluku Utara</td></tr>
-          <tr><td style="font-weight:bold;">Alokasi ${Number(rka.tahun) - 1}</td><td>: Rp. 0,00</td></tr>
-          <tr><td style="font-weight:bold;">Alokasi ${rka.tahun}</td><td>: ${formatRp(totalBelanja)}</td></tr>
-          <tr><td style="font-weight:bold;">Alokasi ${Number(rka.tahun) + 1}</td><td>: Rp. 0,00</td></tr>
-        </table>
-
-        <div class="bold" style="margin:8px 0 4px;">Indikator dan Tolak Ukur Kinerja Kegiatan</div>
-        <table style="margin-bottom:12px;">
-          <thead><tr><th style="width:25%;">Indikator</th><th style="width:55%;">Tolok Ukur Kinerja</th><th style="width:20%;">Target Kinerja</th></tr></thead>
-          <tbody>
-            <tr><td class="bold">Capaian Program</td><td>${rka.capaian_program || '-'}</td><td class="center">${rka.target_capaian || '-'} ${rka.satuan_capaian || '%'}</td></tr>
-            <tr><td class="bold">Masukan</td><td>${rka.masukan || 'Dana yang dibutuhkan'}</td><td class="right">${formatRp(totalBelanja)}</td></tr>
-            <tr><td class="bold">Keluaran</td><td>${rka.keluaran || rka.indikator || '-'}</td><td class="center">${rka.target_keluaran || rka.target || '-'} ${rka.satuan_keluaran || ''}</td></tr>
-            <tr><td class="bold">Hasil</td><td>${rka.hasil || '-'}</td><td class="center">${rka.target_hasil || '-'} ${rka.satuan_hasil || '%'}</td></tr>
-          </tbody>
-        </table>
-
-        <div class="bold" style="margin:8px 0 4px;">Rincian Anggaran Belanja Kegiatan Satuan Kerja Perangkat Daerah</div>
-        <table>
-          <thead>
-            <tr>
-              <th style="width:15%;">Kode Rekening</th>
-              <th style="width:35%;">Uraian</th>
-              <th style="width:12%;">Koefisien</th>
-              <th style="width:10%;">Satuan</th>
-              <th style="width:12%;">Harga</th>
-              <th style="width:6%;">PPN</th>
-              <th style="width:10%;">Jumlah (Rp)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rincianHtml}
-            <tr class="bold" style="background-color:#e2efda;">
-              <td colspan="6" class="center">JUMLAH TOTAL</td>
-              <td class="right">${formatRp(total)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div style="margin-top:20px;display:table;width:100%;table-layout:fixed;">
-          <div style="display:table-row;">
-
-            <!-- Kiri: Pembahasan + TAPD -->
-            <div style="display:table-cell;width:65%;vertical-align:top;padding-right:8px;">
-              <div style="margin-bottom:8px;">
-                <div class="bold" style="margin-bottom:4px;">Pembahasan :</div>
-                <div>Tanggal : ${tapdList[0]?.tanggal_pembahasan || '________________________'}</div>
-                <div style="margin-top:6px;">Catatan :</div>
-                <div style="border:1px solid #ccc;min-height:30px;padding:4px;margin-top:4px;font-size:10px;">
-                  ${tapdList[0]?.catatan || '&nbsp;'}
-                </div>
-              </div>
-              <div class="bold" style="margin:10px 0 4px;">Tim Anggaran Pemerintahan Daerah</div>
-              <table style="width:100%;border-collapse:collapse;font-size:10px;box-sizing:border-box;">
-                <thead>
-                  <tr>
-                    <th style="border:1px solid #000;padding:3px;width:5%;text-align:center;">No</th>
-                    <th style="border:1px solid #000;padding:3px;width:35%;">Nama</th>
-                    <th style="border:1px solid #000;padding:3px;width:25%;">NIP</th>
-                    <th style="border:1px solid #000;padding:3px;width:20%;">Jabatan</th>
-                    <th style="border:1px solid #000;padding:3px;width:15%;text-align:center;">Tanda Tangan</th>
-                  </tr>
-                </thead>
-                <tbody>${tapdRows}</tbody>
-              </table>
-            </div>
-
-            <!-- Kanan: TTD Kepala -->
-            <div style="display:table-cell;width:35%;vertical-align:top;text-align:center;font-weight:bold;padding-left:12px;">
-              Sofifi, _________ ${rka.tahun}<br>
-              Kepala ${opdName}<br><br><br><br><br>
-              ${rka.nama_kepala || 'Dheny Tjan, SH., M.Si'}<br>
-              NIP. ${rka.nip_kepala || '197507302001121001'}
-            </div>
-
-          </div>
-        </div>
-      </body></html>`;
+        </style></head><body>${bodyHtml}</body></html>`;
 
       browser = await puppeteer.launch({
         headless: true,
@@ -2104,173 +2346,52 @@ module.exports = {
         totalBelanjaModal,
         totalBelanjaTidakTerduga,
         totalBelanjaTransfer,
-        total,
       } = getExportTotals(engineResult);
-      const totalRincian = total;
       const detailRows = engineResult.rows;
 
       const opdName = rka.opd_penanggung_jawab || 'DINAS PANGAN PROVINSI';
 
-      // Build hierarki kode rekening sesuai format SIPD
-      // Build hierarki kode rekening sesuai format SIPD
-      // Struktur: 5 → 5.1 → 5.1.02 → 5.1.02.01 → 5.1.02.01.01 → 5.1.02.01.01.0024 → [#] grup → [-] sub → item merah
-      const buildHierarki = (rows) => {
-        const formatRp = (val) => `Rp. ${Number(val).toLocaleString('id-ID')},00`;
-
-        // Hitung subtotal per prefix kode rekening
-        const subtotals = {};
-        rows.forEach((item) => {
-          const segments = item.kode_rekening.split('.');
-          for (let i = 1; i <= segments.length; i++) {
-            const prefix = segments.slice(0, i).join('.');
-            subtotals[prefix] = (subtotals[prefix] || 0) + Number(item.jumlah || 0);
-          }
-        });
-
-        // Kumpulkan nama rekening per prefix dari item pertama yang mengandung prefix tsb
-        const namaPerPrefix = {};
-        rows.forEach((item) => {
-          const kode = item.kode_rekening;
-          const segments = kode.split('.');
-          for (let i = 1; i <= segments.length; i++) {
-            const prefix = segments.slice(0, i).join('.');
-            if (!namaPerPrefix[prefix]) {
-              // Level leaf: pakai nama_rekening; level induk: akan diisi saat item pertama yang mengandung prefix ini ditemukan
-              namaPerPrefix[prefix] =
-                i === segments.length
-                  ? item.nama_rekening || item.uraian || prefix
-                  : item[`nama_level_${i}`] || '';
-            }
-          }
-        });
-
-        // Kelompokkan item per kode rekening leaf (misal 5.1.02.01.01.0024)
-        const grouped = {};
-        const kodeOrder = [];
-        rows.forEach((item) => {
-          const kode = item.kode_rekening;
-          if (!grouped[kode]) {
-            grouped[kode] = [];
-            kodeOrder.push(kode);
-          }
-          grouped[kode].push(item);
-        });
-
-        // Label statis untuk level induk standar Permendagri 77
-        const labelStatis = {
-          5: 'BELANJA DAERAH',
-          5.1: 'BELANJA OPERASI',
-          5.2: 'BELANJA MODAL',
-          5.3: 'BELANJA TIDAK TERDUGA',
-          5.4: 'BELANJA TRANSFER',
-          '5.1.02': 'Belanja Barang dan Jasa',
-          '5.1.02.01': 'Belanja Barang',
-          '5.1.02.01.01': 'Belanja Barang Pakai Habis',
-        };
-
-        let html = '';
-        const renderedPrefixes = new Set();
-
-        kodeOrder.forEach((kode) => {
-          const items = grouped[kode];
-          const segments = kode.split('.');
-
-          // --- Render baris header untuk setiap level prefix yang belum dirender ---
-          for (let i = 1; i <= segments.length; i++) {
-            const prefix = segments.slice(0, i).join('.');
-            if (renderedPrefixes.has(prefix)) continue;
-            renderedPrefixes.add(prefix);
-
-            const isLeaf = i === segments.length;
-            const isTopLevel = i <= 2;
-
-            if (!isLeaf) {
-              // Baris induk: 5 / 5.1 / 5.1.02 / 5.1.02.01 / 5.1.02.01.01
-              const label = labelStatis[prefix] || namaPerPrefix[prefix] || prefix;
-              const bg = isTopLevel ? '#f2f2f2' : '#fff';
-              const fw = isTopLevel ? 'bold' : 'normal';
-              const indent = (i - 1) * 12;
-              html += `
-                <tr style="background-color:${bg};">
-                  <td style="border:1px solid #000;padding:4px;font-weight:${fw};">${prefix}</td>
-                  <td colspan="5" style="border:1px solid #000;padding:4px;padding-left:${indent + 4}px;font-weight:${fw};">${label}</td>
-                  <td style="border:1px solid #000;padding:4px;text-align:right;font-weight:${fw};">${formatRp(subtotals[prefix] || 0)}</td>
-                </tr>`;
-            } else {
-              // Baris leaf: 5.1.02.01.01.0024
-              const namaLeaf = items[0].nama_rekening || items[0].uraian || prefix;
-              html += `
-                <tr>
-                  <td style="border:1px solid #000;padding:4px;font-weight:bold;">${prefix}</td>
-                  <td colspan="5" style="border:1px solid #000;padding:4px;font-weight:bold;">${namaLeaf}</td>
-                  <td style="border:1px solid #000;padding:4px;text-align:right;font-weight:bold;">${formatRp(subtotals[prefix] || 0)}</td>
-                </tr>`;
-
-              // --- Render grup [#] per sumber_dana dalam kode rekening yang sama ---
-              // Kelompokkan items dalam kode ini per sumber_dana
-              const grupSumber = {};
-              const sumberOrder = [];
-              items.forEach((it) => {
-                const sd = it.sumber_dana || 'PAD';
-                if (!grupSumber[sd]) {
-                  grupSumber[sd] = [];
-                  sumberOrder.push(sd);
-                }
-                grupSumber[sd].push(it);
-              });
-
-              sumberOrder.forEach((sd) => {
-                const grupItems = grupSumber[sd];
-                const subtotalGrup = grupItems.reduce((s, it) => s + Number(it.jumlah || 0), 0);
-
-                // Baris [#] header grup sumber dana
-                html += `
-                  <tr>
-                    <td style="border:1px solid #000;padding:4px;"></td>
-                    <td colspan="5" style="border:1px solid #000;padding:4px;">
-                      <strong>[ # ] ${namaLeaf}</strong><br>
-                      <span style="padding-left:12px;">Sumber Dana : ${sd}</span>
-                    </td>
-                    <td style="border:1px solid #000;padding:4px;text-align:right;">${formatRp(subtotalGrup)}</td>
-                  </tr>`;
-
-                // [ - ] sub-grup: gunakan nama_rekening sebagai judul grup uraian
-                // semua item dalam grup ini tampil sebagai baris detail merah
-                const namaGrup = grupItems[0].nama_rekening || namaLeaf;
-                const subtotalSub = grupItems.reduce((s, it) => s + Number(it.jumlah || 0), 0);
-
-                html += `
-                    <tr>
-                      <td style="border:1px solid #000;padding:4px;"></td>
-                      <td colspan="5" style="border:1px solid #000;padding:4px;">[ - ] ${namaGrup}</td>
-                      <td style="border:1px solid #000;padding:4px;text-align:right;">${formatRp(subtotalSub)}</td>
-                    </tr>`;
-
-                // Baris item detail (merah) — satu baris per row di rka_rincian_belanja
-                grupItems.forEach((it) => {
-                  html += `
-                      <tr>
-                        <td style="border:1px solid #000;padding:4px;"></td>
-                        <td style="border:1px solid #000;padding:4px;color:#c00000;padding-left:24px;">
-                          ${it.uraian || '-'}<br>
-                          <span style="color:#555;font-size:10px;">Spesifikasi : ${it.spesifikasi || '-'}</span>
-                        </td>
-                        <td style="border:1px solid #000;padding:4px;text-align:center;">${formatKoefisienDisplay(it.koefisien_array, it.volume)}</td>
-                        <td style="border:1px solid #000;padding:4px;text-align:center;">${it.satuan || '-'}</td>
-                        <td style="border:1px solid #000;padding:4px;text-align:right;color:#c00000;">${Number(it.harga_satuan || 0).toLocaleString('id-ID')},00</td>
-                        <td style="border:1px solid #000;padding:4px;text-align:center;">0 %</td>
-                        <td style="border:1px solid #000;padding:4px;text-align:right;">${formatRp(it.jumlah || 0)}</td>
-                      </tr>`;
-                });
-              });
-            }
-          }
-        });
-
-        return html;
+      // Perbandingan Sebelum/Sesudah/Bertambah-(Berkurang) terhadap tahapan sebelumnya
+      // (kosong/nol kalau RKA masih di APBD_INDUK — belum pernah digeser/diubah)
+      const comparison = await compareTahapanHistory(Number(id));
+      const pejabat = await fetchPejabatByTahun(rka.tahun);
+      const belanjaTypeOf = (kodeRekening) => {
+        const s = String(kodeRekening || '');
+        if (s.startsWith('5.1')) return 'operasi';
+        if (s.startsWith('5.2')) return 'modal';
+        if (s.startsWith('5.3')) return 'btt';
+        if (s.startsWith('5.4')) return 'transfer';
+        return null;
       };
+      const belanjaTypeTotals = { sebelum: { operasi: 0, modal: 0, btt: 0, transfer: 0 }, sesudah: { operasi: 0, modal: 0, btt: 0, transfer: 0 } };
+      comparison.items.forEach((it) => {
+        const type = belanjaTypeOf(it.kode_rekening);
+        if (!type) return;
+        belanjaTypeTotals.sebelum[type] += Number(it.jumlah_sebelum || 0);
+        belanjaTypeTotals.sesudah[type] += Number(it.jumlah_sesudah || 0);
+      });
 
-      let rincianHtmlRows = buildHierarki(detailRows);
+      // Data TAPD asli dari database (tersimpan lewat menu Setting TAPD), otomatis mengikuti tahun RKA
+      const tapdData = await Tapd.findAll({
+        where: { tahun: Number(rka.tahun) },
+        order: [['urutan', 'ASC']],
+      });
+      const tapdRowsFull =
+        tapdData.length > 0
+          ? tapdData
+              .map(
+                (t, i) => `<tr><td class="center">${i + 1}</td><td>${t.nama || ''}</td><td>${t.nip || ''}</td><td>${t.jabatan || ''}</td><td class="center">${i + 1}.</td></tr>`,
+              )
+              .join('')
+          : `<tr><td colspan="5" class="center" style="color:#999;">— Data TAPD belum diisi, lengkapi di menu Setting TAPD —</td></tr>`;
+      const tapdList = tapdData.map((t) => ({
+        nama: t.nama,
+        nip: t.nip,
+        jabatan: t.jabatan,
+        tanggal_pembahasan: t.tanggal_pembahasan || '',
+        catatan: t.catatan || '',
+      }));
+
 
       // Validate detailRows exists
       if (!detailRows || detailRows.length === 0) {
@@ -2280,12 +2401,9 @@ module.exports = {
         });
       }
 
-      // Desain Template Gabungan 8 Formulir Terintegrasi
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
+      // Desain 7 Formulir SIPD — dipecah per formulir agar bisa dicetak satu-satu (?formulir=RKA-SKPD dst)
+      // atau digabung penuh (tanpa query formulir) untuk kompatibilitas lama.
+      const pageStyle = `
           <style>
             body { font-family: Arial, sans-serif; font-size: 11px; margin: 20px; color: #333; }
             .page { page-break-after: always; }
@@ -2301,9 +2419,10 @@ module.exports = {
             .bold { font-weight: bold; }
             .footer-sign { float: right; margin-top: 30px; text-align: center; width: 250px; font-weight: bold; }
             .clear { clear: both; }
-          </style>
-        </head>
-        <body>
+            .meta td { border: none; padding: 2px; }
+          </style>`;
+
+      const pageCover = `
           <div class="page" style="padding: 10px;">
             <div class="cover-title" style="margin-top: 10px;">
               PEMERINTAH PROVINSI MALUKU UTARA<br>
@@ -2323,9 +2442,9 @@ module.exports = {
             <div style="margin-top: 20px; font-size: 12px;">
               <p class="bold" style="margin-bottom: 5px;">Pengguna Anggaran :</p>
               <table style="border: none; width: auto; margin-top: 0; margin-left: 10px;">
-                <tr style="border: none;"><td style="border: none; padding: 2px; width: 80px;">a. Nama</td><td style="border: none; padding: 2px;">: [Nama Pengguna Anggaran]</td></tr>
-                <tr style="border: none;"><td style="border: none; padding: 2px;">b. NIP</td><td style="border: none; padding: 2px;">: [NIP Pengguna Anggaran]</td></tr>
-                <tr style="border: none;"><td style="border: none; padding: 2px;">c. Jabatan</td><td style="border: none; padding: 2px;">: [Jabatan Pengguna Anggaran]</td></tr>
+                <tr style="border: none;"><td style="border: none; padding: 2px; width: 80px;">a. Nama</td><td style="border: none; padding: 2px;">: ${pejabat.penggunaAnggaran.nama}</td></tr>
+                <tr style="border: none;"><td style="border: none; padding: 2px;">b. NIP</td><td style="border: none; padding: 2px;">: ${pejabat.penggunaAnggaran.nip}</td></tr>
+                <tr style="border: none;"><td style="border: none; padding: 2px;">c. Jabatan</td><td style="border: none; padding: 2px;">: ${pejabat.penggunaAnggaran.jabatan}</td></tr>
               </table>
             </div>
 
@@ -2338,16 +2457,15 @@ module.exports = {
               </thead>
               <tbody>
                 <tr><td class="center" style="border: 1px solid #000;">RKA-SKPD</td><td style="border: 1px solid #000;">Ringkasan Anggaran Pendapatan, Belanja dan Pembiayaan Satuan Kerja Perangkat Daerah</td></tr>
-                <tr><td class="center" style="border: 1px solid #000;">RKA-SKPD 1</td><td style="border: 1px solid #000;">Rincian Anggaran Pendapatan Satuan Kerja Perangkat Daerah</td></tr>
-                <tr><td class="center" style="border: 1px solid #000;">RKA-SKPD 2.1</td><td style="border: 1px solid #000;">Rincian Anggaran Belanja Operasi, Belanja Modal, Belanja Tidak Terduga, dan Belanja Transfer Satuan Kerja Perangkat Daerah</td></tr>
-                <tr><td class="center" style="border: 1px solid #000;">RKA-SKPD 2.2</td><td style="border: 1px solid #000;">Rekapitulasi Rincian Anggaran Belanja menurut Program, Kegiatan dan Sub Kegiatan Satuan Kerja Perangkat Daerah</td></tr>
-                <tr><td class="center" style="border: 1px solid #000;">RKA-SKPD 2.2.1</td><td style="border: 1px solid #000;">Rincian Anggaran Belanja menurut Program, Kegiatan dan Sub Kegiatan Satuan Kerja Perangkat Daerah</td></tr>
-                <tr><td class="center" style="border: 1px solid #000;">RKA-SKPD 3.1</td><td style="border: 1px solid #000;">Rincian Penerimaan Pembiayaan Daerah</td></tr>
-                <tr><td class="center" style="border: 1px solid #000;">RKA-SKPD 3.2</td><td style="border: 1px solid #000;">Rincian Pengeluaran Pembiayaan Daerah</td></tr>
+                <tr><td class="center" style="border: 1px solid #000;">RKA-PENDAPATAN SKPD</td><td style="border: 1px solid #000;">Rincian Anggaran Pendapatan Satuan Kerja Perangkat Daerah</td></tr>
+                <tr><td class="center" style="border: 1px solid #000;">REKAPITULASI RKA-BELANJA SKPD</td><td style="border: 1px solid #000;">Rekapitulasi Anggaran Belanja Berdasarkan Program dan Kegiatan Satuan Kerja Perangkat Daerah</td></tr>
+                <tr><td class="center" style="border: 1px solid #000;">RKA-BELANJA SKPD</td><td style="border: 1px solid #000;">Rincian Anggaran Belanja menurut Program, Kegiatan dan Sub Kegiatan Satuan Kerja Perangkat Daerah</td></tr>
+                <tr><td class="center" style="border: 1px solid #000;">RKA-PEMBIAYAAN SKPD</td><td style="border: 1px solid #000;">Rincian Anggaran Pembiayaan Satuan Kerja Perangkat Daerah (jika ada)</td></tr>
               </tbody>
             </table>
-          </div>
+          </div>`;
 
+      const pageRingkasan = `
           <div class="page">
             <div class="header-form">RINGKASAN ANGGARAN PENDAPATAN, BELANJA DAN PEMBIAYAAN<br>SATUAN KERJA PERANGKAT DAERAH (RKA-SKPD)</div>
             <table>
@@ -2375,10 +2493,11 @@ module.exports = {
             </table>
             <div class="footer-sign">Ternate, 02 Juni 2026<br>Pejabat Pengelola Keuangan Daerah<br><br><br><br>( _______________________ )</div>
             <div class="clear"></div>
-          </div>
+          </div>`;
 
+      const pagePendapatan1 = `
           <div class="page">
-            <div class="header-form">RINCIAN ANGGARAN PENDAPATAN SATUAN KERJA PERANGKAT DAERAH (Formulir RKA-SKPD 1)</div>
+            <div class="header-form">RINCIAN ANGGARAN PENDAPATAN SATUAN KERJA PERANGKAT DAERAH (Formulir RKA-PENDAPATAN SKPD)</div>
             <table>
               <thead>
                 <tr>
@@ -2419,55 +2538,18 @@ module.exports = {
                   <tr><th style="width: 5%;">No</th><th style="width: 35%;">Nama</th><th style="width: 20%;">NIP</th><th style="width: 25%;">Jabatan</th><th style="width: 15%;">Tanda Tangan</th></tr>
                 </thead>
                 <tbody>
-                  <tr><td class="center">1</td><td>[Nama Ketua TAPD]</td><td>[NIP]</td><td>Ketua TAPD</td><td>1.</td></tr>
-                  <tr><td class="center">2</td><td>[Nama Sekretaris TAPD]</td><td>[NIP]</td><td>Anggota</td><td>2.</td></tr>
+                  ${tapdRowsFull}
                 </tbody>
               </table>
             </div>
 
-            <div class="footer-sign">Ternate, 02 Juni 2026<br>Kepala SKPD / Pengguna Anggaran<br><br><br><br>( _______________________ )</div>
+            <div class="footer-sign">Ternate, 02 Juni 2026<br>Kepala SKPD / Pengguna Anggaran<br><br><br><br>${pejabat.kepalaDinas.nama}<br>NIP. ${pejabat.kepalaDinas.nip}</div>
             <div class="clear"></div>
-          </div>
+          </div>`;
 
+      const pageBelanja21 = `
           <div class="page">
-            <div class="header-form">REKAPITULASI ANGGARAN BELANJA BERDASARKAN PROGRAM, KEGIATAN, DAN SUB-KEGIATAN<br>SATUAN KERJA PERANGKAT DAERAH (Formulir RKA-SKPD 2.2)</div>
-            <table>
-              <thead>
-                <tr>
-                  <th rowspan="2" style="width: 12%; vertical-align: middle;">Kode</th>
-                  <th rowspan="2" style="width: 33%; vertical-align: middle;">Uraian</th>
-                  <th rowspan="2" style="width: 12%; vertical-align: middle;">Lokasi</th>
-                  <th rowspan="2" style="width: 13%; vertical-align: middle;">Target Kinerja</th>
-                  <th colspan="2" style="width: 20%;">Alokasi Anggaran (Rp)</th>
-                  <th rowspan="2" style="width: 10%; vertical-align: middle;">Prakiraan Maju (Rp)</th>
-                </tr>
-                <tr>
-                  <th>Tahun N-1</th>
-                  <th>Tahun N</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr class="bold" style="background-color: #f9f9f9;">
-                  <td class="center">1.01</td><td>PROGRAM PENUNJANG URUSAN PEMERINTAHAN DAERAH</td><td>Kota Sofifi</td><td class="center">100%</td><td class="right">0</td><td class="right">${formatRupiah(totalBelanja)}</td><td class="right">0</td>
-                </tr>
-                <tr>
-                  <td class="bold">1.01.01</td><td style="padding-left: 10px; font-weight: bold;">Kegiatan Administrasi Keuangan Perangkat Daerah</td><td>Kota Sofifi</td><td class="center">1 Layanan</td><td class="right">0</td><td class="right">${formatRupiah(totalBelanja)}</td><td class="right">0</td>
-                </tr>
-                <tr>
-                  <td>1.01.01.2.02</td><td style="padding-left: 20px; font-style: italic;">Sub-Kegiatan Penyediaan Gaji dan Tunjangan ASN</td><td>Kota Sofifi</td><td class="center">12 Bulan</td><td class="right">0</td><td class="right">${formatRupiah(totalBelanja)}</td><td class="right">0</td>
-                </tr>
-                <tr class="bold" style="background-color: #e2efda;">
-                  <td class="center"></td><td>JUMLAH TOTAL REKAPITULASI</td><td></td><td></td><td class="right">0</td><td class="right">${formatRupiah(totalBelanja)}</td><td class="right">0</td>
-                </tr>
-              </tbody>
-            </table>
-
-            <div class="footer-sign">Ternate, 02 Juni 2026<br>Kepala SKPD / Pengguna Anggaran<br><br><br><br>( _______________________ )</div>
-            <div class="clear"></div>
-          </div>
-
-          <div class="page">
-            <div class="header-form">RINCIAN ANGGARAN BELANJA OPERASI, BELANJA MODAL, BELANJA TIDAK TERDUGA, DAN BELANJA TRANSFER<br>SATUAN KERJA PERANGKAT DAERAH (Formulir RKA-SKPD 2.1)</div>
+            <div class="header-form">RINCIAN ANGGARAN BELANJA OPERASI, BELANJA MODAL, BELANJA TIDAK TERDUGA, DAN BELANJA TRANSFER<br>SATUAN KERJA PERANGKAT DAERAH</div>
             <table>
               <thead>
                 <tr>
@@ -2510,118 +2592,78 @@ module.exports = {
               <strong>Catatan Hasil Pembahasan:</strong> Alokasi Rincian Belanja Daerah disesuaikan dengan target batas anggaran belanja sub-kegiatan organisasi terkait.
             </div>
 
-            <div class="footer-sign">Ternate, 02 Juni 2026<br>Kepala SKPD / Pengguna Anggaran<br><br><br><br>( _______________________ )</div>
+            <div class="footer-sign">Ternate, 02 Juni 2026<br>Kepala SKPD / Pengguna Anggaran<br><br><br><br>${pejabat.kepalaDinas.nama}<br>NIP. ${pejabat.kepalaDinas.nip}</div>
             <div class="clear"></div>
-          </div>
+          </div>`;
 
+      const pageRekap22 = `
           <div class="page">
-            <div class="header-form">REKAPITULASI RINCIAN ANGGARAN BELANJA MENURUT PROGRAM, KEGIATAN DAN SUB KEGIATAN (RKA-SKPD 2.2)</div>
+            <div class="header-form">RENCANA KERJA DAN ANGGARAN SATUAN KERJA PERANGKAT DAERAH<br>Rekapitulasi Anggaran Belanja Berdasarkan Program dan Kegiatan (REKAPITULASI RKA-BELANJA SKPD)</div>
             <table>
               <thead>
                 <tr>
-                  <th>Kode Prog / Keg / Sub</th>
-                  <th>Uraian</th>
-                  <th>Lokasi</th>
-                  <th>Target Kinerja</th>
-                  <th>Belanja Operasi</th>
-                  <th>Belanja Modal</th>
-                  <th>Belanja BTT</th>
-                  <th>Belanja Transfer</th>
-                  <th>Jumlah Total</th>
+                  <th rowspan="3" style="width:10%;">Kode</th>
+                  <th rowspan="3" style="width:16%;">Uraian</th>
+                  <th rowspan="3" style="width:9%;">Sumber Dana</th>
+                  <th rowspan="3" style="width:7%;">Lokasi</th>
+                  <th rowspan="3" style="width:7%;">Jumlah Tahun ${Number(rka.tahun) - 1}</th>
+                  <th colspan="10">Jumlah Tahun ${rka.tahun}</th>
+                  <th rowspan="3" style="width:7%;">Jumlah Tahun ${Number(rka.tahun) + 1}</th>
+                </tr>
+                <tr>
+                  <th colspan="5">Sebelum</th>
+                  <th colspan="5">Sesudah</th>
+                </tr>
+                <tr>
+                  <th style="width:5%;">Belanja Operasi</th><th style="width:5%;">Belanja Modal</th><th style="width:5%;">Belanja BTT</th><th style="width:5%;">Belanja Transfer</th><th style="width:5%;">Jumlah</th>
+                  <th style="width:5%;">Belanja Operasi</th><th style="width:5%;">Belanja Modal</th><th style="width:5%;">Belanja BTT</th><th style="width:5%;">Belanja Transfer</th><th style="width:5%;">Jumlah</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td>PROG-01</td>
+                  <td>${rka.kode_program || '-'}</td>
                   <td>${rka.program} / ${rka.kegiatan} / ${rka.sub_kegiatan}</td>
-                  <td>${rincian[0]?.lokasi || 'Daerah'}</td>
-                  <td>${rka.target || '-'}</td>
-                  <td class="right">${formatRupiah(totalBelanja)}</td>
-                  <td class="right">0</td>
-                  <td class="right">0</td>
-                  <td class="right">0</td>
-                  <td class="right bold">${formatRupiah(totalBelanja)}</td>
+                  <td>${rincian[0]?.sumber_dana || 'PAD'}</td>
+                  <td>${rincian[0]?.lokasi || rka.lokasi || 'Daerah'}</td>
+                  <td class="right">Rp. 0,00</td>
+                  <td class="right">${formatRupiah(belanjaTypeTotals.sebelum.operasi)}</td>
+                  <td class="right">${formatRupiah(belanjaTypeTotals.sebelum.modal)}</td>
+                  <td class="right">${formatRupiah(belanjaTypeTotals.sebelum.btt)}</td>
+                  <td class="right">${formatRupiah(belanjaTypeTotals.sebelum.transfer)}</td>
+                  <td class="right bold">${formatRupiah(comparison.totalSebelum)}</td>
+                  <td class="right">${formatRupiah(belanjaTypeTotals.sesudah.operasi)}</td>
+                  <td class="right">${formatRupiah(belanjaTypeTotals.sesudah.modal)}</td>
+                  <td class="right">${formatRupiah(belanjaTypeTotals.sesudah.btt)}</td>
+                  <td class="right">${formatRupiah(belanjaTypeTotals.sesudah.transfer)}</td>
+                  <td class="right bold">${formatRupiah(comparison.totalSesudah)}</td>
+                  <td class="right">Rp. 0,00</td>
+                </tr>
+                <tr class="bold" style="background-color:#e2efda;">
+                  <td colspan="15" class="center">JUMLAH BERTAMBAH / (BERKURANG)</td>
+                  <td class="right">${formatRupiah(comparison.bertambahBerkurang)}</td>
                 </tr>
               </tbody>
             </table>
-          </div>
+          </div>`;
 
+      // Formulir RKA-BELANJA SKPD — pakai builder yang sama dengan endpoint export-pdf-belanja
+      // (Sebelum/Sesudah/Bertambah-Berkurang + TAPD), supaya user yang memilih formulir ini
+      // dari dropdown Cetak PDF selalu dapat versi yang identik dengan cetakan mandirinya.
+      const formulirBelanjaBodyHtml = await buildFormulirBelanjaBodyHtml({
+        rka,
+        rincian,
+        comparison,
+        tapdList,
+        opdName,
+        pejabat,
+      });
+      const pageDetail221 = `<div class="page">${formulirBelanjaBodyHtml}</div>`;
+
+      const pagePembiayaan31 = `
           <div class="page">
             <div class="header-form">
               RENCANA KERJA DAN ANGGARAN<br>
-              SATUAN KERJA PERANGKAT DAERAH (FORMULIR RKA-SKPD 2.2.1)
-            </div>
-
-            <div style="line-height: 1.6; margin-bottom: 10px; font-size: 11px;">
-              <table style="width: 100%; border: none;">
-                <tr style="border: none;"><td style="width: 22%; border: none; font-weight: bold; padding:2px;">Urusan Pemerintahan</td><td style="border: none; padding:2px;">: ${rka.kode_urusan || (rka.kode_program ? rka.kode_program.split('.')[0] : '-')} ${rka.urusan || ''}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Bidang Urusan</td><td style="border: none; padding:2px;">: ${rka.kode_bidang_urusan || rka.kode_program || '-'} ${rka.bidang_urusan || ''}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Unit Organisasi</td><td style="border: none; padding:2px;">: ${opdName}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Sub Unit Organisasi</td><td style="border: none; padding:2px;">: -</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Program</td><td style="border: none; padding:2px;">: ${rka.kode_program || ''} ${rka.program}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Kegiatan</td><td style="border: none; padding:2px;">: ${rka.kode_kegiatan || ''} ${rka.kegiatan}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Sub Kegiatan</td><td style="border: none; padding:2px;">: ${rka.kode_sub_kegiatan || ''} ${rka.sub_kegiatan}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Sumber Pendanaan</td><td style="border: none; padding:2px;">: ${rincian[0]?.sumber_dana || 'PAD'}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Lokasi</td><td style="border: none; padding:2px;">: ${rka.lokasi || '-'}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Waktu Pelaksanaan</td><td style="border: none; padding:2px;">: ${rka.waktu_mulai || 'Januari'} s.d ${rka.waktu_selesai || 'Desember'}</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Kelompok Sasaran</td><td style="border: none; padding:2px;">: Provinsi Maluku Utara</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Alokasi ${Number(rka.tahun) - 1}</td><td style="border: none; padding:2px;">: Rp. 0,00</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Alokasi ${rka.tahun}</td><td style="border: none; padding:2px;">: Rp. ${Number(totalBelanja).toLocaleString('id-ID')},00</td></tr>
-                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Alokasi ${Number(rka.tahun) + 1}</td><td style="border: none; padding:2px;">: Rp. 0,00</td></tr>
-              </table>
-            </div>
-
-            <p class="bold" style="margin-top: 10px; margin-bottom: 3px; font-size: 11px;">Indikator dan Tolak Ukur Kinerja Kegiatan</p>
-            <table style="margin-bottom: 15px;">
-              <thead>
-                <tr style="background-color: #f2f2f2;">
-                  <th style="width: 25%;">Indikator</th>
-                  <th style="width: 55%;">Tolok Ukur Kinerja</th>
-                  <th style="width: 20%;">Target Kinerja</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr><td class="bold">Capaian Program</td><td>${rka.capaian_program || '-'}</td><td class="center">${rka.target_capaian || '-'} ${rka.satuan_capaian || '%'}</td></tr>
-                <tr><td class="bold">Masukan</td><td>${rka.masukan || 'Dana yang dibutuhkan'}</td><td class="right">${formatRupiah(totalBelanja)}</td></tr>
-                <tr><td class="bold">Keluaran</td><td>${rka.keluaran || rka.indikator || '-'}</td><td class="center">${rka.target_keluaran || rka.target || '-'} ${rka.satuan_keluaran || ''}</td></tr>
-                <tr><td class="bold">Hasil</td><td>${rka.hasil || '-'}</td><td class="center">${rka.target_hasil || '-'} ${rka.satuan_hasil || '%'}</td></tr>
-              </tbody>
-            </table>
-
-            <p class="bold" style="margin-top: 10px; margin-bottom: 3px; font-size: 11px;">Rincian Anggaran Belanja Sub-Kegiatan</p>
-            <table>
-              <thead>
-                <tr style="background-color: #f2f2f2;">
-                  <th style="width: 15%;">Kode Rekening</th>
-                  <th style="width: 35%;">Uraian</th>
-                  <th style="width: 12%;">Koefisien</th>
-                  <th style="width: 10%;">Satuan</th>
-                  <th style="width: 12%;">Harga</th>
-                  <th style="width: 6%;">PPN</th>
-                  <th style="width: 10%;">Jumlah (Rp)</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${rincianHtmlRows}
-                <tr class="bold" style="background-color: #e2efda;">
-                  <td colspan="6" class="center">JUMLAH TOTAL</td>
-                  <td class="right">${formatRupiah(totalRincian)}</td>
-                </tr>
-              </tbody>
-            </table>
-
-            <div class="footer-sign" style="margin-top: 20px;">
-              Ternate, 02 Juni 2026<br>
-              Kepala SKPD / Pengguna Anggaran<br><br><br><br>
-              ( _______________________ )
-            </div>
-            <div class="clear"></div>
-          </div>
-
-          <div class="page">
-            <div class="header-form">
-              RENCANA KERJA DAN ANGGARAN<br>
-              SATUAN KERJA PERANGKAT DAERAH (FORMULIR RKA-SKPD 3.1)
+              SATUAN KERJA PERANGKAT DAERAH (RKA-PEMBIAYAAN SKPD — Penerimaan Pembiayaan)
             </div>
 
             <div style="line-height: 1.5; margin-bottom: 15px; font-size: 11px;">
@@ -2664,12 +2706,13 @@ module.exports = {
               ( _______________________ )
             </div>
             <div class="clear"></div>
-          </div>
+          </div>`;
 
+      const pagePembiayaan32 = `
           <div class="page">
             <div class="header-form">
               RENCANA KERJA DAN ANGGARAN<br>
-              SATUAN KERJA PERANGKAT DAERAH (FORMULIR RKA-SKPD 3.2)
+              SATUAN KERJA PERANGKAT DAERAH (RKA-PEMBIAYAAN SKPD — Pengeluaran Pembiayaan)
             </div>
 
             <div style="line-height: 1.5; margin-bottom: 15px; font-size: 11px;">
@@ -2715,7 +2758,44 @@ module.exports = {
               ( _______________________ )
             </div>
             <div class="clear"></div>
-          </div>
+          </div>`;
+
+      // Katalog formulir sesuai penamaan resmi Permendagri 77/2020 & cetakan SIPD (bukan lagi
+      // kode SIPD lama "RKA-SKPD 1/2.1/2.2/2.2.1/3.1/3.2"). "RKA-SKPD 2.1" (rincian belanja
+      // per jenis Operasi/Modal/BTT/Transfer) bukan formulir resmi tersendiri di lampiran —
+      // tetap disertakan di dokumen lengkap, tapi tidak jadi pilihan cetak satuan.
+      const formulirPages = {
+        'RKA-SKPD': pageRingkasan,
+        'RKA-PENDAPATAN SKPD': pagePendapatan1,
+        'REKAPITULASI RKA-BELANJA SKPD': pageRekap22,
+        'RKA-BELANJA SKPD': pageDetail221,
+        'RKA-PEMBIAYAAN SKPD': pagePembiayaan31 + pagePembiayaan32,
+      };
+
+      const formulirRequested = req.query.formulir;
+      const singleFormulir = formulirRequested && formulirPages[formulirRequested];
+      const bodyContent = singleFormulir
+        ? formulirPages[formulirRequested]
+        : [
+            pageCover,
+            pageRingkasan,
+            pagePendapatan1,
+            pageBelanja21,
+            pageRekap22,
+            pageDetail221,
+            pagePembiayaan31,
+            pagePembiayaan32,
+          ].join('');
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          ${pageStyle}
+        </head>
+        <body>
+          ${bodyContent}
         </body>
         </html>
       `;
@@ -2738,8 +2818,580 @@ module.exports = {
 
       await browser.close();
 
+      const formulirSlug = singleFormulir ? `_${formulirRequested.replace(/[.\s]/g, '')}` : '';
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename=RKA_${id}_${rka.tahun}.pdf`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename=RKA_${id}_${rka.tahun}${formulirSlug}.pdf`,
+      );
+      res.send(pdfBuffer);
+    } catch (error) {
+      if (browser) await browser.close();
+      res.status(500).json({ success: false, message: error.message });
+    }
+  },
+
+  // ==========================================
+  // 3C. EXPORT PDF GABUNGAN — MULTI RKA (dicentang lebih dari satu di Dashboard RKA)
+  // GET /api/rka/export-pdf-batch?ids=34,37&formulir=... (formulir opsional, sama
+  // seperti exportPdf — kalau kosong berarti "Dokumen Lengkap" per RKA)
+  // ==========================================
+  async exportPdfBatch(req, res) {
+    let browser;
+    try {
+      const ids = String(req.query.ids || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (ids.length === 0) {
+        return res
+          .status(400)
+          .json({ success: false, message: 'Parameter ids wajib diisi (contoh: ?ids=34,37).' });
+      }
+
+      // Cuma 1 RKA — tidak perlu agregasi apa pun, pakai jalur cetak biasa apa adanya.
+      if (ids.length === 1) {
+        req.params = { id: ids[0] };
+        return module.exports.exportPdf(req, res);
+      }
+
+      const formulirRequested = req.query.formulir;
+
+      const belanjaTypeOf = (kodeRekening) => {
+        const s = String(kodeRekening || '');
+        if (s.startsWith('5.1')) return 'operasi';
+        if (s.startsWith('5.2')) return 'modal';
+        if (s.startsWith('5.3')) return 'btt';
+        if (s.startsWith('5.4')) return 'transfer';
+        return null;
+      };
+
+      // Ambil data lengkap TIAP RKA yang dicentang — dipakai bareng untuk menyusun bagian
+      // formulir yang tampil sekali (diagregasi) maupun yang berulang per sub kegiatan.
+      const dataset = [];
+      for (const id of ids) {
+        const { rka, rincian } = await fetchExportData(id);
+        const engineResult = await rkaEngine.recalculateWithValidation(id);
+        const totals = getExportTotals(engineResult);
+        const comparison = await compareTahapanHistory(Number(id));
+        const pejabat = await fetchPejabatByTahun(rka.tahun);
+        const belanjaTypeTotals = {
+          sebelum: { operasi: 0, modal: 0, btt: 0, transfer: 0 },
+          sesudah: { operasi: 0, modal: 0, btt: 0, transfer: 0 },
+        };
+        comparison.items.forEach((it) => {
+          const type = belanjaTypeOf(it.kode_rekening);
+          if (!type) return;
+          belanjaTypeTotals.sebelum[type] += Number(it.jumlah_sebelum || 0);
+          belanjaTypeTotals.sesudah[type] += Number(it.jumlah_sesudah || 0);
+        });
+        const tapdData = await Tapd.findAll({
+          where: { tahun: Number(rka.tahun) },
+          order: [['urutan', 'ASC']],
+        });
+        const tapdList = tapdData.map((t) => ({
+          nama: t.nama,
+          nip: t.nip,
+          jabatan: t.jabatan,
+          tanggal_pembahasan: t.tanggal_pembahasan || '',
+          catatan: t.catatan || '',
+        }));
+        dataset.push({
+          id,
+          rka,
+          rincian,
+          totals,
+          comparison,
+          pejabat,
+          belanjaTypeTotals,
+          tapdList,
+          opdName: rka.opd_penanggung_jawab || 'DINAS PANGAN PROVINSI',
+        });
+      }
+
+      const first = dataset[0];
+      const tapdRowsFull =
+        first.tapdList.length > 0
+          ? first.tapdList
+              .map(
+                (t, i) => `<tr><td class="center">${i + 1}</td><td>${t.nama || ''}</td><td>${t.nip || ''}</td><td>${t.jabatan || ''}</td><td class="center">${i + 1}.</td></tr>`,
+              )
+              .join('')
+          : `<tr><td colspan="5" class="center" style="color:#999;">— Data TAPD belum diisi, lengkapi di menu Setting TAPD —</td></tr>`;
+
+      // Total gabungan seluruh RKA yang dicentang — dipakai di RKA-SKPD (ringkasan) &
+      // REKAPITULASI RKA-BELANJA SKPD (baris JUMLAH TOTAL), bukan cuma RKA pertama.
+      const grand = dataset.reduce(
+        (acc, d) => ({
+          totalBelanja: acc.totalBelanja + d.totals.totalBelanja,
+          totalBelanjaOperasi: acc.totalBelanjaOperasi + d.totals.totalBelanjaOperasi,
+          totalBelanjaModal: acc.totalBelanjaModal + d.totals.totalBelanjaModal,
+          totalBelanjaTidakTerduga: acc.totalBelanjaTidakTerduga + d.totals.totalBelanjaTidakTerduga,
+          totalBelanjaTransfer: acc.totalBelanjaTransfer + d.totals.totalBelanjaTransfer,
+          sebelumOperasi: acc.sebelumOperasi + d.belanjaTypeTotals.sebelum.operasi,
+          sebelumModal: acc.sebelumModal + d.belanjaTypeTotals.sebelum.modal,
+          sebelumBtt: acc.sebelumBtt + d.belanjaTypeTotals.sebelum.btt,
+          sebelumTransfer: acc.sebelumTransfer + d.belanjaTypeTotals.sebelum.transfer,
+          sesudahOperasi: acc.sesudahOperasi + d.belanjaTypeTotals.sesudah.operasi,
+          sesudahModal: acc.sesudahModal + d.belanjaTypeTotals.sesudah.modal,
+          sesudahBtt: acc.sesudahBtt + d.belanjaTypeTotals.sesudah.btt,
+          sesudahTransfer: acc.sesudahTransfer + d.belanjaTypeTotals.sesudah.transfer,
+          totalSebelum: acc.totalSebelum + d.comparison.totalSebelum,
+          totalSesudah: acc.totalSesudah + d.comparison.totalSesudah,
+        }),
+        {
+          totalBelanja: 0,
+          totalBelanjaOperasi: 0,
+          totalBelanjaModal: 0,
+          totalBelanjaTidakTerduga: 0,
+          totalBelanjaTransfer: 0,
+          sebelumOperasi: 0,
+          sebelumModal: 0,
+          sebelumBtt: 0,
+          sebelumTransfer: 0,
+          sesudahOperasi: 0,
+          sesudahModal: 0,
+          sesudahBtt: 0,
+          sesudahTransfer: 0,
+          totalSebelum: 0,
+          totalSesudah: 0,
+        },
+      );
+
+      const pageStyle = `
+          <style>
+            body { font-family: Arial, sans-serif; font-size: 11px; margin: 20px; color: #333; }
+            .page { page-break-after: always; }
+            .page:last-child { page-break-after: avoid; }
+            .cover-title { text-align: center; font-size: 16px; font-weight: bold; margin-top: 50px; line-height: 1.6; }
+            .cover-meta { margin-top: 40px; font-size: 13px; line-height: 1.8; }
+            .header-form { text-align: center; font-size: 12px; font-weight: bold; margin-bottom: 15px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
+            th, td { border: 1px solid #000; padding: 6px; text-align: left; }
+            th { background-color: #BDD7EE; text-align: center; font-weight: bold; }
+            .right { text-align: right; }
+            .center { text-align: center; }
+            .bold { font-weight: bold; }
+            .footer-sign { float: right; margin-top: 30px; text-align: center; width: 250px; font-weight: bold; }
+            .clear { clear: both; }
+            .meta td { border: none; padding: 2px; }
+          </style>`;
+
+      const pageCover = `
+          <div class="page" style="padding: 10px;">
+            <div class="cover-title" style="margin-top: 10px;">
+              PEMERINTAH PROVINSI MALUKU UTARA<br>
+              RENCANA ANGGARAN DAERAH<br>
+              SATUAN KERJA PERANGKAT DAERAH<br>
+              (RKA-SKPD)<br>
+              TAHUN ANGGARAN ${first.rka.tahun}
+            </div>
+
+            <div class="cover-meta" style="margin-top: 30px; font-size: 12px;">
+              <table style="border: none; width: auto; margin-top: 0;">
+                <tr style="border: none;"><td style="border: none; padding: 2px; width: 150px; font-weight: bold;">URUSAN PEMERINTAHAN</td><td style="border: none; padding: 2px;">: ${first.rka.program}</td></tr>
+                <tr style="border: none;"><td style="border: none; padding: 2px; font-weight: bold;">ORGANISASI</td><td style="border: none; padding: 2px;">: ${first.opdName}</td></tr>
+              </table>
+            </div>
+
+            <div style="margin-top: 20px; font-size: 12px;">
+              <p class="bold" style="margin-bottom: 5px;">Pengguna Anggaran :</p>
+              <table style="border: none; width: auto; margin-top: 0; margin-left: 10px;">
+                <tr style="border: none;"><td style="border: none; padding: 2px; width: 80px;">a. Nama</td><td style="border: none; padding: 2px;">: ${first.pejabat.penggunaAnggaran.nama}</td></tr>
+                <tr style="border: none;"><td style="border: none; padding: 2px;">b. NIP</td><td style="border: none; padding: 2px;">: ${first.pejabat.penggunaAnggaran.nip}</td></tr>
+                <tr style="border: none;"><td style="border: none; padding: 2px;">c. Jabatan</td><td style="border: none; padding: 2px;">: ${first.pejabat.penggunaAnggaran.jabatan}</td></tr>
+              </table>
+            </div>
+
+            <table style="width: 100%; border-collapse: collapse; margin-top: 25px;">
+              <thead>
+                <tr>
+                  <th style="width: 20%; background-color: #BDD7EE; border: 1px solid #000; text-align: center;">KODE</th>
+                  <th style="width: 80%; background-color: #BDD7EE; border: 1px solid #000; text-align: center;">NAMA FORMULIR</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="center" style="border: 1px solid #000;">RKA-SKPD</td><td style="border: 1px solid #000;">Ringkasan Anggaran Pendapatan, Belanja dan Pembiayaan Satuan Kerja Perangkat Daerah</td></tr>
+                <tr><td class="center" style="border: 1px solid #000;">RKA-PENDAPATAN SKPD</td><td style="border: 1px solid #000;">Rincian Anggaran Pendapatan Satuan Kerja Perangkat Daerah</td></tr>
+                <tr><td class="center" style="border: 1px solid #000;">REKAPITULASI RKA-BELANJA SKPD</td><td style="border: 1px solid #000;">Rekapitulasi Anggaran Belanja Berdasarkan Program dan Kegiatan Satuan Kerja Perangkat Daerah</td></tr>
+                <tr><td class="center" style="border: 1px solid #000;">RKA-BELANJA SKPD</td><td style="border: 1px solid #000;">Rincian Anggaran Belanja menurut Program, Kegiatan dan Sub Kegiatan Satuan Kerja Perangkat Daerah</td></tr>
+                <tr><td class="center" style="border: 1px solid #000;">RKA-PEMBIAYAAN SKPD</td><td style="border: 1px solid #000;">Rincian Anggaran Pembiayaan Satuan Kerja Perangkat Daerah (jika ada)</td></tr>
+              </tbody>
+            </table>
+          </div>`;
+
+      const pageRingkasan = `
+          <div class="page">
+            <div class="header-form">RINGKASAN ANGGARAN PENDAPATAN, BELANJA DAN PEMBIAYAAN<br>SATUAN KERJA PERANGKAT DAERAH (RKA-SKPD)</div>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 15%;">Kode Rekening</th>
+                  <th style="width: 60%;">Uraian</th>
+                  <th style="width: 25%;">Jumlah (Rp)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="bold"><td>4</td><td>PENDAPATAN DAERAH</td><td class="right">0</td></tr>
+                <tr class="bold"><td>5</td><td>BELANJA DAERAH</td><td class="right">${formatRupiah(grand.totalBelanja)}</td></tr>
+                <tr><td>5.1</td><td style="padding-left: 20px;">BELANJA OPERASI</td><td class="right">${formatRupiah(grand.totalBelanjaOperasi)}</td></tr>
+                <tr><td>5.2</td><td style="padding-left: 20px;">BELANJA MODAL</td><td class="right">${formatRupiah(grand.totalBelanjaModal)}</td></tr>
+                <tr><td>5.3</td><td style="padding-left: 20px;">BELANJA TIDAK TERDUGA</td><td class="right">${formatRupiah(grand.totalBelanjaTidakTerduga)}</td></tr>
+                <tr><td>5.4</td><td style="padding-left: 20px;">BELANJA TRANSFER</td><td class="right">${formatRupiah(grand.totalBelanjaTransfer)}</td></tr>
+                <tr class="bold"><td></td><td>SURPLUS / (DEFISIT)</td><td class="right">-${formatRupiah(grand.totalBelanja)}</td></tr>
+                <tr class="bold"><td>6</td><td>PEMBIAYAAN DAERAH</td><td class="right">0</td></tr>
+                <tr><td>6.1</td><td style="padding-left: 20px;">PENERIMAAN PEMBIAYAAN</td><td class="right">0</td></tr>
+                <tr><td>6.2</td><td style="padding-left: 20px;">PENGELUARAN PEMBIAYAAN</td><td class="right">0</td></tr>
+                <tr class="bold"><td></td><td>PEMBIAYAAN NETTO</td><td class="right">0</td></tr>
+                <tr class="bold"><td></td><td>SISA LEBIH PEMBIAYAAN ANGGARAN TAHUN BERJALAN (SILPA)</td><td class="right">0</td></tr>
+              </tbody>
+            </table>
+            <div class="footer-sign">Ternate, 02 Juni 2026<br>Pejabat Pengelola Keuangan Daerah<br><br><br><br>( _______________________ )</div>
+            <div class="clear"></div>
+          </div>`;
+
+      const pagePendapatan1 = `
+          <div class="page">
+            <div class="header-form">RINCIAN ANGGARAN PENDAPATAN SATUAN KERJA PERANGKAT DAERAH (Formulir RKA-PENDAPATAN SKPD)</div>
+            <table>
+              <thead>
+                <tr>
+                  <th rowspan="2" style="width: 15%; vertical-align: middle;">Kode Rekening</th>
+                  <th rowspan="2" style="width: 45%; vertical-align: middle;">Uraian</th>
+                  <th colspan="3" style="width: 25%;">Rincian Perhitungan</th>
+                  <th rowspan="2" style="width: 15%; vertical-align: middle;">Jumlah (Rp)</th>
+                </tr>
+                <tr>
+                  <th>Volume</th>
+                  <th>Satuan</th>
+                  <th>Tarif</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="bold" style="background-color: #f5f5f5;">
+                  <td class="center">4</td><td>PENDAPATAN DAERAH</td><td></td><td></td><td></td><td class="right">0</td>
+                </tr>
+                <tr class="bold">
+                  <td>4.1</td><td style="padding-left: 15px;">PENDAPATAN ASLI DAERAH (PAD)</td><td></td><td></td><td></td><td class="right">0</td>
+                </tr>
+                <tr class="bold">
+                  <td>4.2</td><td style="padding-left: 15px;">PENDAPATAN TRANSFER</td><td></td><td></td><td></td><td class="right">0</td>
+                </tr>
+                <tr class="bold">
+                  <td>4.3</td><td style="padding-left: 15px;">LAIN-LAIN PENDAPATAN DAERAH YANG SAH</td><td></td><td></td><td></td><td class="right">0</td>
+                </tr>
+                <tr class="bold" style="background-color: #e2efda;">
+                  <td class="center"></td><td>JUMLAH TOTAL PENDAPATAN</td><td></td><td></td><td></td><td class="right">0</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div style="margin-top: 20px; font-size: 10px;">
+              <table style="width: 100%; border: 1px solid #000;">
+                <thead>
+                  <tr style="background-color: #f2f2f2;"><th colspan="5" style="text-align: left; background-color: #f2f2f2;">Tim Anggaran Pemerintah Daerah (TAPD):</th></tr>
+                  <tr><th style="width: 5%;">No</th><th style="width: 35%;">Nama</th><th style="width: 20%;">NIP</th><th style="width: 25%;">Jabatan</th><th style="width: 15%;">Tanda Tangan</th></tr>
+                </thead>
+                <tbody>
+                  ${tapdRowsFull}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="footer-sign">Ternate, 02 Juni 2026<br>Kepala SKPD / Pengguna Anggaran<br><br><br><br>${first.pejabat.kepalaDinas.nama}<br>NIP. ${first.pejabat.kepalaDinas.nip}</div>
+            <div class="clear"></div>
+          </div>`;
+
+      const pageBelanja21 = `
+          <div class="page">
+            <div class="header-form">RINCIAN ANGGARAN BELANJA OPERASI, BELANJA MODAL, BELANJA TIDAK TERDUGA, DAN BELANJA TRANSFER<br>SATUAN KERJA PERANGKAT DAERAH</div>
+            <table>
+              <thead>
+                <tr>
+                  <th rowspan="2" style="width: 12%; vertical-align: middle;">Kode Rekening</th>
+                  <th rowspan="2" style="width: 38%; vertical-align: middle;">Uraian</th>
+                  <th colspan="3" style="width: 26%;">Rincian Perhitungan</th>
+                  <th rowspan="2" style="width: 12%; vertical-align: middle;">Jumlah (Rp)</th>
+                  <th rowspan="2" style="width: 12%; vertical-align: middle;">Tahun N+1</th>
+                </tr>
+                <tr>
+                  <th>Volume</th>
+                  <th>Satuan</th>
+                  <th>Harga Satuan</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="bold" style="background-color: #f5f5f5;">
+                  <td class="center">5</td><td>BELANJA DAERAH</td><td></td><td></td><td></td><td class="right">${formatRupiah(grand.totalBelanja)}</td><td class="right">0</td>
+                </tr>
+                <tr>
+                  <td class="bold">5.1</td><td style="padding-left: 15px;">BELANJA OPERASI</td><td></td><td></td><td></td><td class="right">${formatRupiah(grand.totalBelanjaOperasi)}</td><td class="right">0</td>
+                </tr>
+                <tr>
+                  <td class="bold">5.2</td><td style="padding-left: 15px;">BELANJA MODAL</td><td></td><td></td><td></td><td class="right">${formatRupiah(grand.totalBelanjaModal)}</td><td class="right">0</td>
+                </tr>
+                <tr>
+                  <td class="bold">5.3</td><td style="padding-left: 15px;">BELANJA TIDAK TERDUGA</td><td></td><td></td><td></td><td class="right">${formatRupiah(grand.totalBelanjaTidakTerduga)}</td><td class="right">0</td>
+                </tr>
+                <tr>
+                  <td class="bold">5.4</td><td style="padding-left: 15px;">BELANJA TRANSFER</td><td></td><td></td><td></td><td class="right">${formatRupiah(grand.totalBelanjaTransfer)}</td><td class="right">0</td>
+                </tr>
+                <tr class="bold" style="background-color: #e2efda;">
+                  <td class="center"></td><td>JUMLAH TOTAL BELANJA</td><td></td><td></td><td></td><td class="right">${formatRupiah(grand.totalBelanja)}</td><td class="right">0</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div style="margin-top: 15px; font-size: 9px; border: 1px solid #000; padding: 6px;">
+              <strong>Tanggal Pembahasan:</strong> 02 Juni 2026<br>
+              <strong>Catatan Hasil Pembahasan:</strong> Alokasi Rincian Belanja Daerah disesuaikan dengan target batas anggaran belanja sub-kegiatan organisasi terkait.
+            </div>
+
+            <div class="footer-sign">Ternate, 02 Juni 2026<br>Kepala SKPD / Pengguna Anggaran<br><br><br><br>${first.pejabat.kepalaDinas.nama}<br>NIP. ${first.pejabat.kepalaDinas.nip}</div>
+            <div class="clear"></div>
+          </div>`;
+
+      // REKAPITULASI RKA-BELANJA SKPD — SATU baris per sub kegiatan yang dicentang, ditutup
+      // dengan baris JUMLAH TOTAL yang menjumlahkan seluruh baris (bukan cuma RKA pertama).
+      const rekapRows = dataset
+        .map(
+          (d) => `<tr>
+                  <td>${d.rka.kode_program || '-'}</td>
+                  <td>${d.rka.program} / ${d.rka.kegiatan} / ${d.rka.sub_kegiatan}</td>
+                  <td>${d.rincian[0]?.sumber_dana || 'PAD'}</td>
+                  <td>${d.rincian[0]?.lokasi || d.rka.lokasi || 'Daerah'}</td>
+                  <td class="right">Rp. 0,00</td>
+                  <td class="right">${formatRupiah(d.belanjaTypeTotals.sebelum.operasi)}</td>
+                  <td class="right">${formatRupiah(d.belanjaTypeTotals.sebelum.modal)}</td>
+                  <td class="right">${formatRupiah(d.belanjaTypeTotals.sebelum.btt)}</td>
+                  <td class="right">${formatRupiah(d.belanjaTypeTotals.sebelum.transfer)}</td>
+                  <td class="right bold">${formatRupiah(d.comparison.totalSebelum)}</td>
+                  <td class="right">${formatRupiah(d.belanjaTypeTotals.sesudah.operasi)}</td>
+                  <td class="right">${formatRupiah(d.belanjaTypeTotals.sesudah.modal)}</td>
+                  <td class="right">${formatRupiah(d.belanjaTypeTotals.sesudah.btt)}</td>
+                  <td class="right">${formatRupiah(d.belanjaTypeTotals.sesudah.transfer)}</td>
+                  <td class="right bold">${formatRupiah(d.comparison.totalSesudah)}</td>
+                  <td class="right">Rp. 0,00</td>
+                </tr>`,
+        )
+        .join('');
+
+      const pageRekap22 = `
+          <div class="page">
+            <div class="header-form">RENCANA KERJA DAN ANGGARAN SATUAN KERJA PERANGKAT DAERAH<br>Rekapitulasi Anggaran Belanja Berdasarkan Program dan Kegiatan (REKAPITULASI RKA-BELANJA SKPD)</div>
+            <table>
+              <thead>
+                <tr>
+                  <th rowspan="3" style="width:10%;">Kode</th>
+                  <th rowspan="3" style="width:16%;">Uraian</th>
+                  <th rowspan="3" style="width:9%;">Sumber Dana</th>
+                  <th rowspan="3" style="width:7%;">Lokasi</th>
+                  <th rowspan="3" style="width:7%;">Jumlah Tahun ${Number(first.rka.tahun) - 1}</th>
+                  <th colspan="10">Jumlah Tahun ${first.rka.tahun}</th>
+                  <th rowspan="3" style="width:7%;">Jumlah Tahun ${Number(first.rka.tahun) + 1}</th>
+                </tr>
+                <tr>
+                  <th colspan="5">Sebelum</th>
+                  <th colspan="5">Sesudah</th>
+                </tr>
+                <tr>
+                  <th style="width:5%;">Belanja Operasi</th><th style="width:5%;">Belanja Modal</th><th style="width:5%;">Belanja BTT</th><th style="width:5%;">Belanja Transfer</th><th style="width:5%;">Jumlah</th>
+                  <th style="width:5%;">Belanja Operasi</th><th style="width:5%;">Belanja Modal</th><th style="width:5%;">Belanja BTT</th><th style="width:5%;">Belanja Transfer</th><th style="width:5%;">Jumlah</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rekapRows}
+                <tr class="bold" style="background-color:#e2efda;">
+                  <td colspan="4" class="center">JUMLAH TOTAL</td>
+                  <td class="right">Rp. 0,00</td>
+                  <td class="right">${formatRupiah(grand.sebelumOperasi)}</td>
+                  <td class="right">${formatRupiah(grand.sebelumModal)}</td>
+                  <td class="right">${formatRupiah(grand.sebelumBtt)}</td>
+                  <td class="right">${formatRupiah(grand.sebelumTransfer)}</td>
+                  <td class="right">${formatRupiah(grand.totalSebelum)}</td>
+                  <td class="right">${formatRupiah(grand.sesudahOperasi)}</td>
+                  <td class="right">${formatRupiah(grand.sesudahModal)}</td>
+                  <td class="right">${formatRupiah(grand.sesudahBtt)}</td>
+                  <td class="right">${formatRupiah(grand.sesudahTransfer)}</td>
+                  <td class="right">${formatRupiah(grand.totalSesudah)}</td>
+                  <td class="right">Rp. 0,00</td>
+                </tr>
+                <tr class="bold" style="background-color:#e2efda;">
+                  <td colspan="15" class="center">JUMLAH BERTAMBAH / (BERKURANG)</td>
+                  <td class="right">${formatRupiah(grand.totalSesudah - grand.totalSebelum)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>`;
+
+      // RKA-BELANJA SKPD — TETAP berulang satu formulir per sub kegiatan yang dicentang
+      // (bukan diagregasi), karena masing-masing punya rincian belanja sendiri-sendiri.
+      const detailPagesList = [];
+      for (const d of dataset) {
+        const bodyHtml = await buildFormulirBelanjaBodyHtml({
+          rka: d.rka,
+          rincian: d.rincian,
+          comparison: d.comparison,
+          tapdList: d.tapdList,
+          opdName: d.opdName,
+          pejabat: d.pejabat,
+        });
+        detailPagesList.push(`<div class="page">${bodyHtml}</div>`);
+      }
+      const pageDetailAll = detailPagesList.join('');
+
+      const pagePembiayaan31 = `
+          <div class="page">
+            <div class="header-form">
+              RENCANA KERJA DAN ANGGARAN<br>
+              SATUAN KERJA PERANGKAT DAERAH (RKA-PEMBIAYAAN SKPD — Penerimaan Pembiayaan)
+            </div>
+
+            <div style="line-height: 1.5; margin-bottom: 15px; font-size: 11px;">
+              <table style="width: 100%; border: none;">
+                <tr style="border: none;"><td style="width: 18%; border: none; font-weight: bold; padding:2px;">Urusan Pemerintahan</td><td style="border: none; padding:2px;">: ${first.rka.kode_urusan || (first.rka.kode_program ? first.rka.kode_program.split('.')[0] : '-')} ${first.rka.urusan || ''}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Bidang Urusan</td><td style="border: none; padding:2px;">: ${first.rka.kode_bidang_urusan || first.rka.kode_program || '-'} ${first.rka.bidang_urusan || ''}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Program</td><td style="border: none; padding:2px;">: ${first.rka.program}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Organisasi</td><td style="border: none; padding:2px;">: ${first.opdName}</td></tr>
+              </table>
+            </div>
+
+            <p class="bold" style="margin-top: 10px; margin-bottom: 3px; font-size: 11px;">Rincian Rencana Anggaran Penerimaan Pembiayaan</p>
+            <table>
+              <thead>
+                <tr style="background-color: #f2f2f2;">
+                  <th style="width: 25%;">Kode Rekening</th>
+                  <th style="width: 55%;">Uraian</th>
+                  <th style="width: 20%;">Jumlah (Rp)</th>
+                </tr>
+                <tr style="background-color: #f9f9f9; font-size: 10px;">
+                  <th class="center">1</th><th class="center">2</th><th class="center">3</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="bold"><td>6</td><td>PENERIMAAN PEMBIAYAAN</td><td class="right">0</td></tr>
+                <tr><td>6.1</td><td style="padding-left: 15px;">SISA LEBIH PERHITUNGAN ANGGARAN TAHUN SEBELUMNYA (SiLPA)</td><td class="right">0</td></tr>
+                <tr class="bold" style="background-color: #e2efda;">
+                  <td colspan="2" class="center">JUMLAH PENERIMAAN PEMBIAYAAN</td>
+                  <td class="right">0</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="footer-sign" style="margin-top: 30px;">
+              Sofifi, _________ 2026<br>
+              Mengesahkan,<br>
+              Pejabat Pengelola Keuangan Daerah<br><br><br><br>
+              ( _______________________ )
+            </div>
+            <div class="clear"></div>
+          </div>`;
+
+      const pagePembiayaan32 = `
+          <div class="page">
+            <div class="header-form">
+              RENCANA KERJA DAN ANGGARAN<br>
+              SATUAN KERJA PERANGKAT DAERAH (RKA-PEMBIAYAAN SKPD — Pengeluaran Pembiayaan)
+            </div>
+
+            <div style="line-height: 1.5; margin-bottom: 15px; font-size: 11px;">
+              <table style="width: 100%; border: none;">
+                <tr style="border: none;"><td style="width: 18%; border: none; font-weight: bold; padding:2px;">Urusan Pemerintahan</td><td style="border: none; padding:2px;">: ${first.rka.kode_urusan || (first.rka.kode_program ? first.rka.kode_program.split('.')[0] : '-')} ${first.rka.urusan || ''}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Bidang Urusan</td><td style="border: none; padding:2px;">: ${first.rka.kode_bidang_urusan || first.rka.kode_program || '-'} ${first.rka.bidang_urusan || ''}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Program</td><td style="border: none; padding:2px;">: ${first.rka.program}</td></tr>
+                <tr style="border: none;"><td style="border: none; font-weight: bold; padding:2px;">Organisasi</td><td style="border: none; padding:2px;">: ${first.opdName}</td></tr>
+              </table>
+            </div>
+
+            <p class="bold" style="margin-top: 10px; margin-bottom: 3px; font-size: 11px;">Rincian Rencana Anggaran Pengeluaran Pembiayaan</p>
+            <table>
+              <thead>
+                <tr style="background-color: #f2f2f2;">
+                  <th style="width: 25%;">Kode Rekening</th>
+                  <th style="width: 55%;">Uraian</th>
+                  <th style="width: 20%;">Jumlah (Rp)</th>
+                </tr>
+                <tr style="background-color: #f9f9f9; font-size: 10px;">
+                  <th class="center">1</th><th class="center">2</th><th class="center">3</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="bold"><td>6.2</td><td>PENGELUARAN PEMBIAYAAN</td><td class="right">0</td></tr>
+                <tr><td>6.2.1</td><td style="padding-left: 15px;">Pembentukan Dana Cadangan</td><td class="right">0</td></tr>
+                <tr><td>6.2.2</td><td style="padding-left: 15px;">Penyertaan Modal Daerah</td><td class="right">0</td></tr>
+                <tr><td>6.2.3</td><td style="padding-left: 15px;">Pembayaran Cicilan Pokok Utang yang Jatuh Tempo</td><td class="right">0</td></tr>
+                <tr><td>6.2.4</td><td style="padding-left: 15px;">Pemberian Pinjaman Daerah</td><td class="right">0</td></tr>
+                <tr class="bold" style="background-color: #e2efda;">
+                  <td colspan="2" class="center">JUMLAH PENGELUARAN PEMBIAYAAN</td>
+                  <td class="right">0</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="footer-sign" style="margin-top: 30px;">
+              Sofifi, _________ 2026<br>
+              Mengesahkan,<br>
+              Pejabat Pengelola Keuangan Daerah<br><br><br><br>
+              ( _______________________ )
+            </div>
+            <div class="clear"></div>
+          </div>`;
+
+      const formulirPages = {
+        'RKA-SKPD': pageRingkasan,
+        'RKA-PENDAPATAN SKPD': pagePendapatan1,
+        'REKAPITULASI RKA-BELANJA SKPD': pageRekap22,
+        'RKA-BELANJA SKPD': pageDetailAll,
+        'RKA-PEMBIAYAAN SKPD': pagePembiayaan31 + pagePembiayaan32,
+      };
+
+      const singleFormulir = formulirRequested && formulirPages[formulirRequested];
+      const bodyContent = singleFormulir
+        ? formulirPages[formulirRequested]
+        : [
+            pageCover,
+            pageRingkasan,
+            pagePendapatan1,
+            pageBelanja21,
+            pageRekap22,
+            pageDetailAll,
+            pagePembiayaan31,
+            pagePembiayaan32,
+          ].join('');
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          ${pageStyle}
+        </head>
+        <body>
+          ${bodyContent}
+        </body>
+        </html>
+      `;
+
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      });
+      const page = await browser.newPage();
+      await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        landscape: true,
+        printBackground: true,
+        margin: { top: '20px', bottom: '20px', left: '20px', right: '20px' },
+      });
+      await browser.close();
+
+      const formulirSlug = singleFormulir ? `_${formulirRequested.replace(/[.\s]/g, '')}` : '';
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename=RKA_Gabungan_${ids.length}dok_${first.rka.tahun}${formulirSlug}.pdf`,
+      );
       res.send(pdfBuffer);
     } catch (error) {
       if (browser) await browser.close();
