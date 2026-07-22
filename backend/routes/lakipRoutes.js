@@ -1,41 +1,42 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const LakipController = require("../controllers/lakipController");
-const verifyToken = require("../middlewares/verifyToken");
-const allowRoles = require("../middlewares/allowRoles");
-const guardApproved = require("../middlewares/guardApproved");
+const LakipController = require('../controllers/lakipController');
+const verifyToken = require('../middlewares/verifyToken');
+const allowRoles = require('../middlewares/allowRoles');
+const guardApproved = require('../middlewares/guardApproved');
 
 router.get(
-  "/",
+  '/',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  LakipController.getAll
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  LakipController.getAll,
 );
 router.get(
-  "/:id",
+  '/:id',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  LakipController.getById
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  LakipController.getById,
 );
-router.post(
-  "/",
-  verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  LakipController.create
-);
+router.post('/', verifyToken, allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']), LakipController.create);
 router.put(
-  "/:id",
+  '/:id',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  guardApproved("lakip"),
-  LakipController.update
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
+  guardApproved('lakip'),
+  LakipController.update,
 );
 router.delete(
-  "/:id",
+  '/:id',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  guardApproved("lakip"),
-  LakipController.destroy
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
+  guardApproved('lakip'),
+  LakipController.destroy,
+);
+router.post(
+  '/sync-renstra/:tahun',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
+  LakipController.syncFromRenstra,
 );
 
 module.exports = router;

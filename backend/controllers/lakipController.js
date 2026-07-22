@@ -6,20 +6,24 @@ const {
   Rkpd,
   Renja,
   LkDispang,
-} = require("../models");
-const Joi = require("joi");
+} = require('../models');
+const Joi = require('joi');
+const { generateLakipDariRenstraTahun } = require('../services/lakipAutoGenerateService');
+const {
+  syncRealisasiAnggaranLakipTahun,
+} = require('../services/lakipRealisasiAnggaranSyncService');
 
 const lakipSchema = Joi.object({
   tahun: Joi.string().required(),
   periode_id: Joi.number().required(),
-  program: Joi.string().allow(null, ""),
-  kegiatan: Joi.string().allow(null, ""),
-  indikator_kinerja: Joi.string().allow(null, ""),
-  target: Joi.string().allow(null, ""),
-  realisasi: Joi.string().allow(null, ""),
-  evaluasi: Joi.string().allow(null, ""),
-  rekomendasi: Joi.string().allow(null, ""),
-  jenis_dokumen: Joi.string().allow(null, ""),
+  program: Joi.string().allow(null, ''),
+  kegiatan: Joi.string().allow(null, ''),
+  indikator_kinerja: Joi.string().allow(null, ''),
+  target: Joi.string().allow(null, ''),
+  realisasi: Joi.string().allow(null, ''),
+  evaluasi: Joi.string().allow(null, ''),
+  rekomendasi: Joi.string().allow(null, ''),
+  jenis_dokumen: Joi.string().allow(null, ''),
   renstra_id: Joi.number().allow(null),
   rkpd_id: Joi.number().allow(null),
   renja_id: Joi.number().allow(null),
@@ -39,25 +43,25 @@ module.exports = {
       const data = await Lakip.findAll({
         where,
         include: [
-          { model: PeriodeRpjmd, as: "periode" },
+          { model: PeriodeRpjmd, as: 'periode' },
           {
             model: RenstraProgram,
-            as: "renstra_program",
+            as: 'renstra_program',
             required: true,
             include: [
               {
                 model: RenstraOPD,
-                as: "renstra",
+                as: 'renstra',
                 where: { is_aktif: true },
                 required: true,
               },
             ],
           },
-          { model: Rkpd, as: "rkpd" },
-          { model: Renja, as: "renja" },
-          { model: LkDispang, as: "lk_dispang" },
+          { model: Rkpd, as: 'rkpd' },
+          { model: Renja, as: 'renja' },
+          { model: LkDispang, as: 'lk_dispang' },
         ],
-        order: [["tahun", "DESC"]],
+        order: [['tahun', 'DESC']],
       });
 
       res.json(data);
@@ -72,27 +76,27 @@ module.exports = {
       const { id } = req.params;
       const data = await Lakip.findByPk(id, {
         include: [
-          { model: PeriodeRpjmd, as: "periode" },
+          { model: PeriodeRpjmd, as: 'periode' },
           {
             model: RenstraProgram,
-            as: "renstra_program",
+            as: 'renstra_program',
             required: true,
             include: [
               {
                 model: RenstraOPD,
-                as: "renstra",
+                as: 'renstra',
                 where: { is_aktif: true },
                 required: true,
               },
             ],
           },
-          { model: Rkpd, as: "rkpd" },
-          { model: Renja, as: "renja" },
-          { model: LkDispang, as: "lk_dispang" },
+          { model: Rkpd, as: 'rkpd' },
+          { model: Renja, as: 'renja' },
+          { model: LkDispang, as: 'lk_dispang' },
         ],
       });
 
-      if (!data) return res.status(404).json({ error: "Data tidak ditemukan" });
+      if (!data) return res.status(404).json({ error: 'Data tidak ditemukan' });
 
       res.json(data);
     } catch (error) {
@@ -104,8 +108,7 @@ module.exports = {
   async create(req, res) {
     try {
       const { error, value } = lakipSchema.validate(req.body);
-      if (error)
-        return res.status(400).json({ error: error.details[0].message });
+      if (error) return res.status(400).json({ error: error.details[0].message });
 
       const created = await Lakip.create(value);
       res.status(201).json(created);
@@ -119,13 +122,11 @@ module.exports = {
     try {
       const { id } = req.params;
       const { error, value } = lakipSchema.validate(req.body);
-      if (error)
-        return res.status(400).json({ error: error.details[0].message });
+      if (error) return res.status(400).json({ error: error.details[0].message });
 
       const [updated] = await Lakip.update(value, { where: { id } });
 
-      if (!updated)
-        return res.status(404).json({ error: "Data tidak ditemukan" });
+      if (!updated) return res.status(404).json({ error: 'Data tidak ditemukan' });
 
       const result = await Lakip.findByPk(id);
       res.json(result);
@@ -140,10 +141,21 @@ module.exports = {
       const { id } = req.params;
       const deleted = await Lakip.destroy({ where: { id } });
 
-      if (!deleted)
-        return res.status(404).json({ error: "Data tidak ditemukan" });
+      if (!deleted) return res.status(404).json({ error: 'Data tidak ditemukan' });
 
-      res.json({ message: "Data berhasil dihapus" });
+      res.json({ message: 'Data berhasil dihapus' });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
+  // SYNC dari Renstra — auto-generate baris Program/Kegiatan/Indikator BAB II
+  async syncFromRenstra(req, res) {
+    try {
+      const { tahun } = req.params;
+      const generate = await generateLakipDariRenstraTahun(tahun);
+      const anggaran = await syncRealisasiAnggaranLakipTahun(tahun);
+      res.json({ generate, anggaran });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }

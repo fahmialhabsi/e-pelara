@@ -8,14 +8,14 @@
  *   GET /api/lakip-generator/export-pdf?tahun=2025&periode_id=1 → PDF (Tahap 2)
  */
 
-const { sequelize } = require("../models");
+const { sequelize } = require('../models');
 
 // ── Nama OPD dinas ──────────────────────────────────────────────────────────
 const OPD_CONFIG = {
-  nama_opd:     "Dinas Ketahanan Pangan",
-  nama_provinsi: "Maluku Utara",
-  kepala_opd:   "Kepala Dinas Ketahanan Pangan",
-  nip_kepala:   "NIP. —",
+  nama_opd: 'Dinas Ketahanan Pangan',
+  nama_provinsi: 'Maluku Utara',
+  kepala_opd: 'Kepala Dinas Ketahanan Pangan',
+  nip_kepala: 'NIP. —',
   tahun_anggaran: new Date().getFullYear(),
 };
 
@@ -24,25 +24,25 @@ async function collectLakipData(tahun, periode_id) {
   // 1. Identitas periode RPJMD
   const [[periode]] = await sequelize.query(
     `SELECT id, nama, tahun_awal, tahun_akhir FROM periode_rpjmds WHERE id = :id LIMIT 1`,
-    { replacements: { id: periode_id || 1 } }
+    { replacements: { id: periode_id || 1 } },
   );
 
   // 1b. OPD aktif (Renstra) — Indikator Kinerja hanya diambil untuk OPD ini,
   // jangan lintas OPD (tabel legacy `indikator` tidak punya kolom penghubung OPD).
   const [[renstraAktif]] = await sequelize.query(
-    `SELECT id, tahun_mulai FROM renstra_opd WHERE is_aktif = 1 LIMIT 1`
+    `SELECT id, tahun_mulai FROM renstra_opd WHERE is_aktif = 1 LIMIT 1`,
   );
 
   // 2. Visi
   const [[visi]] = await sequelize.query(
     `SELECT v.isi_visi FROM visi v
      LEFT JOIN periode_rpjmds p ON v.rpjmd_id = p.id
-     LIMIT 1`
+     LIMIT 1`,
   );
 
   // 3. Misi
   const [misiList] = await sequelize.query(
-    `SELECT id, no_misi, isi_misi FROM misi ORDER BY no_misi ASC LIMIT 10`
+    `SELECT id, no_misi, isi_misi FROM misi ORDER BY no_misi ASC LIMIT 10`,
   );
 
   // 4. Tujuan (Renstra OPD aktif)
@@ -50,7 +50,7 @@ async function collectLakipData(tahun, periode_id) {
     ? await sequelize.query(
         `SELECT id, misi_id, no_tujuan, isi_tujuan FROM renstra_tujuan
          WHERE renstra_id = :renstraId ORDER BY id ASC`,
-        { replacements: { renstraId: renstraAktif.id } }
+        { replacements: { renstraId: renstraAktif.id } },
       )
     : [[]];
 
@@ -59,7 +59,7 @@ async function collectLakipData(tahun, periode_id) {
     ? await sequelize.query(
         `SELECT id, tujuan_id, nomor, isi_sasaran FROM renstra_sasaran
          WHERE renstra_id = :renstraId ORDER BY nomor ASC`,
-        { replacements: { renstraId: renstraAktif.id } }
+        { replacements: { renstraId: renstraAktif.id } },
       )
     : [[]];
 
@@ -111,12 +111,12 @@ async function collectLakipData(tahun, periode_id) {
     let programId = null;
     let kegiatanId = null;
 
-    if (stage === "sasaran") {
+    if (stage === 'sasaran') {
       sasaranId = refId;
-    } else if (stage === "program") {
+    } else if (stage === 'program') {
       programId = refId;
       sasaranId = resolveSasaranIdFromProgram(programId);
-    } else if (stage === "kegiatan") {
+    } else if (stage === 'kegiatan') {
       kegiatanId = refId;
       programId = kegiatanById.get(kegiatanId)?.program_id || null;
       sasaranId = resolveSasaranIdFromProgram(programId);
@@ -136,7 +136,7 @@ async function collectLakipData(tahun, periode_id) {
          FROM indikator_renstra
          WHERE stage IN ('sasaran','program','kegiatan') AND renstra_id = :renstraId
          ORDER BY id ASC`,
-        { replacements: { renstraId: renstraAktif.id } }
+        { replacements: { renstraId: renstraAktif.id } },
       )
     : [[]];
 
@@ -148,7 +148,7 @@ async function collectLakipData(tahun, periode_id) {
       `SELECT indikator_renstra_id, nilai_realisasi
        FROM realisasi_indikator_renstra
        WHERE indikator_renstra_id IN (:ids) AND tahun = :tahun`,
-      { replacements: { ids: indikatorIds, tahun } }
+      { replacements: { ids: indikatorIds, tahun } },
     );
     for (const r of realisasiRows) {
       realisasiMap[r.indikator_renstra_id] = r;
@@ -160,34 +160,63 @@ async function collectLakipData(tahun, periode_id) {
     `SELECT id, tahun, program, kegiatan, indikator_kinerja, target, realisasi,
             evaluasi, rekomendasi, jenis_dokumen, approval_status
      FROM lakip
-     ${tahun ? "WHERE tahun = :tahun" : ""}
+     ${tahun ? 'WHERE tahun = :tahun' : ''}
      ORDER BY tahun DESC, program ASC`,
-    tahun ? { replacements: { tahun } } : undefined
+    tahun ? { replacements: { tahun } } : undefined,
   );
 
   // 9. Agregasi anggaran — pagu dari DPA, realisasi dari Penatausahaan (OCR SIPD),
   // konsisten dengan sumber yang dipakai renstraRealisasiAnggaranSyncService.js.
-  const dpaWhere = tahun ? "d.tahun = :tahun AND" : "";
+  const dpaWhere = tahun ? 'd.tahun = :tahun AND' : '';
   const [anggaranRows] = await sequelize.query(
     `SELECT
        (SELECT SUM(d.anggaran) FROM dpa d WHERE ${dpaWhere} d.is_active_version = 1) as total_pagu,
        (SELECT SUM(p.jumlah) FROM penatausahaan p
           INNER JOIN dpa d ON d.id = p.dpa_id
           WHERE ${dpaWhere} d.is_active_version = 1) as total_realisasi`,
-    tahun ? { replacements: { tahun } } : undefined
+    tahun ? { replacements: { tahun } } : undefined,
   );
+
+  // 9b. Gambaran Umum (Tusi) & Isu Strategis dari modul Renstra (BAB II & III)
+  const [renstraBabRows] = renstraAktif
+    ? await sequelize.query(
+        `SELECT bab, judul_bab, isi FROM renstra_bab WHERE tahun = :tahunRenstra AND bab IN ('II','III')`,
+        { replacements: { tahunRenstra: renstraAktif.tahun_mulai } },
+      )
+    : [[]];
+  let gambaranUmumItem = null;
+  let isuStrategisItem = null;
+  for (const row of renstraBabRows) {
+    let items = [];
+    try {
+      items = JSON.parse(row.isi);
+    } catch (e) {
+      items = [];
+    }
+    if (row.bab === 'II') {
+      gambaranUmumItem =
+        items.find((it) => String(it.judul || '').startsWith('2.1')) || items[0] || null;
+    } else if (row.bab === 'III') {
+      isuStrategisItem =
+        items.find((it) => String(it.judul || '').startsWith('3.5')) ||
+        items[items.length - 1] ||
+        null;
+    }
+  }
 
   // 10. Flatten indikator + resolusi ancestry, lalu susun jadi nested tree
   // Tujuan -> Sasaran -> Program -> Kegiatan supaya jelas indikator itu milik siapa.
   const indikatorFlat = indikatorList.map((ind) => {
-    const offset = renstraAktif && tahun
-      ? Math.min(Math.max(Number(tahun) - Number(renstraAktif.tahun_mulai) + 1, 1), 6)
-      : 1;
+    const offset =
+      renstraAktif && tahun
+        ? Math.min(Math.max(Number(tahun) - Number(renstraAktif.tahun_mulai) + 1, 1), 6)
+        : 1;
     const target = parseFloat(ind[`target_tahun_${offset}`]) || 0;
     const real = realisasiMap[ind.id];
     const realisasi = real ? parseFloat(real.nilai_realisasi) : 0;
     const pct = target > 0 ? Math.round((realisasi / target) * 100) : 0;
-    const statusCapaian = pct >= 100 ? "Tercapai" : pct >= 75 ? "Hampir Tercapai" : "Belum Tercapai";
+    const statusCapaian =
+      pct >= 100 ? 'Tercapai' : pct >= 75 ? 'Hampir Tercapai' : 'Belum Tercapai';
     const ancestry = resolveAncestry(ind.stage, ind.ref_id);
     return {
       id: ind.id,
@@ -214,7 +243,7 @@ async function collectLakipData(tahun, periode_id) {
       isi_tujuan: t.isi_tujuan,
       sasaran: sasaranAnak.map((s) => {
         const indikatorSasaran = indikatorFlat.filter(
-          (i) => i.stage === "sasaran" && i.sasaranId === s.id,
+          (i) => i.stage === 'sasaran' && i.sasaranId === s.id,
         );
         indikatorSasaran.forEach((i) => placedIndikatorIds.add(i.id));
 
@@ -227,7 +256,7 @@ async function collectLakipData(tahun, periode_id) {
           indikator: indikatorSasaran,
           program: programAnak.map((p) => {
             const indikatorProgram = indikatorFlat.filter(
-              (i) => i.stage === "program" && i.programId === p.id,
+              (i) => i.stage === 'program' && i.programId === p.id,
             );
             indikatorProgram.forEach((i) => placedIndikatorIds.add(i.id));
 
@@ -239,7 +268,7 @@ async function collectLakipData(tahun, periode_id) {
               indikator: indikatorProgram,
               kegiatan: kegiatanAnak.map((k) => {
                 const indikatorKegiatan = indikatorFlat.filter(
-                  (i) => i.stage === "kegiatan" && i.kegiatanId === k.id,
+                  (i) => i.stage === 'kegiatan' && i.kegiatanId === k.id,
                 );
                 indikatorKegiatan.forEach((i) => placedIndikatorIds.add(i.id));
                 return {
@@ -266,7 +295,7 @@ async function collectLakipData(tahun, periode_id) {
       periode,
       generated_at: new Date().toISOString(),
     },
-    visi: visi?.isi_visi || "Visi Dinas Ketahanan Pangan Maluku Utara",
+    visi: visi?.isi_visi || 'Visi Dinas Ketahanan Pangan Maluku Utara',
     misi: misiList,
     tujuan: tujuanList,
     sasaran: sasaranList,
@@ -274,8 +303,10 @@ async function collectLakipData(tahun, periode_id) {
     indikatorTree,
     indikatorOrphan,
     lakipEntries,
+    gambaranUmumItem,
+    isuStrategisItem,
     anggaran: {
-      total_pagu:      parseFloat(anggaranRows[0]?.total_pagu) || 0,
+      total_pagu: parseFloat(anggaranRows[0]?.total_pagu) || 0,
       total_realisasi: parseFloat(anggaranRows[0]?.total_realisasi) || 0,
       pct:
         anggaranRows[0]?.total_pagu > 0
@@ -287,7 +318,7 @@ async function collectLakipData(tahun, periode_id) {
 
 // ── Auto-generate narasi analisis capaian ──────────────────────────────────
 function generateNarasi(namaIndikator, target, realisasi, pct, satuan) {
-  const sat = satuan || "";
+  const sat = satuan || '';
   if (pct === 0 && realisasi === 0 && target === 0) {
     return `Indikator "${namaIndikator}" belum memiliki data target dan realisasi. Pengisian data realisasi diperlukan untuk evaluasi kinerja.`;
   }
@@ -303,35 +334,77 @@ function generateNarasi(namaIndikator, target, realisasi, pct, satuan) {
 
 // ── Rupiah formatter ──────────────────────────────────────────────────────
 function formatRp(n) {
-  if (!n || isNaN(n)) return "Rp 0";
-  return "Rp " + parseFloat(n).toLocaleString("id-ID", { minimumFractionDigits: 0 });
+  if (!n || isNaN(n)) return 'Rp 0';
+  return 'Rp ' + parseFloat(n).toLocaleString('id-ID', { minimumFractionDigits: 0 });
 }
 
 // ── HTML Template Generator ───────────────────────────────────────────────
 function buildHtml(data) {
-  const { meta, visi, misi, tujuan, sasaran, indikator, indikatorTree, indikatorOrphan, lakipEntries, anggaran } = data;
+  const {
+    meta,
+    visi,
+    misi,
+    tujuan,
+    sasaran,
+    indikator,
+    indikatorTree,
+    indikatorOrphan,
+    lakipEntries,
+    gambaranUmumItem,
+    isuStrategisItem,
+    anggaran,
+  } = data;
   const tahun = meta.tahun;
-  const opd   = meta.opd;
+  const opd = meta.opd;
 
   // Header warna sesuai status capaian
-  const pctColor = (pct) => pct >= 100 ? "#16a34a" : pct >= 75 ? "#d97706" : "#dc2626";
+  const pctColor = (pct) => (pct >= 100 ? '#16a34a' : pct >= 75 ? '#d97706' : '#dc2626');
 
   // Baris + tabel indikator, dipakai berulang di tiap level (Sasaran/Program/Kegiatan)
   const indikatorRowsHtml = (items) =>
     items.length
-      ? items.map((ind) => `
+      ? items
+          .map(
+            (ind) => `
           <tr>
             <td>${escH(ind.nama_indikator)}</td>
-            <td class="center">${escH(ind.satuan || "-")}</td>
-            <td class="center">${ind.target || "-"}</td>
-            <td class="center">${ind.realisasi || "-"}</td>
+            <td class="center">${escH(ind.satuan || '-')}</td>
+            <td class="center">${ind.target || '-'}</td>
+            <td class="center">${ind.realisasi || '-'}</td>
             <td class="center" style="color:${pctColor(ind.pct_capaian)}; font-weight:bold">${ind.pct_capaian}%</td>
-            <td class="center"><span class="badge badge-${ind.pct_capaian >= 100 ? "green" : ind.pct_capaian >= 75 ? "yellow" : "red"}">${ind.status_capaian}</span></td>
+            <td class="center"><span class="badge badge-${ind.pct_capaian >= 100 ? 'green' : ind.pct_capaian >= 75 ? 'yellow' : 'red'}">${ind.status_capaian}</span></td>
           </tr>
           <tr class="narasi-row">
             <td colspan="6"><em>Analisis: ${escH(ind.narasi)}</em></td>
-          </tr>`).join("")
+          </tr>`,
+          )
+          .join('')
       : `<tr><td colspan="6" class="center text-muted">Belum ada indikator</td></tr>`;
+
+  // Tabel Perjanjian Kinerja: Sasaran + Indikator level sasaran + Target tahun berjalan
+  const perjanjianKinerjaRows = () => {
+    let no = 0;
+    const rows = [];
+    (indikatorTree || []).forEach((t) => {
+      t.sasaran.forEach((s) => {
+        (s.indikator || []).forEach((ind) => {
+          no++;
+          rows.push(`
+            <tr>
+              <td class="center">${no}</td>
+              <td>${escH(s.isi_sasaran || '-')}</td>
+              <td>${escH(ind.nama_indikator)}</td>
+              <td class="center">${escH(ind.satuan || '-')}</td>
+              <td class="center">${ind.target || '-'}</td>
+            </tr>`);
+        });
+      });
+    });
+    return (
+      rows.join('') ||
+      `<tr><td colspan="5" class="center text-muted">Belum ada data sasaran/indikator level sasaran</td></tr>`
+    );
+  };
 
   const indikatorTableHtml = (items) => `
     <table>
@@ -349,63 +422,91 @@ function buildHtml(data) {
     </table>`;
 
   // Nested Tujuan -> Sasaran -> Program -> Kegiatan, supaya jelas indikator milik siapa.
-  const indikatorHierarkiHtml = (indikatorTree && indikatorTree.length)
-    ? indikatorTree.map((t) => `
+  const indikatorHierarkiHtml =
+    indikatorTree && indikatorTree.length
+      ? indikatorTree
+          .map(
+            (t) => `
         <div class="tujuan-block">
-          <h4 class="hierarchy-title tujuan-title">Tujuan ${escH(t.no_tujuan || "")}: ${escH(t.isi_tujuan || "-")}</h4>
-          ${t.sasaran.map((s) => `
+          <h4 class="hierarchy-title tujuan-title">Tujuan ${escH(t.no_tujuan || '')}: ${escH(t.isi_tujuan || '-')}</h4>
+          ${t.sasaran
+            .map(
+              (s) => `
             <div class="sasaran-block">
-              <h5 class="hierarchy-title sasaran-title">Sasaran ${escH(s.nomor || "")}: ${escH(s.isi_sasaran || "-")}</h5>
+              <h5 class="hierarchy-title sasaran-title">Sasaran ${escH(s.nomor || '')}: ${escH(s.isi_sasaran || '-')}</h5>
               ${indikatorTableHtml(s.indikator)}
-              ${s.program.map((p) => `
+              ${s.program
+                .map(
+                  (p) => `
                 <div class="program-block">
-                  <h6 class="hierarchy-title program-title">Program: ${escH(p.nama_program || "-")}</h6>
+                  <h6 class="hierarchy-title program-title">Program: ${escH(p.nama_program || '-')}</h6>
                   ${indikatorTableHtml(p.indikator)}
-                  ${p.kegiatan.map((k) => `
+                  ${p.kegiatan
+                    .map(
+                      (k) => `
                     <div class="kegiatan-block">
-                      <h6 class="hierarchy-title kegiatan-title">Kegiatan: ${escH(k.nama_kegiatan || "-")}</h6>
+                      <h6 class="hierarchy-title kegiatan-title">Kegiatan: ${escH(k.nama_kegiatan || '-')}</h6>
                       ${indikatorTableHtml(k.indikator)}
-                    </div>`).join("")}
-                </div>`).join("")}
-            </div>`).join("")}
-        </div>`).join("")
-    : `<p class="text-muted">Belum ada data Tujuan/Sasaran/Program/Kegiatan untuk OPD aktif.</p>`;
+                    </div>`,
+                    )
+                    .join('')}
+                </div>`,
+                )
+                .join('')}
+            </div>`,
+            )
+            .join('')}
+        </div>`,
+          )
+          .join('')
+      : `<p class="text-muted">Belum ada data Tujuan/Sasaran/Program/Kegiatan untuk OPD aktif.</p>`;
 
-  const indikatorOrphanHtml = (indikatorOrphan && indikatorOrphan.length)
-    ? `<div class="orphan-block">
+  const indikatorOrphanHtml =
+    indikatorOrphan && indikatorOrphan.length
+      ? `<div class="orphan-block">
          <h4 class="hierarchy-title">Indikator Belum Terhubung ke Hierarki Renstra</h4>
          ${indikatorTableHtml(indikatorOrphan)}
        </div>`
-    : "";
+      : '';
 
   // Baris LAKIP entries (program/kegiatan)
   const lakipRows = lakipEntries.length
-    ? lakipEntries.map((l, i) => `
+    ? lakipEntries
+        .map(
+          (l, i) => `
         <tr>
           <td class="center">${i + 1}</td>
-          <td>${escH(l.program || "-")}</td>
-          <td>${escH(l.kegiatan || "-")}</td>
-          <td>${escH(l.indikator_kinerja || "-")}</td>
-          <td class="center">${escH(l.target || "-")}</td>
-          <td class="center">${escH(l.realisasi || "-")}</td>
-          <td>${escH(l.evaluasi || "—")}</td>
-        </tr>`).join("")
+          <td>${escH(l.program || '-')}</td>
+          <td>${escH(l.kegiatan || '-')}</td>
+          <td>${escH(l.indikator_kinerja || '-')}</td>
+          <td class="center">${escH(l.target || '-')}</td>
+          <td class="center">${escH(l.realisasi || '-')}</td>
+          <td>${escH(l.evaluasi || '—')}</td>
+        </tr>`,
+        )
+        .join('')
     : `<tr><td colspan="7" class="center text-muted">Belum ada entri program/kegiatan LAKIP untuk tahun ${tahun}</td></tr>`;
 
   // Misi list
   const misiHtml = misi.length
-    ? misi.map((m) => `<li>Misi ${m.no_misi}: ${escH(m.isi_misi)}</li>`).join("")
-    : "<li>Belum ada data misi</li>";
+    ? misi.map((m) => `<li>Misi ${m.no_misi}: ${escH(m.isi_misi)}</li>`).join('')
+    : '<li>Belum ada data misi</li>';
 
   // Sasaran grouped
   const sasaranHtml = sasaran.length
-    ? sasaran.map((s) => `
+    ? sasaran
+        .map(
+          (s) => `
         <div class="sasaran-item">
-          <strong>Sasaran ${escH(s.nomor || "")}</strong>: ${escH(s.isi_sasaran)}
-          ${tujuan.find((t) => t.id === s.tujuan_id)
-            ? `<div class="text-muted small">Tujuan: ${escH(tujuan.find((t) => t.id === s.tujuan_id)?.isi_tujuan || "")}</div>`
-            : ""}
-        </div>`).join("")
+          <strong>Sasaran ${escH(s.nomor || '')}</strong>: ${escH(s.isi_sasaran)}
+          ${
+            tujuan.find((t) => t.id === s.tujuan_id)
+              ? `<div class="text-muted small">Tujuan: ${escH(tujuan.find((t) => t.id === s.tujuan_id)?.isi_tujuan || '')}</div>`
+              : ''
+          }
+        </div>`,
+        )
+        .join('')
     : "<p class='text-muted'>Belum ada data sasaran strategis</p>";
 
   const pctRealisasiAnggaranColor = pctColor(anggaran.pct);
@@ -620,6 +721,9 @@ function buildHtml(data) {
       border-left: 2px dotted #dbeafe;
     }
     .orphan-block { margin-top: 20px; }
+    .renstra-subtable { margin: 6px 0 14px; }
+    .renstra-subtable td { border: 1px solid #d1d5db; }
+    .renstra-table-block { margin: 10px 0 16px; }
     ul { padding-left: 20px; }
     li { margin-bottom: 6px; }
     .exec-summary {
@@ -704,9 +808,48 @@ function buildHtml(data) {
         </div>
         <div class="tahun-badge">TAHUN ${escH(tahun)}</div>
         <p class="text-muted" style="margin-top:24px; font-size:10pt">
-          Diterbitkan: ${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+          Diterbitkan: ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
         </p>
       </div>
+    </div>
+
+    <!-- ═══════════════ BAB I — PENDAHULUAN ═══════════════ -->
+    <div class="page page-break">
+      <h2 class="section-title">BAB I — PENDAHULUAN</h2>
+      <h3 class="sub-title">A. Dasar Hukum</h3>
+      <p>
+        Laporan Kinerja Instansi Pemerintah (LKj) ${escH(opd.nama_opd)} Tahun ${escH(tahun)} disusun
+        berdasarkan Peraturan Presiden Nomor 29 Tahun 2014 tentang Sistem Akuntabilitas Kinerja
+        Instansi Pemerintah, dan Peraturan Menteri Pendayagunaan Aparatur Negara dan Reformasi
+        Birokrasi Nomor 53 Tahun 2014 tentang Petunjuk Teknis Penyusunan Perjanjian Kinerja,
+        Pelaporan Kinerja, dan Tata Cara Reviu atas Laporan Kinerja Instansi Pemerintah.
+      </p>
+      <h3 class="sub-title">B. Maksud dan Tujuan</h3>
+      <p>
+        Laporan ini disusun sebagai bentuk pertanggungjawaban atas pelaksanaan program dan kegiatan
+        ${escH(opd.nama_opd)} Provinsi ${escH(opd.nama_provinsi)} dalam mencapai tujuan dan sasaran
+        yang telah ditetapkan dalam Rencana Strategis Tahun ${escH(tahun)}.
+      </p>
+
+      <h3 class="sub-title">C. Gambaran Umum Organisasi</h3>
+      ${
+        gambaranUmumItem
+          ? `
+        ${renderRenstraTeks(gambaranUmumItem.isi)}
+        ${renderRenstraTabel(gambaranUmumItem.tables)}
+      `
+          : `<p class="text-muted">Data gambaran umum organisasi belum tersedia pada modul Renstra.</p>`
+      }
+
+      <h3 class="sub-title">D. Isu Strategis</h3>
+      ${
+        isuStrategisItem
+          ? `
+        ${renderRenstraTeks(isuStrategisItem.isi)}
+        ${renderRenstraTabel(isuStrategisItem.tables)}
+      `
+          : `<p class="text-muted">Data isu strategis belum tersedia pada modul Renstra.</p>`
+      }
     </div>
 
     <!-- ═══════════════ RINGKASAN EKSEKUTIF ═══════════════ -->
@@ -719,19 +862,18 @@ function buildHtml(data) {
           atas pelaksanaan program dan kegiatan dalam rangka pencapaian tujuan dan sasaran yang telah
           ditetapkan dalam Rencana Strategis.
         </p>
-        <p>
-          Laporan ini disusun berdasarkan Peraturan Menteri Pendayagunaan Aparatur Negara dan
-          Reformasi Birokrasi Nomor 53 Tahun 2014 tentang Petunjuk Teknis Penyusunan Perjanjian
-          Kinerja, Pelaporan Kinerja, dan Tata Cara Reviu atas Laporan Kinerja Instansi Pemerintah.
-        </p>
-        ${anggaran.total_pagu > 0 ? `
+        ${
+          anggaran.total_pagu > 0
+            ? `
         <p>
           Pada Tahun ${escH(tahun)}, ${escH(opd.nama_opd)} mendapatkan alokasi anggaran sebesar
           <strong>${formatRp(anggaran.total_pagu)}</strong> dengan realisasi anggaran sebesar
           <strong>${formatRp(anggaran.total_realisasi)}</strong>
           atau <strong style="color:${pctRealisasiAnggaranColor}">${anggaran.pct}%</strong>
           dari total pagu anggaran.
-        </p>` : ""}
+        </p>`
+            : ''
+        }
       </div>
 
       <!-- KPI Boxes -->
@@ -741,16 +883,18 @@ function buildHtml(data) {
           <div class="kpi-lbl">Indikator Kinerja</div>
         </div>
         <div class="kpi-box">
-          <div class="kpi-val" style="color:#15803d">${indikator.filter(i => i.pct_capaian >= 100).length}</div>
+          <div class="kpi-val" style="color:#15803d">${indikator.filter((i) => i.pct_capaian >= 100).length}</div>
           <div class="kpi-lbl">Indikator Tercapai</div>
         </div>
         <div class="kpi-box">
-          <div class="kpi-val" style="color:#b91c1c">${indikator.filter(i => i.pct_capaian < 100).length}</div>
+          <div class="kpi-val" style="color:#b91c1c">${indikator.filter((i) => i.pct_capaian < 100).length}</div>
           <div class="kpi-lbl">Perlu Perhatian</div>
         </div>
       </div>
 
-      ${anggaran.total_pagu > 0 ? `
+      ${
+        anggaran.total_pagu > 0
+          ? `
       <h3 class="sub-title">Realisasi Anggaran</h3>
       <table>
         <thead><tr>
@@ -767,7 +911,9 @@ function buildHtml(data) {
         <div class="budget-bar-fill" style="width:${Math.min(anggaran.pct, 100)}%">
           ${anggaran.pct}%
         </div>
-      </div>` : ""}
+      </div>`
+          : ''
+      }
 
       <h3 class="sub-title">Visi</h3>
       <p><em>"${escH(visi)}"</em></p>
@@ -776,9 +922,32 @@ function buildHtml(data) {
       <ul>${misiHtml}</ul>
     </div>
 
+    <!-- ═══════════════ BAB II — PERENCANAAN KINERJA ═══════════════ -->
+    <div class="page page-break">
+      <h2 class="section-title">BAB II — PERENCANAAN KINERJA</h2>
+      <p class="text-muted small">
+        Perencanaan kinerja ${escH(opd.nama_opd)} Tahun ${escH(tahun)} mengacu pada Visi, Misi,
+        Tujuan, dan Sasaran Strategis sebagaimana tercantum dalam Rencana Strategis (Renstra) OPD.
+      </p>
+      <h3 class="sub-title">Perjanjian Kinerja Tahun ${escH(tahun)}</h3>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:5%">No</th>
+            <th style="width:28%">Sasaran Strategis</th>
+            <th style="width:32%">Indikator Kinerja</th>
+            <th style="width:12%">Satuan</th>
+            <th style="width:12%">Target</th>
+          </tr>
+        </thead>
+        <tbody>${perjanjianKinerjaRows()}</tbody>
+      </table>
+    </div>
+
     <!-- ═══════════════ SASARAN STRATEGIS ═══════════════ -->
     <div class="page page-break">
-      <h2 class="section-title">BAB I — SASARAN STRATEGIS & INDIKATOR KINERJA</h2>
+      <h2 class="section-title">BAB III — AKUNTABILITAS KINERJA</h2>
+      <h3 class="sub-title">A. Capaian Kinerja Organisasi</h3>
       <h3 class="sub-title">Sasaran Strategis</h3>
       ${sasaranHtml}
 
@@ -792,7 +961,7 @@ function buildHtml(data) {
 
     <!-- ═══════════════ PROGRAM / KEGIATAN ═══════════════ -->
     <div class="page page-break">
-      <h2 class="section-title">BAB II — AKUNTABILITAS PROGRAM & KEGIATAN</h2>
+      <h3 class="sub-title">B. Rincian Realisasi Program dan Kegiatan</h3>
       <p class="text-muted small">
         Data program dan kegiatan bersumber dari entri LAKIP Tahun ${escH(tahun)}.
       </p>
@@ -814,7 +983,7 @@ function buildHtml(data) {
 
     <!-- ═══════════════ PENUTUP + TTD ═══════════════ -->
     <div class="page">
-      <h2 class="section-title">BAB III — PENUTUP & REKOMENDASI</h2>
+      <h2 class="section-title">BAB IV — PENUTUP</h2>
       <div class="exec-summary">
         <p>
           Berdasarkan hasil evaluasi kinerja Tahun ${escH(tahun)}, ${escH(opd.nama_opd)} telah
@@ -838,7 +1007,7 @@ function buildHtml(data) {
       <div class="ttd-area">
         <div class="ttd-box">
           <p>${escH(meta.opd.nama_provinsi)},
-          ${new Date().toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</p>
+          ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
           <p>${escH(opd.kepala_opd)}</p>
           <div class="ttd-name">
             (......................................)
@@ -855,12 +1024,67 @@ function buildHtml(data) {
 
 // ── HTML escape helper ─────────────────────────────────────────────────────
 function escH(str) {
-  if (!str) return "";
+  if (!str) return '';
   return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── Render subbab Renstra (teks biasa + baris ber-tab jadi tabel sederhana) ──
+function renderRenstraTeks(isiText) {
+  if (!isiText) return '';
+  const lines = String(isiText).split('\n');
+  let html = '';
+  let tableBuffer = [];
+  const flushTable = () => {
+    if (!tableBuffer.length) return;
+    html += `<table class="renstra-subtable"><tbody>${tableBuffer
+      .map(
+        (line) =>
+          `<tr>${line
+            .split('\t')
+            .map((c) => `<td>${escH(c)}</td>`)
+            .join('')}</tr>`,
+      )
+      .join('')}</tbody></table>`;
+    tableBuffer = [];
+  };
+  for (const line of lines) {
+    if (line.includes('\t')) {
+      tableBuffer.push(line);
+    } else {
+      flushTable();
+      const t = line.trim();
+      if (t) html += `<p>${escH(t)}</p>`;
+    }
+  }
+  flushTable();
+  return html;
+}
+
+function renderRenstraTabel(tables) {
+  if (!tables || !tables.length) return '';
+  return tables
+    .map(
+      (t) => `
+    <div class="renstra-table-block">
+      <p class="small"><strong>Tabel ${escH(t.nomor || '')} ${escH(t.judul || '')}</strong></p>
+      <table>
+        <thead><tr>${(t.columns || []).map((c) => `<th>${escH(c)}</th>`).join('')}</tr></thead>
+        <tbody>${(t.tabel || [])
+          .map(
+            (row) =>
+              `<tr>${(t.columns || []).map((c) => `<td>${escH(row[c] ?? '-')}</td>`).join('')}</tr>`,
+          )
+          .join('')}</tbody>
+      </table>
+      ${t.sumber ? `<p class="text-muted small">Sumber: ${escH(t.sumber)}</p>` : ''}
+      ${t.analisa ? `<p class="small"><em>${escH(t.analisa)}</em></p>` : ''}
+    </div>`,
+    )
+    .join('');
 }
 
 // ═══════════════ CONTROLLER EXPORTS ═══════════════════════════════════════
@@ -875,8 +1099,10 @@ exports.getData = async (req, res) => {
     const data = await collectLakipData(tahun, parseInt(periode_id) || 1);
     return res.json({ success: true, data });
   } catch (err) {
-    console.error("[lakipGenerator] getData:", err);
-    return res.status(500).json({ success: false, message: "Gagal mengambil data LAKIP: " + err.message });
+    console.error('[lakipGenerator] getData:', err);
+    return res
+      .status(500)
+      .json({ success: false, message: 'Gagal mengambil data LAKIP: ' + err.message });
   }
 };
 
@@ -889,11 +1115,11 @@ exports.preview = async (req, res) => {
     const { tahun, periode_id } = req.query;
     const data = await collectLakipData(tahun, parseInt(periode_id) || 1);
     const html = buildHtml(data);
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Cache-Control", "no-store");
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
     return res.send(html);
   } catch (err) {
-    console.error("[lakipGenerator] preview:", err);
+    console.error('[lakipGenerator] preview:', err);
     return res.status(500).send(`<h2>Gagal generate preview LAKIP</h2><pre>${err.message}</pre>`);
   }
 };
