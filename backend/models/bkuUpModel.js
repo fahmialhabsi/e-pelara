@@ -4,7 +4,10 @@ const { Model } = require("sequelize");
 
 module.exports = (sequelize, DataTypes) => {
   class BkuUp extends Model {
-    static associate() {}
+    static associate(models) {
+      BkuUp.belongsTo(models.Bku, { foreignKey: "bku_id", as: "bku_pencairan" });
+      BkuUp.belongsTo(models.Bku, { foreignKey: "setoran_bku_id", as: "bku_setoran" });
+    }
   }
 
   BkuUp.init(
@@ -25,6 +28,10 @@ module.exports = (sequelize, DataTypes) => {
       },
       sigap_up_id: { type: DataTypes.INTEGER, allowNull: true },
       keterangan: { type: DataTypes.TEXT, allowNull: true },
+      nomor_bukti: { type: DataTypes.STRING(60), allowNull: true },
+      nomor_sp2d: { type: DataTypes.STRING(50), allowNull: true },
+      bku_id: { type: DataTypes.INTEGER, allowNull: true },
+      setoran_bku_id: { type: DataTypes.INTEGER, allowNull: true },
     },
     {
       sequelize,

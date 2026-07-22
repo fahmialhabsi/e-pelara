@@ -22,11 +22,13 @@ async function generateLo(sequelize, models, tahunAnggaran) {
     throw err;
   }
 
+  // bulan=0 = kumulatif tahunan (lihat catatan sama di neracaService.js) — bulan=12
+  // literal bisa kosong kalau transaksi terakhir tahun itu bukan di Desember.
   const pendapatanRows = await sequelize.query(
     `SELECT sa.kode_akun, sa.saldo_akhir AS nilai, kab.nama AS nama_akun
      FROM saldo_akun sa
      INNER JOIN kode_akun_bas kab ON kab.kode = sa.kode_akun AND kab.aktif = 1
-     WHERE sa.tahun_anggaran = :th AND sa.bulan = 12
+     WHERE sa.tahun_anggaran = :th AND sa.bulan = 0
        AND kab.digunakan_di = 'LO' AND kab.jenis = 'PENDAPATAN'`,
     { replacements: { th: tahunAnggaran }, type: QueryTypes.SELECT },
   );

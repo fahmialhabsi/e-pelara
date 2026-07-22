@@ -15,11 +15,15 @@ import {
   message,
 } from "antd";
 import dayjs from "dayjs";
-import { getBkuUpList, createBkuUp } from "../services/lkApi";
+import { getBkuUpList, createBkuUp, setorSisaBkuUp } from "../services/lkApi";
 
 const { Title } = Typography;
 
 const JENIS_UP = ["UP", "GU", "TUP"].map((v) => ({ value: v, label: v }));
+const JENIS_KAS = [
+  { value: "BANK", label: "Bank (rekening bendahara)" },
+  { value: "TUNAI", label: "Tunai" },
+];
 
 export default function BkuUpPage() {
   const nav = useNavigate();
@@ -28,6 +32,8 @@ export default function BkuUpPage() {
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [form] = Form.useForm();
+  const [setorTarget, setSetorTarget] = useState(null);
+  const [setorForm] = Form.useForm();
 
   const load = async () => {
     setLoading(true);
@@ -55,8 +61,36 @@ export default function BkuUpPage() {
       render: (v) =>
         `Rp. ${Number(v).toLocaleString("id-ID", { minimumFractionDigits: 2 })}`,
     },
-    { title: "Sisa UP", dataIndex: "sisa_up", key: "sisa_up" },
+    {
+      title: "Sisa UP",
+      dataIndex: "sisa_up",
+      key: "sisa_up",
+      render: (v) =>
+        `Rp. ${Number(v).toLocaleString("id-ID", { minimumFractionDigits: 2 })}`,
+    },
     { title: "Status", dataIndex: "status", key: "status" },
+    {
+      title: "Baris BKU",
+      key: "bku_pencairan",
+      render: (_, r) =>
+        r.bku_pencairan ? `#${r.bku_pencairan.id} (saldo Rp. ${Number(r.bku_pencairan.saldo).toLocaleString("id-ID")})` : "—",
+    },
+    {
+      title: "Aksi",
+      key: "aksi",
+      render: (_, r) =>
+        r.status !== "SETOR_KEMBALI" && Number(r.sisa_up) > 0 ? (
+          <Button
+            size="small"
+            onClick={() => {
+              setSetorTarget(r);
+              setorForm.setFieldsValue({ tanggal: dayjs(), nomor_bukti: "" });
+            }}
+          >
+            Setor Sisa
+          </Button>
+        ) : null,
+    },
   ];
 
   return (
@@ -90,9 +124,12 @@ export default function BkuUpPage() {
               jenis: v.jenis,
               tanggal: v.tanggal.format("YYYY-MM-DD"),
               nominal: v.nominal,
+              jenis_kas: v.jenis_kas || "BANK",
+              nomor_sp2d: v.nomor_sp2d || null,
+              nomor_bukti: v.nomor_bukti || null,
               keterangan: v.keterangan || null,
             });
-            message.success("Tersimpan");
+            message.success("Tersimpan — baris BKU (penerimaan) & jurnal otomatis dibuat");
             setOpen(false);
             form.resetFields();
             load();
@@ -109,6 +146,7 @@ export default function BkuUpPage() {
           initialValues={{
             tahun_anggaran: tahun,
             tanggal: dayjs(),
+            jenis_kas: "BANK",
           }}
         >
           <Form.Item name="tahun_anggaran" label="Tahun anggaran" rules={[{ required: true }]}>
@@ -117,14 +155,60 @@ export default function BkuUpPage() {
           <Form.Item name="jenis" label="Jenis" rules={[{ required: true }]}>
             <Select options={JENIS_UP} />
           </Form.Item>
+          <Form.Item name="jenis_kas" label="Jenis kas (pencairan masuk ke)" rules={[{ required: true }]}>
+            <Select options={JENIS_KAS} />
+          </Form.Item>
           <Form.Item name="tanggal" label="Tanggal" rules={[{ required: true }]}>
             <DatePicker style={{ width: "100%" }} format="YYYY-MM-DD" />
           </Form.Item>
           <Form.Item name="nominal" label="Nominal" rules={[{ required: true }]}>
             <InputNumber min={0} style={{ width: "100%" }} />
           </Form.Item>
+          <Form.Item name="nomor_sp2d" label="Nomor SP2D">
+            <Input />
+          </Form.Item>
+          <Form.Item name="nomor_bukti" label="Nomor Bukti">
+            <Input />
+          </Form.Item>
           <Form.Item name="keterangan" label="Keterangan">
             <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={`Setor Sisa ${setorTarget?.jenis || ""} — Sisa Rp. ${
+          setorTarget ? Number(setorTarget.sisa_up).toLocaleString("id-ID", { minimumFractionDigits: 2 }) : 0
+        }`}
+        open={!!setorTarget}
+        onCancel={() => setSetorTarget(null)}
+        onOk={async () => {
+          try {
+            const v = await setorForm.validateFields();
+            await setorSisaBkuUp(setorTarget.id, {
+              tanggal: v.tanggal.format("YYYY-MM-DD"),
+              nomor_bukti: v.nomor_bukti || null,
+              jenis_kas: v.jenis_kas || "BANK",
+            });
+            message.success("Setoran tersimpan — baris BKU (pengeluaran) & jurnal otomatis dibuat");
+            setSetorTarget(null);
+            load();
+          } catch (e) {
+            if (e?.errorFields) return;
+            message.error(e.response?.data?.message || e.message);
+          }
+        }}
+        destroyOnHidden
+      >
+        <Form form={setorForm} layout="vertical">
+          <Form.Item name="tanggal" label="Tanggal Setor" rules={[{ required: true }]}>
+            <DatePicker style={{ width: "100%" }} format="YYYY-MM-DD" />
+          </Form.Item>
+          <Form.Item name="nomor_bukti" label="Nomor Bukti Setor">
+            <Input />
+          </Form.Item>
+          <Form.Item name="jenis_kas" label="Disetor dari kas" initialValue="BANK">
+            <Select options={JENIS_KAS} />
           </Form.Item>
         </Form>
       </Modal>

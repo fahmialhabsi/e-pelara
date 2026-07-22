@@ -10,6 +10,22 @@ function num(v) {
 /**
  * Generate LPE + upsert snapshot. Membandingkan ekuitas akhir dengan neraca (jujur jika selisih).
  */
+async function perubahanEkuitasPembiayaan(sequelize, tahunAnggaran) {
+  // UP/GU/TUP dijurnal Kas DEBIT / Ekuitas KREDIT (lihat bkuJurnalService.js MAPPING_JURNAL) —
+  // efek Ekuitas ini nyata di GL tapi tidak lewat LO (bukan pendapatan/beban akrual), jadi
+  // harus dimasukkan eksplisit di sini supaya EKUITAS_AKHIR LPE cocok dengan Neraca (residual
+  // aset-kewajiban, yang otomatis ikut mencerminkan posting Ekuitas ini).
+  const [row] = await sequelize.query(
+    `SELECT
+       COALESCE(SUM(CASE WHEN jenis_transaksi IN ('UP','GU','TUP') THEN penerimaan ELSE 0 END), 0)
+         - COALESCE(SUM(CASE WHEN jenis_transaksi = 'SETORAN_SISA_UP' THEN pengeluaran ELSE 0 END), 0) AS t
+     FROM bku
+     WHERE tahun_anggaran = :th AND status_validasi IN ('VALID','BELUM')`,
+    { replacements: { th: tahunAnggaran }, type: QueryTypes.SELECT },
+  );
+  return num(row?.t);
+}
+
 async function generateLpe(sequelize, models, tahunAnggaran, koreksiManual = {}) {
   const { LpeSnapshot, NeracaSnapshot } = models;
 
@@ -30,6 +46,7 @@ async function generateLpe(sequelize, models, tahunAnggaran, koreksiManual = {})
   const ekuitasAwal = neracaLalu ? num(neracaLalu.nilai_tahun_ini) : 0;
 
   const surplusDefisit = loTahunIni.surplus_defisit;
+  const perubahanPembiayaan = await perubahanEkuitasPembiayaan(sequelize, tahunAnggaran);
   const koreksiPersediaan = num(koreksiManual.persediaan);
   const koreksiAsetTetap = num(koreksiManual.aset_tetap);
   const koreksiLainnya = num(koreksiManual.lainnya);
@@ -38,6 +55,7 @@ async function generateLpe(sequelize, models, tahunAnggaran, koreksiManual = {})
   const ekuitasAkhir =
     ekuitasAwal +
     surplusDefisit +
+    perubahanPembiayaan +
     koreksiPersediaan +
     koreksiAsetTetap +
     koreksiLainnya +
@@ -52,15 +70,20 @@ async function generateLpe(sequelize, models, tahunAnggaran, koreksiManual = {})
   const komponenLpe = [
     { komponen: "EKUITAS_AWAL", nilai_tahun_ini: ekuitasAwal, urutan: 1 },
     { komponen: "SURPLUS_DEFISIT_LO", nilai_tahun_ini: surplusDefisit, urutan: 2 },
-    { komponen: "KOREKSI_PERSEDIAAN", nilai_tahun_ini: koreksiPersediaan, urutan: 3 },
-    { komponen: "KOREKSI_ASET_TETAP", nilai_tahun_ini: koreksiAsetTetap, urutan: 4 },
-    { komponen: "KOREKSI_LAINNYA", nilai_tahun_ini: koreksiLainnya, urutan: 5 },
+    {
+      komponen: "PERUBAHAN_EKUITAS_PEMBIAYAAN",
+      nilai_tahun_ini: perubahanPembiayaan,
+      urutan: 3,
+    },
+    { komponen: "KOREKSI_PERSEDIAAN", nilai_tahun_ini: koreksiPersediaan, urutan: 4 },
+    { komponen: "KOREKSI_ASET_TETAP", nilai_tahun_ini: koreksiAsetTetap, urutan: 5 },
+    { komponen: "KOREKSI_LAINNYA", nilai_tahun_ini: koreksiLainnya, urutan: 6 },
     {
       komponen: "KEWAJIBAN_KONSOLIDASIKAN",
       nilai_tahun_ini: kewajibanKonsolidasi,
-      urutan: 6,
+      urutan: 7,
     },
-    { komponen: "EKUITAS_AKHIR", nilai_tahun_ini: ekuitasAkhir, urutan: 7 },
+    { komponen: "EKUITAS_AKHIR", nilai_tahun_ini: ekuitasAkhir, urutan: 8 },
   ];
 
   for (const k of komponenLpe) {
@@ -88,6 +111,7 @@ async function generateLpe(sequelize, models, tahunAnggaran, koreksiManual = {})
   return {
     ekuitas_awal: ekuitasAwal,
     surplus_defisit: surplusDefisit,
+    perubahan_ekuitas_pembiayaan: perubahanPembiayaan,
     ekuitas_akhir: ekuitasAkhir,
     ekuitas_neraca: ekuitasNeraca,
     balance_lpe_neraca: selisih < 1,

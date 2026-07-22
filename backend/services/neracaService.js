@@ -54,11 +54,14 @@ async function generateNeraca(sequelize, models, tahunAnggaran) {
 
   const rows = [];
 
+  // bulan=0 = kumulatif tahunan (selalu terisi begitu ada 1 jurnal terposting,
+  // apapun bulannya) — bulan=12 literal bisa kosong kalau transaksi terakhir
+  // tahun itu bukan di Desember, bikin kas Neraca keliru terbaca 0.
   const kas = await SaldoAkun.findOne({
     where: {
       kode_akun: "1.1.01.02",
       tahun_anggaran: tahunAnggaran,
-      bulan: 12,
+      bulan: 0,
     },
   });
   rows.push({

@@ -35,6 +35,11 @@ const JENIS = [
   "SETORAN_SISA_UP",
 ];
 
+const JENIS_KAS = [
+  { value: "BANK", label: "Bank (rekening bendahara)" },
+  { value: "TUNAI", label: "Tunai" },
+];
+
 export default function BkuFormPage() {
   const { message } = App.useApp();
   const nav = useNavigate();
@@ -79,6 +84,7 @@ export default function BkuFormPage() {
       tanggal,
       uraian: v.uraian,
       jenis_transaksi: v.jenis_transaksi,
+      jenis_kas: v.jenis_kas || "BANK",
       penerimaan: v.penerimaan ?? 0,
       pengeluaran: v.pengeluaran ?? 0,
       kode_akun: v.kode_akun || null,
@@ -140,6 +146,7 @@ export default function BkuFormPage() {
             layout="vertical"
             initialValues={{
               tahun_anggaran: new Date().getFullYear(),
+              jenis_kas: "BANK",
               penerimaan: 0,
               pengeluaran: 0,
               skip_jurnal: false,
@@ -153,6 +160,9 @@ export default function BkuFormPage() {
             </Form.Item>
             <Form.Item name="jenis_transaksi" label="Jenis transaksi" rules={[{ required: true }]}>
               <Select options={JENIS.map((x) => ({ value: x, label: x }))} />
+            </Form.Item>
+            <Form.Item name="jenis_kas" label="Jenis kas" rules={[{ required: true }]}>
+              <Select options={JENIS_KAS} />
             </Form.Item>
             <Form.Item name="uraian" label="Uraian" rules={[{ required: true }]}>
               <Input.TextArea rows={3} />

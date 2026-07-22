@@ -75,6 +75,11 @@ export async function updateBku(id, body) {
   return data;
 }
 
+export async function deleteBku(id) {
+  const { data } = await api.delete(`/bku/${id}`);
+  return data;
+}
+
 export async function previewJurnalBku(body) {
   const { data } = await api.post("/bku/preview-jurnal", body);
   return data;
@@ -95,6 +100,11 @@ export async function getBkuCetak(tahun, bulan) {
   return data;
 }
 
+export async function getPejabatPenandatanganTahun(tahun) {
+  const { data } = await api.get(`/pejabat-penandatangan`, { params: { tahun } });
+  return data;
+}
+
 export async function syncBkuSigap(body) {
   const { data } = await api.post("/bku/sync-sigap", body);
   return data;
@@ -110,8 +120,43 @@ export async function createBkuUp(body) {
   return data;
 }
 
+export async function setorSisaBkuUp(id, body) {
+  const { data } = await api.post(`/bku/up/${id}/setor`, body || {});
+  return data;
+}
+
 export async function getBkuRekonsiliasi(tahun, bulan) {
   const { data } = await api.get(`/bku/rekonsiliasi/${tahun}/${bulan}`);
+  return data;
+}
+
+export async function getSaldoTunaiBank(tahun, bulan) {
+  const { data } = await api.get(`/bku/saldo-tunai-bank/${tahun}/${bulan}`);
+  return data;
+}
+
+export async function pindahKas(body) {
+  const { data } = await api.post(`/bku/pindah-kas`, body);
+  return data;
+}
+
+export async function getBkuTutupBukuStatus(tahun, bulan) {
+  const { data } = await api.get(`/bku/tutup-buku/${tahun}/${bulan}`);
+  return data;
+}
+
+export async function tutupBkuBulan(tahun, bulan) {
+  const { data } = await api.post(`/bku/tutup-buku/${tahun}/${bulan}/tutup`);
+  return data;
+}
+
+export async function setujuiTutupBkuBulan(tahun, bulan) {
+  const { data } = await api.post(`/bku/tutup-buku/${tahun}/${bulan}/setujui`);
+  return data;
+}
+
+export async function tolakTutupBkuBulan(tahun, bulan, catatan) {
+  const { data } = await api.post(`/bku/tutup-buku/${tahun}/${bulan}/tolak`, { catatan });
   return data;
 }
 

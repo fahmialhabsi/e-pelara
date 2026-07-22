@@ -194,8 +194,11 @@ async function generateLak(sequelize, models, tahunAnggaran) {
     }
   }
 
+  // Baris BKU terakhir tahun ini APAPUN bulannya (bukan khusus bulan=12) — kalau
+  // transaksi terakhir tahun itu bukan Desember, filter bulan=12 literal akan
+  // selalu kosong dan saldoBkuAkhir keliru terbaca 0.
   const lastDes = await Bku.findOne({
-    where: { tahun_anggaran: tahunAnggaran, bulan: 12, status_validasi: BKU_OK },
+    where: { tahun_anggaran: tahunAnggaran, status_validasi: BKU_OK },
     order: [
       ["tanggal", "DESC"],
       ["id", "DESC"],
@@ -227,7 +230,6 @@ async function validasiLak(models, tahunAnggaran) {
   const lastDes = await Bku.findOne({
     where: {
       tahun_anggaran: tahunAnggaran,
-      bulan: 12,
       status_validasi: BKU_OK,
     },
     order: [

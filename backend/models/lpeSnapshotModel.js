@@ -14,6 +14,7 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.ENUM(
           "EKUITAS_AWAL",
           "SURPLUS_DEFISIT_LO",
+          "PERUBAHAN_EKUITAS_PEMBIAYAAN",
           "KOREKSI_PERSEDIAAN",
           "KOREKSI_ASET_TETAP",
           "KOREKSI_LAINNYA",

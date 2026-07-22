@@ -15,13 +15,18 @@
 
 /**
  * Memetakan jenis dari bridge SIGAP (jenis_spj / jenis_belanja) ke jenis_transaksi BKU e-PELARA.
+ *
+ * SPJ dari SIGAP selalu berupa pertanggungjawaban BELANJA (pengeluaran) —
+ * pencairan UP/GU/TUP (penerimaan kas) dicatat lewat jalur terpisah
+ * (POST /bku/up, lihat lkBkuController.createUp) karena SIGAP tidak
+ * melacak peristiwa SP2D/pencairan (di luar scope-nya, lihat Spj.js).
+ * Jadi fungsi ini TIDAK PERNAH menghasilkan UP/GU/TUP — sebelumnya ada
+ * cabang untuk itu tapi tidak pernah tercapai (dead code) dan salah
+ * konsep (SPJ bukan peristiwa penerimaan kas).
  */
 function mapJenisSpjSigapKeBku(row) {
   const s = String(row?.jenis_spj || row?.jenis_belanja || "").toLowerCase().trim();
   if (!s) return "LS_BARANG";
-  if (s === "up" || s.includes("uang persediaan")) return "UP";
-  if (s === "gu" || s.includes("ganti uang")) return "GU";
-  if (s === "tup" || s.includes("tambahan uang")) return "TUP";
   if (s.includes("pegawai") || s.includes("gaji")) return "LS_GAJI";
   if (s.includes("modal") || s.includes("barang") || s.includes("jasa")) return "LS_BARANG";
   if (s.includes("penerimaan")) return "PENERIMAAN_LAIN";
@@ -33,9 +38,18 @@ function mapJenisBelanjaKeBku(jenisBelanja) {
   return mapJenisSpjSigapKeBku({ jenis_belanja: jenisBelanja });
 }
 
+const { resolveKodeAkunBasFromRekening } = require("./kodeRekeningBasMappingService");
+
 function isApprovedStatus(status) {
+  // "selesai_ppk" = SPJ sudah lanjut sampai SPM terbit di SIGAP — tetap approved
+  // secara finansial, harus tetap ikut sync (lihat juga bridgeEpelara.js sisi SIGAP).
   const s = String(status || "").toLowerCase();
-  return s === "terverifikasi_ppk" || s.includes("terverifikasi_ppk");
+  return (
+    s === "terverifikasi_ppk" ||
+    s.includes("terverifikasi_ppk") ||
+    s === "selesai_ppk" ||
+    s.includes("selesai_ppk")
+  );
 }
 
 /**
@@ -78,15 +92,18 @@ async function ambilSpjApprovedDariSigap(tahunAnggaran) {
 }
 
 async function syncSpjDariSigap(sequelize, models, tahunAnggaran) {
-  const { Bku } = models;
+  const { Bku, Dpa } = models;
   const {
     buatJurnalDariBku,
     hitungUlangSaldoBkuDari,
   } = require("./bkuJurnalService");
 
+  const { assertBulanTerbuka } = require("./bkuTutupBukuService");
+
   const hasil = {
     berhasil: 0,
     skip_sudah_ada: 0,
+    skip_bulan_tertutup: 0,
     gagal: 0,
     detail_gagal: [],
     configured: false,
@@ -119,8 +136,26 @@ async function syncSpjDariSigap(sequelize, models, tahunAnggaran) {
     const bulan = d.getMonth() + 1;
     const jenis = mapJenisSpjSigapKeBku(spj);
 
+    // Cocokkan ke DPA lewat kode_sub_kegiatan — dpa_id di sini adalah cara PALING
+    // AKURAT bagi dpaRealisasiRollupService.js menghitung realisasi per DPA (tidak
+    // ambigu spt matching by kode_rekening/BAS yang bisa dipakai bareng oleh banyak
+    // sub kegiatan). Null kalau sub_kegiatan_kode tidak match DPA manapun (mis. SPJ
+    // lama berformat default "SEKRETARIAT") — baris itu jatuh ke fallback lama.
+    let dpaId = null;
+    if (spj.kode_sub_kegiatan) {
+      const dpaMatch = await Dpa.findOne({
+        where: {
+          kode_sub_kegiatan: spj.kode_sub_kegiatan,
+          tahun: String(tahunAnggaran),
+          is_active_version: true,
+        },
+      });
+      if (dpaMatch) dpaId = dpaMatch.id;
+    }
+
     const t = await sequelize.transaction();
     try {
+      await assertBulanTerbuka(models, tahunAnggaran, bulan, t);
       const bkuRow = await Bku.create(
         {
           tahun_anggaran: tahunAnggaran,
@@ -128,16 +163,24 @@ async function syncSpjDariSigap(sequelize, models, tahunAnggaran) {
           tanggal: String(tgl).slice(0, 10),
           nomor_bukti: spj.nomor_spj || String(spj.id),
           nomor_spm: spj.nomor_spm || null,
+          dpa_id: dpaId,
           uraian:
             spj.keterangan ||
             spj.uraian_kegiatan ||
             spj.sub_kegiatan_kode ||
             `SPJ SIGAP #${spj.id}`,
           jenis_transaksi: jenis,
+          jenis_kas: "BANK", // pembayaran LS ke pihak ketiga selalu transfer bank, tidak pernah tunai
           penerimaan: 0,
           pengeluaran: Number(spj.nominal) || 0,
           saldo: 0,
-          kode_akun: spj.kode_rekening || null,
+          // Simpan kode BAS hasil crosswalk (mis. "5.1.02.01.01.0024" -> "5.2.01"), BUKAN kode
+          // rekening APBD mentah — LRA/LO membaca `bku.kode_akun` langsung (match exact / prefix
+          // LIKE '5.1%'/'5.2%'), jadi kode mentah bikin realisasi LRA 0 & LO salah klasifikasi
+          // (semua kebaca "Beban Pegawai" krn prefix "5.1" tanpa resolve dulu). Fallback ke kode
+          // mentah kalau crosswalk belum menangani kelompoknya (Bunga/Subsidi/Hibah/Bansos) —
+          // buildBarisJurnal() masih punya fallback resolve sendiri untuk kasus itu.
+          kode_akun: resolveKodeAkunBasFromRekening(spj.kode_rekening) || spj.kode_rekening || null,
           sigap_spj_id: spj.id,
           status_validasi: "VALID",
         },
@@ -161,6 +204,11 @@ async function syncSpjDariSigap(sequelize, models, tahunAnggaran) {
       hasil.berhasil++;
     } catch (err) {
       await t.rollback();
+      if (/sudah ditutup|sudah disetujui/i.test(err.message || "")) {
+        hasil.skip_bulan_tertutup++;
+        hasil.detail_gagal.push({ spj_id: spj.id, error: err.message, tipe: "BULAN_TERTUTUP" });
+        continue;
+      }
       hasil.gagal++;
       hasil.detail_gagal.push({ spj_id: spj.id, error: err.message });
     }

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, Button, Space, InputNumber, Typography, Table, message } from "antd";
-import { getBkuCetak } from "../services/lkApi";
+import { getBkuCetak, getPejabatPenandatanganTahun, getBkuTutupBukuStatus } from "../services/lkApi";
 import { tampilSaldo, formatRupiah } from "../utils/lkFormat.jsx";
 
 const { Title, Text } = Typography;
@@ -12,12 +12,20 @@ export default function BkuCetakPage() {
   const [bulan, setBulan] = useState(new Date().getMonth() + 1);
   const [loading, setLoading] = useState(false);
   const [payload, setPayload] = useState(null);
+  const [pejabat, setPejabat] = useState([]);
+  const [tutupStatus, setTutupStatus] = useState(null);
 
   const load = async () => {
     setLoading(true);
     try {
       const res = await getBkuCetak(tahun, bulan);
       setPayload(res);
+      const [pejabatRes, tutupRes] = await Promise.all([
+        getPejabatPenandatanganTahun(tahun).catch(() => ({ data: [] })),
+        getBkuTutupBukuStatus(tahun, bulan).catch(() => ({ data: null })),
+      ]);
+      setPejabat(pejabatRes.data || []);
+      setTutupStatus(tutupRes.data || null);
     } catch (e) {
       message.error(e.response?.data?.message || "Gagal memuat data cetak");
     } finally {
@@ -30,7 +38,12 @@ export default function BkuCetakPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- muat ulang via tombol / ganti periode
   }, [tahun, bulan]);
 
+  const penggunaAnggaran = pejabat.find(
+    (p) => p.role === "PENGGUNA_ANGGARAN" || p.role === "KUASA_PENGGUNA_ANGGARAN",
+  );
+
   const columns = [
+    { title: "No.", key: "no_urut", width: 48, render: (_, __, idx) => idx + 1 },
     { title: "Tanggal", dataIndex: "tanggal", key: "tanggal" },
     { title: "No. Bukti", dataIndex: "nomor_bukti", key: "nomor_bukti" },
     { title: "Uraian", dataIndex: "uraian", key: "uraian", ellipsis: true },
@@ -60,7 +73,12 @@ export default function BkuCetakPage() {
             <Title level={4} style={{ marginBottom: 0 }}>
               {payload?.judul || "Buku Kas Umum"}
             </Title>
-            <Text type="secondary">Bendahara — format standar ringkas</Text>
+            <Text type="secondary">
+              Bendahara — format standar ringkas
+              {tutupStatus?.status && tutupStatus.status !== "BELUM_TUTUP"
+                ? ` • Status: ${tutupStatus.status === "DISETUJUI" ? "Disetujui (final)" : "Ditutup (menunggu persetujuan)"}`
+                : " • Status: Belum ditutup"}
+            </Text>
           </div>
           <Table
             size="small"
@@ -73,6 +91,27 @@ export default function BkuCetakPage() {
             columns={columns}
             pagination={false}
           />
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 48, padding: "0 24px" }}>
+            <div style={{ textAlign: "center", width: 260 }}>
+              <Text>Bendahara Pengeluaran</Text>
+              <div style={{ height: 72 }} />
+              <Text strong style={{ borderTop: "1px solid #000", display: "inline-block", minWidth: 200, paddingTop: 4 }}>
+                (.......................................)
+              </Text>
+            </div>
+            <div style={{ textAlign: "center", width: 260 }}>
+              <Text>Mengetahui, Pengguna Anggaran</Text>
+              <div style={{ height: 72 }} />
+              <Text strong style={{ borderTop: "1px solid #000", display: "inline-block", minWidth: 200, paddingTop: 4 }}>
+                {penggunaAnggaran?.nama || "(.......................................)"}
+              </Text>
+              {penggunaAnggaran?.nip && (
+                <div>
+                  <Text type="secondary">NIP. {penggunaAnggaran.nip}</Text>
+                </div>
+              )}
+            </div>
+          </div>
         </Space>
       </Card>
       <style>{`

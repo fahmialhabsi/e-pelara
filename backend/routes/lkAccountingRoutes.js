@@ -53,14 +53,22 @@ router.get("/bku/saldo-akhir/:tahun/:bulan", allowRoles(LK_READ), bku.saldoAkhir
 router.get("/bku/cetak/:tahun/:bulan", allowRoles(LK_READ), bku.cetak);
 router.get("/bku/up/:tahun", allowRoles(LK_READ), bku.listUp);
 router.post("/bku/up", allowRoles(LK_WRITE), bku.createUp);
+router.post("/bku/up/:id/setor", allowRoles(LK_WRITE), bku.setorSisaUp);
 router.post("/bku/sync-sigap", allowRoles(LK_WRITE), bku.syncSigap);
 router.post("/bku/recalc-rollup", allowRoles(LK_WRITE), bku.recalcRollup);
 router.post("/bku/preview-jurnal", allowRoles(LK_READ), bku.previewJurnal);
 router.get("/bku/rekonsiliasi/:tahun/:bulan", allowRoles(LK_READ), bku.rekonsiliasiKas);
+router.get("/bku/saldo-tunai-bank/:tahun/:bulan", allowRoles(LK_READ), bku.ringkasanTunaiBank);
+router.post("/bku/pindah-kas", allowRoles(LK_WRITE), bku.pindahKas);
+router.get("/bku/tutup-buku/:tahun/:bulan", allowRoles(LK_READ), bku.statusTutupBuku);
+router.post("/bku/tutup-buku/:tahun/:bulan/tutup", allowRoles(LK_WRITE), bku.tutupBuku);
+router.post("/bku/tutup-buku/:tahun/:bulan/setujui", allowRoles(LRA_KUNCI), bku.setujuiTutupBuku);
+router.post("/bku/tutup-buku/:tahun/:bulan/tolak", allowRoles(LRA_KUNCI), bku.tolakTutupBuku);
 router.get("/bku", allowRoles(LK_READ), bku.list);
 router.post("/bku", allowRoles(LK_WRITE), bku.create);
 router.get("/bku/:id", allowRoles(LK_READ), bku.getById);
 router.put("/bku/:id", allowRoles(LK_WRITE), bku.update);
+router.delete("/bku/:id", allowRoles(LK_WRITE), bku.destroy);
 
 router.get("/lra/:tahun/perbandingan", allowRoles(LK_READ), lra.perbandingan);
 router.post("/lra/:tahun/generate", allowRoles(LK_WRITE), lra.generate);
