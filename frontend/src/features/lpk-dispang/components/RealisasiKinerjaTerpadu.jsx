@@ -1,6 +1,6 @@
 // Halaman terpadu: filter cascading Tujuan->Sasaran->Program->Kegiatan->Sub Kegiatan,
 // tiap level tampilkan target + input realisasi supaya tidak salah isi.
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Card, Form, Row, Col, Spinner, Alert, Button } from 'react-bootstrap';
 import api from '@/services/api';
 import { useDokumen } from '../../../hooks/useDokumen';
@@ -14,7 +14,7 @@ import {
   deletePengkeg,
 } from '../services/lpkDispangApi';
 import LpkDispangForm from './LpkDispangForm';
-import LpkDispangTable from './LpkDispangTable';
+import LpkDispangHistoryTree from './LpkDispangHistoryTree';
 
 const IndikatorCard = ({ title, items, tahun, onSaved }) => {
   // Tidak sinkron dari props lewat effect — parent wajib kasih key unik per node
@@ -100,6 +100,8 @@ const RealisasiKinerjaTerpadu = () => {
   const [dpaOptions, setDpaOptions] = useState([]);
   const [existingPengkeg, setExistingPengkeg] = useState(null);
   const [historyRows, setHistoryRows] = useState([]);
+
+  const topRef = useRef(null);
 
   useEffect(() => {
     api
@@ -222,6 +224,7 @@ const RealisasiKinerjaTerpadu = () => {
     setDpaId('');
     setExistingPengkeg(null);
     reloadHistory();
+    topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   // Klik "Edit" di tabel Riwayat -> arahkan ulang filter cascading ke posisi yang
@@ -254,7 +257,7 @@ const RealisasiKinerjaTerpadu = () => {
 
   return (
     <div>
-      <p className="text-muted small mb-3">
+      <p ref={topRef} className="text-muted small mb-3">
         Pilih Tujuan → Sasaran → Program → Kegiatan → Sub Kegiatan untuk mengisi realisasi capaian
         per level. Target ditampilkan supaya nilai yang diisi tidak salah.
       </p>
@@ -404,8 +407,9 @@ const RealisasiKinerjaTerpadu = () => {
 
       <hr className="my-4" />
       <h6 className="fw-semibold mb-2">Riwayat Realisasi Sub Kegiatan — Tahun {tahun || '-'}</h6>
-      <LpkDispangTable
-        data={historyRows}
+      <LpkDispangHistoryTree
+        tree={tree}
+        historyRows={historyRows}
         onEdit={handleEditFromHistory}
         onDelete={handleDeleteFromHistory}
       />

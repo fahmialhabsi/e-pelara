@@ -65,7 +65,7 @@ module.exports = {
         include: includeAssoc,
         order: [
           ['tahun', 'DESC'],
-          ['created_at', 'DESC'],
+          [{ model: Dpa, as: 'dpa' }, 'kode_sub_kegiatan', 'ASC'],
         ],
       });
 
