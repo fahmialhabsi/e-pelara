@@ -1,17 +1,29 @@
 // src/features/lpk-dispang/pages/LpkDispangDashboard.jsx
-import React from "react";
+import React from 'react';
+import { Card, Badge } from 'react-bootstrap';
+import { ClipboardData } from 'react-bootstrap-icons';
+import { useDokumen } from '../../../hooks/useDokumen';
+import RealisasiKinerjaTerpadu from '../components/RealisasiKinerjaTerpadu';
 
 const LpkDispangDashboard = () => {
+  const { tahun } = useDokumen();
+
   return (
-    <div className="p-4">
-      <h2>Dashboard Laporan Pengelolaan Kegiatan</h2>
-      <p>
-        Halaman ini akan menampilkan ringkasan atau data terkait laporan
-        pengelolaan kegiatan.
-      </p>
-    </div>
+    <Card className="shadow-sm border-0">
+      <Card.Header className="bg-primary text-white d-flex align-items-center gap-2 py-3">
+        <ClipboardData size={20} />
+        <span className="fw-bold">Dashboard Laporan Pengelolaan Kegiatan</span>
+        {tahun && (
+          <Badge bg="light" text="primary" className="ms-auto">
+            Tahun {tahun}
+          </Badge>
+        )}
+      </Card.Header>
+      <Card.Body>
+        <RealisasiKinerjaTerpadu />
+      </Card.Body>
+    </Card>
   );
 };
 
 export default LpkDispangDashboard;
-// LpkDispangDashboard untuk modul LPK-DISPANG

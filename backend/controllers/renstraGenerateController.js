@@ -488,7 +488,7 @@ function buildBab5(data) {
 // BAB VI: Rencana Program dan Kegiatan
 // ─────────────────────────────────────────────────────────────────────────────
 function buildBab6(data) {
-  const { programs, kegiatans, subkegiatans, indikators } = data;
+  const { tujuans, sasarans, strategis, kebijakans, programs, kegiatans, subkegiatans, indikators } = data;
 
   const indByRefStage = {};
   indikators.forEach((ind) => {
@@ -506,7 +506,7 @@ function buildBab6(data) {
   const kondisiAkhir = (ind) =>
     ind ? `${s(ind.target_tahun_5)} / Rp ${fmtRp(ind.pagu_tahun_5)}` : '-';
 
-  // Agregasi Pendanaan Rp bottom-up: Sub Kegiatan -> Kegiatan -> Program
+  // Agregasi Pendanaan Rp bottom-up: Sub Kegiatan -> Kegiatan -> Program -> Kebijakan -> Strategi -> Sasaran -> Tujuan
   const paguOf = (ind, i) => Number(ind?.[`pagu_tahun_${i}`]) || 0;
   const sumPaguForKegiatan = (kegId) => {
     const subs = subkegiatans.filter((sk) => sk.kegiatan_id === kegId);
@@ -529,63 +529,175 @@ function buildBab6(data) {
     });
     return sums;
   };
+  const sumPaguForKebijakan = (kebId) => {
+    const progs = programs.filter((p) => p.kebijakan_id === kebId);
+    const sums = [0, 0, 0, 0, 0];
+    progs.forEach((prog) => {
+      sumPaguForProgram(prog.id).forEach((v, idx) => {
+        sums[idx] += v;
+      });
+    });
+    return sums;
+  };
+  const sumPaguForStrategi = (stratId) => {
+    const kebs = kebijakans.filter((k) => k.strategi_id === stratId);
+    const sums = [0, 0, 0, 0, 0];
+    kebs.forEach((keb) => {
+      sumPaguForKebijakan(keb.id).forEach((v, idx) => {
+        sums[idx] += v;
+      });
+    });
+    return sums;
+  };
+  const sumPaguForSasaran = (sasId) => {
+    const strats = strategis.filter((st) => st.sasaran_id === sasId);
+    const sums = [0, 0, 0, 0, 0];
+    strats.forEach((strat) => {
+      sumPaguForStrategi(strat.id).forEach((v, idx) => {
+        sums[idx] += v;
+      });
+    });
+    return sums;
+  };
+  const sumPaguForTujuan = (tujId) => {
+    const sass = sasarans.filter((sas) => sas.tujuan_id === tujId);
+    const sums = [0, 0, 0, 0, 0];
+    sass.forEach((sas) => {
+      sumPaguForSasaran(sas.id).forEach((v, idx) => {
+        sums[idx] += v;
+      });
+    });
+    return sums;
+  };
   const paguCellsFromArray = (arr) => arr.map((v) => `<td>${fmtRp(v)}</td>`).join('');
   const kondisiAkhirMixed = (targetVal, rpVal) => `${s(targetVal)} / Rp ${fmtRp(rpVal)}`;
 
   let rows = '';
-  if (programs.length === 0) {
-    rows = `<tr><td colspan="18" style="text-align:center;color:#888;font-style:italic">Belum ada data Program dan Kegiatan</td></tr>`;
+  if (tujuans.length === 0) {
+    rows = `<tr><td colspan="18" style="text-align:center;color:#888;font-style:italic">Belum ada data Tujuan/Sasaran/Strategi/Kebijakan/Program/Kegiatan</td></tr>`;
   } else {
     let no = 1;
-    programs.forEach((prog) => {
-      const progInd = (indByRefStage[`program_${prog.id}`] || [])[0];
-      const progPaguSums = sumPaguForProgram(prog.id);
-      rows += `<tr style="background:#d6eaf8;font-weight:bold">
+    tujuans.forEach((tuj) => {
+      const tujInd = (indByRefStage[`tujuan_${tuj.id}`] || [])[0];
+      const tujPaguSums = sumPaguForTujuan(tuj.id);
+      rows += `<tr style="background:#1a5276;color:#fff;font-weight:bold">
         <td>${no++}</td>
-        <td>${s(prog.kode_program)}</td>
-        <td>${s(prog.nama_program)}</td>
-        <td>${progInd ? s(progInd.nama_indikator) : '-'}</td>
-        <td>${progInd ? s(progInd.satuan) : '-'}</td>
-        <td>${progInd ? s(progInd.baseline) : '-'}</td>
-        ${targetCells(progInd)}
-        ${paguCellsFromArray(progPaguSums)}
-        <td>${kondisiAkhirMixed(progInd?.target_tahun_5, progPaguSums[4])}</td>
-        <td>${s(prog.opd_penanggung_jawab)}</td>
+        <td>${s(tuj.no_tujuan)}</td>
+        <td>Tujuan: ${s(tuj.isi_tujuan)}</td>
+        <td>${tujInd ? s(tujInd.nama_indikator) : '-'}</td>
+        <td>${tujInd ? s(tujInd.satuan) : '-'}</td>
+        <td>${tujInd ? s(tujInd.baseline) : '-'}</td>
+        ${targetCells(tujInd)}
+        ${paguCellsFromArray(tujPaguSums)}
+        <td>${kondisiAkhirMixed(tujInd?.target_tahun_5, tujPaguSums[4])}</td>
+        <td>-</td>
       </tr>`;
 
-      const progKegiatan = kegiatans.filter((k) => k.program_id === prog.id);
-      progKegiatan.forEach((keg) => {
-        const kegInd = (indByRefStage[`kegiatan_${keg.id}`] || [])[0];
-        const kegPaguSums = sumPaguForKegiatan(keg.id);
-        rows += `<tr style="background:#eaf4fb">
+      const tujSasaran = sasarans.filter((sas) => sas.tujuan_id === tuj.id);
+      tujSasaran.forEach((sas) => {
+        const sasInd = (indByRefStage[`sasaran_${sas.id}`] || [])[0];
+        const sasPaguSums = sumPaguForSasaran(sas.id);
+        rows += `<tr style="background:#2e86c1;color:#fff;font-weight:bold">
           <td></td>
-          <td>${s(keg.kode_kegiatan)}</td>
-          <td>${s(keg.nama_kegiatan)}</td>
-          <td>${kegInd ? s(kegInd.nama_indikator) : '-'}</td>
-          <td>${kegInd ? s(kegInd.satuan) : '-'}</td>
-          <td>${kegInd ? s(kegInd.baseline) : '-'}</td>
-          ${targetCells(kegInd)}
-          ${paguCellsFromArray(kegPaguSums)}
-          <td>${kondisiAkhirMixed(kegInd?.target_tahun_5, kegPaguSums[4])}</td>
-          <td>${s(keg.bidang_opd)}</td>
+          <td>${s(sas.nomor)}</td>
+          <td>Sasaran: ${s(sas.isi_sasaran)}</td>
+          <td>${sasInd ? s(sasInd.nama_indikator) : '-'}</td>
+          <td>${sasInd ? s(sasInd.satuan) : '-'}</td>
+          <td>${sasInd ? s(sasInd.baseline) : '-'}</td>
+          ${targetCells(sasInd)}
+          ${paguCellsFromArray(sasPaguSums)}
+          <td>${kondisiAkhirMixed(sasInd?.target_tahun_5, sasPaguSums[4])}</td>
+          <td>-</td>
         </tr>`;
 
-        // RenstraSubkegiatan uses renstra_program_id + kegiatan_id
-        const kegSub = subkegiatans.filter((sk) => sk.kegiatan_id === keg.id);
-        kegSub.forEach((sub) => {
-          const subInd = (indByRefStage[`sub_kegiatan_${sub.id}`] || [])[0];
-          rows += `<tr>
+        const sasStrategi = strategis.filter((st) => st.sasaran_id === sas.id);
+        sasStrategi.forEach((strat) => {
+          const stratInd = (indByRefStage[`strategi_${strat.id}`] || [])[0];
+          const stratPaguSums = sumPaguForStrategi(strat.id);
+          rows += `<tr style="background:#85c1e9;font-weight:bold">
             <td></td>
-            <td>${s(sub.kode_sub_kegiatan || sub.kode_subkegiatan)}</td>
-            <td>${s(sub.nama_sub_kegiatan || sub.nama_subkegiatan)}</td>
-            <td>${subInd ? s(subInd.nama_indikator) : '-'}</td>
-            <td>${subInd ? s(subInd.satuan) : '-'}</td>
-            <td>${subInd ? s(subInd.baseline) : '-'}</td>
-            ${targetCells(subInd)}
-            ${paguCells(subInd)}
-            <td>${kondisiAkhir(subInd)}</td>
-            <td>${s(sub.sub_bidang_opd, '-')}</td>
+            <td>${s(strat.kode_strategi)}</td>
+            <td>Strategi: ${s(strat.deskripsi)}</td>
+            <td>${stratInd ? s(stratInd.nama_indikator) : '-'}</td>
+            <td>${stratInd ? s(stratInd.satuan) : '-'}</td>
+            <td>${stratInd ? s(stratInd.baseline) : '-'}</td>
+            ${targetCells(stratInd)}
+            ${paguCellsFromArray(stratPaguSums)}
+            <td>${kondisiAkhirMixed(stratInd?.target_tahun_5, stratPaguSums[4])}</td>
+            <td>-</td>
           </tr>`;
+
+          const stratKebijakan = kebijakans.filter((keb) => keb.strategi_id === strat.id);
+          stratKebijakan.forEach((keb) => {
+            const kebInd = (indByRefStage[`kebijakan_${keb.id}`] || [])[0];
+            const kebPaguSums = sumPaguForKebijakan(keb.id);
+            rows += `<tr style="background:#d6eaf8;font-weight:bold">
+              <td></td>
+              <td>${s(keb.kode_kebjkn)}</td>
+              <td>Arah Kebijakan: ${s(keb.deskripsi)}</td>
+              <td>${kebInd ? s(kebInd.nama_indikator) : '-'}</td>
+              <td>${kebInd ? s(kebInd.satuan) : '-'}</td>
+              <td>${kebInd ? s(kebInd.baseline) : '-'}</td>
+              ${targetCells(kebInd)}
+              ${paguCellsFromArray(kebPaguSums)}
+              <td>${kondisiAkhirMixed(kebInd?.target_tahun_5, kebPaguSums[4])}</td>
+              <td>-</td>
+            </tr>`;
+
+            const kebProgram = programs.filter((p) => p.kebijakan_id === keb.id);
+            kebProgram.forEach((prog) => {
+              const progInd = (indByRefStage[`program_${prog.id}`] || [])[0];
+              const progPaguSums = sumPaguForProgram(prog.id);
+              rows += `<tr style="background:#eaf4fb">
+                <td></td>
+                <td>${s(prog.kode_program)}</td>
+                <td>${s(prog.nama_program)}</td>
+                <td>${progInd ? s(progInd.nama_indikator) : '-'}</td>
+                <td>${progInd ? s(progInd.satuan) : '-'}</td>
+                <td>${progInd ? s(progInd.baseline) : '-'}</td>
+                ${targetCells(progInd)}
+                ${paguCellsFromArray(progPaguSums)}
+                <td>${kondisiAkhirMixed(progInd?.target_tahun_5, progPaguSums[4])}</td>
+                <td>${s(prog.opd_penanggung_jawab)}</td>
+              </tr>`;
+
+              const progKegiatan = kegiatans.filter((k) => k.program_id === prog.id);
+              progKegiatan.forEach((keg) => {
+                const kegInd = (indByRefStage[`kegiatan_${keg.id}`] || [])[0];
+                const kegPaguSums = sumPaguForKegiatan(keg.id);
+                rows += `<tr>
+                  <td></td>
+                  <td>${s(keg.kode_kegiatan)}</td>
+                  <td>${s(keg.nama_kegiatan)}</td>
+                  <td>${kegInd ? s(kegInd.nama_indikator) : '-'}</td>
+                  <td>${kegInd ? s(kegInd.satuan) : '-'}</td>
+                  <td>${kegInd ? s(kegInd.baseline) : '-'}</td>
+                  ${targetCells(kegInd)}
+                  ${paguCellsFromArray(kegPaguSums)}
+                  <td>${kondisiAkhirMixed(kegInd?.target_tahun_5, kegPaguSums[4])}</td>
+                  <td>${s(keg.bidang_opd)}</td>
+                </tr>`;
+
+                // RenstraSubkegiatan uses renstra_program_id + kegiatan_id
+                const kegSub = subkegiatans.filter((sk) => sk.kegiatan_id === keg.id);
+                kegSub.forEach((sub) => {
+                  const subInd = (indByRefStage[`sub_kegiatan_${sub.id}`] || [])[0];
+                  rows += `<tr>
+                    <td></td>
+                    <td>${s(sub.kode_sub_kegiatan || sub.kode_subkegiatan)}</td>
+                    <td>${s(sub.nama_sub_kegiatan || sub.nama_subkegiatan)}</td>
+                    <td>${subInd ? s(subInd.nama_indikator) : '-'}</td>
+                    <td>${subInd ? s(subInd.satuan) : '-'}</td>
+                    <td>${subInd ? s(subInd.baseline) : '-'}</td>
+                    ${targetCells(subInd)}
+                    ${paguCells(subInd)}
+                    <td>${kondisiAkhir(subInd)}</td>
+                    <td>${s(sub.sub_bidang_opd, '-')}</td>
+                  </tr>`;
+                });
+              });
+            });
+          });
         });
       });
     });
@@ -610,7 +722,7 @@ function buildBab6(data) {
     <tr>
       <th rowspan="2">No</th>
       <th rowspan="2">Kode</th>
-      <th rowspan="2">Program / Kegiatan / Sub-Kegiatan</th>
+      <th rowspan="2">Tujuan / Sasaran / Strategi / Kebijakan / Program / Kegiatan / Sub-Kegiatan</th>
       <th rowspan="2">Indikator Kinerja</th>
       <th rowspan="2">Satuan</th>
       <th rowspan="2">Kondisi Awal</th>

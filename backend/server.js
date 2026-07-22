@@ -354,6 +354,7 @@ const penatausahaanRoutes = require('./routes/penatausahaanRoutes');
 
 // USE PENGKEG
 const pengkegRoutes = require('./routes/pengkegRoutes');
+const realisasiIndikatorRenstraRoutes = require('./routes/realisasiIndikatorRenstraRoutes');
 
 // USE MONEV
 const monevRoutes = require('./routes/monevRoutes');
@@ -562,6 +563,7 @@ app.use('/api/lk-dispang', lkDispangRoutes);
 // USE LAKIP
 app.use('/api/lakip', lakipRoutes);
 app.use('/api/lakip-realisasi-anggaran', require('./routes/lakipRealisasiAnggaranRoutes'));
+app.use('/api/realisasi-indikator-renstra', realisasiIndikatorRenstraRoutes);
 
 // USE APPROVAL WORKFLOW
 app.use('/api/approval', approvalRoutes);
