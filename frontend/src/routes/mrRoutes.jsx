@@ -8,6 +8,7 @@ import MrPlanningReportPage from "@/pages/mr/MrPlanningReportPage";
 import MrPlanningMitigationListPage from "@/pages/mr/MrPlanningMitigationListPage";
 import MrPlanningMitigationForm from "@/pages/mr/MrPlanningMitigationForm";
 import MrPlanningMonitoringListPage from "@/pages/mr/MrPlanningMonitoringListPage";
+import MrRiskManagementWizardPage from "@/pages/mr/unified/MrRiskManagementWizardPage";
 import MrModuleErrorBoundary from "@/features/mr/components/MrModuleErrorBoundary";
 
 // Modul TLHP — Pengelolaan Tindak Lanjut Temuan Inspektorat/BPK/BPKP
@@ -108,6 +109,17 @@ const mrRoutes = [
     path: "/mr/planning-report",
     element: withMrBoundary(<MrPlanningReportPage />),
     role: MR_READ_ROLES,
+  },
+
+  // =====================================================
+  // MODUL TERPADU — Pengelolaan Manajemen Risiko (wizard, additive)
+  // Menggabungkan MrPlanningContextPage + MrPlanningRiskForm +
+  // MrPlanningReportPage jadi satu alur; route lama di atas TETAP ada.
+  // =====================================================
+  {
+    path: "/mr/pengelolaan-risiko/:contextId?",
+    element: withMrBoundary(<MrRiskManagementWizardPage />),
+    role: MR_WRITE_ROLES,
   },
 
   // =====================================================

@@ -266,10 +266,40 @@ async function repairDraftFromFindings(contextId, payload = {}, options = {}) {
           try {
             const existing = await mrPlanningRootCauseService.getRootCausesByRisk(riskId);
             if (Array.isArray(existing) && existing.length > 0) {
-              skipped_count += 1;
-              skipped_reasons.push(
-                `Risk ID ${riskId} sudah memiliki root cause, auto-repair dilewati.`,
-              );
+              const rootCause = existing[0];
+              const isDraft = String(rootCause?.status_revisi || "").toLowerCase() === "draft";
+              if (!isDraft) {
+                skipped_count += 1;
+                skipped_reasons.push(
+                  `Risk ID ${riskId} memiliki root cause non-draft, auto-repair dilewati.`,
+                );
+                continue;
+              }
+
+              // Sama seperti PEDOMAN_5: root cause SUDAH ADA tapi
+              // uraian_penyebab/akar_penyebab masih kosong (dibuat sebelum
+              // fix applyRootCauseDefaultsFromRisk) — paksa re-hit
+              // updateDraftRootCause agar diisi ulang dari penyebab_risiko.
+              const needsRecompute =
+                !hasValue(rootCause?.uraian_penyebab) || !hasValue(rootCause?.akar_penyebab);
+
+              if (!needsRecompute) {
+                skipped_count += 1;
+                skipped_reasons.push(
+                  `Risk ID ${riskId} sudah memiliki root cause lengkap, auto-repair dilewati.`,
+                );
+                continue;
+              }
+
+              await mrPlanningRootCauseService.updateDraftRootCause({
+                rootCauseId: rootCause.id,
+                body: {
+                  alasan_revisi:
+                    "Auto-repair Pedoman 8: normalisasi field root cause turunan yang belum terisi.",
+                },
+                userId: options.user_id || null,
+              });
+              repaired_count += 1;
               continue;
             }
 

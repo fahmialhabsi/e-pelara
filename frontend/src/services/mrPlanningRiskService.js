@@ -245,6 +245,34 @@ const mrPlanningRiskService = {
     return getResponseData(response);
   },
 
+  // Alur workflow risiko (paralel dengan workflow context di
+  // mrPlanningContextService.js): draft -> submit -> verifikasi -> verify ->
+  // verifikasi (diverifikasi_oleh terisi) -> approve -> approved. Export
+  // Word/PDF laporan MR mensyaratkan SEMUA risiko dalam laporan berstatus
+  // approved (buildUnifiedReportApprovalGate di
+  // backend/services/mr/mrPlanningReportQueryService.js), terpisah dari
+  // status context sendiri.
+  async submitForVerification(id) {
+    if (!id) throw new Error('ID MR Planning Risk wajib diisi.');
+
+    const response = await api.post(`${ENDPOINT}/${id}/submit`);
+    return getResponseData(response);
+  },
+
+  async verify(id) {
+    if (!id) throw new Error('ID MR Planning Risk wajib diisi.');
+
+    const response = await api.post(`${ENDPOINT}/${id}/verify`);
+    return getResponseData(response);
+  },
+
+  async approve(id) {
+    if (!id) throw new Error('ID MR Planning Risk wajib diisi.');
+
+    const response = await api.post(`${ENDPOINT}/${id}/approve`);
+    return getResponseData(response);
+  },
+
   async exportExcel(params = {}) {
     return requestExport({
       path: `${ENDPOINT}/export/excel`,
@@ -277,6 +305,30 @@ const mrPlanningRiskService = {
       format: 'pdf',
     });
   },
+
+  async exportSingleWord(id, params = {}) {
+    return requestExport({
+      path: `${ENDPOINT}/${id}/export/word`,
+      params,
+      format: 'word',
+    });
+  },
+
+  async exportSingleExcel(id, params = {}) {
+    return requestExport({
+      path: `${ENDPOINT}/${id}/export/excel`,
+      params,
+      format: 'excel',
+    });
+  },
+
+  async exportSinglePdf(id, params = {}) {
+    return requestExport({
+      path: `${ENDPOINT}/${id}/export/pdf`,
+      params,
+      format: 'pdf',
+    });
+  },
 };
 
 export const {
@@ -304,6 +356,9 @@ export const {
   exportExcel,
   exportDocx,
   exportPdf,
+  exportSingleWord,
+  exportSingleExcel,
+  exportSinglePdf,
 } = mrPlanningRiskService;
 
 export default mrPlanningRiskService;

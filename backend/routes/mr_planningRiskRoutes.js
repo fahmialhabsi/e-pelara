@@ -1,5 +1,5 @@
 // backend/routes/mr_planningRiskRoutes.js
-"use strict";
+'use strict';
 
 /**
  * MR Planning Risk Routes
@@ -18,11 +18,12 @@
  * - Tidak membuat endpoint dashboard/export/laporan pada fase foundation.
  */
 
-const express = require("express");
+const express = require('express');
 
-const controller = require("../controllers/mr_planningRiskController");
-const verifyToken = require("../middlewares/verifyToken");
-const allowRoles = require("../middlewares/allowRoles");
+const controller = require('../controllers/mr_planningRiskController');
+const riskSingleExportController = require('../controllers/mr_riskSingleExportController');
+const verifyToken = require('../middlewares/verifyToken');
+const allowRoles = require('../middlewares/allowRoles');
 
 const router = express.Router();
 
@@ -50,12 +51,12 @@ const router = express.Router();
  * - SUPER_ADMIN
  */
 
-const READ = ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"];
-const HISTORY_READ = ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS"];
-const WRITE = ["SUPER_ADMIN", "ADMINISTRATOR"];
-const APPROVE = ["SUPER_ADMIN"];
-const DELETE = ["SUPER_ADMIN"];
-const REBUILD = ["SUPER_ADMIN"];
+const READ = ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA'];
+const HISTORY_READ = ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS'];
+const WRITE = ['SUPER_ADMIN', 'ADMINISTRATOR'];
+const APPROVE = ['SUPER_ADMIN'];
+const DELETE = ['SUPER_ADMIN'];
+const REBUILD = ['SUPER_ADMIN'];
 
 /**
  * READ ROUTES
@@ -64,23 +65,13 @@ const REBUILD = ["SUPER_ADMIN"];
  * GET /:id
  */
 
-router.get(
-  "/",
-  verifyToken,
-  allowRoles(READ),
-  controller.findAll
-);
+router.get('/', verifyToken, allowRoles(READ), controller.findAll);
 
 // =====================================================
 // PHASE 4 — STEP 10A CONTEXT-BASED READ ROUTES
 // =====================================================
 
-router.get(
-  "/context/:contextId",
-  verifyToken,
-  allowRoles(READ),
-  controller.getRisksByContext
-);
+router.get('/context/:contextId', verifyToken, allowRoles(READ), controller.getRisksByContext);
 
 /**
  * HISTORY ROUTES
@@ -91,56 +82,56 @@ router.get(
  */
 
 router.get(
-  "/history/:history_id",
+  '/history/:history_id',
   verifyToken,
   allowRoles(HISTORY_READ),
-  controller.getHistoryDetail
+  controller.getHistoryDetail,
 );
 
 router.patch(
-  "/history/:history_id/verifikasi",
+  '/history/:history_id/verifikasi',
   verifyToken,
   allowRoles(WRITE),
-  controller.verifikasiHistory
+  controller.verifikasiHistory,
 );
 
 router.patch(
-  "/history/:history_id/approve",
+  '/history/:history_id/approve',
   verifyToken,
   allowRoles(APPROVE),
-  controller.approveHistory
+  controller.approveHistory,
 );
 
 router.patch(
-  "/history/:history_id/tolak",
+  '/history/:history_id/tolak',
   verifyToken,
   allowRoles(APPROVE),
-  controller.tolakHistory
+  controller.tolakHistory,
 );
 
-/**
- * DETAIL & ACTIVE HISTORY ROUTES
- * ---------------------------------------------------------------------------
- * GET /:id/history
- * GET /:id
- *
- * Catatan:
- * /:id/history harus diletakkan sebelum /:id.
- */
+router.get('/:id/history', verifyToken, allowRoles(HISTORY_READ), controller.getHistory);
+
+// =====================================================
+// SINGLE-RISK EXPORT ROUTES (laporan khusus 1 risiko)
+// =====================================================
 
 router.get(
-  "/:id/history",
-  verifyToken,
-  allowRoles(HISTORY_READ),
-  controller.getHistory
-);
-
-router.get(
-  "/:id",
+  '/:id/export/word',
   verifyToken,
   allowRoles(READ),
-  controller.findById
+  riskSingleExportController.exportWord,
 );
+
+router.get('/:id/export/pdf', verifyToken, allowRoles(READ), riskSingleExportController.exportPdf);
+
+router.get(
+  '/:id/export/excel',
+  verifyToken,
+  allowRoles(READ),
+  riskSingleExportController.exportExcel,
+);
+
+router.get('/:id', verifyToken, allowRoles(READ), controller.findById);
 
 /**
  * WRITE ROUTES
@@ -159,74 +150,49 @@ router.get(
 // =====================================================
 
 router.post(
-  "/context/:contextId",
+  '/context/:contextId',
   verifyToken,
   allowRoles(WRITE),
-  controller.createRiskFromContext
+  controller.createRiskFromContext,
 );
 
 // =====================================================
 // PHASE REPORT 2026 — STEP R17A-2B PROPOSAL INTAKE ROUTE
 // =====================================================
 
-router.post(
-  "/proposal-intake",
-  verifyToken,
-  allowRoles(WRITE),
-  controller.createProposalIntake
-);
+router.post('/proposal-intake', verifyToken, allowRoles(WRITE), controller.createProposalIntake);
 
-router.post(
-  "/",
-  verifyToken,
-  allowRoles(WRITE),
-  controller.create
-);
+router.post('/', verifyToken, allowRoles(WRITE), controller.create);
 
 router.put(
-  "/:id/draft",
+  '/:id/draft',
   verifyToken,
   allowRoles(WRITE),
-  controller.updateDraftRiskFromContextService
+  controller.updateDraftRiskFromContextService,
 );
 
-router.put(
-  "/:id",
-  verifyToken,
-  allowRoles(WRITE),
-  controller.update
-);
+router.put('/:id', verifyToken, allowRoles(WRITE), controller.update);
 
 // =====================================================
 // PHASE 4 — STEP 10A CONTEXT-BASED WORKFLOW ROUTES
 // =====================================================
 
-router.post(
-  "/:id/submit",
-  verifyToken,
-  allowRoles(WRITE),
-  controller.submitRiskForVerification
-);
+router.post('/:id/submit', verifyToken, allowRoles(WRITE), controller.submitRiskForVerification);
+
+router.post('/:id/verify', verifyToken, allowRoles(WRITE), controller.verifyRiskFromContextService);
 
 router.post(
-  "/:id/verify",
-  verifyToken,
-  allowRoles(WRITE),
-  controller.verifyRiskFromContextService
-);
-
-router.post(
-  "/:id/approve",
+  '/:id/approve',
   verifyToken,
   allowRoles(APPROVE),
-  controller.approveRiskFromContextService
+  controller.approveRiskFromContextService,
 );
 
 router.post(
-  "/:id/reject",
+  '/:id/reject',
   verifyToken,
   allowRoles(APPROVE),
-  controller.rejectRiskFromContextService
+  controller.rejectRiskFromContextService,
 );
 
 // =====================================================
@@ -234,24 +200,24 @@ router.post(
 // =====================================================
 
 router.post(
-  "/:id/revision-from-approved",
+  '/:id/revision-from-approved',
   verifyToken,
   allowRoles(WRITE),
-  controller.createRevisionFromApprovedRiskContextService
+  controller.createRevisionFromApprovedRiskContextService,
 );
 
 router.post(
-  "/:id/revisi",
+  '/:id/revisi',
   verifyToken,
   allowRoles(WRITE),
-  controller.createRevisionFromApprovedRiskContextService
+  controller.createRevisionFromApprovedRiskContextService,
 );
 
 router.post(
-  "/repair-placeholder-sources",
+  '/repair-placeholder-sources',
   verifyToken,
   allowRoles(WRITE),
-  controller.repairPlaceholderRiskSources
+  controller.repairPlaceholderRiskSources,
 );
 
 /**
@@ -264,10 +230,10 @@ router.post(
  */
 
 router.post(
-  "/:id/rebuild-active-from-history",
+  '/:id/rebuild-active-from-history',
   verifyToken,
   allowRoles(REBUILD),
-  controller.rebuildActiveFromHistory
+  controller.rebuildActiveFromHistory,
 );
 
 /**
@@ -279,11 +245,6 @@ router.post(
  * Service tetap akan memblokir data approved.
  */
 
-router.delete(
-  "/:id",
-  verifyToken,
-  allowRoles(DELETE),
-  controller.delete
-);
+router.delete('/:id', verifyToken, allowRoles(DELETE), controller.delete);
 
 module.exports = router;

@@ -168,8 +168,20 @@ const collectRiskRefsByCode = (report = {}) => {
   };
 
   refs[CODES.PEDOMAN_4_RISK_CATEGORY_MISSING] = normalizeRiskRefs(lampiran?.daftar_risiko);
-  refs[CODES.PEDOMAN_5_ANALYSIS_MISSING] = normalizeRiskRefs(lampiran?.risiko_prioritas);
-  refs[CODES.PEDOMAN_8_ROOT_CAUSE_MISSING] = normalizeRiskRefs(lampiran?.risiko_prioritas);
+  // PEDOMAN_5 (Analisis Risiko) wajib untuk SEMUA risiko, bukan hanya risiko
+  // prioritas — risiko baru (belum punya analisis) TIDAK BISA masuk
+  // risiko_prioritas karena is_above_appetite baru bisa dihitung setelah
+  // analisis ada (sirkuler). Kalau risk_refs dipersempit ke risiko_prioritas,
+  // risiko baru selalu punya risk_refs kosong sehingga "Buat Draft Perbaikan
+  // Otomatis" skip tanpa memperbaiki apa pun.
+  refs[CODES.PEDOMAN_5_ANALYSIS_MISSING] = normalizeRiskRefs(lampiran?.daftar_risiko);
+  // Sama seperti PEDOMAN_5: "Root cause belum lengkap" (missingRootCauseFields
+  // di mrPlanningReportQueryService.js) memeriksa SEMUA root cause yang sudah
+  // ada, bukan hanya milik risiko prioritas — root cause auto-create dari
+  // wizard bisa terjadi untuk risiko apapun. Kalau dipersempit ke
+  // risiko_prioritas, repair-draft tidak dapat menjangkau risiko non-prioritas
+  // yang root cause-nya kosong.
+  refs[CODES.PEDOMAN_8_ROOT_CAUSE_MISSING] = normalizeRiskRefs(lampiran?.daftar_risiko);
   refs[CODES.PEDOMAN_10_MONITORING_MISSING] = normalizeRiskRefs(lampiran?.rencana_pengendalian);
   refs[CODES.PEDOMAN_15_EFFECTIVENESS_UNRATED] = normalizeRiskRefs(lampiran?.realisasi_pengendalian);
   refs[CODES.RESIDUAL_GATE_NOT_EVALUATED] = normalizeRiskRefs(lampiran?.risiko_prioritas);

@@ -1,3 +1,4 @@
+// frontend/src/shared/components/MuiSidebarGlobal.jsx
 import * as React from 'react';
 import { NavLink } from 'react-router-dom';
 import Drawer from '@mui/material/Drawer';
@@ -44,21 +45,9 @@ const menuItems = [
     roles: ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS'],
   },
   {
-    label: 'MR Planning Context',
+    label: 'Pengelolaan Manajemen Risiko',
     icon: <FactCheckIcon />,
-    path: '/mr/planning-context',
-    roles: ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA'],
-  },
-  {
-    label: 'MR Planning Risk',
-    icon: <FactCheckIcon />,
-    path: '/mr/planning-risk',
-    roles: ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS'],
-  },
-  {
-    key: '/mr/planning-report',
-    label: 'Laporan MR',
-    path: '/mr/planning-report',
+    path: '/mr/pengelolaan-risiko',
     roles: ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA'],
   },
   {

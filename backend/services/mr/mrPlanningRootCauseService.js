@@ -242,6 +242,33 @@ const getRiskWithContext = async (riskId, options = {}) => {
   return risk;
 };
 
+const AKAR_PENYEBAB_SUFFIX =
+  "Akar penyebab awal mengikuti penyebab risiko yang tercatat; perlu diperdalam melalui analisis 5-Why lebih lanjut oleh pemilik risiko.";
+
+/**
+ * Pedoman No 8 (backend/services/mr/mrPlanningReportQueryService.js) selalu
+ * blocking untuk laporan final kalau uraian_penyebab/akar_penyebab kosong.
+ * createRootCauseFromRisk/updateDraftRootCause dulu dipanggil dengan body
+ * kosong (dari wizard maupun repair-draft), padahal risk sudah punya
+ * penyebab_risiko (diisi user di Step 2 Identifikasi Risiko). Fungsi ini
+ * menurunkan kedua field itu dari penyebab_risiko tanpa menimpa nilai yang
+ * memang sudah dikirim eksplisit oleh caller.
+ */
+const applyRootCauseDefaultsFromRisk = (payload = {}, risk = {}) => {
+  const result = { ...payload };
+  const penyebabRisiko = String(risk.penyebab_risiko || "").trim();
+
+  if (!result.uraian_penyebab && penyebabRisiko) {
+    result.uraian_penyebab = penyebabRisiko;
+  }
+
+  if (!result.akar_penyebab && penyebabRisiko) {
+    result.akar_penyebab = `${penyebabRisiko} ${AKAR_PENYEBAB_SUFFIX}`;
+  }
+
+  return result;
+};
+
 const ensureAnalysisBelongsToRisk = async ({
   analysisId,
   riskId,
@@ -385,9 +412,10 @@ const createRootCauseFromRisk = async ({
   const normalizedPayload = normalizeBusinessPayload(allowedPayload);
 
   const risk = await getRiskWithContext(riskId, { transaction });
+  const payloadWithDefaults = applyRootCauseDefaultsFromRisk(normalizedPayload, risk);
 
   const analysis = await ensureAnalysisBelongsToRisk({
-    analysisId: normalizedPayload.mr_planning_risk_analysis_id,
+    analysisId: payloadWithDefaults.mr_planning_risk_analysis_id,
     riskId,
     transaction,
   });
@@ -399,7 +427,7 @@ const createRootCauseFromRisk = async ({
     transaction,
   });
 
-  const labelPayload = await resolveLabelsForPayload(normalizedPayload, {
+  const labelPayload = await resolveLabelsForPayload(payloadWithDefaults, {
     transaction,
   });
 
@@ -464,7 +492,12 @@ const updateDraftRootCause = async ({
       null,
   };
 
-  const labelPayload = await resolveLabelsForPayload(mergedPayload, {
+  const risk = await MrPlanningRisk.findByPk(rootCause.mr_planning_risk_id, { transaction });
+  const payloadWithDefaults = risk
+    ? applyRootCauseDefaultsFromRisk(mergedPayload, risk)
+    : mergedPayload;
+
+  const labelPayload = await resolveLabelsForPayload(payloadWithDefaults, {
     transaction,
   });
 

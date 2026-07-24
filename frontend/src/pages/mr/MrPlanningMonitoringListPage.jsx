@@ -72,6 +72,12 @@ const EVIDENCE_TYPE_OPTIONS = [
   { value: 'BUKTI_VERIFIKASI', label: 'Bukti Verifikasi' },
 ];
 
+const unwrapReferenceItems = (raw) => {
+  if (Array.isArray(raw)) return raw;
+  if (Array.isArray(raw?.data)) return raw.data;
+  return [];
+};
+
 const safeText = (value, fallback = 'Belum Tersedia') => {
   if (value === undefined || value === null || value === '') return fallback;
   return String(value);
@@ -209,8 +215,9 @@ const formatFileSize = (value) => {
   return `${(size / (1024 * 1024)).toFixed(2)} MB`;
 };
 
-export default function MrPlanningMonitoringListPage() {
-  const { riskId } = useParams();
+export default function MrPlanningMonitoringListPage({ riskId: riskIdProp, onBack }) {
+  const routeParams = useParams();
+  const riskId = riskIdProp ?? routeParams.riskId;
   const navigate = useNavigate();
   const { message, modal } = App.useApp();
 
@@ -257,6 +264,20 @@ export default function MrPlanningMonitoringListPage() {
     queryFn: () => mrPlanningMonitoringService.getByRisk(riskId),
     enabled: Boolean(riskId),
   });
+
+  // Field Efektivitas Pengendalian sebelumnya tidak ada di form ini sama
+  // sekali (kolom tabel di bawah cuma tampilan baca) — akibatnya Pedoman No 15
+  // (backend/services/mr/mrPlanningReportQueryService.js) selalu blocking untuk
+  // laporan final karena tidak ada jalur UI untuk mengisinya.
+  const { data: effectivenessOptionsRaw } = useQuery({
+    queryKey: ['mr-monitoring', 'reference', 'CONTROL_EFFECTIVENESS'],
+    queryFn: () => mrPlanningRiskService.getReferenceItemsByGroup('CONTROL_EFFECTIVENESS'),
+  });
+
+  const effectivenessOptions = unwrapReferenceItems(effectivenessOptionsRaw).map((item) => ({
+    value: item.id,
+    label: item.nama_item || item.nilai_text || item.kode_item,
+  }));
 
   const risk = riskResponse?.data || riskResponse || null;
   const rows = getRows(monitoringResponse);
@@ -397,6 +418,7 @@ export default function MrPlanningMonitoringListPage() {
         kendala: draft.kendala,
         tindak_lanjut: draft.tindak_lanjut,
         rekomendasi: draft.rekomendasi,
+        efektivitas_pengendalian_ref_id: draft.efektivitas_pengendalian_ref_id || undefined,
         status_monitoring: draft.status_monitoring || 'draft',
         terjadi_risiko: false,
       });
@@ -461,6 +483,7 @@ export default function MrPlanningMonitoringListPage() {
       kendala: record?.kendala,
       tindak_lanjut: record?.tindak_lanjut,
       rekomendasi: record?.rekomendasi,
+      efektivitas_pengendalian_ref_id: record?.efektivitas_pengendalian_ref_id || undefined,
       terjadi_risiko: record?.terjadi_risiko || false,
     });
 
@@ -895,7 +918,10 @@ export default function MrPlanningMonitoringListPage() {
 
         <Col>
           <Space wrap>
-            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(LIST_PATH)}>
+            <Button
+              icon={<ArrowLeftOutlined />}
+              onClick={() => (onBack ? onBack() : navigate(LIST_PATH))}
+            >
               Kembali
             </Button>
 
@@ -1111,6 +1137,20 @@ export default function MrPlanningMonitoringListPage() {
             <TextArea
               rows={2}
               placeholder="Tuliskan output aktual dari pelaksanaan pengendalian."
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="efektivitas_pengendalian_ref_id"
+            label="Efektivitas Pengendalian"
+            extra="Penilaian efektivitas pengendalian berdasarkan hasil pemantauan ini. Wajib diisi sebelum laporan bisa difinalisasi (Word/PDF)."
+          >
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={effectivenessOptions}
+              placeholder="Pilih penilaian efektivitas pengendalian"
             />
           </Form.Item>
 

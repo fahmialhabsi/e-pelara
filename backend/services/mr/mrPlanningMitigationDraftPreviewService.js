@@ -635,7 +635,7 @@ const buildAlasanRevisi = ({ hasCompleteAnalysisRootCause } = {}) => {
   return "Penyusunan awal Rencana Tindak Pengendalian berdasarkan informasi risiko yang tersedia dan masih memerlukan pelengkapan Analisis Risiko serta Analisis Akar Permasalahan.";
 };
 
-const buildContextFallbackDraft = ({ risk = {}, contextItem = null } = {}) => {
+const buildContextFallbackDraft = ({ risk = {}, contextItem = null, namaOpd = null } = {}) => {
   const metadata = {
     ...parseJsonSafe(risk.metadata_json),
     ...parseJsonSafe(contextItem?.metadata_json),
@@ -671,10 +671,10 @@ const buildContextFallbackDraft = ({ risk = {}, contextItem = null } = {}) => {
       metadata.kegiatan_pengendalian,
       metadata.target_output,
       metadata.indikator_keluaran,
-      contextItem?.nama_indikator,
-      contextItem?.kode_indikator,
       risk.rekomendasi,
       risk.rencana_tindak_lanjut_awal,
+      contextItem?.nama_indikator,
+      contextItem?.kode_indikator,
       risk.nama_risiko,
     ),
     "menyusun rencana tindak pengendalian",
@@ -699,6 +699,7 @@ const buildContextFallbackDraft = ({ risk = {}, contextItem = null } = {}) => {
       risk.pic,
       risk.unit_terkait,
       risk.nama_opd,
+      namaOpd,
       risk.owner_name,
       risk.owner_user_name,
     ),
@@ -718,8 +719,8 @@ const buildContextFallbackDraft = ({ risk = {}, contextItem = null } = {}) => {
     firstFilled(
       metadata.indikator_keluaran,
       metadata.target_output,
-      contextItem?.kode_indikator,
       contextItem?.nama_indikator,
+      contextItem?.kode_indikator,
     ),
     "Tersedia indikator keluaran yang dapat dipantau",
   );
@@ -802,7 +803,18 @@ const buildDraftPreview = async (riskId, options = {}) => {
 
   const riskObjectLabel = getRiskObjectLabel(risk);
   const riskSourceLabel = getRiskSourceLabel(risk);
-  const contextFallbackDraft = buildContextFallbackDraft({ risk, contextItem });
+
+  const contextRow = risk.context_id
+    ? (
+        await sequelize.query(
+          `SELECT nama_opd FROM mr_planning_context WHERE id = :contextId LIMIT 1`,
+          { type: QueryTypes.SELECT, replacements: { contextId: risk.context_id } },
+        )
+      )[0]
+    : null;
+  const namaOpd = contextRow?.nama_opd || null;
+
+  const contextFallbackDraft = buildContextFallbackDraft({ risk, contextItem, namaOpd });
 
   const textBundle = buildRiskTextBundle({
     risk,

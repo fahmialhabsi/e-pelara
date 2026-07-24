@@ -1,5 +1,5 @@
 // backend/services/mr/mrPlanningRiskService.js
-"use strict";
+'use strict';
 
 /**
  * MR Planning Risk Service
@@ -16,10 +16,10 @@
  * - Backend membuat history setiap create/update workflow.
  */
 
-const crypto = require("crypto");
-const db = require("../../models");
-const { assertFinalReportNotOverwrite } = require("./mrPolicyEngineService");
-const { QueryTypes } = require("sequelize");
+const crypto = require('crypto');
+const db = require('../../models');
+const { assertFinalReportNotOverwrite } = require('./mrPolicyEngineService');
+const { QueryTypes } = require('sequelize');
 
 const MAX_KODE_KONTEKS_LENGTH = 100;
 
@@ -34,19 +34,19 @@ const {
 } = db;
 
 const USER_INPUT_FIELDS = [
-  "nama_risiko",
-  "uraian_risiko",
-  "risk_statement",
-  "kategori_risiko_ref_id",
-  "sumber_risiko_ref_id",
-  "penyebab_risiko",
-  "dampak_risiko",
-  "kemungkinan_ref_id",
-  "dampak_ref_id",
-  "selera_risiko_ref_id",
-  "status_risiko_ref_id",
-  "metode_pencapaian_tujuan_spip",
-  "alasan_revisi",
+  'nama_risiko',
+  'uraian_risiko',
+  'risk_statement',
+  'kategori_risiko_ref_id',
+  'sumber_risiko_ref_id',
+  'penyebab_risiko',
+  'dampak_risiko',
+  'kemungkinan_ref_id',
+  'dampak_ref_id',
+  'selera_risiko_ref_id',
+  'status_risiko_ref_id',
+  'metode_pencapaian_tujuan_spip',
+  'alasan_revisi',
 ];
 
 /**
@@ -55,195 +55,193 @@ const USER_INPUT_FIELDS = [
  * perencanaan. Frontend boleh mengirim field ini agar backend mengambil
  * stage/ref_id/indikator_id dari context item terpilih.
  */
-const CONTEXT_SELECTOR_FIELDS = [
-  "context_item_id",
-];
+const CONTEXT_SELECTOR_FIELDS = ['context_item_id'];
 
 const PROPOSAL_SOURCE = {
-  RENSTRA: "RENSTRA",
-  LAKIP: "LAKIP",
-  LAPORAN_KEUANGAN: "LAPORAN_KEUANGAN",
-  TINDAK_LANJUT_BPK: "TINDAK_LANJUT_BPK",
-  TINDAK_LANJUT_INSPEKTORAT: "TINDAK_LANJUT_INSPEKTORAT",
-  TINDAK_LANJUT_BPKP: "TINDAK_LANJUT_BPKP",
-  PELAKSANAAN_KEGIATAN: "PELAKSANAAN_KEGIATAN",
-  PERTANGGUNGJAWABAN_KEUANGAN: "PERTANGGUNGJAWABAN_KEUANGAN",
-  SPIP_E_SIGAP: "SPIP_E_SIGAP",
-  MANUAL_ADHOC: "MANUAL_ADHOC",
-  LAINNYA: "LAINNYA",
+  RENSTRA: 'RENSTRA',
+  LAKIP: 'LAKIP',
+  LAPORAN_KEUANGAN: 'LAPORAN_KEUANGAN',
+  TINDAK_LANJUT_BPK: 'TINDAK_LANJUT_BPK',
+  TINDAK_LANJUT_INSPEKTORAT: 'TINDAK_LANJUT_INSPEKTORAT',
+  TINDAK_LANJUT_BPKP: 'TINDAK_LANJUT_BPKP',
+  PELAKSANAAN_KEGIATAN: 'PELAKSANAAN_KEGIATAN',
+  PERTANGGUNGJAWABAN_KEUANGAN: 'PERTANGGUNGJAWABAN_KEUANGAN',
+  SPIP_E_SIGAP: 'SPIP_E_SIGAP',
+  MANUAL_ADHOC: 'MANUAL_ADHOC',
+  LAINNYA: 'LAINNYA',
 };
 
 const PROPOSAL_SOURCE_TO_STAGE = {
-  LAKIP: "lakip",
-  LAPORAN_KEUANGAN: "lk",
-  TINDAK_LANJUT_BPK: "temuan_bpk",
-  TINDAK_LANJUT_INSPEKTORAT: "temuan_inspektorat",
-  TINDAK_LANJUT_BPKP: "temuan_bpkp",
-  PELAKSANAAN_KEGIATAN: "pelaksanaan_kegiatan",
-  PERTANGGUNGJAWABAN_KEUANGAN: "pertanggungjawaban_keuangan",
-  SPIP_E_SIGAP: "spip_e_sigap",
-  MANUAL_ADHOC: "manual_adhoc",
-  LAINNYA: "lainnya",
+  LAKIP: 'lakip',
+  LAPORAN_KEUANGAN: 'lk',
+  TINDAK_LANJUT_BPK: 'temuan_bpk',
+  TINDAK_LANJUT_INSPEKTORAT: 'temuan_inspektorat',
+  TINDAK_LANJUT_BPKP: 'temuan_bpkp',
+  PELAKSANAAN_KEGIATAN: 'pelaksanaan_kegiatan',
+  PERTANGGUNGJAWABAN_KEUANGAN: 'pertanggungjawaban_keuangan',
+  SPIP_E_SIGAP: 'spip_e_sigap',
+  MANUAL_ADHOC: 'manual_adhoc',
+  LAINNYA: 'lainnya',
 };
 
 const PROPOSAL_SOURCE_TO_DOCUMENT = {
-  LAKIP: "lakip",
-  LAPORAN_KEUANGAN: "laporan_keuangan",
-  TINDAK_LANJUT_BPK: "tindak_lanjut_bpk",
-  TINDAK_LANJUT_INSPEKTORAT: "tindak_lanjut_inspektorat",
-  TINDAK_LANJUT_BPKP: "tindak_lanjut_bpkp",
-  PELAKSANAAN_KEGIATAN: "pelaksanaan_kegiatan",
-  PERTANGGUNGJAWABAN_KEUANGAN: "pertanggungjawaban_keuangan",
-  SPIP_E_SIGAP: "spip_e_sigap",
-  MANUAL_ADHOC: "manual_adhoc",
-  LAINNYA: "lainnya",
+  LAKIP: 'lakip',
+  LAPORAN_KEUANGAN: 'laporan_keuangan',
+  TINDAK_LANJUT_BPK: 'tindak_lanjut_bpk',
+  TINDAK_LANJUT_INSPEKTORAT: 'tindak_lanjut_inspektorat',
+  TINDAK_LANJUT_BPKP: 'tindak_lanjut_bpkp',
+  PELAKSANAAN_KEGIATAN: 'pelaksanaan_kegiatan',
+  PERTANGGUNGJAWABAN_KEUANGAN: 'pertanggungjawaban_keuangan',
+  SPIP_E_SIGAP: 'spip_e_sigap',
+  MANUAL_ADHOC: 'manual_adhoc',
+  LAINNYA: 'lainnya',
 };
 
 const PROPOSAL_INTAKE_ALLOWED_FIELDS = [
-  "proposal_source_type",
-  "proposal_source_ref_id",
+  'proposal_source_type',
+  'proposal_source_ref_id',
 
   // Jalur Renstra tetap memakai flow lama
-  "context_id",
-  "context_item_id",
+  'context_id',
+  'context_item_id',
 
   // Context bisnis
-  "tahun",
-  "periode_type",
-  "periode_label",
-  "opd_id",
-  "nama_opd",
-  "unit_terkait",
+  'tahun',
+  'periode_type',
+  'periode_label',
+  'opd_id',
+  'nama_opd',
+  'unit_terkait',
 
   // Informasi audit finding / dokumen sumber
-  "nomor_temuan",
-  "judul_temuan",
-  "tahun_pemeriksaan",
-  "tanggal_dokumen",
-  "ringkasan_temuan",
-  "rekomendasi",
-  "status_tindak_lanjut",
-  "nilai_temuan",
+  'nomor_temuan',
+  'judul_temuan',
+  'tahun_pemeriksaan',
+  'tanggal_dokumen',
+  'ringkasan_temuan',
+  'rekomendasi',
+  'status_tindak_lanjut',
+  'nilai_temuan',
 
   // Laporan keuangan / pertanggungjawaban keuangan
-  "akun_pos",
-  "jenis_transaksi",
-  "nilai_transaksi",
-  "jenis_dokumen_pertanggungjawaban",
-  "status_dokumen",
-  "catatan_koreksi",
+  'akun_pos',
+  'jenis_transaksi',
+  'nilai_transaksi',
+  'jenis_dokumen_pertanggungjawaban',
+  'status_dokumen',
+  'catatan_koreksi',
 
   // Pelaksanaan kegiatan
-  "nama_kegiatan",
-  "tahapan_pelaksanaan",
-  "lokasi",
-  "output_kegiatan",
-  "kendala_pelaksanaan",
-  "target_pelaksanaan",
+  'nama_kegiatan',
+  'tahapan_pelaksanaan',
+  'lokasi',
+  'output_kegiatan',
+  'kendala_pelaksanaan',
+  'target_pelaksanaan',
 
   // Custom category
-  "nama_kategori_baru",
-  "deskripsi_kategori_baru",
-  "is_renstra_related",
-  "alasan_pengajuan_kategori",
-  "contoh_sumber_risiko",
+  'nama_kategori_baru',
+  'deskripsi_kategori_baru',
+  'is_renstra_related',
+  'alasan_pengajuan_kategori',
+  'contoh_sumber_risiko',
 
   // Objek dan substansi risiko
-  "objek_risiko",
-  "nama_risiko",
-  "uraian_risiko",
-  "risk_statement",
-  "penyebab_risiko",
-  "dampak_risiko",
+  'objek_risiko',
+  'nama_risiko',
+  'uraian_risiko',
+  'risk_statement',
+  'penyebab_risiko',
+  'dampak_risiko',
 
   // Reference risiko
-  "kategori_risiko_ref_id",
-  "sumber_risiko_ref_id",
-  "kemungkinan_ref_id",
-  "dampak_ref_id",
-  "selera_risiko_ref_id",
-  "status_risiko_ref_id",
+  'kategori_risiko_ref_id',
+  'sumber_risiko_ref_id',
+  'kemungkinan_ref_id',
+  'dampak_ref_id',
+  'selera_risiko_ref_id',
+  'status_risiko_ref_id',
 
   // Rencana awal
-  "rencana_tindak_lanjut_awal",
-  "pic",
-  "target_waktu",
-  "catatan",
-  "alasan_revisi",
+  'rencana_tindak_lanjut_awal',
+  'pic',
+  'target_waktu',
+  'catatan',
+  'alasan_revisi',
 
   // Metadata tambahan jika nanti frontend mengirim object metadata
-  "metadata_json",
+  'metadata_json',
 ];
 
 const TECHNICAL_BLOCKED_FIELDS = [
-  "id",
-  "context_id",
-  "periode_id",
-  "tahun",
-  "jenis_dokumen",
-  "renstra_id",
-  "opd_id",
-  "indikator_id",
-  "stage",
-  "ref_id",
-  "source_table",
-  "source_id",
-  "kode_risiko",
-  "kemungkinan",
-  "dampak",
-  "skor_risiko",
-  "level_risiko",
-  "level_risiko_ref_id",
-  "matrix_code",
-  "matrix_id",
-  "is_above_appetite",
-  "risk_code_auto_generated",
-  "is_priority_candidate",
-  "owner_user_id",
-  "owner_division_id",
-  "versi",
-  "status_revisi",
-  "last_revised_at",
-  "last_revised_by",
-  "dibuat_oleh",
-  "diverifikasi_oleh",
-  "disetujui_oleh",
-  "ditolak_oleh",
-  "dibuat_pada",
-  "diverifikasi_pada",
-  "disetujui_pada",
-  "ditolak_pada",
-  "created_by",
-  "updated_by",
-  "created_at",
-  "updated_at",
+  'id',
+  'context_id',
+  'periode_id',
+  'tahun',
+  'jenis_dokumen',
+  'renstra_id',
+  'opd_id',
+  'indikator_id',
+  'stage',
+  'ref_id',
+  'source_table',
+  'source_id',
+  'kode_risiko',
+  'kemungkinan',
+  'dampak',
+  'skor_risiko',
+  'level_risiko',
+  'level_risiko_ref_id',
+  'matrix_code',
+  'matrix_id',
+  'is_above_appetite',
+  'risk_code_auto_generated',
+  'is_priority_candidate',
+  'owner_user_id',
+  'owner_division_id',
+  'versi',
+  'status_revisi',
+  'last_revised_at',
+  'last_revised_by',
+  'dibuat_oleh',
+  'diverifikasi_oleh',
+  'disetujui_oleh',
+  'ditolak_oleh',
+  'dibuat_pada',
+  'diverifikasi_pada',
+  'disetujui_pada',
+  'ditolak_pada',
+  'created_by',
+  'updated_by',
+  'created_at',
+  'updated_at',
 ];
 
 const WORKFLOW_STATUS = {
-  DRAFT: "draft",
-  VERIFIKASI: "verifikasi",
-  APPROVED: "approved",
-  DITOLAK: "ditolak",
+  DRAFT: 'draft',
+  VERIFIKASI: 'verifikasi',
+  APPROVED: 'approved',
+  DITOLAK: 'ditolak',
 };
 
 const HISTORY_ACTION = {
-  CREATE: "create",
-  UPDATE: "update",
+  CREATE: 'create',
+  UPDATE: 'update',
 
   // Tidak memakai "submit" karena action_type history mengikuti ENUM existing.
   // Submit berarti mengajukan risk ke status verifikasi.
-  SUBMIT: "verifikasi",
+  SUBMIT: 'verifikasi',
 
-  VERIFY: "verifikasi",
-  APPROVE: "approve",
-  REJECT: "reject",
-  REVISI: "revisi",
+  VERIFY: 'verifikasi',
+  APPROVE: 'approve',
+  REJECT: 'reject',
+  REVISI: 'revisi',
 };
 
 class ServiceError extends Error {
   constructor(message, statusCode = 400, details = null) {
     super(message);
-    this.name = "ServiceError";
+    this.name = 'ServiceError';
     this.statusCode = statusCode;
     this.details = details;
   }
@@ -251,7 +249,7 @@ class ServiceError extends Error {
 
 const toPlain = (instance) => {
   if (!instance) return null;
-  if (typeof instance.get === "function") return instance.get({ plain: true });
+  if (typeof instance.get === 'function') return instance.get({ plain: true });
   return instance;
 };
 
@@ -266,7 +264,7 @@ const clonePlain = (value) => {
 };
 
 const toNumberOrNull = (value) => {
-  if (value === null || value === undefined || value === "") return null;
+  if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isNaN(parsed) ? null : parsed;
 };
@@ -298,24 +296,24 @@ const pickModelPayload = (model, payload = {}) => {
 };
 
 const normalizeSourceCode = (value) => {
-  return String(value || "")
+  return String(value || '')
     .trim()
     .toUpperCase()
-    .replace(/[\s-]+/g, "_")
-    .replace(/_+/g, "_");
+    .replace(/[\s-]+/g, '_')
+    .replace(/_+/g, '_');
 };
 
 const normalizeSourceValue = (value) => {
-  return String(value || "")
+  return String(value || '')
     .trim()
     .toLowerCase()
-    .replace(/[\s-]+/g, "_")
-    .replace(/_+/g, "_");
+    .replace(/[\s-]+/g, '_')
+    .replace(/_+/g, '_');
 };
 
 const buildMetadata = (...sources) => {
   return sources.reduce((acc, source) => {
-    if (source && typeof source === "object" && !Array.isArray(source)) {
+    if (source && typeof source === 'object' && !Array.isArray(source)) {
       return {
         ...acc,
         ...source,
@@ -336,20 +334,16 @@ const getUserId = (user) => {
 const assertModelsLoaded = () => {
   const missing = [];
 
-  if (!sequelize) missing.push("sequelize");
-  if (!MrPlanningRisk) missing.push("MrPlanningRisk");
-  if (!MrPlanningRiskHistory) missing.push("MrPlanningRiskHistory");
-  if (!MrPlanningContext) missing.push("MrPlanningContext");
-  if (!MrPlanningContextItem) missing.push("MrPlanningContextItem");
-  if (!MrReferenceItem) missing.push("MrReferenceItem");
-  if (!MrRiskMatrix) missing.push("MrRiskMatrix");
+  if (!sequelize) missing.push('sequelize');
+  if (!MrPlanningRisk) missing.push('MrPlanningRisk');
+  if (!MrPlanningRiskHistory) missing.push('MrPlanningRiskHistory');
+  if (!MrPlanningContext) missing.push('MrPlanningContext');
+  if (!MrPlanningContextItem) missing.push('MrPlanningContextItem');
+  if (!MrReferenceItem) missing.push('MrReferenceItem');
+  if (!MrRiskMatrix) missing.push('MrRiskMatrix');
 
   if (missing.length > 0) {
-    throw new ServiceError(
-      `Model MR belum loaded: ${missing.join(", ")}`,
-      500,
-      { missing }
-    );
+    throw new ServiceError(`Model MR belum loaded: ${missing.join(', ')}`, 500, { missing });
   }
 };
 
@@ -384,14 +378,10 @@ const assertNoUnknownProposalFields = (body = {}) => {
   });
 
   if (unknownFields.length > 0) {
-    throw new ServiceError(
-      `Field proposal intake tidak dikenali: ${unknownFields[0]}`,
-      400,
-      {
-        blocked: true,
-        blocked_fields: unknownFields,
-      }
-    );
+    throw new ServiceError(`Field proposal intake tidak dikenali: ${unknownFields[0]}`, 400, {
+      blocked: true,
+      blocked_fields: unknownFields,
+    });
   }
 };
 
@@ -399,53 +389,40 @@ const assertNoBlockedProposalFields = (body = {}) => {
   const allowedForProposal = new Set(PROPOSAL_INTAKE_ALLOWED_FIELDS);
 
   const blocked = TECHNICAL_BLOCKED_FIELDS.filter((field) => {
-    return (
-      Object.prototype.hasOwnProperty.call(body, field) &&
-      !allowedForProposal.has(field)
-    );
+    return Object.prototype.hasOwnProperty.call(body, field) && !allowedForProposal.has(field);
   });
 
   if (blocked.length > 0) {
-    throw new ServiceError(
-      `Field tidak diperbolehkan untuk proposal intake: ${blocked[0]}`,
-      400,
-      {
-        blocked: true,
-        blocked_fields: blocked,
-      }
-    );
+    throw new ServiceError(`Field tidak diperbolehkan untuk proposal intake: ${blocked[0]}`, 400, {
+      blocked: true,
+      blocked_fields: blocked,
+    });
   }
 };
 
 const assertNoBlockedFields = (body = {}) => {
   const blocked = TECHNICAL_BLOCKED_FIELDS.filter((field) =>
-    Object.prototype.hasOwnProperty.call(body, field)
+    Object.prototype.hasOwnProperty.call(body, field),
   );
 
   if (blocked.length > 0) {
-    throw new ServiceError(
-      `Field tidak diperbolehkan: ${blocked[0]}`,
-      400,
-      {
-        blocked: true,
-        blocked_fields: blocked,
-      }
-    );
+    throw new ServiceError(`Field tidak diperbolehkan: ${blocked[0]}`, 400, {
+      blocked: true,
+      blocked_fields: blocked,
+    });
   }
 };
 
 const assertRequired = (payload, fields) => {
   const missing = fields.filter((field) => {
     const value = payload[field];
-    return value === null || value === undefined || value === "";
+    return value === null || value === undefined || value === '';
   });
 
   if (missing.length > 0) {
-    throw new ServiceError(
-      `Field wajib belum lengkap: ${missing.join(", ")}`,
-      400,
-      { missing_fields: missing }
-    );
+    throw new ServiceError(`Field wajib belum lengkap: ${missing.join(', ')}`, 400, {
+      missing_fields: missing,
+    });
   }
 };
 
@@ -467,7 +444,7 @@ const getReferenceLabel = async (id, transaction) => {
 };
 
 const findReferenceItemByGroupLabel = async (groupCode, label, transaction) => {
-  const normalizedLabel = String(label || "")
+  const normalizedLabel = String(label || '')
     .trim()
     .toLowerCase();
 
@@ -491,20 +468,18 @@ const findReferenceItemByGroupLabel = async (groupCode, label, transaction) => {
       transaction,
       replacements: { groupCode },
       type: QueryTypes.SELECT,
-    }
+    },
   );
 
   return (
     rows.find((item) => {
-      const candidates = [
-        item.nama_item,
-        item.kode_item,
-        item.nilai_text,
-      ]
+      const candidates = [item.nama_item, item.kode_item, item.nilai_text]
         .filter(Boolean)
         .map((value) => String(value).trim().toLowerCase());
 
-      return candidates.some((value) => value === normalizedLabel || value.includes(normalizedLabel));
+      return candidates.some(
+        (value) => value === normalizedLabel || value.includes(normalizedLabel),
+      );
     }) || null
   );
 };
@@ -541,7 +516,7 @@ const resolveReferenceIdFromLabel = async ({
       transaction,
       replacements: { groupCode },
       type: QueryTypes.SELECT,
-    }
+    },
   );
 
   return firstActive[0]?.id || null;
@@ -556,13 +531,9 @@ const resolveProposalSourceReference = async ({
   const sourceValue = normalizeSourceValue(proposalSourceType);
 
   if (!sourceCode && !proposalSourceRefId) {
-    throw new ServiceError(
-      "Sumber usulan risiko wajib dipilih.",
-      400,
-      {
-        missing_fields: ["proposal_source_type"],
-      }
-    );
+    throw new ServiceError('Sumber usulan risiko wajib dipilih.', 400, {
+      missing_fields: ['proposal_source_type'],
+    });
   }
 
   const replacements = {
@@ -571,17 +542,12 @@ const resolveProposalSourceReference = async ({
     proposalSourceRefId: toPositiveIntOrNull(proposalSourceRefId),
   };
 
-  const whereParts = [
-    "g.kode_group = 'MR_PROPOSAL_SOURCE'",
-    "i.is_active = 1",
-  ];
+  const whereParts = ["g.kode_group = 'MR_PROPOSAL_SOURCE'", 'i.is_active = 1'];
 
   if (replacements.proposalSourceRefId) {
-    whereParts.push("i.id = :proposalSourceRefId");
+    whereParts.push('i.id = :proposalSourceRefId');
   } else {
-    whereParts.push(
-      "(UPPER(i.kode_item) = :sourceCode OR LOWER(i.nilai_text) = :sourceValue)"
-    );
+    whereParts.push('(UPPER(i.kode_item) = :sourceCode OR LOWER(i.nilai_text) = :sourceValue)');
   }
 
   const [rows] = await sequelize.query(
@@ -596,27 +562,23 @@ const resolveProposalSourceReference = async ({
       FROM mr_reference_items i
       JOIN mr_reference_groups g
         ON g.id = i.group_id
-      WHERE ${whereParts.join(" AND ")}
+      WHERE ${whereParts.join(' AND ')}
       LIMIT 1
     `,
     {
       replacements,
       transaction,
-    }
+    },
   );
 
   const item = rows?.[0] || null;
 
   if (!item) {
-    throw new ServiceError(
-      "Sumber usulan risiko tidak ditemukan atau tidak aktif.",
-      400,
-      {
-        proposal_source_type: proposalSourceType,
-        proposal_source_ref_id: proposalSourceRefId || null,
-        required_group: "MR_PROPOSAL_SOURCE",
-      }
-    );
+    throw new ServiceError('Sumber usulan risiko tidak ditemukan atau tidak aktif.', 400, {
+      proposal_source_type: proposalSourceType,
+      proposal_source_ref_id: proposalSourceRefId || null,
+      required_group: 'MR_PROPOSAL_SOURCE',
+    });
   }
 
   return {
@@ -641,52 +603,47 @@ const getSupportedProposalSources = () => {
 
 const getRequiredFieldsByProposalSource = (sourceRef) => {
   const base = [
-    "tahun",
-    "periode_type",
-    "opd_id",
-    "objek_risiko",
-    "nama_risiko",
-    "kemungkinan_ref_id",
-    "dampak_ref_id",
+    'tahun',
+    'periode_type',
+    'opd_id',
+    'objek_risiko',
+    'nama_risiko',
+    'kemungkinan_ref_id',
+    'dampak_ref_id',
   ];
 
   const sourceCode = sourceRef?.kode_item;
 
   if (sourceCode === PROPOSAL_SOURCE.RENSTRA) {
-    return ["context_id", "nama_risiko", "kemungkinan_ref_id", "dampak_ref_id"];
+    return ['context_id', 'nama_risiko', 'kemungkinan_ref_id', 'dampak_ref_id'];
   }
 
   if (sourceCode === PROPOSAL_SOURCE.TINDAK_LANJUT_BPK) {
-    return [...base, "nomor_temuan", "judul_temuan"];
+    return [...base, 'nomor_temuan', 'judul_temuan'];
   }
 
   if (sourceCode === PROPOSAL_SOURCE.TINDAK_LANJUT_INSPEKTORAT) {
-    return [...base, "nomor_temuan", "judul_temuan"];
+    return [...base, 'nomor_temuan', 'judul_temuan'];
   }
 
   if (sourceCode === PROPOSAL_SOURCE.TINDAK_LANJUT_BPKP) {
-    return [...base, "nomor_temuan", "judul_temuan"];
+    return [...base, 'nomor_temuan', 'judul_temuan'];
   }
 
   if (sourceCode === PROPOSAL_SOURCE.PELAKSANAAN_KEGIATAN) {
-    return [...base, "nama_kegiatan"];
+    return [...base, 'nama_kegiatan'];
   }
 
   if (sourceCode === PROPOSAL_SOURCE.PERTANGGUNGJAWABAN_KEUANGAN) {
-    return [...base, "jenis_dokumen_pertanggungjawaban"];
+    return [...base, 'jenis_dokumen_pertanggungjawaban'];
   }
 
   if (sourceCode === PROPOSAL_SOURCE.LAPORAN_KEUANGAN) {
-    return [...base, "akun_pos"];
+    return [...base, 'akun_pos'];
   }
 
   if (sourceCode === PROPOSAL_SOURCE.LAINNYA) {
-    return [
-      ...base,
-      "nama_kategori_baru",
-      "deskripsi_kategori_baru",
-      "alasan_pengajuan_kategori",
-    ];
+    return [...base, 'nama_kategori_baru', 'deskripsi_kategori_baru', 'alasan_pengajuan_kategori'];
   }
 
   return base;
@@ -698,14 +655,10 @@ const validateReferenceIfProvided = async (id, label, transaction) => {
   const item = await findReferenceItem(id, transaction);
 
   if (!item) {
-    throw new ServiceError(
-      `${label} tidak ditemukan atau tidak aktif.`,
-      400,
-      {
-        field: label,
-        reference_id: id,
-      }
-    );
+    throw new ServiceError(`${label} tidak ditemukan atau tidak aktif.`, 400, {
+      field: label,
+      reference_id: id,
+    });
   }
 
   return item;
@@ -713,7 +666,7 @@ const validateReferenceIfProvided = async (id, label, transaction) => {
 
 const findPlanningContext = async (contextId, transaction) => {
   if (!contextId) {
-    throw new ServiceError("context_id wajib tersedia dari route/service.", 400);
+    throw new ServiceError('context_id wajib tersedia dari route/service.', 400);
   }
 
   const context = await MrPlanningContext.findOne({
@@ -725,11 +678,9 @@ const findPlanningContext = async (contextId, transaction) => {
   });
 
   if (!context) {
-    throw new ServiceError(
-      "MR Planning Context tidak ditemukan atau tidak aktif.",
-      404,
-      { context_id: contextId }
-    );
+    throw new ServiceError('MR Planning Context tidak ditemukan atau tidak aktif.', 404, {
+      context_id: contextId,
+    });
   }
 
   return context;
@@ -743,8 +694,8 @@ const findPrimaryContextItem = async (contextId, transaction) => {
       is_active: true,
     },
     order: [
-      ["urutan", "ASC"],
-      ["id", "ASC"],
+      ['urutan', 'ASC'],
+      ['id', 'ASC'],
     ],
     transaction,
   });
@@ -756,8 +707,8 @@ const findPrimaryContextItem = async (contextId, transaction) => {
         is_active: true,
       },
       order: [
-        ["urutan", "ASC"],
-        ["id", "ASC"],
+        ['urutan', 'ASC'],
+        ['id', 'ASC'],
       ],
       transaction,
     });
@@ -765,9 +716,9 @@ const findPrimaryContextItem = async (contextId, transaction) => {
 
   if (!item) {
     throw new ServiceError(
-      "Context item aktif tidak ditemukan. Risk tidak boleh dibuat tanpa sumber konteks.",
+      'Context item aktif tidak ditemukan. Risk tidak boleh dibuat tanpa sumber konteks.',
       400,
-      { context_id: contextId }
+      { context_id: contextId },
     );
   }
 
@@ -784,22 +735,14 @@ const countActiveContextItems = async (contextId, transaction) => {
   });
 };
 
-const findContextItemByIdForContext = async ({
-  contextId,
-  contextItemId,
-  transaction,
-}) => {
+const findContextItemByIdForContext = async ({ contextId, contextItemId, transaction }) => {
   const parsedContextItemId = toPositiveIntOrNull(contextItemId);
 
   if (!parsedContextItemId) {
-    throw new ServiceError(
-      "context_item_id tidak valid.",
-      400,
-      {
-        field: "context_item_id",
-        value: contextItemId,
-      }
-    );
+    throw new ServiceError('context_item_id tidak valid.', 400, {
+      field: 'context_item_id',
+      value: contextItemId,
+    });
   }
 
   const item = await MrPlanningContextItem.findOne({
@@ -813,23 +756,19 @@ const findContextItemByIdForContext = async ({
 
   if (!item) {
     throw new ServiceError(
-      "context_item_id tidak ditemukan atau tidak sesuai dengan context yang dipilih.",
+      'context_item_id tidak ditemukan atau tidak sesuai dengan context yang dipilih.',
       400,
       {
         context_id: contextId,
         context_item_id: parsedContextItemId,
-      }
+      },
     );
   }
 
   return item;
 };
 
-const resolveContextItemForRiskCreate = async ({
-  contextId,
-  body = {},
-  transaction,
-}) => {
+const resolveContextItemForRiskCreate = async ({ contextId, body = {}, transaction }) => {
   const selectedContextItemId = body.context_item_id;
 
   if (selectedContextItemId) {
@@ -844,13 +783,13 @@ const resolveContextItemForRiskCreate = async ({
 
   if (totalActiveItems > 1) {
     throw new ServiceError(
-      "Context memiliki lebih dari satu sumber perencanaan. Pilih context_item_id terlebih dahulu.",
+      'Context memiliki lebih dari satu sumber perencanaan. Pilih context_item_id terlebih dahulu.',
       400,
       {
         context_id: contextId,
         total_active_context_items: totalActiveItems,
-        required_field: "context_item_id",
-      }
+        required_field: 'context_item_id',
+      },
     );
   }
 
@@ -890,7 +829,7 @@ const buildScopeFromContext = (contextInstance, itemInstance) => {
     source_id: item.source_id || null,
   };
 
-  assertRequired(scope, ["renstra_id", "indikator_id", "stage", "ref_id"]);
+  assertRequired(scope, ['renstra_id', 'indikator_id', 'stage', 'ref_id']);
 
   return scope;
 };
@@ -908,13 +847,7 @@ const resolveMatrixCode = (contextInstance, body = {}) => {
   );
 };
 
-const findRiskMatrix = async ({
-  likelihoodRefId,
-  impactRefId,
-  tahun,
-  matrixCode,
-  transaction,
-}) => {
+const findRiskMatrix = async ({ likelihoodRefId, impactRefId, tahun, matrixCode, transaction }) => {
   const baseWhere = {
     likelihood_ref_id: likelihoodRefId,
     impact_ref_id: impactRefId,
@@ -955,8 +888,8 @@ const findRiskMatrix = async ({
     const matrix = await MrRiskMatrix.findOne({
       where,
       order: [
-        ["tahun_berlaku", "DESC"],
-        ["id", "ASC"],
+        ['tahun_berlaku', 'DESC'],
+        ['id', 'ASC'],
       ],
       transaction,
     });
@@ -965,20 +898,22 @@ const findRiskMatrix = async ({
   }
 
   throw new ServiceError(
-    "Risk matrix tidak ditemukan untuk kombinasi likelihood dan impact.",
+    'Risk matrix tidak ditemukan untuk kombinasi likelihood dan impact.',
     400,
     {
       likelihood_ref_id: likelihoodRefId,
       impact_ref_id: impactRefId,
       tahun,
       matrix_code: matrixCode,
-    }
+    },
   );
 };
 
 const buildRiskCode = async ({ scope, transaction }) => {
-  const yearPart = scope.tahun || "NA";
-  const stagePart = String(scope.stage || "MR").toUpperCase().replace(/[^A-Z0-9]/g, "_");
+  const yearPart = scope.tahun || 'NA';
+  const stagePart = String(scope.stage || 'MR')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '_');
 
   const count = await MrPlanningRisk.count({
     where: {
@@ -987,7 +922,7 @@ const buildRiskCode = async ({ scope, transaction }) => {
     transaction,
   });
 
-  const sequence = String(count + 1).padStart(3, "0");
+  const sequence = String(count + 1).padStart(3, '0');
 
   return `MR-${yearPart}-${stagePart}-${sequence}`;
 };
@@ -1021,27 +956,21 @@ const createRiskHistory = async ({
       alasan_revisi: alasanRevisi,
       status_revisi: statusRevisi,
       action_type: actionType,
-      source_module: "mr_planning_risk",
+      source_module: 'mr_planning_risk',
 
       dibuat_oleh: userId,
       dibuat_pada: currentTime,
 
-      diverifikasi_oleh:
-        statusRevisi === WORKFLOW_STATUS.VERIFIKASI ? userId : null,
-      diverifikasi_pada:
-        statusRevisi === WORKFLOW_STATUS.VERIFIKASI ? currentTime : null,
+      diverifikasi_oleh: statusRevisi === WORKFLOW_STATUS.VERIFIKASI ? userId : null,
+      diverifikasi_pada: statusRevisi === WORKFLOW_STATUS.VERIFIKASI ? currentTime : null,
 
-      disetujui_oleh:
-        statusRevisi === WORKFLOW_STATUS.APPROVED ? userId : null,
-      disetujui_pada:
-        statusRevisi === WORKFLOW_STATUS.APPROVED ? currentTime : null,
+      disetujui_oleh: statusRevisi === WORKFLOW_STATUS.APPROVED ? userId : null,
+      disetujui_pada: statusRevisi === WORKFLOW_STATUS.APPROVED ? currentTime : null,
 
-      ditolak_oleh:
-        statusRevisi === WORKFLOW_STATUS.DITOLAK ? userId : null,
-      ditolak_pada:
-        statusRevisi === WORKFLOW_STATUS.DITOLAK ? currentTime : null,
+      ditolak_oleh: statusRevisi === WORKFLOW_STATUS.DITOLAK ? userId : null,
+      ditolak_pada: statusRevisi === WORKFLOW_STATUS.DITOLAK ? currentTime : null,
     },
-    { transaction }
+    { transaction },
   );
 };
 
@@ -1096,9 +1025,7 @@ const syncLinkedContextItemFromRiskPayload = async ({
         ? payload.ringkasan_temuan
         : currentMetadata.ringkasan_temuan || null,
     rekomendasi:
-      payload.rekomendasi !== undefined
-        ? payload.rekomendasi
-        : currentMetadata.rekomendasi || null,
+      payload.rekomendasi !== undefined ? payload.rekomendasi : currentMetadata.rekomendasi || null,
     rencana_tindak_lanjut_awal:
       payload.rencana_tindak_lanjut_awal !== undefined
         ? payload.rencana_tindak_lanjut_awal
@@ -1113,15 +1040,8 @@ const syncLinkedContextItemFromRiskPayload = async ({
     nama_konteks: nextNamaKonteks,
     nama_indikator: nextNamaIndikator,
     uraian_konteks:
-      payload.ringkasan_temuan ||
-      payload.uraian_risiko ||
-      itemPlain.uraian_konteks ||
-      null,
-    penanggung_jawab:
-      payload.pic ||
-      payload.unit_terkait ||
-      itemPlain.penanggung_jawab ||
-      null,
+      payload.ringkasan_temuan || payload.uraian_risiko || itemPlain.uraian_konteks || null,
+    penanggung_jawab: payload.pic || payload.unit_terkait || itemPlain.penanggung_jawab || null,
     metadata_json: nextMetadata,
     updated_by: userId,
   };
@@ -1222,15 +1142,9 @@ const repairPlaceholderRiskSources = async ({
             itemPlain.nama_indikator ||
             null,
           uraian_konteks:
-            payload.ringkasan_temuan ||
-            payload.uraian_risiko ||
-            itemPlain.uraian_konteks ||
-            null,
+            payload.ringkasan_temuan || payload.uraian_risiko || itemPlain.uraian_konteks || null,
           penanggung_jawab:
-            payload.pic ||
-            payload.unit_terkait ||
-            itemPlain.penanggung_jawab ||
-            null,
+            payload.pic || payload.unit_terkait || itemPlain.penanggung_jawab || null,
           metadata_json: nextMetadata,
           updated_by: userId,
         }),
@@ -1295,49 +1209,49 @@ const ensureDraftEditable = (risk) => {
   const plain = toPlain(risk);
 
   if (!plain) {
-    throw new ServiceError("Risk tidak ditemukan.", 404);
+    throw new ServiceError('Risk tidak ditemukan.', 404);
   }
 
   if (plain.status_revisi !== WORKFLOW_STATUS.DRAFT) {
-    throw new ServiceError(
-      "Risk hanya bisa diubah saat status draft.",
-      400,
-      {
-        current_status: plain.status_revisi,
-      }
-    );
+    throw new ServiceError('Risk hanya bisa diubah saat status draft.', 400, {
+      current_status: plain.status_revisi,
+    });
   }
 };
 
+// Risk berstatus 'ditolak' sebelumnya tidak punya jalan keluar sama sekali:
+// submitRiskForVerification (ensureDraftEditable) hanya menerima status
+// 'draft', dan fungsi revisi ini dulu hanya menerima 'approved' — sehingga
+// risk yang ditolak permanen macet, padahal buildUnifiedReportApprovalGate
+// (backend/services/mr/mrPlanningReportQueryService.js) mewajibkan SEMUA
+// risk dalam cakupan laporan berstatus approved sebelum Word/PDF final bisa
+// diekspor. Revisi dari 'ditolak' dipakai sebagai jalur "perbaiki & ajukan
+// ulang" — logic-nya sama (reset ke draft, versi naik, field
+// verifikasi/persetujuan/penolakan dikosongkan).
 const ensureApprovedRevisable = (risk) => {
   const plain = toPlain(risk);
 
   if (!plain) {
-    throw new ServiceError("Risk tidak ditemukan.", 404);
+    throw new ServiceError('Risk tidak ditemukan.', 404);
   }
 
-  if (plain.status_revisi !== WORKFLOW_STATUS.APPROVED) {
+  const revisableStatuses = [WORKFLOW_STATUS.APPROVED, WORKFLOW_STATUS.DITOLAK];
+
+  if (!revisableStatuses.includes(plain.status_revisi)) {
     throw new ServiceError(
-      "Revisi hanya bisa dibuat dari risk yang sudah approved.",
+      'Revisi hanya bisa dibuat dari risk yang sudah approved atau ditolak.',
       400,
       {
         current_status: plain.status_revisi,
-      }
+      },
     );
   }
 };
 
-const recalculateRiskMatrixForPayload = async ({
-  baseRisk,
-  payload,
-  body = {},
-  transaction,
-}) => {
-  const likelihoodRefId =
-    payload.kemungkinan_ref_id || baseRisk.kemungkinan_ref_id;
+const recalculateRiskMatrixForPayload = async ({ baseRisk, payload, body = {}, transaction }) => {
+  const likelihoodRefId = payload.kemungkinan_ref_id || baseRisk.kemungkinan_ref_id;
 
-  const impactRefId =
-    payload.dampak_ref_id || baseRisk.dampak_ref_id;
+  const impactRefId = payload.dampak_ref_id || baseRisk.dampak_ref_id;
 
   if (!likelihoodRefId || !impactRefId) {
     return payload;
@@ -1345,17 +1259,9 @@ const recalculateRiskMatrixForPayload = async ({
 
   const context = await findPlanningContext(baseRisk.context_id, transaction);
 
-  await validateReferenceIfProvided(
-    likelihoodRefId,
-    "kemungkinan_ref_id",
-    transaction
-  );
+  await validateReferenceIfProvided(likelihoodRefId, 'kemungkinan_ref_id', transaction);
 
-  await validateReferenceIfProvided(
-    impactRefId,
-    "dampak_ref_id",
-    transaction
-  );
+  await validateReferenceIfProvided(impactRefId, 'dampak_ref_id', transaction);
 
   const matrix = await findRiskMatrix({
     likelihoodRefId,
@@ -1393,37 +1299,34 @@ const recalculateRiskMatrixForPayload = async ({
   };
 };
 
-const resolveReferenceLabelsForPayload = async ({
-  payload,
-  transaction,
-}) => {
+const resolveReferenceLabelsForPayload = async ({ payload, transaction }) => {
   const nextPayload = { ...payload };
 
   if (nextPayload.kategori_risiko_ref_id) {
     nextPayload.kategori_risiko = await getReferenceLabel(
       nextPayload.kategori_risiko_ref_id,
-      transaction
+      transaction,
     );
   }
 
   if (nextPayload.sumber_risiko_ref_id) {
     nextPayload.sumber_risiko = await getReferenceLabel(
       nextPayload.sumber_risiko_ref_id,
-      transaction
+      transaction,
     );
   }
 
   if (nextPayload.selera_risiko_ref_id) {
     nextPayload.selera_risiko = await getReferenceLabel(
       nextPayload.selera_risiko_ref_id,
-      transaction
+      transaction,
     );
   }
 
   if (nextPayload.status_risiko_ref_id) {
     nextPayload.status_risiko = await getReferenceLabel(
       nextPayload.status_risiko_ref_id,
-      transaction
+      transaction,
     );
   }
 
@@ -1433,9 +1336,8 @@ const resolveReferenceLabelsForPayload = async ({
 const buildProposalContextLookup = ({ payload, sourceRef }) => {
   const tahun = toPositiveIntOrNull(payload.tahun);
   const opdId = toPositiveIntOrNull(payload.opd_id);
-  const periodeType = payload.periode_type || "adhoc";
-  const jenisDokumen =
-    PROPOSAL_SOURCE_TO_DOCUMENT[sourceRef.kode_item] || sourceRef.nilai_text;
+  const periodeType = payload.periode_type || 'adhoc';
+  const jenisDokumen = PROPOSAL_SOURCE_TO_DOCUMENT[sourceRef.kode_item] || sourceRef.nilai_text;
 
   assertRequired(
     {
@@ -1443,7 +1345,7 @@ const buildProposalContextLookup = ({ payload, sourceRef }) => {
       periode_type: periodeType,
       opd_id: opdId,
     },
-    ["tahun", "periode_type", "opd_id"]
+    ['tahun', 'periode_type', 'opd_id'],
   );
 
   return {
@@ -1451,18 +1353,11 @@ const buildProposalContextLookup = ({ payload, sourceRef }) => {
     opdId,
     periodeType,
     jenisDokumen,
-    periodeLabel:
-      payload.periode_label ||
-      `${sourceRef.nama_item} Tahun ${tahun}`,
+    periodeLabel: payload.periode_label || `${sourceRef.nama_item} Tahun ${tahun}`,
   };
 };
 
-const ensureProposalContext = async ({
-  payload,
-  sourceRef,
-  userId,
-  transaction,
-}) => {
+const ensureProposalContext = async ({ payload, sourceRef, userId, transaction }) => {
   const lookup = buildProposalContextLookup({ payload, sourceRef });
 
   const existing = await MrPlanningContext.findOne({
@@ -1473,7 +1368,7 @@ const ensureProposalContext = async ({
       opd_id: lookup.opdId,
       is_active: true,
     },
-    order: [["id", "ASC"]],
+    order: [['id', 'ASC']],
     transaction,
   });
 
@@ -1500,8 +1395,7 @@ const ensureProposalContext = async ({
     status_revisi: WORKFLOW_STATUS.DRAFT,
     versi: 1,
     alasan_revisi:
-      payload.alasan_revisi ||
-      `Context otomatis dari sumber usulan risiko ${sourceRef.nama_item}.`,
+      payload.alasan_revisi || `Context otomatis dari sumber usulan risiko ${sourceRef.nama_item}.`,
     dibuat_oleh: userId || null,
     dibuat_pada: now(),
     last_revised_by: userId || null,
@@ -1510,7 +1404,7 @@ const ensureProposalContext = async ({
     is_locked: false,
 
     metadata_json: buildMetadata(payload.metadata_json, {
-      generated_by: "proposal_intake",
+      generated_by: 'proposal_intake',
       proposal_source_type: sourceRef.nilai_text,
       proposal_source_code: sourceRef.kode_item,
       proposal_source_ref_id: sourceRef.id,
@@ -1535,101 +1429,73 @@ const countProposalContextItems = async ({ contextId, stage, transaction }) => {
 };
 
 const limitKodeKonteks = (rawCode) => {
-  const code = String(rawCode || "").trim();
+  const code = String(rawCode || '').trim();
   if (!code) return code;
   if (code.length <= MAX_KODE_KONTEKS_LENGTH) return code;
 
-  const hash = crypto.createHash("sha1").update(code).digest("hex").slice(0, 8);
+  const hash = crypto.createHash('sha1').update(code).digest('hex').slice(0, 8);
   const suffix = `-${hash}`;
   const maxPrefixLen = MAX_KODE_KONTEKS_LENGTH - suffix.length;
-  const trimmed = code.slice(0, maxPrefixLen).replace(/-+$/g, "");
+  const trimmed = code.slice(0, maxPrefixLen).replace(/-+$/g, '');
 
   return `${trimmed}${suffix}`;
 };
 
 const buildProposalObjectCode = ({ sourceRef, payload }) => {
   const clean = (value, fallback) => {
-    const normalized = String(value || "")
+    const normalized = String(value || '')
       .trim()
-      .replace(/[^A-Za-z0-9.]+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-|-$/g, "");
+      .replace(/[^A-Za-z0-9.]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
 
     return normalized || fallback;
   };
 
-  const buildCode = (prefix, slugSource, fallback = "OBJEK") =>
+  const buildCode = (prefix, slugSource, fallback = 'OBJEK') =>
     limitKodeKonteks(`${prefix}-${clean(slugSource, fallback)}`);
 
   switch (sourceRef.kode_item) {
     case PROPOSAL_SOURCE.TINDAK_LANJUT_BPK:
-      return buildCode("BPK", payload.nomor_temuan, "TANPA-NOMOR");
+      return buildCode('BPK', payload.nomor_temuan, 'TANPA-NOMOR');
 
     case PROPOSAL_SOURCE.TINDAK_LANJUT_INSPEKTORAT:
-      return buildCode("INSPEKTORAT", payload.nomor_temuan, "TANPA-NOMOR");
+      return buildCode('INSPEKTORAT', payload.nomor_temuan, 'TANPA-NOMOR');
 
     case PROPOSAL_SOURCE.TINDAK_LANJUT_BPKP:
-      return buildCode("BPKP", payload.nomor_temuan, "TANPA-NOMOR");
+      return buildCode('BPKP', payload.nomor_temuan, 'TANPA-NOMOR');
 
     case PROPOSAL_SOURCE.LAKIP:
-      return buildCode(
-        "LAKIP",
-        payload.objek_risiko || payload.nama_risiko,
-        "OBJEK"
-      );
+      return buildCode('LAKIP', payload.objek_risiko || payload.nama_risiko, 'OBJEK');
 
     case PROPOSAL_SOURCE.LAPORAN_KEUANGAN:
-      return buildCode("LK", payload.akun_pos || payload.objek_risiko, "OBJEK");
+      return buildCode('LK', payload.akun_pos || payload.objek_risiko, 'OBJEK');
 
     case PROPOSAL_SOURCE.PELAKSANAAN_KEGIATAN:
-      return buildCode(
-        "GIAT",
-        payload.nama_kegiatan || payload.objek_risiko,
-        "OBJEK"
-      );
+      return buildCode('GIAT', payload.nama_kegiatan || payload.objek_risiko, 'OBJEK');
 
     case PROPOSAL_SOURCE.PERTANGGUNGJAWABAN_KEUANGAN:
       return buildCode(
-        "SPJ",
+        'SPJ',
         payload.jenis_dokumen_pertanggungjawaban || payload.objek_risiko,
-        "OBJEK"
+        'OBJEK',
       );
 
     case PROPOSAL_SOURCE.SPIP_E_SIGAP:
-      return buildCode(
-        "SPIP",
-        payload.objek_risiko || payload.nama_risiko,
-        "OBJEK"
-      );
+      return buildCode('SPIP', payload.objek_risiko || payload.nama_risiko, 'OBJEK');
 
     case PROPOSAL_SOURCE.MANUAL_ADHOC:
-      return buildCode(
-        "ADHOC",
-        payload.objek_risiko || payload.nama_risiko,
-        "OBJEK"
-      );
+      return buildCode('ADHOC', payload.objek_risiko || payload.nama_risiko, 'OBJEK');
 
     case PROPOSAL_SOURCE.LAINNYA:
-      return buildCode(
-        "CUSTOM",
-        payload.nama_kategori_baru || payload.objek_risiko,
-        "OBJEK"
-      );
+      return buildCode('CUSTOM', payload.nama_kategori_baru || payload.objek_risiko, 'OBJEK');
 
     default:
-      return limitKodeKonteks(
-        `${sourceRef.kode_item}-${clean(payload.objek_risiko, "OBJECT")}`
-      );
+      return limitKodeKonteks(`${sourceRef.kode_item}-${clean(payload.objek_risiko, 'OBJECT')}`);
   }
 };
 
-const ensureProposalContextItem = async ({
-  context,
-  payload,
-  sourceRef,
-  userId,
-  transaction,
-}) => {
+const ensureProposalContextItem = async ({ context, payload, sourceRef, userId, transaction }) => {
   const contextPlain = toPlain(context);
   const stage = PROPOSAL_SOURCE_TO_STAGE[sourceRef.kode_item];
 
@@ -1640,17 +1506,14 @@ const ensureProposalContextItem = async ({
       {
         proposal_source_type: sourceRef.kode_item,
         supported_sources: getSupportedProposalSources(),
-      }
+      },
     );
   }
 
   assertRequired(payload, getRequiredFieldsByProposalSource(sourceRef));
 
   const kodeKonteks = buildProposalObjectCode({ sourceRef, payload });
-  const namaKonteks =
-    payload.objek_risiko ||
-    payload.judul_temuan ||
-    payload.nama_risiko;
+  const namaKonteks = payload.objek_risiko || payload.judul_temuan || payload.nama_risiko;
 
   const existing = await MrPlanningContextItem.findOne({
     where: {
@@ -1659,7 +1522,7 @@ const ensureProposalContextItem = async ({
       kode_konteks: kodeKonteks,
       is_active: true,
     },
-    order: [["id", "ASC"]],
+    order: [['id', 'ASC']],
     transaction,
   });
 
@@ -1687,16 +1550,12 @@ const ensureProposalContextItem = async ({
     ref_id: nextRefId,
     indikator_id: null,
 
-    source_table: "proposal_intake",
+    source_table: 'proposal_intake',
     source_id: null,
 
     kode_konteks: kodeKonteks,
     nama_konteks: namaKonteks,
-    uraian_konteks:
-      payload.ringkasan_temuan ||
-      payload.uraian_risiko ||
-      payload.catatan ||
-      null,
+    uraian_konteks: payload.ringkasan_temuan || payload.uraian_risiko || payload.catatan || null,
 
     kode_indikator: null,
     nama_indikator: namaKonteks,
@@ -1707,7 +1566,7 @@ const ensureProposalContextItem = async ({
     is_active: true,
 
     metadata_json: buildMetadata(payload.metadata_json, {
-      generated_by: "proposal_intake",
+      generated_by: 'proposal_intake',
       proposal_source_type: sourceRef.nilai_text,
       proposal_source_code: sourceRef.kode_item,
       proposal_source_ref_id: sourceRef.id,
@@ -1724,8 +1583,7 @@ const ensureProposalContextItem = async ({
       akun_pos: payload.akun_pos || null,
       jenis_transaksi: payload.jenis_transaksi || null,
       nilai_transaksi: payload.nilai_transaksi || null,
-      jenis_dokumen_pertanggungjawaban:
-        payload.jenis_dokumen_pertanggungjawaban || null,
+      jenis_dokumen_pertanggungjawaban: payload.jenis_dokumen_pertanggungjawaban || null,
       status_dokumen: payload.status_dokumen || null,
       catatan_koreksi: payload.catatan_koreksi || null,
 
@@ -1741,16 +1599,13 @@ const ensureProposalContextItem = async ({
       is_renstra_related: payload.is_renstra_related ?? null,
       alasan_pengajuan_kategori: payload.alasan_pengajuan_kategori || null,
       contoh_sumber_risiko: payload.contoh_sumber_risiko || null,
-      custom_category_status: isCustomProposalSource(sourceRef)
-        ? "pending_review"
-        : null,
+      custom_category_status: isCustomProposalSource(sourceRef) ? 'pending_review' : null,
 
-      rencana_tindak_lanjut_awal:
-        payload.rencana_tindak_lanjut_awal || null,
+      rencana_tindak_lanjut_awal: payload.rencana_tindak_lanjut_awal || null,
       pic: payload.pic || null,
       target_waktu: payload.target_waktu || null,
 
-      object_ref_mode: "internal_context_item_ref",
+      object_ref_mode: 'internal_context_item_ref',
     }),
 
     created_by: userId || null,
@@ -1761,74 +1616,63 @@ const ensureProposalContextItem = async ({
     transaction,
   });
 
-  if (hasModelAttribute(MrPlanningContextItem, "source_id")) {
+  if (hasModelAttribute(MrPlanningContextItem, 'source_id')) {
     await created.update(
       {
         source_id: created.id,
         updated_by: userId || null,
       },
-      { transaction }
+      { transaction },
     );
   }
 
   return created;
 };
 
-const buildRiskPayloadFromContext = async ({
-  context,
-  contextItem,
-  body,
-  userId,
-  transaction,
-}) => {
+const buildRiskPayloadFromContext = async ({ context, contextItem, body, userId, transaction }) => {
   const allowedPayload = pickAllowedFields(body);
 
-  assertRequired(allowedPayload, [
-    "nama_risiko",
-    "kemungkinan_ref_id",
-    "dampak_ref_id",
-  ]);
+  assertRequired(allowedPayload, ['nama_risiko', 'kemungkinan_ref_id', 'dampak_ref_id']);
 
   const scope = buildScopeFromContext(context, contextItem);
   const contextItemPlain = toPlain(contextItem);
 
   const likelihoodItem = await validateReferenceIfProvided(
     allowedPayload.kemungkinan_ref_id,
-    "kemungkinan_ref_id",
-    transaction
+    'kemungkinan_ref_id',
+    transaction,
   );
 
   const impactItem = await validateReferenceIfProvided(
     allowedPayload.dampak_ref_id,
-    "dampak_ref_id",
-    transaction
+    'dampak_ref_id',
+    transaction,
   );
 
   const kategoriItem = await validateReferenceIfProvided(
     allowedPayload.kategori_risiko_ref_id,
-    "kategori_risiko_ref_id",
-    transaction
+    'kategori_risiko_ref_id',
+    transaction,
   );
 
   const sumberItem = await validateReferenceIfProvided(
     allowedPayload.sumber_risiko_ref_id,
-    "sumber_risiko_ref_id",
-    transaction
+    'sumber_risiko_ref_id',
+    transaction,
   );
 
   const statusItem = await validateReferenceIfProvided(
     allowedPayload.status_risiko_ref_id,
-    "status_risiko_ref_id",
-    transaction
+    'status_risiko_ref_id',
+    transaction,
   );
 
-  let seleraRefId =
-    allowedPayload.selera_risiko_ref_id || scope.selera_risiko_ref_id || null;
+  let seleraRefId = allowedPayload.selera_risiko_ref_id || scope.selera_risiko_ref_id || null;
 
   const seleraItem = await validateReferenceIfProvided(
     seleraRefId,
-    "selera_risiko_ref_id",
-    transaction
+    'selera_risiko_ref_id',
+    transaction,
   );
 
   const matrixCode = resolveMatrixCode(context, body);
@@ -1878,8 +1722,7 @@ const buildRiskPayloadFromContext = async ({
 
     penyebab_risiko: allowedPayload.penyebab_risiko || null,
     dampak_risiko: allowedPayload.dampak_risiko || null,
-    metode_pencapaian_tujuan_spip:
-      allowedPayload.metode_pencapaian_tujuan_spip || null,
+    metode_pencapaian_tujuan_spip: allowedPayload.metode_pencapaian_tujuan_spip || null,
 
     kemungkinan_ref_id: allowedPayload.kemungkinan_ref_id,
     dampak_ref_id: allowedPayload.dampak_ref_id,
@@ -1890,9 +1733,7 @@ const buildRiskPayloadFromContext = async ({
       0,
 
     dampak:
-      toNumberOrNull(impactPlain.nilai_numeric) ||
-      toNumberOrNull(matrixPlain.impact_value) ||
-      0,
+      toNumberOrNull(impactPlain.nilai_numeric) || toNumberOrNull(matrixPlain.impact_value) || 0,
 
     skor_risiko: toNumberOrNull(matrixPlain.score) || 0,
 
@@ -1900,22 +1741,21 @@ const buildRiskPayloadFromContext = async ({
     level_risiko: matrixPlain.level_risiko || null,
 
     selera_risiko_ref_id: seleraRefId,
-    selera_risiko:
-      seleraItem?.nama_item || scope.selera_risiko || null,
+    selera_risiko: seleraItem?.nama_item || scope.selera_risiko || null,
 
     matrix_code: matrixPlain.matrix_code || null,
     matrix_id: matrixPlain.id || null,
     is_above_appetite: Boolean(matrixPlain.is_above_appetite),
 
     status_risiko_ref_id: allowedPayload.status_risiko_ref_id || null,
-    status_risiko: statusItem ? statusItem.nama_item : "aktif",
+    status_risiko: statusItem ? statusItem.nama_item : 'aktif',
 
     owner_user_id: scope.owner_user_id,
     owner_division_id: scope.owner_division_id,
 
     versi: 1,
     status_revisi: WORKFLOW_STATUS.DRAFT,
-    alasan_revisi: allowedPayload.alasan_revisi || "Create MR planning risk.",
+    alasan_revisi: allowedPayload.alasan_revisi || 'Create MR planning risk.',
     last_revised_at: now(),
     last_revised_by: userId,
     dibuat_oleh: userId,
@@ -1924,7 +1764,7 @@ const buildRiskPayloadFromContext = async ({
     updated_by: userId,
   };
 
-  if (hasModelAttribute(MrPlanningRisk, "context_item_id")) {
+  if (hasModelAttribute(MrPlanningRisk, 'context_item_id')) {
     basePayload.context_item_id = contextItemPlain.id;
   }
 
@@ -1942,59 +1782,32 @@ const buildDuplicateRiskGuardKey = ({ payload, sourceRef, contextItem }) => {
       metadata.proposal_source_type ||
       null,
 
-    nomor_temuan:
-      payload.nomor_temuan ||
-      metadata.nomor_temuan ||
-      null,
+    nomor_temuan: payload.nomor_temuan || metadata.nomor_temuan || null,
 
-    tahun_pemeriksaan:
-      payload.tahun_pemeriksaan ||
-      metadata.tahun_pemeriksaan ||
-      null,
+    tahun_pemeriksaan: payload.tahun_pemeriksaan || metadata.tahun_pemeriksaan || null,
 
-    opd_id:
-      payload.opd_id ||
-      itemPlain?.opd_id ||
-      null,
+    opd_id: payload.opd_id || itemPlain?.opd_id || null,
 
-    stage:
-      itemPlain?.stage ||
-      PROPOSAL_SOURCE_TO_STAGE[sourceRef?.kode_item] ||
-      null,
+    stage: itemPlain?.stage || PROPOSAL_SOURCE_TO_STAGE[sourceRef?.kode_item] || null,
 
-    source_table:
-      itemPlain?.source_table ||
-      "proposal_intake",
+    source_table: itemPlain?.source_table || 'proposal_intake',
 
-    source_id:
-      itemPlain?.source_id ||
-      itemPlain?.id ||
-      null,
+    source_id: itemPlain?.source_id || itemPlain?.id || null,
 
-    context_item_id:
-      itemPlain?.id ||
-      null,
+    context_item_id: itemPlain?.id || null,
 
-    kode_konteks:
-      itemPlain?.kode_konteks ||
-      null,
+    kode_konteks: itemPlain?.kode_konteks || null,
   };
 };
 
-const findDuplicateProposalRisks = async ({
-  contextItem,
-  transaction,
-}) => {
+const findDuplicateProposalRisks = async ({ contextItem, transaction }) => {
   const itemPlain = toPlain(contextItem);
 
   if (!itemPlain) {
     return [];
   }
 
-  const contextId =
-    itemPlain.mr_planning_context_id ||
-    itemPlain.context_id ||
-    null;
+  const contextId = itemPlain.mr_planning_context_id || itemPlain.context_id || null;
 
   const stage = itemPlain.stage || null;
   const refId = itemPlain.ref_id || null;
@@ -2009,29 +1822,29 @@ const findDuplicateProposalRisks = async ({
     ref_id: refId,
   };
 
-  if (hasModelAttribute(MrPlanningRisk, "is_active")) {
+  if (hasModelAttribute(MrPlanningRisk, 'is_active')) {
     where.is_active = true;
   }
 
   const attributes = [
-    "id",
-    "kode_risiko",
-    "nama_risiko",
-    "status_revisi",
-    "versi",
-    "context_id",
-    "stage",
-    "ref_id",
-    "source_table",
-    "source_id",
-    "created_at",
-    "createdAt",
+    'id',
+    'kode_risiko',
+    'nama_risiko',
+    'status_revisi',
+    'versi',
+    'context_id',
+    'stage',
+    'ref_id',
+    'source_table',
+    'source_id',
+    'created_at',
+    'createdAt',
   ].filter((field) => hasModelAttribute(MrPlanningRisk, field));
 
   const rows = await MrPlanningRisk.findAll({
     where,
     attributes,
-    order: [["id", "DESC"]],
+    order: [['id', 'DESC']],
     limit: 10,
     transaction,
   });
@@ -2039,18 +1852,15 @@ const findDuplicateProposalRisks = async ({
   return rows.map((row) => toPlain(row));
 };
 
-const buildDuplicateRiskWarning = ({
-  duplicates = [],
-  duplicateKey = {},
-}) => {
+const buildDuplicateRiskWarning = ({ duplicates = [], duplicateKey = {} }) => {
   const hasDuplicate = duplicates.length > 0;
 
   return {
     has_duplicate: hasDuplicate,
-    severity: hasDuplicate ? "warning" : "none",
-    mode: "warning_only",
+    severity: hasDuplicate ? 'warning' : 'none',
+    mode: 'warning_only',
     message: hasDuplicate
-      ? "Sumber usulan/temuan ini sudah pernah dibuat sebagai risiko MR. Silakan cek risiko terkait sebelum membuat atau melanjutkan data baru."
+      ? 'Sumber usulan/temuan ini sudah pernah dibuat sebagai risiko MR. Silakan cek risiko terkait sebelum membuat atau melanjutkan data baru.'
       : null,
     guard_key: duplicateKey,
     duplicate_count: duplicates.length,
@@ -2081,49 +1891,44 @@ const buildRiskPayloadFromProposal = async ({
   const contextPlain = toPlain(context);
   const itemPlain = toPlain(contextItem);
 
-  assertRequired(body, [
-    "nama_risiko",
-    "kemungkinan_ref_id",
-    "dampak_ref_id",
-  ]);
+  assertRequired(body, ['nama_risiko', 'kemungkinan_ref_id', 'dampak_ref_id']);
 
   const likelihoodItem = await validateReferenceIfProvided(
     body.kemungkinan_ref_id,
-    "kemungkinan_ref_id",
-    transaction
+    'kemungkinan_ref_id',
+    transaction,
   );
 
   const impactItem = await validateReferenceIfProvided(
     body.dampak_ref_id,
-    "dampak_ref_id",
-    transaction
+    'dampak_ref_id',
+    transaction,
   );
 
   const kategoriItem = await validateReferenceIfProvided(
     body.kategori_risiko_ref_id,
-    "kategori_risiko_ref_id",
-    transaction
+    'kategori_risiko_ref_id',
+    transaction,
   );
 
   const sumberItem = await validateReferenceIfProvided(
     body.sumber_risiko_ref_id,
-    "sumber_risiko_ref_id",
-    transaction
+    'sumber_risiko_ref_id',
+    transaction,
   );
 
   const statusItem = await validateReferenceIfProvided(
     body.status_risiko_ref_id,
-    "status_risiko_ref_id",
-    transaction
+    'status_risiko_ref_id',
+    transaction,
   );
 
-  const seleraRefId =
-    body.selera_risiko_ref_id || contextPlain.selera_risiko_ref_id || null;
+  const seleraRefId = body.selera_risiko_ref_id || contextPlain.selera_risiko_ref_id || null;
 
   const seleraItem = await validateReferenceIfProvided(
     seleraRefId,
-    "selera_risiko_ref_id",
-    transaction
+    'selera_risiko_ref_id',
+    transaction,
   );
 
   const matrix = await findRiskMatrix({
@@ -2148,7 +1953,7 @@ const buildRiskPayloadFromProposal = async ({
     indikator_id: null,
     stage: itemPlain.stage,
     ref_id: itemPlain.ref_id,
-    source_table: itemPlain.source_table || "proposal_intake",
+    source_table: itemPlain.source_table || 'proposal_intake',
     source_id: itemPlain.source_id || itemPlain.id || null,
     owner_user_id:
       contextPlain.owner_user_id ||
@@ -2159,7 +1964,7 @@ const buildRiskPayloadFromProposal = async ({
     owner_division_id: contextPlain.owner_division_id || null,
   };
 
-  assertRequired(scope, ["context_id", "opd_id", "stage", "ref_id"]);
+  assertRequired(scope, ['context_id', 'opd_id', 'stage', 'ref_id']);
 
   const kodeRisiko = await buildRiskCode({ scope, transaction });
 
@@ -2196,9 +2001,7 @@ const buildRiskPayloadFromProposal = async ({
     dampak_risiko: body.dampak_risiko || null,
 
     metode_pencapaian_tujuan_spip:
-      body.rencana_tindak_lanjut_awal ||
-      body.metode_pencapaian_tujuan_spip ||
-      null,
+      body.rencana_tindak_lanjut_awal || body.metode_pencapaian_tujuan_spip || null,
 
     kemungkinan_ref_id: body.kemungkinan_ref_id,
     dampak_ref_id: body.dampak_ref_id,
@@ -2209,9 +2012,7 @@ const buildRiskPayloadFromProposal = async ({
       0,
 
     dampak:
-      toNumberOrNull(impactPlain.nilai_numeric) ||
-      toNumberOrNull(matrixPlain.impact_value) ||
-      0,
+      toNumberOrNull(impactPlain.nilai_numeric) || toNumberOrNull(matrixPlain.impact_value) || 0,
 
     skor_risiko: toNumberOrNull(matrixPlain.score) || 0,
 
@@ -2219,15 +2020,14 @@ const buildRiskPayloadFromProposal = async ({
     level_risiko: matrixPlain.level_risiko || null,
 
     selera_risiko_ref_id: seleraRefId,
-    selera_risiko:
-      seleraItem?.nama_item || contextPlain.selera_risiko || null,
+    selera_risiko: seleraItem?.nama_item || contextPlain.selera_risiko || null,
 
     matrix_code: matrixPlain.matrix_code || null,
     matrix_id: matrixPlain.id || null,
     is_above_appetite: Boolean(matrixPlain.is_above_appetite),
 
     status_risiko_ref_id: body.status_risiko_ref_id || null,
-    status_risiko: statusItem ? statusItem.nama_item : "aktif",
+    status_risiko: statusItem ? statusItem.nama_item : 'aktif',
 
     owner_user_id: scope.owner_user_id,
     owner_division_id: scope.owner_division_id,
@@ -2235,8 +2035,7 @@ const buildRiskPayloadFromProposal = async ({
     versi: 1,
     status_revisi: WORKFLOW_STATUS.DRAFT,
     alasan_revisi:
-      body.alasan_revisi ||
-      `Create MR planning risk dari proposal ${sourceRef.nama_item}.`,
+      body.alasan_revisi || `Create MR planning risk dari proposal ${sourceRef.nama_item}.`,
     last_revised_at: now(),
     last_revised_by: userId,
     dibuat_oleh: userId,
@@ -2245,7 +2044,7 @@ const buildRiskPayloadFromProposal = async ({
     updated_by: userId,
   };
 
-  if (hasModelAttribute(MrPlanningRisk, "context_item_id")) {
+  if (hasModelAttribute(MrPlanningRisk, 'context_item_id')) {
     basePayload.context_item_id = itemPlain.id;
   }
 
@@ -2290,7 +2089,7 @@ const createRiskFromContext = async ({ contextId, body = {}, user = null }) => {
 
     return {
       success: true,
-      message: "MR Planning Risk berhasil dibuat dari context.",
+      message: 'MR Planning Risk berhasil dibuat dari context.',
       data: {
         ...toPlain(risk),
         selected_context_item: toPlain(contextItem),
@@ -2315,19 +2114,25 @@ const createProposalIntake = async ({ body = {}, user = null }) => {
 
   if (isRenstraProposalSource(sourceRef)) {
     if (!payload.context_id) {
-      throw new ServiceError(
-        "Context MR wajib dipilih untuk sumber Renstra.",
-        400,
-        {
-          missing_fields: ["context_id"],
-          proposal_source_type: sourceRef.kode_item,
-        }
-      );
+      throw new ServiceError('Context MR wajib dipilih untuk sumber Renstra.', 400, {
+        missing_fields: ['context_id'],
+        proposal_source_type: sourceRef.kode_item,
+      });
     }
+
+    // createRiskFromContext memanggil assertNoBlockedFields(body) tanpa
+    // pengecualian apa pun, sedangkan payload proposal-intake di sini masih
+    // membawa context_id/tahun/opd_id (field itu memang termasuk
+    // PROPOSAL_INTAKE_ALLOWED_FIELDS). contextId sudah diteruskan lewat
+    // parameter terpisah, jadi field teknis itu dibuang dulu dari body agar
+    // tidak kena blokir oleh assertNoBlockedFields di jalur lama.
+    const riskBodyFromProposal = Object.fromEntries(
+      Object.entries(payload).filter(([key]) => !TECHNICAL_BLOCKED_FIELDS.includes(key)),
+    );
 
     return createRiskFromContext({
       contextId: payload.context_id,
-      body: payload,
+      body: riskBodyFromProposal,
       user,
     });
   }
@@ -2391,8 +2196,8 @@ const createProposalIntake = async ({ body = {}, user = null }) => {
     return {
       success: true,
       message: duplicateWarning.has_duplicate
-        ? "Draft usulan risiko berhasil dibuat, namun sumber/temuan ini terindikasi sudah pernah dibuat sebagai risiko MR."
-        : "Draft usulan risiko berhasil dibuat dari proposal intake.",
+        ? 'Draft usulan risiko berhasil dibuat, namun sumber/temuan ini terindikasi sudah pernah dibuat sebagai risiko MR.'
+        : 'Draft usulan risiko berhasil dibuat dari proposal intake.',
       data: {
         ...toPlain(risk),
         proposal_source: sourceRef,
@@ -2400,13 +2205,9 @@ const createProposalIntake = async ({ body = {}, user = null }) => {
         generated_context_item: toPlain(contextItem),
 
         duplicate_guard: duplicateWarning,
-        duplicate_warning: duplicateWarning.has_duplicate
-          ? duplicateWarning.message
-          : null,
+        duplicate_warning: duplicateWarning.has_duplicate ? duplicateWarning.message : null,
 
-        custom_category_status: isCustomProposalSource(sourceRef)
-          ? "pending_review"
-          : null,
+        custom_category_status: isCustomProposalSource(sourceRef) ? 'pending_review' : null,
       },
     };
   });
@@ -2434,29 +2235,17 @@ const updateDraftRisk = async ({ riskId, body = {}, user = null }) => {
       alasan_revisi:
         allowedPayload.alasan_revisi ||
         beforeJson.alasan_revisi ||
-        "Update draft MR planning risk.",
+        'Update draft MR planning risk.',
     };
 
-    if (
-      allowedPayload.kemungkinan_ref_id ||
-      allowedPayload.dampak_ref_id
-    ) {
+    if (allowedPayload.kemungkinan_ref_id || allowedPayload.dampak_ref_id) {
       const context = await findPlanningContext(beforeJson.context_id, transaction);
-      const likelihoodRefId =
-        allowedPayload.kemungkinan_ref_id || beforeJson.kemungkinan_ref_id;
+      const likelihoodRefId = allowedPayload.kemungkinan_ref_id || beforeJson.kemungkinan_ref_id;
       const impactRefId = allowedPayload.dampak_ref_id || beforeJson.dampak_ref_id;
 
-      await validateReferenceIfProvided(
-        likelihoodRefId,
-        "kemungkinan_ref_id",
-        transaction
-      );
+      await validateReferenceIfProvided(likelihoodRefId, 'kemungkinan_ref_id', transaction);
 
-      await validateReferenceIfProvided(
-        impactRefId,
-        "dampak_ref_id",
-        transaction
-      );
+      await validateReferenceIfProvided(impactRefId, 'dampak_ref_id', transaction);
 
       const matrix = await findRiskMatrix({
         likelihoodRefId,
@@ -2492,28 +2281,28 @@ const updateDraftRisk = async ({ riskId, body = {}, user = null }) => {
     if (allowedPayload.kategori_risiko_ref_id) {
       nextPayload.kategori_risiko = await getReferenceLabel(
         allowedPayload.kategori_risiko_ref_id,
-        transaction
+        transaction,
       );
     }
 
     if (allowedPayload.sumber_risiko_ref_id) {
       nextPayload.sumber_risiko = await getReferenceLabel(
         allowedPayload.sumber_risiko_ref_id,
-        transaction
+        transaction,
       );
     }
 
     if (allowedPayload.selera_risiko_ref_id) {
       nextPayload.selera_risiko = await getReferenceLabel(
         allowedPayload.selera_risiko_ref_id,
-        transaction
+        transaction,
       );
     }
 
     if (allowedPayload.status_risiko_ref_id) {
       nextPayload.status_risiko = await getReferenceLabel(
         allowedPayload.status_risiko_ref_id,
-        transaction
+        transaction,
       );
     }
 
@@ -2521,14 +2310,14 @@ const updateDraftRisk = async ({ riskId, body = {}, user = null }) => {
 
     if (
       [
-        "objek_risiko",
-        "nomor_temuan",
-        "judul_temuan",
-        "ringkasan_temuan",
-        "rekomendasi",
-        "rencana_tindak_lanjut_awal",
-        "pic",
-        "unit_terkait",
+        'objek_risiko',
+        'nomor_temuan',
+        'judul_temuan',
+        'ringkasan_temuan',
+        'rekomendasi',
+        'rencana_tindak_lanjut_awal',
+        'pic',
+        'unit_terkait',
       ].some((field) => allowedPayload[field] !== undefined)
     ) {
       await syncLinkedContextItemFromRiskPayload({
@@ -2552,7 +2341,7 @@ const updateDraftRisk = async ({ riskId, body = {}, user = null }) => {
 
     return {
       success: true,
-      message: "Draft MR Planning Risk berhasil diperbarui.",
+      message: 'Draft MR Planning Risk berhasil diperbarui.',
       data: toPlain(risk),
     };
   });
@@ -2577,14 +2366,14 @@ const submitRiskForVerification = async ({ riskId, user = null }) => {
         last_revised_by: userId,
         updated_by: userId,
       },
-      { transaction }
+      { transaction },
     );
 
     await createRiskHistory({
       risk,
       beforeJson,
       afterJson: toPlain(risk),
-      alasanRevisi: "Risk diajukan untuk verifikasi.",
+      alasanRevisi: 'Risk diajukan untuk verifikasi.',
       statusRevisi: WORKFLOW_STATUS.VERIFIKASI,
       actionType: HISTORY_ACTION.SUBMIT,
       userId,
@@ -2593,7 +2382,7 @@ const submitRiskForVerification = async ({ riskId, user = null }) => {
 
     return {
       success: true,
-      message: "MR Planning Risk berhasil diajukan untuk verifikasi.",
+      message: 'MR Planning Risk berhasil diajukan untuk verifikasi.',
       data: toPlain(risk),
     };
   });
@@ -2608,17 +2397,15 @@ const verifyRisk = async ({ riskId, user = null }) => {
     const risk = await MrPlanningRisk.findByPk(riskId, { transaction });
 
     if (!risk) {
-      throw new ServiceError("Risk tidak ditemukan.", 404);
+      throw new ServiceError('Risk tidak ditemukan.', 404);
     }
 
     const plain = toPlain(risk);
 
     if (plain.status_revisi !== WORKFLOW_STATUS.VERIFIKASI) {
-      throw new ServiceError(
-        "Risk hanya bisa diverifikasi setelah status verifikasi.",
-        400,
-        { current_status: plain.status_revisi }
-      );
+      throw new ServiceError('Risk hanya bisa diverifikasi setelah status verifikasi.', 400, {
+        current_status: plain.status_revisi,
+      });
     }
 
     const beforeJson = toPlain(risk);
@@ -2631,14 +2418,14 @@ const verifyRisk = async ({ riskId, user = null }) => {
         last_revised_by: userId,
         updated_by: userId,
       },
-      { transaction }
+      { transaction },
     );
 
     await createRiskHistory({
       risk,
       beforeJson,
       afterJson: toPlain(risk),
-      alasanRevisi: "Risk diverifikasi.",
+      alasanRevisi: 'Risk diverifikasi.',
       statusRevisi: WORKFLOW_STATUS.VERIFIKASI,
       actionType: HISTORY_ACTION.VERIFY,
       userId,
@@ -2647,7 +2434,7 @@ const verifyRisk = async ({ riskId, user = null }) => {
 
     return {
       success: true,
-      message: "MR Planning Risk berhasil diverifikasi.",
+      message: 'MR Planning Risk berhasil diverifikasi.',
       data: toPlain(risk),
     };
   });
@@ -2662,7 +2449,7 @@ const approveRisk = async ({ riskId, user = null }) => {
     const risk = await MrPlanningRisk.findByPk(riskId, { transaction });
 
     if (!risk) {
-      throw new ServiceError("Risk tidak ditemukan.", 404);
+      throw new ServiceError('Risk tidak ditemukan.', 404);
     }
 
     const plain = toPlain(risk);
@@ -2672,11 +2459,9 @@ const approveRisk = async ({ riskId, user = null }) => {
     });
 
     if (plain.status_revisi !== WORKFLOW_STATUS.VERIFIKASI) {
-      throw new ServiceError(
-        "Risk hanya bisa disetujui setelah status verifikasi.",
-        400,
-        { current_status: plain.status_revisi }
-      );
+      throw new ServiceError('Risk hanya bisa disetujui setelah status verifikasi.', 400, {
+        current_status: plain.status_revisi,
+      });
     }
 
     const beforeJson = toPlain(risk);
@@ -2690,14 +2475,14 @@ const approveRisk = async ({ riskId, user = null }) => {
         last_revised_by: userId,
         updated_by: userId,
       },
-      { transaction }
+      { transaction },
     );
 
     await createRiskHistory({
       risk,
       beforeJson,
       afterJson: toPlain(risk),
-      alasanRevisi: "Risk disetujui.",
+      alasanRevisi: 'Risk disetujui.',
       statusRevisi: WORKFLOW_STATUS.APPROVED,
       actionType: HISTORY_ACTION.APPROVE,
       userId,
@@ -2706,7 +2491,7 @@ const approveRisk = async ({ riskId, user = null }) => {
 
     return {
       success: true,
-      message: "MR Planning Risk berhasil disetujui.",
+      message: 'MR Planning Risk berhasil disetujui.',
       data: toPlain(risk),
     };
   });
@@ -2716,7 +2501,7 @@ const rejectRisk = async ({ riskId, reason, user = null }) => {
   assertModelsLoaded();
 
   if (!reason) {
-    throw new ServiceError("Alasan penolakan wajib diisi.", 400);
+    throw new ServiceError('Alasan penolakan wajib diisi.', 400);
   }
 
   const userId = getUserId(user);
@@ -2725,7 +2510,7 @@ const rejectRisk = async ({ riskId, reason, user = null }) => {
     const risk = await MrPlanningRisk.findByPk(riskId, { transaction });
 
     if (!risk) {
-      throw new ServiceError("Risk tidak ditemukan.", 404);
+      throw new ServiceError('Risk tidak ditemukan.', 404);
     }
 
     const beforeJson = toPlain(risk);
@@ -2740,7 +2525,7 @@ const rejectRisk = async ({ riskId, reason, user = null }) => {
         last_revised_by: userId,
         updated_by: userId,
       },
-      { transaction }
+      { transaction },
     );
 
     await createRiskHistory({
@@ -2756,17 +2541,13 @@ const rejectRisk = async ({ riskId, reason, user = null }) => {
 
     return {
       success: true,
-      message: "MR Planning Risk berhasil ditolak.",
+      message: 'MR Planning Risk berhasil ditolak.',
       data: toPlain(risk),
     };
   });
 };
 
-const createRevisionFromApprovedRisk = async ({
-  riskId,
-  body = {},
-  user = null,
-}) => {
+const createRevisionFromApprovedRisk = async ({ riskId, body = {}, user = null }) => {
   assertModelsLoaded();
   assertNoBlockedFields(body);
 
@@ -2791,9 +2572,7 @@ const createRevisionFromApprovedRisk = async ({
       versi: nextVersion,
       status_revisi: WORKFLOW_STATUS.DRAFT,
 
-      alasan_revisi:
-        allowedPayload.alasan_revisi ||
-        "Revisi risk dari data approved.",
+      alasan_revisi: allowedPayload.alasan_revisi || 'Revisi risk dari data approved.',
 
       last_revised_at: now(),
       last_revised_by: userId,
@@ -2825,14 +2604,14 @@ const createRevisionFromApprovedRisk = async ({
 
     if (
       [
-        "objek_risiko",
-        "nomor_temuan",
-        "judul_temuan",
-        "ringkasan_temuan",
-        "rekomendasi",
-        "rencana_tindak_lanjut_awal",
-        "pic",
-        "unit_terkait",
+        'objek_risiko',
+        'nomor_temuan',
+        'judul_temuan',
+        'ringkasan_temuan',
+        'rekomendasi',
+        'rencana_tindak_lanjut_awal',
+        'pic',
+        'unit_terkait',
       ].some((field) => allowedPayload[field] !== undefined)
     ) {
       await syncLinkedContextItemFromRiskPayload({
@@ -2858,7 +2637,7 @@ const createRevisionFromApprovedRisk = async ({
 
     return {
       success: true,
-      message: "Revisi MR Planning Risk berhasil dibuat sebagai draft.",
+      message: 'Revisi MR Planning Risk berhasil dibuat sebagai draft.',
       data: toPlain(risk),
     };
   });
@@ -2877,18 +2656,13 @@ const enrichRiskWithContextItem = async (riskRecord) => {
 
   const contextItemId =
     riskPlain.context_item_id ||
-    (riskPlain.source_table === "proposal_intake" ? riskPlain.source_id : null);
+    (riskPlain.source_table === 'proposal_intake' ? riskPlain.source_id : null);
 
   if (contextItemId) {
     contextItem = await MrPlanningContextItem.findByPk(contextItemId);
   }
 
-  if (
-    !contextItem &&
-    riskPlain.context_id &&
-    riskPlain.stage &&
-    riskPlain.ref_id
-  ) {
+  if (!contextItem && riskPlain.context_id && riskPlain.stage && riskPlain.ref_id) {
     contextItem = await MrPlanningContextItem.findOne({
       where: {
         mr_planning_context_id: riskPlain.context_id,
@@ -2896,7 +2670,7 @@ const enrichRiskWithContextItem = async (riskRecord) => {
         ref_id: riskPlain.ref_id,
         is_active: true,
       },
-      order: [["id", "ASC"]],
+      order: [['id', 'ASC']],
     });
   }
 
@@ -2908,7 +2682,7 @@ const enrichRiskWithContextItem = async (riskRecord) => {
   const metadata = itemPlain.metadata_json || {};
   const contextMetadata = riskPlain.context?.metadata_json || {};
   const resolvedSeleraRefId = await resolveReferenceIdFromLabel({
-    groupCode: "RISK_APPETITE",
+    groupCode: 'RISK_APPETITE',
     label:
       riskPlain.selera_risiko ||
       metadata.selera_risiko ||
@@ -2919,7 +2693,7 @@ const enrichRiskWithContextItem = async (riskRecord) => {
     transaction: null,
   });
   const resolvedStatusRefId = await resolveReferenceIdFromLabel({
-    groupCode: "RISK_STATUS",
+    groupCode: 'RISK_STATUS',
     label:
       riskPlain.status_risiko ||
       metadata.status_risiko ||
@@ -2935,21 +2709,11 @@ const enrichRiskWithContextItem = async (riskRecord) => {
     context_item: itemPlain,
 
     // Flatten context item technical linkage agar frontend form bisa membaca langsung
-    context_item_id:
-      riskPlain.context_item_id ||
-      itemPlain.id ||
-      null,
+    context_item_id: riskPlain.context_item_id || itemPlain.id || null,
 
-    source_table:
-      riskPlain.source_table ||
-      itemPlain.source_table ||
-      null,
+    source_table: riskPlain.source_table || itemPlain.source_table || null,
 
-    source_id:
-      riskPlain.source_id ||
-      itemPlain.source_id ||
-      itemPlain.id ||
-      null,
+    source_id: riskPlain.source_id || itemPlain.source_id || itemPlain.id || null,
 
     proposal_source_type:
       metadata.proposal_source_code ||
@@ -2958,84 +2722,41 @@ const enrichRiskWithContextItem = async (riskRecord) => {
       null,
 
     proposal_source_ref_id:
-      metadata.proposal_source_ref_id ||
-      riskPlain.proposal_source_ref_id ||
-      null,
+      metadata.proposal_source_ref_id || riskPlain.proposal_source_ref_id || null,
 
     objek_risiko:
-      itemPlain.nama_konteks ||
-      itemPlain.nama_indikator ||
-      riskPlain.objek_risiko ||
-      null,
+      itemPlain.nama_konteks || itemPlain.nama_indikator || riskPlain.objek_risiko || null,
 
-    judul_temuan:
-      metadata.judul_temuan ||
-      riskPlain.judul_temuan ||
-      null,
+    judul_temuan: metadata.judul_temuan || riskPlain.judul_temuan || null,
 
-    nomor_temuan:
-      metadata.nomor_temuan ||
-      riskPlain.nomor_temuan ||
-      null,
+    nomor_temuan: metadata.nomor_temuan || riskPlain.nomor_temuan || null,
 
-    ringkasan_temuan:
-      metadata.ringkasan_temuan ||
-      riskPlain.ringkasan_temuan ||
-      null,
+    ringkasan_temuan: metadata.ringkasan_temuan || riskPlain.ringkasan_temuan || null,
 
-    rekomendasi:
-      metadata.rekomendasi ||
-      riskPlain.rekomendasi ||
-      null,
+    rekomendasi: metadata.rekomendasi || riskPlain.rekomendasi || null,
 
-    status_tindak_lanjut:
-      metadata.status_tindak_lanjut ||
-      riskPlain.status_tindak_lanjut ||
-      null,
+    status_tindak_lanjut: metadata.status_tindak_lanjut || riskPlain.status_tindak_lanjut || null,
 
-    nama_kegiatan:
-      metadata.nama_kegiatan ||
-      riskPlain.nama_kegiatan ||
-      null,
+    nama_kegiatan: metadata.nama_kegiatan || riskPlain.nama_kegiatan || null,
 
-    akun_pos:
-      metadata.akun_pos ||
-      riskPlain.akun_pos ||
-      null,
+    akun_pos: metadata.akun_pos || riskPlain.akun_pos || null,
 
     jenis_dokumen_pertanggungjawaban:
       metadata.jenis_dokumen_pertanggungjawaban ||
       riskPlain.jenis_dokumen_pertanggungjawaban ||
       null,
 
-    nama_kategori_baru:
-      metadata.nama_kategori_baru ||
-      riskPlain.nama_kategori_baru ||
-      null,
+    nama_kategori_baru: metadata.nama_kategori_baru || riskPlain.nama_kategori_baru || null,
 
     nama_indikator:
-      itemPlain.nama_indikator ||
-      itemPlain.nama_konteks ||
-      riskPlain.nama_indikator ||
-      null,
+      itemPlain.nama_indikator || itemPlain.nama_konteks || riskPlain.nama_indikator || null,
 
     indikator_nama:
-      itemPlain.nama_indikator ||
-      itemPlain.nama_konteks ||
-      riskPlain.indikator_nama ||
-      null,
+      itemPlain.nama_indikator || itemPlain.nama_konteks || riskPlain.indikator_nama || null,
 
-    unit_terkait:
-      itemPlain.penanggung_jawab ||
-      metadata.pic ||
-      riskPlain.unit_terkait ||
-      null,
+    unit_terkait: itemPlain.penanggung_jawab || metadata.pic || riskPlain.unit_terkait || null,
 
-    pic:
-      metadata.pic ||
-      itemPlain.penanggung_jawab ||
-      riskPlain.pic ||
-      null,
+    pic: metadata.pic || itemPlain.penanggung_jawab || riskPlain.pic || null,
 
     selera_risiko_ref_id:
       riskPlain.selera_risiko_ref_id ||
@@ -3063,19 +2784,14 @@ const enrichRiskWithContextItem = async (riskRecord) => {
       riskPlain.context?.status_risiko ||
       'aktif',
 
-    target_waktu:
-      metadata.target_waktu ||
-      riskPlain.target_waktu ||
-      null,
+    target_waktu: metadata.target_waktu || riskPlain.target_waktu || null,
   };
 };
 
 const enrichRisksWithContextItems = async (rows = []) => {
   const plainRows = rows.map((row) => toPlain(row));
 
-  return Promise.all(
-    plainRows.map((row) => enrichRiskWithContextItem(row))
-  );
+  return Promise.all(plainRows.map((row) => enrichRiskWithContextItem(row)));
 };
 
 const getRiskDetail = async ({ riskId }) => {
@@ -3085,26 +2801,26 @@ const getRiskDetail = async ({ riskId }) => {
     include: [
       {
         model: MrPlanningContext,
-        as: "context",
+        as: 'context',
         required: false,
       },
       {
         model: MrPlanningRiskHistory,
-        as: "histories",
+        as: 'histories',
         required: false,
       },
     ],
   });
 
   if (!risk) {
-    throw new ServiceError("Risk tidak ditemukan.", 404);
+    throw new ServiceError('Risk tidak ditemukan.', 404);
   }
 
   const enrichedRisk = await enrichRiskWithContextItem(risk);
 
   return {
     success: true,
-    message: "Detail MR Planning Risk berhasil diambil.",
+    message: 'Detail MR Planning Risk berhasil diambil.',
     data: enrichedRisk,
   };
 };
@@ -3120,16 +2836,16 @@ const getRisksByContext = async ({ contextId, limit = 50, offset = 0 }) => {
     },
     limit: Number(limit) || 50,
     offset: Number(offset) || 0,
-    order: [["id", "DESC"]],
+    order: [['id', 'DESC']],
   });
 
   const enrichedRows = await Promise.all(
-    rows.rows.map(async (row) => enrichRiskWithContextItem(toPlain(row)))
+    rows.rows.map(async (row) => enrichRiskWithContextItem(toPlain(row))),
   );
 
   return {
     success: true,
-    message: "Daftar MR Planning Risk berdasarkan context berhasil diambil.",
+    message: 'Daftar MR Planning Risk berdasarkan context berhasil diambil.',
     total: rows.count,
     data: enrichedRows,
   };

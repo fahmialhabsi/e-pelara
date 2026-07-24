@@ -1,6 +1,6 @@
 // frontend/src/pages/mr/MrPlanningMitigationForm.jsx
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Alert,
@@ -197,12 +197,20 @@ const buildInitialValues = (detail = {}) => {
   };
 };
 
-export default function MrPlanningMitigationForm({ mode: propMode }) {
+export default function MrPlanningMitigationForm({
+  mode: propMode,
+  riskId: riskIdProp,
+  mitigationId: mitigationIdProp,
+  onSaved,
+  onCancel,
+}) {
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { message } = App.useApp();
-  const { riskId, mitigationId } = useParams();
+  const routeParams = useParams();
+  const riskId = riskIdProp ?? routeParams.riskId;
+  const mitigationId = mitigationIdProp ?? routeParams.mitigationId;
 
   const mode = propMode || (mitigationId ? 'edit' : 'create');
   const isCreateMode = mode === 'create';
@@ -320,7 +328,7 @@ export default function MrPlanningMitigationForm({ mode: propMode }) {
 
   const createMutation = useMutation({
     mutationFn: (values) => mrPlanningMitigationService.createFromRisk(riskId, values),
-    onSuccess: () => {
+    onSuccess: (result) => {
       message.success('Rencana Tindak Pengendalian berhasil disimpan.');
       setIsDirty(false);
       setBackendError(null);
@@ -329,7 +337,11 @@ export default function MrPlanningMitigationForm({ mode: propMode }) {
         queryKey: MR_PLANNING_MITIGATION_QUERY_KEYS.byRisk(riskId),
       });
 
-      navigate(`${LIST_PATH}/${riskId}/mitigation`);
+      if (onSaved) {
+        onSaved(result?.data || result);
+      } else {
+        navigate(`${LIST_PATH}/${riskId}/mitigation`);
+      }
     },
     onError: (error) => {
       const msg = getBackendErrorMessage(error);
@@ -353,7 +365,11 @@ export default function MrPlanningMitigationForm({ mode: propMode }) {
         queryKey: MR_PLANNING_MITIGATION_QUERY_KEYS.detail(mitigationId),
       });
 
-      navigate(`${LIST_PATH}/${riskId}/mitigation`);
+      if (onSaved) {
+        onSaved({ id: mitigationId });
+      } else {
+        navigate(`${LIST_PATH}/${riskId}/mitigation`);
+      }
     },
     onError: (error) => {
       const msg = getBackendErrorMessage(error);
@@ -452,8 +468,24 @@ export default function MrPlanningMitigationForm({ mode: propMode }) {
     }
   };
 
+  // Auto-terapkan draft otomatis sekali saat form dibuka dalam mode create,
+  // supaya user tidak perlu klik tombol "Sarankan Otomatis" secara manual —
+  // tetap bisa diubah manual setelahnya karena hanya mengisi form, bukan submit.
+  const autoDraftAppliedRef = useRef(false);
+  useEffect(() => {
+    if (isCreateMode && riskId && !autoDraftAppliedRef.current) {
+      autoDraftAppliedRef.current = true;
+      handleApplyAutomaticDraft();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCreateMode, riskId]);
+
   const handleBack = () => {
-    navigate(`${LIST_PATH}/${riskId}/mitigation`);
+    if (onCancel) {
+      onCancel();
+    } else {
+      navigate(`${LIST_PATH}/${riskId}/mitigation`);
+    }
   };
 
   const submitting = createMutation.isPending || updateMutation.isPending;

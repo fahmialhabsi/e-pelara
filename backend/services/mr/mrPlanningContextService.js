@@ -342,68 +342,37 @@ const contextDetailInclude = [
 ];
 
 const RENSTRA_STAGE_SOURCES = [
-  {
-    stage: 'tujuan',
-    table: 'renstra_tabel_tujuan',
-    refCandidates: ['tujuan_id', 'id'],
-    codeCandidates: ['kode_tujuan', 'kode'],
-    nameCandidates: ['nama_tujuan', 'tujuan', 'uraian_tujuan', 'deskripsi_tujuan'],
-  },
-  {
-    stage: 'sasaran',
-    table: 'renstra_tabel_sasaran',
-    refCandidates: ['sasaran_id', 'id'],
-    codeCandidates: ['kode_sasaran', 'kode'],
-    nameCandidates: ['nama_sasaran', 'sasaran', 'uraian_sasaran', 'deskripsi_sasaran'],
-  },
+  { stage: 'tujuan', table: 'renstra_tujuan', codeColumn: 'no_tujuan', nameColumn: 'isi_tujuan' },
+  { stage: 'sasaran', table: 'renstra_sasaran', codeColumn: 'nomor', nameColumn: 'isi_sasaran' },
   {
     stage: 'strategi',
-    table: 'renstra_tabel_strategi',
-    refCandidates: ['strategi_id', 'id'],
-    codeCandidates: ['kode_strategi', 'kode'],
-    nameCandidates: ['nama_strategi', 'strategi', 'uraian_strategi', 'deskripsi_strategi'],
+    table: 'renstra_strategi',
+    codeColumn: 'kode_strategi',
+    nameColumn: 'deskripsi',
   },
   {
     stage: 'kebijakan',
-    table: 'renstra_tabel_arah_kebijakan',
-    refCandidates: ['kebijakan_id', 'arah_kebijakan_id', 'id'],
-    codeCandidates: ['kode_kebijakan', 'kode_arah_kebijakan', 'kode'],
-    nameCandidates: [
-      'nama_kebijakan',
-      'nama_arah_kebijakan',
-      'arah_kebijakan',
-      'kebijakan',
-      'uraian_kebijakan',
-      'deskripsi_kebijakan',
-    ],
+    table: 'renstra_kebijakan',
+    codeColumn: 'kode_kebjkn',
+    nameColumn: 'deskripsi',
   },
   {
     stage: 'program',
-    table: 'renstra_tabel_program',
-    refCandidates: ['program_id', 'id'],
-    codeCandidates: ['kode_program', 'kode'],
-    nameCandidates: ['nama_program', 'program', 'uraian_program', 'deskripsi_program'],
+    table: 'renstra_program',
+    codeColumn: 'kode_program',
+    nameColumn: 'nama_program',
   },
   {
     stage: 'kegiatan',
-    table: 'renstra_tabel_kegiatan',
-    refCandidates: ['kegiatan_id', 'id'],
-    codeCandidates: ['kode_kegiatan', 'kode'],
-    nameCandidates: ['nama_kegiatan', 'kegiatan', 'uraian_kegiatan', 'deskripsi_kegiatan'],
+    table: 'renstra_kegiatan',
+    codeColumn: 'kode_kegiatan',
+    nameColumn: 'nama_kegiatan',
   },
   {
     stage: 'sub_kegiatan',
-    table: 'renstra_tabel_subkegiatan',
-    refCandidates: ['sub_kegiatan_id', 'subkegiatan_id', 'id'],
-    codeCandidates: ['kode_sub_kegiatan', 'kode_subkegiatan', 'kode'],
-    nameCandidates: [
-      'nama_sub_kegiatan',
-      'nama_subkegiatan',
-      'sub_kegiatan',
-      'subkegiatan',
-      'uraian_sub_kegiatan',
-      'deskripsi_sub_kegiatan',
-    ],
+    table: 'renstra_subkegiatan',
+    codeColumn: 'kode_sub_kegiatan',
+    nameColumn: 'nama_sub_kegiatan',
   },
 ];
 
@@ -633,6 +602,13 @@ const createReportPeriodContext = async ({ payload = {}, userId = null } = {}) =
     });
 
     if (existingContext && isValidReportContext(existingContext)) {
+      const existingRenstraId = parsePositiveInt(existingContext.renstra_id);
+      const payloadRenstraId = parsePositiveInt(payload.renstra_id);
+
+      if (!existingRenstraId && payloadRenstraId) {
+        await existingContext.update({ renstra_id: payloadRenstraId }, { transaction });
+      }
+
       return {
         created: false,
         context: existingContext,
@@ -736,7 +712,10 @@ const getContextItems = async (contextId) => {
 const buildStageRowsQuery = async ({ context, source, transaction }) => {
   const contextPlain = normalizePlain(context);
   const renstraId = parsePositiveInt(contextPlain.renstra_id);
-  const opdId = parsePositiveInt(contextPlain.opd_id);
+
+  if (!renstraId) {
+    return null;
+  }
 
   const sourceColumns = await getTableColumns(source.table, transaction);
 
@@ -744,125 +723,49 @@ const buildStageRowsQuery = async ({ context, source, transaction }) => {
     return null;
   }
 
-  const indikatorColumns = await getTableColumns('indikator_renstra', transaction);
+  const codeColumn = hasColumn(sourceColumns, source.codeColumn) ? source.codeColumn : null;
+  const nameColumn = hasColumn(sourceColumns, source.nameColumn) ? source.nameColumn : null;
 
-  const refColumn = firstExistingColumn(sourceColumns, source.refCandidates);
-  const codeColumn = firstExistingColumn(sourceColumns, source.codeCandidates);
-  const nameColumn = firstExistingColumn(sourceColumns, source.nameCandidates);
-
-  const indikatorColumn = hasColumn(sourceColumns, 'indikator_id') ? 'indikator_id' : null;
-  const sourceRenstraColumn = hasColumn(sourceColumns, 'renstra_id') ? 'renstra_id' : null;
-  const sourceOpdColumn = hasColumn(sourceColumns, 'opd_id') ? 'opd_id' : null;
-  const statusColumn = hasColumn(sourceColumns, 'status_revisi') ? 'status_revisi' : null;
-
-  if (!refColumn || !indikatorColumn) {
-    return null;
-  }
-
-  const indikatorKodeColumn = firstExistingColumn(indikatorColumns, [
-    'kode_indikator',
-    'kode',
-    'kode_ref',
-  ]);
-
-  const indikatorNamaColumn = firstExistingColumn(indikatorColumns, [
-    'nama_indikator',
-    'indikator',
-    'uraian_indikator',
-    'deskripsi_indikator',
-    'nama',
-  ]);
-
-  const indikatorSatuanColumn = firstExistingColumn(indikatorColumns, [
-    'satuan',
-    'satuan_target',
-    'unit',
-  ]);
-
-  const baselineColumn = firstExistingColumn(sourceColumns, [
-    'baseline',
-    'baseline_target',
-    'target_awal',
-  ]);
-
-  const satuanTargetColumn = firstExistingColumn(sourceColumns, [
-    'satuan_target',
-    'satuan',
-    'unit',
-  ]);
-
-  const targetColumns = [1, 2, 3, 4, 5, 6].reduce((acc, tahunKe) => {
-    const column = firstExistingColumn(sourceColumns, [
-      `target_tahun_${tahunKe}`,
-      `target_th${tahunKe}`,
-      `target_${tahunKe}`,
-    ]);
-
-    acc[`target_tahun_${tahunKe}`] = column;
-    return acc;
-  }, {});
-
-  const whereParts = [];
   const replacements = {
     stage: source.stage,
     renstraId,
-    opdId,
   };
 
-  if (sourceRenstraColumn && renstraId) {
-    whereParts.push(`r.\`${sourceRenstraColumn}\` = :renstraId`);
-  } else if (sourceOpdColumn && opdId) {
-    whereParts.push(`r.\`${sourceOpdColumn}\` = :opdId`);
-  }
-
-  if (statusColumn) {
-    whereParts.push(`LOWER(COALESCE(r.\`${statusColumn}\`, '')) IN ('approved', 'disetujui')`);
-  }
-
-  if (hasColumn(indikatorColumns, 'stage')) {
-    whereParts.push(`LOWER(COALESCE(i.\`stage\`, '')) = :stage`);
-  }
-
-  if (hasColumn(indikatorColumns, 'ref_id')) {
-    whereParts.push(`i.\`ref_id\` = r.\`${refColumn}\``);
-  }
-
-  if (hasColumn(indikatorColumns, 'renstra_id') && renstraId) {
-    whereParts.push(`i.\`renstra_id\` = :renstraId`);
-  }
-
-  const whereSql = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
-
+  // Skema asli: tabel renstra_* (tujuan/sasaran/strategi/kebijakan/program/
+  // kegiatan/subkegiatan) TIDAK punya kolom indikator_id/status_revisi.
+  // Baseline/target/pagu ada di indikator_renstra, dihubungkan lewat
+  // indikator_renstra.ref_id -> tabel stage.id (arah join terbalik dari
+  // asumsi kode lama yang mencari r.indikator_id -> indikator_renstra.id).
   const selectFields = [
     `'${source.stage}' AS stage`,
-    `r.\`${refColumn}\` AS ref_id`,
-    `r.\`${indikatorColumn}\` AS indikator_id`,
-    sqlValue('r', sourceRenstraColumn, 'renstra_id'),
-    sqlValue('r', sourceOpdColumn, 'opd_id'),
+    'r.`id` AS ref_id',
+    'i.`id` AS indikator_id',
+    'i.`renstra_id` AS renstra_id',
+    'NULL AS opd_id',
     sqlValue('r', codeColumn, 'kode_konteks'),
     sqlValue('r', nameColumn, 'nama_konteks'),
-    sqlValue('i', indikatorKodeColumn, 'kode_indikator'),
-    sqlValue('i', indikatorNamaColumn, 'nama_indikator'),
-    sqlValue('i', indikatorSatuanColumn, 'satuan_indikator'),
-    sqlValue('r', satuanTargetColumn, 'satuan_target'),
-    sqlValue('r', baselineColumn, 'baseline'),
-    sqlValue('r', targetColumns.target_tahun_1, 'target_tahun_1'),
-    sqlValue('r', targetColumns.target_tahun_2, 'target_tahun_2'),
-    sqlValue('r', targetColumns.target_tahun_3, 'target_tahun_3'),
-    sqlValue('r', targetColumns.target_tahun_4, 'target_tahun_4'),
-    sqlValue('r', targetColumns.target_tahun_5, 'target_tahun_5'),
-    sqlValue('r', targetColumns.target_tahun_6, 'target_tahun_6'),
+    'i.`kode_indikator` AS kode_indikator',
+    'i.`nama_indikator` AS nama_indikator',
+    'i.`satuan` AS satuan_indikator',
+    'NULL AS satuan_target',
+    'i.`baseline` AS baseline',
+    'i.`target_tahun_1` AS target_tahun_1',
+    'i.`target_tahun_2` AS target_tahun_2',
+    'i.`target_tahun_3` AS target_tahun_3',
+    'i.`target_tahun_4` AS target_tahun_4',
+    'i.`target_tahun_5` AS target_tahun_5',
+    'i.`target_tahun_6` AS target_tahun_6',
   ];
 
   return {
     sql: `
       SELECT
         ${selectFields.join(',\n        ')}
-      FROM \`${source.table}\` r
-      LEFT JOIN \`indikator_renstra\` i
-        ON i.\`id\` = r.\`${indikatorColumn}\`
-      ${whereSql}
-      ORDER BY r.\`${refColumn}\` ASC, r.\`${indikatorColumn}\` ASC
+      FROM \`indikator_renstra\` i
+      INNER JOIN \`${source.table}\` r
+        ON r.\`id\` = i.\`ref_id\`
+      WHERE i.\`renstra_id\` = :renstraId AND i.\`stage\` = :stage
+      ORDER BY r.\`id\` ASC, i.\`id\` ASC
     `,
     replacements,
   };

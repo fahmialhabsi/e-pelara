@@ -139,6 +139,7 @@ const getProposalSourceLabel = (record) => {
     LAPORAN_KEUANGAN: 'Laporan Keuangan',
     TINDAK_LANJUT_BPK: 'Tindak Lanjut BPK',
     TINDAK_LANJUT_INSPEKTORAT: 'Tindak Lanjut Inspektorat',
+    TINDAK_LANJUT_BPKP: 'Tindak Lanjut BPKP',
     PELAKSANAAN_KEGIATAN: 'Pelaksanaan Kegiatan',
     PERTANGGUNGJAWABAN_KEUANGAN: 'Pertanggungjawaban Keuangan',
     SPIP_E_SIGAP: 'SPIP / e-SIGAP',
@@ -149,6 +150,7 @@ const getProposalSourceLabel = (record) => {
   const stageMap = {
     temuan_bpk: 'Tindak Lanjut BPK',
     temuan_inspektorat: 'Tindak Lanjut Inspektorat',
+    temuan_bpkp: 'Tindak Lanjut BPKP',
     pelaksanaan_kegiatan: 'Pelaksanaan Kegiatan',
     pertanggungjawaban_keuangan: 'Pertanggungjawaban Keuangan',
     laporan_keuangan: 'Laporan Keuangan',
@@ -177,6 +179,7 @@ const isProposalIntakeRecord = (record) =>
   [
     'temuan_bpk',
     'temuan_inspektorat',
+    'temuan_bpkp',
     'pelaksanaan_kegiatan',
     'pertanggungjawaban_keuangan',
     'laporan_keuangan',
@@ -416,7 +419,10 @@ const buildRepairSourceSummary = (record) => ({
   judul_temuan: record?.judul_temuan || record?.objek_risiko || record?.nama_risiko || null,
   nomor_temuan: record?.nomor_temuan || record?.proposal_source_ref_id || record?.ref_id || null,
   ringkasan_temuan:
-    record?.ringkasan_temuan || record?.context_item?.uraian_konteks || record?.uraian_risiko || null,
+    record?.ringkasan_temuan ||
+    record?.context_item?.uraian_konteks ||
+    record?.uraian_risiko ||
+    null,
   rekomendasi: record?.rekomendasi || null,
   rencana_tindak_lanjut_awal: record?.rencana_tindak_lanjut_awal || null,
 });
@@ -671,9 +677,7 @@ export default function MrPlanningRiskListPage() {
     const buildPayloadForSelectedTarget = () => ({
       risk_ids: [selectedTargetId],
       context_item_id:
-        selectedTargetRecord()?.context_item_id ||
-        selectedTargetRecord()?.context_item?.id ||
-        null,
+        selectedTargetRecord()?.context_item_id || selectedTargetRecord()?.context_item?.id || null,
       payload: buildRepairSourceSummary(selectedTargetRecord()),
     });
 
@@ -727,7 +731,10 @@ export default function MrPlanningRiskListPage() {
                   borderBottom: '1px dashed #eee',
                 }}
               >
-                <Text style={{ flex: 0.45 }} strong={label === 'Kode Risiko' || label === 'Risk ID'}>
+                <Text
+                  style={{ flex: 0.45 }}
+                  strong={label === 'Kode Risiko' || label === 'Risk ID'}
+                >
                   {label}
                 </Text>
                 <div style={{ flex: 0.55, textAlign: 'right' }}>{renderRepairValue(value)}</div>
@@ -1352,6 +1359,13 @@ export default function MrPlanningRiskListPage() {
               Refresh
             </Button>
 
+            <Button
+              onClick={() => navigate('/mr/planning-report')}
+              style={{ backgroundColor: '#ff85c0', borderColor: '#ff85c0', color: '#fff' }}
+            >
+              Laporan MR
+            </Button>
+
             {canWrite && (
               <Button
                 type="primary"
@@ -1433,11 +1447,11 @@ export default function MrPlanningRiskListPage() {
           </Button>
         </Space>
 
-          <Table
+        <Table
           rowKey={(record) => getRecordId(record)}
           loading={isLoading || isFetching}
           columns={columns}
-            dataSource={filteredRisks}
+          dataSource={filteredRisks}
           bordered
           size="middle"
           scroll={{ x: 1500 }}

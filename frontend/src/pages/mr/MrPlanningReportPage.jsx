@@ -33,6 +33,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 
 import mrPlanningReportService from '@/services/mrPlanningReportService';
+import {
+  getMrPlanningContextDetail,
+  submitMrPlanningContext,
+  verifyMrPlanningContext,
+  approveMrPlanningContext,
+} from '@/services/mrPlanningContextService';
 import { useMrIdempotency } from '@/features/mr/hooks/useMrIdempotency';
 import MrQuickRepairPanel from '@/features/mr/components/MrQuickRepairPanel';
 import api from '@/services/api';
@@ -44,6 +50,7 @@ const QUERY_KEYS = {
   fullReport: (contextId) => ['mr-report', 'full', contextId],
   exportHistory: (contextId) => ['mr-report', 'export-history', contextId],
   integrityScan: (contextId) => ['mr-report', 'integrity-scan', contextId],
+  contextDetail: (contextId) => ['mr-report', 'context-detail', contextId],
 };
 
 const unwrapRows = (response) => {
@@ -56,20 +63,6 @@ const unwrapRows = (response) => {
 };
 
 const ensureArray = (value) => (Array.isArray(value) ? value : []);
-
-const formatContextLabel = (context) => {
-  if (!context) return '-';
-
-  const parts = [
-    context.periode_label,
-    context.tahun,
-    context.jenis_dokumen,
-    context.nama_opd,
-    context.status_revisi ? `Status: ${context.status_revisi}` : null,
-  ].filter(Boolean);
-
-  return parts.join(' - ');
-};
 
 const normalizePeriodeType = (context) => {
   const rawValue = String(
@@ -122,8 +115,29 @@ const normalizePeriodeType = (context) => {
   return 'lainnya';
 };
 
+// Context lama (dibuat sebelum StepContext.jsx berhenti menyisipkan jenis_sumber
+// ke periode_label) masih tersimpan dengan periode_label mis. "Renstra - Tahun
+// 2025". Ini strip kosmetik agar tampilan dropdown konsisten "1 Laporan MR per
+// periode" untuk data lama maupun baru — tidak mengubah data di database.
+const LEGACY_SOURCE_LABEL_PREFIXES = [
+  'Renstra',
+  'Lakip',
+  'Laporan Keuangan',
+  'Tindak Lanjut BPK',
+  'Tindak Lanjut BPKP',
+  'Tindak Lanjut Inspektorat',
+];
+
+const stripLegacySourcePrefix = (periodeLabel = '') => {
+  const text = String(periodeLabel || '').trim();
+
+  const hit = LEGACY_SOURCE_LABEL_PREFIXES.find((source) => text.startsWith(`${source} - `));
+
+  return hit ? text.slice(`${hit} - `.length) : text;
+};
+
 const getCleanPeriodeLabel = (context) => {
-  const periodeLabel = String(context?.periode_label || '').trim();
+  const periodeLabel = stripLegacySourcePrefix(context?.periode_label);
   const tahun = context?.tahun || '';
 
   if (periodeLabel && tahun && periodeLabel.includes(String(tahun))) {
@@ -145,7 +159,7 @@ const getCleanPeriodeLabel = (context) => {
   return `Context ${context?.id || '-'}`;
 };
 
-const getReportOpdLabel = (context) => {
+const getReportOpdLabel = (context, periodeLabel = '') => {
   const namaOpd = String(
     context?.nama_opd || context?.opd_nama || context?.nama_perangkat_daerah || '',
   ).trim();
@@ -158,31 +172,55 @@ const getReportOpdLabel = (context) => {
     return ` - ${namaOpd} belum ter-resolve`;
   }
 
+  // Context lama bisa sudah menyertakan nama OPD di dalam periode_label sendiri
+  // (lihat komentar stripLegacySourcePrefix) — jangan ditempel dua kali
+  // ("... - Dinas Pangan - Dinas Pangan").
+  if (periodeLabel && periodeLabel.toLowerCase().includes(namaOpd.toLowerCase())) {
+    return '';
+  }
+
   return ` - ${namaOpd}`;
 };
 
+const CONTEXT_STATUS_SUFFIX_LABEL = {
+  draft: 'Draft',
+  verifikasi: 'Menunggu Persetujuan',
+  approved: 'Disetujui',
+  final: 'Disetujui',
+  selesai: 'Disetujui',
+  ditolak: 'Ditolak',
+};
+
+// Sejak periode_label dibersihkan dari nama sumber (stripLegacySourcePrefix),
+// dua context BERBEDA untuk OPD+tahun+tipe periode yang sama (mis. bekas
+// "Renstra - Tahun 2025" vs "Lakip - Tahun 2025" vs context kosong baru) bisa
+// tampil dengan teks IDENTIK di dropdown — user tidak bisa membedakan mana
+// yang sudah lengkap datanya. Suffix status ini wajib ada supaya user tahu
+// context mana yang benar untuk dipilih (terutama yang sudah "Disetujui").
 const getReportGroupLabel = (context) => {
   const periodeType = normalizePeriodeType(context);
   const periodeLabel = getCleanPeriodeLabel(context);
-  const opdLabel = getReportOpdLabel(context);
+  const opdLabel = getReportOpdLabel(context, periodeLabel);
+  const statusKey = String(context?.status_revisi || 'draft').toLowerCase();
+  const statusSuffix = ` [${CONTEXT_STATUS_SUFFIX_LABEL[statusKey] || 'Draft'} · ID ${context?.id || '-'}]`;
 
   if (periodeType === 'bulanan') {
-    return `Laporan Bulanan - ${periodeLabel}${opdLabel}`;
+    return `Laporan MR Bulanan - ${periodeLabel}${opdLabel}${statusSuffix}`;
   }
 
   if (periodeType === 'triwulan') {
-    return `Laporan Triwulan - ${periodeLabel}${opdLabel}`;
+    return `Laporan MR Triwulan - ${periodeLabel}${opdLabel}${statusSuffix}`;
   }
 
   if (periodeType === 'semesteran') {
-    return `Laporan Semesteran - ${periodeLabel}${opdLabel}`;
+    return `Laporan MR Semesteran - ${periodeLabel}${opdLabel}${statusSuffix}`;
   }
 
   if (periodeType === 'tahunan') {
-    return `Laporan Tahunan - ${periodeLabel}${opdLabel}`;
+    return `Laporan MR Tahunan - ${periodeLabel}${opdLabel}${statusSuffix}`;
   }
 
-  return `Laporan MR - ${periodeLabel}${opdLabel}`;
+  return `Laporan MR - ${periodeLabel}${opdLabel}${statusSuffix}`;
 };
 
 const getReportGroupKey = (context) => {
@@ -633,6 +671,11 @@ const exportHistoryColumns = [
 
 const EXPORT_HISTORY_ROLES = ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS'];
 
+// Sama dengan WRITE role di backend/routes/mr_planningContextRoutes.js — backend
+// tetap jadi penegak akses sebenarnya, ini hanya menyembunyikan tombol di UI
+// supaya role lain tidak mencoba aksi yang pasti ditolak backend.
+const CONTEXT_WORKFLOW_ROLES = ['SUPER_ADMIN', 'ADMINISTRATOR'];
+
 const normalizeRole = (value) => {
   if (!value) return '';
 
@@ -833,10 +876,12 @@ const MrPlanningReportPage = () => {
   const [showRepairPanel, setShowRepairPanel] = useState(false);
   const [scanFeedback, setScanFeedback] = useState(null);
   const [changedStepNos, setChangedStepNos] = useState([]);
+  const [contextWorkflowLoading, setContextWorkflowLoading] = useState(null);
   const { guard } = useMrIdempotency();
 
   const currentUserRole = String(getCurrentUserRole() || '').toUpperCase();
   const canReadExportHistory = EXPORT_HISTORY_ROLES.includes(currentUserRole);
+  const canManageContextWorkflow = CONTEXT_WORKFLOW_ROLES.includes(currentUserRole);
 
   const {
     data: contextsResponse,
@@ -944,8 +989,60 @@ const MrPlanningReportPage = () => {
     enabled: Boolean(selectedContextId),
   });
 
+  // report.context (dari getFullReport) dibangun dari raw SQL kolom terbatas
+  // (backend/services/mr/mrPlanningReportQueryService.js:getContext) yang TIDAK
+  // menyertakan diverifikasi_oleh/diverifikasi_pada/disetujui_oleh/disetujui_pada
+  // — jadi tidak bisa dipakai untuk menentukan progres tombol Ajukan/Verifikasi/
+  // Setujui. Ambil field itu lewat endpoint detail context terpisah (row model
+  // penuh, sudah dipakai wizard) supaya tidak perlu mengubah SQL laporan.
+  const {
+    data: contextDetailResponse,
+    refetch: refetchContextDetail,
+  } = useQuery({
+    queryKey: QUERY_KEYS.contextDetail(selectedContextId),
+    queryFn: async () => {
+      const result = await getMrPlanningContextDetail(selectedContextId);
+      return result?.data || result || null;
+    },
+    enabled: Boolean(selectedContextId),
+  });
+
   const report = fullReportResponse?.data || null;
   const context = report?.context || null;
+  const contextWorkflowDetail = contextDetailResponse || null;
+
+  // Alur workflow context (lihat mrPlanningContextService.js backend):
+  // draft/ditolak -> submit -> verifikasi -> verify -> verifikasi
+  // (diverifikasi_oleh terisi) -> approve -> approved. Word/PDF laporan MR
+  // baru aktif setelah status ini 'approved' (FINAL_REPORT_STATUSES di
+  // mrPlanningReportQueryService.js) — sebelumnya tidak ada UI untuk
+  // menjalankan alur ini sama sekali sehingga context selamanya draft.
+  //
+  // Dipakai dari contextWorkflowDetail (bukan `context` dari getFullReport)
+  // karena raw SQL getContext() di backend tidak menyertakan kolom
+  // diverifikasi_oleh/diverifikasi_pada, sehingga status "sudah diverifikasi"
+  // tidak akan pernah terbaca lewat `context` dan tombol Setujui tidak pernah
+  // muncul walau verify sudah berhasil di backend.
+  const contextStatusRevisi = String(
+    contextWorkflowDetail?.status_revisi || context?.status_revisi || 'draft',
+  ).toLowerCase();
+  const contextIsVerified = Boolean(
+    contextWorkflowDetail?.diverifikasi_oleh && contextWorkflowDetail?.diverifikasi_pada,
+  );
+  const isContextApproved = ['approved', 'final', 'selesai'].includes(contextStatusRevisi);
+  const canSubmitContext = ['draft', 'ditolak'].includes(contextStatusRevisi);
+  const canVerifyContext = contextStatusRevisi === 'verifikasi' && !contextIsVerified;
+  const canApproveContext = contextStatusRevisi === 'verifikasi' && contextIsVerified;
+  const contextStatusLabel = isContextApproved
+    ? 'Disetujui (Final)'
+    : contextStatusRevisi === 'ditolak'
+      ? 'Ditolak'
+      : contextStatusRevisi === 'verifikasi'
+        ? contextIsVerified
+          ? 'Terverifikasi — Menunggu Persetujuan'
+          : 'Menunggu Verifikasi'
+        : 'Draft';
+
   const summary = report?.summary || null;
   const narasi = report?.narasi || {};
   const lampiran = report?.lampiran || {};
@@ -986,7 +1083,6 @@ const MrPlanningReportPage = () => {
   const exportHistoryMeta = exportHistoryResponse?.meta || {};
   const integrityScan = integrityScanResponse?.data || null;
   const integrityFindings = ensureArray(integrityScan?.findings);
-  const integrityActions = ensureArray(integrityScan?.recommended_actions);
   const integrityBlockingCount = Number(integrityScan?.blocking_count || 0);
   const isIntegrityBlocked = integrityBlockingCount > 0;
   const hasSelectedContext = Boolean(selectedContextId || form.getFieldValue('context_id'));
@@ -1021,9 +1117,7 @@ const MrPlanningReportPage = () => {
     {
       no: 1,
       title: ped1Finding?.user_title || 'Buat konteks & sumber risiko',
-      desc:
-        ped1Finding?.user_message ||
-        'Isi OPD, periode, dan minimal 1 sumber risiko (konteks)',
+      desc: ped1Finding?.user_message || 'Isi OPD, periode, dan minimal 1 sumber risiko (konteks)',
       status: ped1Open ? 'Belum selesai' : 'Selesai',
       countLabel: ped1Open ? 'Belum' : 'Selesai',
       path: getFindingRoute(ped1Finding) || '/mr/planning-context',
@@ -1035,8 +1129,7 @@ const MrPlanningReportPage = () => {
       no: 2,
       title: ped4Finding?.user_title || 'Lengkapi data risiko',
       desc:
-        ped4Finding?.user_message ||
-        'Lengkapi kategori risiko pada data risiko yang masih kosong.',
+        ped4Finding?.user_message || 'Lengkapi kategori risiko pada data risiko yang masih kosong.',
       status: ped4Count > 0 ? `${ped4Count} belum diisi` : 'Selesai',
       countLabel: ped4Count > 0 ? `${ped4Count} belum diisi` : 'Selesai',
       path: getFindingRoute(ped4Finding) || '/mr/planning-risk',
@@ -1268,6 +1361,84 @@ const MrPlanningReportPage = () => {
     },
   ];
 
+  const getWorkflowContextId = () => selectedContextId || form.getFieldValue('context_id');
+
+  const handleSubmitContextWorkflow = guard(async () => {
+    const contextId = getWorkflowContextId();
+    if (!contextId) {
+      message.warning('Pilih periode laporan terlebih dahulu.');
+      return;
+    }
+
+    try {
+      setContextWorkflowLoading('submit');
+      const result = await submitMrPlanningContext(contextId);
+      message.success(result?.message || 'Context berhasil diajukan untuk verifikasi.');
+      await Promise.all([refetchReport(), refetchContexts(), refetchContextDetail()]);
+    } catch (error) {
+      message.error(getBackendErrorMessage(error, 'Gagal mengajukan context untuk verifikasi.'));
+    } finally {
+      setContextWorkflowLoading(null);
+    }
+  });
+
+  const handleVerifyContextWorkflow = guard(async () => {
+    const contextId = getWorkflowContextId();
+    if (!contextId) {
+      message.warning('Pilih periode laporan terlebih dahulu.');
+      return;
+    }
+
+    try {
+      setContextWorkflowLoading('verify');
+      const result = await verifyMrPlanningContext(contextId);
+      message.success(result?.message || 'Context berhasil diverifikasi.');
+      await Promise.all([refetchReport(), refetchContexts(), refetchContextDetail()]);
+    } catch (error) {
+      message.error(getBackendErrorMessage(error, 'Gagal memverifikasi context.'));
+    } finally {
+      setContextWorkflowLoading(null);
+    }
+  });
+
+  const handleApproveContextWorkflow = guard(async () => {
+    const contextId = getWorkflowContextId();
+    if (!contextId) {
+      message.warning('Pilih periode laporan terlebih dahulu.');
+      return;
+    }
+
+    const confirmed = await new Promise((resolve) => {
+      Modal.confirm({
+        title: 'Setujui Context Laporan MR?',
+        content:
+          'Setelah disetujui, context akan terkunci (final) dan Download Word/PDF akan aktif. Pastikan data risiko sudah benar sebelum melanjutkan.',
+        okText: 'Ya, Setujui',
+        cancelText: 'Batal',
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+
+    if (!confirmed) return;
+
+    try {
+      setContextWorkflowLoading('approve');
+      const result = await approveMrPlanningContext(contextId);
+      message.success(result?.message || 'Context berhasil disetujui.');
+      await Promise.all([
+        refetchReport(),
+        refetchContexts(),
+        refetchIntegrityScan(),
+        refetchContextDetail(),
+      ]);
+    } catch (error) {
+      message.error(getBackendErrorMessage(error, 'Gagal menyetujui context.'));
+    } finally {
+      setContextWorkflowLoading(null);
+    }
+  });
+
   const handleLoadReport = () => {
     const contextId = form.getFieldValue('context_id');
 
@@ -1357,14 +1528,15 @@ const MrPlanningReportPage = () => {
       .map((f) => `- ${f?.message || f?.code || 'Temuan blocking'}`)
       .join('\n');
 
-    if (blockingCount > 0) {
+    if (blockingCount > 0 && isFinalFlow) {
       message.error(
         `Aksi ditolak oleh integrity-scan. Status: ${getGovernanceStatusLabel(
           latestScan?.overall_status,
           blockingCount,
         )}. Blocking: ${blockingCount}.`,
       );
-        const modalRef = Modal.confirm({
+
+      Modal.confirm({
         title: 'Laporan belum siap diekspor',
         okText: 'Perbaiki Sekarang',
         cancelText: 'Tutup',
@@ -1377,7 +1549,7 @@ const MrPlanningReportPage = () => {
               icon={<ReloadOutlined />}
               onClick={async () => {
                 await refetchIntegrityScan();
-                modalRef.destroy();
+                Modal.destroyAll();
               }}
             >
               Scan Ulang / Cek Ulang Data
@@ -1389,30 +1561,13 @@ const MrPlanningReportPage = () => {
             message.warning('Pilih periode laporan terlebih dahulu sebelum perbaikan.');
             return;
           }
+
           const firstFinding = latestScan?.findings?.[0] || null;
-          const firstFindingCode = String(firstFinding?.code || '');
-          navigate(buildRepairUrl(getFindingRoute(firstFinding), firstFindingCode));
+          navigate(buildRepairUrl(getFindingRoute(firstFinding), String(firstFinding?.code || '')));
         },
       });
+
       return;
-    }
-
-    if (isFinalFlow) {
-      const confirmed = await new Promise((resolve) => {
-        Modal.confirm({
-          title: 'Konfirmasi Review Sebelum Export Final',
-          content:
-            'Pastikan laporan sudah direview. Export Word/PDF diperlakukan sebagai flow final/correction sesuai policy backend.',
-          okText: 'Lanjut Export',
-          cancelText: 'Batal',
-          onOk: () => resolve(true),
-          onCancel: () => resolve(false),
-        });
-      });
-
-      if (!confirmed) {
-        return;
-      }
     }
 
     try {
@@ -1490,10 +1645,10 @@ const MrPlanningReportPage = () => {
             <Button
               type="primary"
               icon={<FileExcelOutlined />}
+              title="Download Excel tersedia untuk review laporan meski belum final"
               loading={downloadingType === 'excel'}
               disabled={
                 Boolean(downloadingType) ||
-                isIntegrityBlocked ||
                 (!selectedContextId && !form.getFieldValue('context_id'))
               }
               onClick={() => handleDownloadReport('excel')}
@@ -1516,6 +1671,66 @@ const MrPlanningReportPage = () => {
             </Button>
           </Space>
         </Space>
+        <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
+          Download Excel dapat dilakukan sebagai review setelah Step 1–5 selesai. Word/PDF
+          membutuhkan status final/approved sebelum diekspor.
+        </Text>
+
+        {hasSelectedContext && (
+          <>
+            <Space align="center" wrap style={{ marginTop: 12 }}>
+              <Text strong>Status Persetujuan Laporan:</Text>
+              <Tag
+                color={
+                  isContextApproved
+                    ? 'success'
+                    : contextStatusRevisi === 'ditolak'
+                      ? 'error'
+                      : 'processing'
+                }
+              >
+                {contextStatusLabel}
+              </Tag>
+              {canManageContextWorkflow && canSubmitContext && (
+                <Button
+                  size="small"
+                  loading={contextWorkflowLoading === 'submit'}
+                  disabled={Boolean(contextWorkflowLoading)}
+                  onClick={handleSubmitContextWorkflow}
+                >
+                  Ajukan Verifikasi
+                </Button>
+              )}
+              {canManageContextWorkflow && canVerifyContext && (
+                <Button
+                  size="small"
+                  loading={contextWorkflowLoading === 'verify'}
+                  disabled={Boolean(contextWorkflowLoading)}
+                  onClick={handleVerifyContextWorkflow}
+                >
+                  Verifikasi
+                </Button>
+              )}
+              {canManageContextWorkflow && canApproveContext && (
+                <Button
+                  size="small"
+                  type="primary"
+                  loading={contextWorkflowLoading === 'approve'}
+                  disabled={Boolean(contextWorkflowLoading)}
+                  onClick={handleApproveContextWorkflow}
+                >
+                  Setujui (Final)
+                </Button>
+              )}
+            </Space>
+            {!canManageContextWorkflow && !isContextApproved && (
+              <Text type="secondary" style={{ display: 'block', fontSize: 12, marginTop: 4 }}>
+                Hanya role Super Admin/Administrator yang dapat mengajukan, memverifikasi, atau
+                menyetujui context laporan ini.
+              </Text>
+            )}
+          </>
+        )}
 
         <Divider />
 
@@ -1605,7 +1820,10 @@ const MrPlanningReportPage = () => {
             : 'Tidak ada blocker aktif. Anda dapat lanjut review dan export sesuai policy.'}
         </Text>
         {integrityBlockingCount > 0 && (
-          <Button onClick={() => setShowRepairPanel(true)} style={{ marginTop: 8, marginBottom: 12 }}>
+          <Button
+            onClick={() => setShowRepairPanel(true)}
+            style={{ marginTop: 8, marginBottom: 12 }}
+          >
             Perbaiki sekarang ↗
           </Button>
         )}
@@ -1663,59 +1881,59 @@ const MrPlanningReportPage = () => {
         )}
 
         {isIntegrityBlocked ? (
-        <List
-          size="small"
-          header={
-            <Space direction="vertical" size={0}>
-              <Text strong>Langkah Perbaikan</Text>
-              <Text type="secondary">
-                Progress: {completedChecklistCount}/{totalChecklistCount} langkah selesai
-              </Text>
-            </Space>
-          }
-          dataSource={actionChecklist}
-          renderItem={(row) => (
-            <List.Item
-              style={
-                changedStepNos.includes(row.no)
-                  ? { background: '#f6ffed', borderRadius: 6, paddingInline: 8 }
-                  : undefined
-              }
-            >
-              <Space direction="vertical" size={0} style={{ width: '100%' }}>
-                <Text strong>
-                  {row.no} · {row.title}
+          <List
+            size="small"
+            header={
+              <Space direction="vertical" size={0}>
+                <Text strong>Langkah Perbaikan</Text>
+                <Text type="secondary">
+                  Progress: {completedChecklistCount}/{totalChecklistCount} langkah selesai
                 </Text>
-                <Text>{row.desc}</Text>
-                <Text type={row.done ? 'success' : 'danger'}>{row.countLabel}</Text>
-                {!row.done && (
-                  <Button
-                    type="link"
-                    style={{ padding: 0, height: 'auto', width: 'fit-content' }}
-                    onClick={() => navigate(buildRepairUrl(row.path || getFindingRepairPath()))}
-                  >
-                    {row.cta || 'Buka modul perbaikan'} (buka)
-                  </Button>
-                )}
-                {!row.done && ensureArray(row.technicalDetails).length > 0 && (
-                  <details style={{ marginTop: 4 }}>
-                    <summary style={{ cursor: 'pointer' }}>
-                      <Text type="secondary">Lihat detail teknis</Text>
-                    </summary>
-                    <Space direction="vertical" size={0} style={{ marginTop: 4 }}>
-                      {ensureArray(row.technicalDetails).map((item, idx) => (
-                        <Text key={`${row.no}-${idx}`} type="secondary" style={{ fontSize: 12 }}>
-                          {String(item?.code || '').toUpperCase()}
-                        </Text>
-                      ))}
-                    </Space>
-                  </details>
-                )}
               </Space>
-            </List.Item>
-          )}
-          style={{ marginBottom: 16 }}
-        />
+            }
+            dataSource={actionChecklist}
+            renderItem={(row) => (
+              <List.Item
+                style={
+                  changedStepNos.includes(row.no)
+                    ? { background: '#f6ffed', borderRadius: 6, paddingInline: 8 }
+                    : undefined
+                }
+              >
+                <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                  <Text strong>
+                    {row.no} · {row.title}
+                  </Text>
+                  <Text>{row.desc}</Text>
+                  <Text type={row.done ? 'success' : 'danger'}>{row.countLabel}</Text>
+                  {!row.done && (
+                    <Button
+                      type="link"
+                      style={{ padding: 0, height: 'auto', width: 'fit-content' }}
+                      onClick={() => navigate(buildRepairUrl(row.path || getFindingRepairPath()))}
+                    >
+                      {row.cta || 'Buka modul perbaikan'} (buka)
+                    </Button>
+                  )}
+                  {!row.done && ensureArray(row.technicalDetails).length > 0 && (
+                    <details style={{ marginTop: 4 }}>
+                      <summary style={{ cursor: 'pointer' }}>
+                        <Text type="secondary">Lihat detail teknis</Text>
+                      </summary>
+                      <Space direction="vertical" size={0} style={{ marginTop: 4 }}>
+                        {ensureArray(row.technicalDetails).map((item, idx) => (
+                          <Text key={`${row.no}-${idx}`} type="secondary" style={{ fontSize: 12 }}>
+                            {String(item?.code || '').toUpperCase()}
+                          </Text>
+                        ))}
+                      </Space>
+                    </details>
+                  )}
+                </Space>
+              </List.Item>
+            )}
+            style={{ marginBottom: 16 }}
+          />
         ) : (
           <Alert
             type="success"
@@ -1746,13 +1964,7 @@ const MrPlanningReportPage = () => {
                   placeholder="Pilih laporan bulanan, triwulan, semesteran, atau tahunan"
                   optionFilterProp="label"
                   options={contextOptions}
-                  onChange={(value, option) => {
-                    console.log('MR Report selected context:', {
-                      value,
-                      label: option?.label,
-                      context: option?.item,
-                    });
-
+                  onChange={(value) => {
                     setSelectedContextId(value || null);
                   }}
                 />
@@ -1864,11 +2076,7 @@ const MrPlanningReportPage = () => {
             )}
 
             {hasBlockingPlaceholder && placeholderSummaryRows.length > 0 && (
-              <Card
-                size="small"
-                title="Ringkasan Placeholder Unik"
-                style={{ marginTop: 16 }}
-              >
+              <Card size="small" title="Ringkasan Placeholder Unik" style={{ marginTop: 16 }}>
                 <Alert
                   type="warning"
                   showIcon
@@ -2082,5 +2290,3 @@ const MrPlanningReportPage = () => {
 };
 
 export default MrPlanningReportPage;
-
-

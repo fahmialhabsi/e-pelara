@@ -71,6 +71,7 @@ const ALLOWED_SOURCE_TYPES = [
   'PERTANGGUNGJAWABAN_KEUANGAN',
   'SPIP_E_SIGAP',
   'MANUAL_ADHOC',
+  'RENSTRA_SASARAN_INDIKATOR',
   'LAINNYA',
 ];
 
@@ -185,8 +186,13 @@ const getRequiredFieldsBySource = (payload) => {
     return ['proposal_source_type', 'jenis_dokumen_pertanggungjawaban'];
   }
 
-  // ✨ TAMBAHKAN LOGIKA INI:
-  // Jika nama_kegiatan ada (jalur Renstra), ringkasan_temuan tidak lagi diwajibkan
+  if (sourceType === 'RENSTRA_SASARAN_INDIKATOR') {
+    return ['proposal_source_type', 'nama_indikator', 'isi_sasaran'];
+  }
+
+  // Fallback lama (sebelum ada RENSTRA_SASARAN_INDIKATOR): kalau nama_kegiatan
+  // ada, ringkasan_temuan tidak diwajibkan. Dibiarkan agar tidak memutus jalur
+  // lain yang mungkin masih mengirim nama_kegiatan dengan source type lama.
   if (payload.nama_kegiatan) {
     return ['proposal_source_type'];
   }
@@ -225,6 +231,8 @@ Tugas:
       'Fokus pada target kegiatan, tahapan pelaksanaan, output, lokasi, kendala, keterlambatan, kualitas pelaksanaan, dan manfaat kegiatan.',
     PERTANGGUNGJAWABAN_KEUANGAN:
       'Fokus pada SPJ, bukti pengeluaran, validitas transaksi, kelengkapan dokumen, pajak, pertanggungjawaban bendahara, dan kepatuhan administrasi keuangan.',
+    RENSTRA_SASARAN_INDIKATOR:
+      'Fokus pada risiko ketidaktercapaian target indikator kinerja sasaran strategis dalam dokumen Renstra. Nama risiko WAJIB persis mengikuti pola "Risiko Ketidakpencapaian Target [Nama Indikator]" menggunakan Nama Indikator apa adanya dari input (jangan menambah nama OPD/wilayah tambahan di akhir kalimat, karena nama indikator biasanya sudah memuat cakupan wilayahnya sendiri). Uraian risiko menjelaskan kesenjangan antara kondisi/baseline saat ini dan target indikator, sebutkan satuan dan besaran target apa adanya dari input tanpa mengubah angka. Penyebab risiko menjelaskan faktor penghambat pencapaian target kinerja (mis. keterbatasan data, koordinasi lintas OPD, ketersediaan sumber daya, kendala teknis/regulasi) sebagai perkiraan wajar, bukan klaim fakta pasti. Dampak risiko menjelaskan konsekuensi terhadap capaian sasaran strategis dan akuntabilitas kinerja perangkat daerah (SAKIP) bila target tidak tercapai.',
     SPIP_E_SIGAP:
       'Fokus pada pengendalian intern, RTP, risiko operasional, monitoring SPIP, evidence, dan perbaikan kontrol.',
     MANUAL_ADHOC:
@@ -235,7 +243,11 @@ Tugas:
 
   const auditStyle = getAuditNarrativeStyleBlock();
 
-  return [auditStyle, commonInstruction, `Fokus sumber risiko:\n${sourceSpecific[sourceType] || sourceSpecific.LAINNYA}`]
+  return [
+    auditStyle,
+    commonInstruction,
+    `Fokus sumber risiko:\n${sourceSpecific[sourceType] || sourceSpecific.LAINNYA}`,
+  ]
     .filter(Boolean)
     .join('\n\n');
 };
@@ -296,6 +308,10 @@ const buildPrompt = (payload = {}) => {
         output_kegiatan: payload.output_kegiatan,
         kendala_pelaksanaan: payload.kendala_pelaksanaan,
         target_pelaksanaan: payload.target_pelaksanaan,
+        isi_sasaran: payload.isi_sasaran,
+        nama_indikator: payload.nama_indikator,
+        satuan: payload.satuan,
+        target_tahun_1: payload.target_tahun_1,
         nama_kategori_baru: payload.nama_kategori_baru,
         deskripsi_kategori_baru: payload.deskripsi_kategori_baru,
         alasan_pengajuan_kategori: payload.alasan_pengajuan_kategori,
@@ -438,6 +454,11 @@ const normalizePreviewPayload = (body = {}) => {
     output_kegiatan: cleanText(body.output_kegiatan),
     kendala_pelaksanaan: cleanText(body.kendala_pelaksanaan),
     target_pelaksanaan: cleanText(body.target_pelaksanaan),
+
+    isi_sasaran: cleanText(body.isi_sasaran),
+    nama_indikator: cleanText(body.nama_indikator),
+    satuan: cleanText(body.satuan),
+    target_tahun_1: cleanText(body.target_tahun_1),
 
     nama_kategori_baru: cleanText(body.nama_kategori_baru),
     deskripsi_kategori_baru: cleanText(body.deskripsi_kategori_baru),

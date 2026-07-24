@@ -347,6 +347,80 @@ const applyRiskMatrixCalculation = async (payload = {}, options = {}) => {
   return calculated;
 };
 
+const CONTROL_EFFECTIVENESS_GROUP = 'CONTROL_EFFECTIVENESS';
+const DEFAULT_EXISTING_CONTROL_DESCRIPTION =
+  'Belum ada dokumentasi rinci pengendalian existing; perlu ditinjau dan dilengkapi lebih lanjut oleh pemilik risiko.';
+
+/**
+ * Pedoman No 5 (backend/services/mr/mrPlanningReportQueryService.js) selalu
+ * blocking kalau existing_control_status/inherent_score/residual_score kosong.
+ * createAnalysisFromRisk/updateDraftAnalysis dulu dipanggil dengan body kosong
+ * (dari wizard maupun repair-draft), sehingga field turunan ini selalu null
+ * meski risk sudah punya kemungkinan_ref_id/dampak_ref_id. Fungsi di bawah
+ * mengisi celah tsb dari data risk + default group CONTROL_EFFECTIVENESS,
+ * tanpa menimpa nilai yang memang sudah dikirim eksplisit oleh caller.
+ */
+const getDefaultControlEffectivenessRefId = async (options = {}) => {
+  const group = await MrReferenceGroup.findOne({
+    where: { kode_group: CONTROL_EFFECTIVENESS_GROUP, is_active: true },
+    ...options,
+  });
+
+  if (!group) return null;
+
+  const defaultItem =
+    (await MrReferenceItem.findOne({
+      where: { group_id: group.id, is_active: true, is_default: true },
+      ...options,
+    })) ||
+    (await MrReferenceItem.findOne({
+      where: { group_id: group.id, is_active: true },
+      order: [
+        ['urutan', 'ASC'],
+        ['id', 'ASC'],
+      ],
+      ...options,
+    }));
+
+  return defaultItem?.id || null;
+};
+
+const applyAnalysisDefaultsFromRisk = async (payload = {}, risk = {}, options = {}) => {
+  const result = { ...payload };
+
+  if (!result.inherent_likelihood_ref_id && risk.kemungkinan_ref_id) {
+    result.inherent_likelihood_ref_id = risk.kemungkinan_ref_id;
+  }
+
+  if (!result.inherent_impact_ref_id && risk.dampak_ref_id) {
+    result.inherent_impact_ref_id = risk.dampak_ref_id;
+  }
+
+  if (!result.residual_likelihood_ref_id && result.inherent_likelihood_ref_id) {
+    result.residual_likelihood_ref_id = result.inherent_likelihood_ref_id;
+  }
+
+  if (!result.residual_impact_ref_id && result.inherent_impact_ref_id) {
+    result.residual_impact_ref_id = result.inherent_impact_ref_id;
+  }
+
+  if (!result.existing_control_status_ref_id || !result.control_adequacy_ref_id) {
+    const defaultControlRefId = await getDefaultControlEffectivenessRefId(options);
+
+    if (defaultControlRefId) {
+      result.existing_control_status_ref_id =
+        result.existing_control_status_ref_id || defaultControlRefId;
+      result.control_adequacy_ref_id = result.control_adequacy_ref_id || defaultControlRefId;
+    }
+  }
+
+  if (!result.existing_control_description) {
+    result.existing_control_description = DEFAULT_EXISTING_CONTROL_DESCRIPTION;
+  }
+
+  return result;
+};
+
 const getRiskWithContext = async (riskId, options = {}) => {
   const risk = await MrPlanningRisk.findByPk(riskId, {
     include: [
@@ -413,12 +487,16 @@ const createAnalysisFromRisk = async ({ riskId, body = {}, userId, transaction }
 
   const allowedPayload = pickAllowedFields(body);
   const risk = await getRiskWithContext(riskId, { transaction });
+  const payloadWithDefaults = await applyAnalysisDefaultsFromRisk(allowedPayload, risk, {
+    transaction,
+  });
 
   const systemPayload = buildSystemFieldsFromRisk(risk, userId);
 
   const payloadWithAppetiteRef = {
-    ...allowedPayload,
-    selera_risiko_ref_id: allowedPayload.selera_risiko_ref_id || risk.selera_risiko_ref_id || null,
+    ...payloadWithDefaults,
+    selera_risiko_ref_id:
+      payloadWithDefaults.selera_risiko_ref_id || risk.selera_risiko_ref_id || null,
   };
 
   const labelPayload = await resolveLabelsForPayload(payloadWithAppetiteRef, {
@@ -473,7 +551,15 @@ const updateDraftAnalysis = async ({ analysisId, body = {}, userId, transaction 
     ...allowedPayload,
   };
 
-  const labelPayload = await resolveLabelsForPayload(mergedPayload, {
+  const risk = analysis.mr_planning_risk_id
+    ? await MrPlanningRisk.findByPk(analysis.mr_planning_risk_id, { transaction })
+    : null;
+
+  const payloadWithDefaults = risk
+    ? await applyAnalysisDefaultsFromRisk(mergedPayload, risk, { transaction })
+    : mergedPayload;
+
+  const labelPayload = await resolveLabelsForPayload(payloadWithDefaults, {
     transaction,
   });
 

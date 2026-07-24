@@ -318,6 +318,7 @@ const mrPlanningMonitoringRoutes = require('./routes/mr_planningMonitoringRoutes
 const mrPlanningDeviationRoutes = require('./routes/mr_planningDeviationRoutes');
 const mrPlanningWarningRoutes = require('./routes/mr_planningWarningRoutes');
 const mrPlanningContextRoutes = require('./routes/mr_planningContextRoutes');
+const mrAutoFillRoutes = require('./routes/mr_autoFillRoutes');
 const mrReferenceDropdownRoutes = require('./routes/mr_referenceDropdownRoutes');
 const mrPlanningReportRoutes = require('./routes/mr_planningReportRoutes');
 const mrNarrativeDraftRoutes = require('./routes/mr_NarrativeDraftRoutes');
@@ -507,6 +508,7 @@ app.use('/api/mr-planning-monitoring', mrPlanningMonitoringRoutes);
 app.use('/api/mr-planning-deviation', mrPlanningDeviationRoutes);
 app.use('/api/mr-planning-warning', mrPlanningWarningRoutes);
 app.use('/api/mr-planning-context', mrPlanningContextRoutes);
+app.use('/api/mr-autofill', mrAutoFillRoutes);
 app.use('/api/mr-reference-items', mrReferenceDropdownRoutes);
 app.use('/api/mr-report', mrPlanningReportRoutes);
 app.use('/api/mr-planning-risk', mrNarrativeDraftRoutes);
