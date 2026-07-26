@@ -74,14 +74,14 @@ const replaceDocxExtensionWithPdf = (filename = "") => {
   return `${filename}.pdf`;
 };
 
-const buildTlhpPdfFromWord = async (scopeParams) => {
+const buildTlhpPdfFromWord = async (scopeParams, options = {}) => {
   const tempRoot = path.join(os.tmpdir(), `mr-tlhp-pdf-${Date.now()}-${crypto.randomBytes(8).toString("hex")}`);
 
   await fs.mkdir(tempRoot, { recursive: true });
 
   try {
     const { buffer: wordBuffer, filename: wordFilename, report } =
-      await reportExportWordService.buildTlhpWordDocument(scopeParams);
+      await reportExportWordService.buildTlhpWordDocument(scopeParams, options);
 
     const safeWordFilename = wordFilename || "Laporan_Pemantauan_TLHP.docx";
     const pdfFilename = replaceDocxExtensionWithPdf(safeWordFilename);

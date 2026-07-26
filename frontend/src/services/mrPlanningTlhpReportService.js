@@ -19,7 +19,7 @@ const normalizeScope = (scope = {}) =>
     Object.entries(scope).filter(([, value]) => value !== undefined && value !== null && value !== ''),
   );
 
-const exportReportFile = (scope, type) => {
+const exportReportFile = (scope, type, { draft = false } = {}) => {
   assertTahun(scope);
 
   const endpointMap = {
@@ -34,7 +34,7 @@ const exportReportFile = (scope, type) => {
   }
 
   return api.get(endpoint, {
-    params: normalizeScope(scope),
+    params: { ...normalizeScope(scope), ...(draft ? { draft: 'true' } : {}) },
     responseType: 'blob',
   });
 };
@@ -66,6 +66,17 @@ const mrPlanningTlhpReportService = {
 
   exportPdf(scope) {
     return exportReportFile(scope, 'pdf');
+  },
+
+  // Unduh Draft — tidak terkena aturan policy gate (semua Temuan harus
+  // "Disetujui"), untuk meninjau isi laporan lebih dulu. Dokumen tetap
+  // menampilkan status "DRAFT" pada bagian penutup.
+  exportWordDraft(scope) {
+    return exportReportFile(scope, 'word', { draft: true });
+  },
+
+  exportPdfDraft(scope) {
+    return exportReportFile(scope, 'pdf', { draft: true });
   },
 };
 

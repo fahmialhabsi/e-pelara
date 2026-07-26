@@ -41,6 +41,28 @@ router.get(
 router.get('/options/lakip', verifyToken, allowRoles(READ), controller.getLakipOptions);
 
 /**
+ * Opsi akun/pos laporan keuangan (dari Penatausahaan) untuk sebuah Renstra.
+ *
+ * Contoh:
+ * GET /api/mr-autofill/options/laporan-keuangan?renstraId=1&tahun=2025
+ */
+router.get(
+  '/options/laporan-keuangan',
+  verifyToken,
+  allowRoles(READ),
+  controller.getPenatausahaanAkunOptions,
+);
+
+/**
+ * Opsi temuan tindak lanjut BPK/BPKP/Inspektorat untuk sebuah Renstra.
+ * Parameter `entitas` wajib salah satu dari BPK | BPKP | INSPEKTORAT.
+ *
+ * Contoh:
+ * GET /api/mr-autofill/options/temuan?renstraId=1&entitas=BPK&tahun=2025
+ */
+router.get('/options/temuan', verifyToken, allowRoles(READ), controller.getTemuanOptions);
+
+/**
  * Ambil data usulan auto-fill untuk sebuah MR planning context.
  *
  * Contoh:

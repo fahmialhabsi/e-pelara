@@ -1655,6 +1655,13 @@ const getContextItems = async (contextId, options = {}) => {
           THEN 'Tindak Lanjut BPK'
 
         WHEN LOWER(COALESCE(ci.source_table, '')) = 'proposal_intake'
+          AND (
+            ${proposalSourceCodeSelect} = 'TINDAK_LANJUT_BPKP'
+            OR LOWER(COALESCE(ci.stage, '')) = 'temuan_bpkp'
+          )
+          THEN 'Tindak Lanjut BPKP'
+
+        WHEN LOWER(COALESCE(ci.source_table, '')) = 'proposal_intake'
           AND ${proposalSourceCodeSelect} IN ('LAKIP')
           THEN 'LAKIP'
 
@@ -1738,6 +1745,8 @@ const getContextItems = async (contextId, options = {}) => {
       type: QueryTypes.SELECT,
     },
   );
+
+  return rows;
 };
 
 const getSummary = async (contextId, options = {}) => {
@@ -2038,6 +2047,7 @@ const getDaftarRisiko = async (contextId, options = {}) => {
       r.skor_risiko,
       r.level_risiko,
       r.selera_risiko,
+      r.is_above_appetite,
       r.status_risiko,
       r.status_revisi,
       r.versi,
@@ -2075,6 +2085,13 @@ const getDaftarRisiko = async (contextId, options = {}) => {
             OR LOWER(COALESCE(r.stage, ci.stage, '')) = 'temuan_bpk'
           )
           THEN 'Tindak Lanjut BPK'
+
+        WHEN LOWER(COALESCE(ci.source_table, '')) = 'proposal_intake'
+          AND (
+            ${proposalSourceCodeSelect} = 'TINDAK_LANJUT_BPKP'
+            OR LOWER(COALESCE(r.stage, ci.stage, '')) = 'temuan_bpkp'
+          )
+          THEN 'Tindak Lanjut BPKP'
 
         WHEN LOWER(COALESCE(ci.source_table, '')) = 'proposal_intake'
           AND ${proposalSourceCodeSelect} IN ('LAKIP')
@@ -2242,9 +2259,9 @@ const getDaftarRisiko = async (contextId, options = {}) => {
     FROM mr_planning_risk r
     LEFT JOIN mr_planning_context_item ci
       ON ci.mr_planning_context_id = r.context_id
+      ${contextItemJoinCondition}
     LEFT JOIN mr_planning_context c
       ON c.id = r.context_id
-    ${contextItemJoinCondition}
     WHERE ${riskScopeWhere}
     ORDER BY r.context_id ASC, r.id ASC
     `,
@@ -2299,6 +2316,7 @@ const getAnalisisRisiko = async (contextId, options = {}) => {
       })},
       a.residual_score,
       a.residual_level,
+      a.dampak_area,
       a.selera_risiko,
       a.is_above_appetite,
       a.analysis_note,
@@ -2418,11 +2436,7 @@ const getRencanaPengendalian = async (contextId, options = {}) => {
       m.sub_unsur_spip,
       m.output_rtp,
       m.kegiatan_pengendalian,
-      ${selectColumn({
-        columns: mitigationColumns,
-        alias: 'm',
-        column: 'target_waktu',
-      })},
+      COALESCE(m.target_tanggal, m.target_waktu_selesai, m.target_waktu_mulai) AS target_waktu,
       m.target_output,
       m.indikator_keluaran,
       m.target_keluaran,
@@ -2760,13 +2774,13 @@ const getPengendalianBelumTerealisasi = async (contextId, options = {}) => {
         r.kode_risiko,
         r.nama_risiko,
         ${selectColumn({
-          columns: await getTableColumns('mr_planning_monitoring'),
-          alias: 'mon',
+          columns: await getTableColumns('mr_planning_mitigation'),
+          alias: 'mit',
           column: 'kegiatan_pengendalian',
         })},
         ${selectColumn({
-          columns: await getTableColumns('mr_planning_monitoring'),
-          alias: 'mon',
+          columns: await getTableColumns('mr_planning_mitigation'),
+          alias: 'mit',
           column: 'penanggung_jawab',
         })},
         ${selectColumn({
@@ -2779,11 +2793,10 @@ const getPengendalianBelumTerealisasi = async (contextId, options = {}) => {
           alias: 'mon',
           column: 'realisasi_waktu',
         })},
-        ${selectColumn({
-          columns: await getTableColumns('mr_planning_monitoring'),
-          alias: 'mon',
-          column: 'target_waktu',
-        })},
+        COALESCE(
+          ${hasColumn(await getTableColumns('mr_planning_monitoring'), 'target_waktu') ? 'mon.target_waktu' : 'NULL'},
+          ${hasColumn(await getTableColumns('mr_planning_mitigation'), 'target_tanggal') ? 'mit.target_tanggal' : 'NULL'}
+        ) AS target_waktu,
         mon.progress_persen,
       mon.status_monitoring,
       mon.status_realisasi,
@@ -2795,6 +2808,8 @@ const getPengendalianBelumTerealisasi = async (contextId, options = {}) => {
     FROM mr_planning_monitoring mon
     JOIN mr_planning_risk r
       ON r.id = mon.mr_planning_risk_id
+    LEFT JOIN mr_planning_mitigation mit
+      ON mit.id = mon.mr_planning_mitigation_id
     WHERE ${riskScopeWhere}
       AND mon.is_active = 1
       AND mon.is_latest = 1
@@ -2831,11 +2846,51 @@ const getPengendalianBelumTerealisasi = async (contextId, options = {}) => {
         if (!isUnrealized) return null;
 
         const kendala = String(item.kendala || '').trim();
-        const keterangan_belum_terealisasi =
-          kendala ||
-          (Number.isFinite(progress) && progress < 100
-            ? 'Pengendalian belum terealisasi penuh karena progress belum mencapai 100%.'
-            : 'Pengendalian belum terealisasi penuh dan masih memerlukan tindak lanjut.');
+        const progressPct = Number.isFinite(progress) ? progress : 0;
+        const targetWaktuRaw = item.target_waktu || item.target_tanggal;
+        const targetWaktuLabel =
+          targetWaktuRaw instanceof Date
+            ? targetWaktuRaw.toISOString().slice(0, 10)
+            : typeof targetWaktuRaw === 'string'
+              ? targetWaktuRaw.slice(0, 10)
+              : targetWaktuRaw;
+
+        // PENTING: sebelumnya keterangan_belum_terealisasi = kendala (copy
+        // persis, dua kolom identik). Kolom ini seharusnya menjelaskan status
+        // realisasi (progress % & target waktu), BUKAN mengulang hambatan yang
+        // sudah ada di kolom Kendala — dibangun dari data terukur (progress,
+        // target_waktu) agar genuinely berbeda dari Kendala walau Kendala terisi.
+        const keteranganParts = [
+          progressPct >= 100
+            ? 'Pengendalian sudah mencapai 100% namun status realisasi belum ditetapkan selesai.'
+            : `Realisasi pengendalian baru mencapai ${progressPct}% dari target penyelesaian.`,
+        ];
+        if (targetWaktuLabel) {
+          keteranganParts.push(`Target waktu penyelesaian yang ditetapkan: ${targetWaktuLabel}.`);
+        }
+        if (kendala) {
+          keteranganParts.push(`Hal ini terkait kendala yang tercatat pada kolom Kendala.`);
+        }
+        const keterangan_belum_terealisasi = keteranganParts.join(' ');
+
+        // PENTING: status_monitoring pada modul ini SELALU "draft" (workflow
+        // submit/verifikasi/persetujuan Monitoring memang belum dibangun —
+        // lihat komentar STEP 14F di mrPlanningMonitoringService.js/Routes,
+        // BUKAN bug). status_realisasi_ref_id juga sengaja belum dipakai.
+        // Supaya kolom Status Realisasi tidak selalu bertuliskan "Draft" tanpa
+        // makna, turunkan label dari progress_persen (data yang genuinely
+        // bervariasi per risiko) saat status mentah kosong/"draft".
+        const rawStatus = String(item.status_realisasi || item.status_monitoring || '')
+          .trim()
+          .toLowerCase();
+        const statusRealisasi =
+          rawStatus && rawStatus !== 'draft'
+            ? item.status_realisasi || item.status_monitoring
+            : progressPct >= 100
+              ? 'Selesai (belum diverifikasi)'
+              : progressPct > 0
+                ? `Dalam Proses (${progressPct}%)`
+                : 'Belum Dimulai';
 
         return {
           no: index + 1,
@@ -2844,8 +2899,8 @@ const getPengendalianBelumTerealisasi = async (contextId, options = {}) => {
           kegiatan_pengendalian: item.kegiatan_pengendalian,
           penanggung_jawab: item.penanggung_jawab,
           target_waktu: item.target_waktu || item.target_tanggal || 'Belum Tersedia',
-          progress_persen: Number.isFinite(progress) ? progress : 0,
-          status_realisasi: item.status_realisasi || item.status_monitoring || 'Belum Selesai',
+          progress_persen: progressPct,
+          status_realisasi: statusRealisasi,
           kendala: kendala || '-',
           keterangan_belum_terealisasi,
           tindak_lanjut: item.tindak_lanjut || '-',
@@ -2878,40 +2933,39 @@ const getEfektivitasPengendalian = async (contextId, options = {}) => {
   const id = assertContextId(contextId);
   const reportScope = options.reportScope || { scope_mode: 'context' };
   const riskScopeWhere = buildRiskScopeWhere(reportScope, 'r');
+  // PENTING: taksonomi kategori akar penyebab di sistem ini BUKAN "6M"
+  // Man/Money/Method/Material/Machine/External — reference group
+  // ROOT_CAUSE_CATEGORY (backend/seeders) hanya punya 4 kode_item:
+  // PEOPLE/PROCESS/SYSTEM/EXTERNAL (dicek langsung ke DB 2026-07-25). Label
+  // kolom laporan "Kode Penyebab 6M" tetap dipertahankan (istilah historis di
+  // Form Coaching Clinic), tapi mapping-nya HARUS ikut 4 kategori nyata ini —
+  // mapping Man/Money/Method/Material/Machine lama TIDAK PERNAH cocok dengan
+  // data asli sehingga kolom ini selalu "Belum Tersedia" walau RootCause.
+  // kategori_penyebab sudah diisi.
   const normalize6mCode = (value) => {
     const normalized = String(value || '')
       .trim()
       .toLowerCase();
     const map = {
-      man: 'Man',
-      manusia: 'Man',
-      money: 'Money',
-      uang: 'Money',
-      method: 'Method',
-      metode: 'Method',
-      material: 'Material',
-      bahan: 'Material',
-      machine: 'Machine',
-      mesin: 'Machine',
-      external: 'External',
-      lingkungan: 'External',
+      people: 'SDM (People)',
+      man: 'SDM (People)',
+      manusia: 'SDM (People)',
+      sdm: 'SDM (People)',
+      process: 'Proses (Process)',
+      proses: 'Proses (Process)',
+      method: 'Proses (Process)',
+      metode: 'Proses (Process)',
+      system: 'Sistem (System)',
+      sistem: 'Sistem (System)',
+      external: 'Eksternal (External)',
+      eksternal: 'Eksternal (External)',
+      lingkungan: 'Eksternal (External)',
     };
 
     if (map[normalized]) return map[normalized];
 
-    const token = normalized.match(/\b(man|money|method|material|machine|external)\b/i);
-    return token ? token[1][0].toUpperCase() + token[1].slice(1).toLowerCase() : 'Belum Tersedia';
-  };
-
-  const inferStatusEfektivitas = ({ actualScore, residualScore, raw }) => {
-    const rawText = String(raw || '').trim();
-    const hasRaw = Boolean(rawText) && rawText !== '-';
-    if (hasRaw) return rawText;
-    if (!Number.isFinite(actualScore) || !Number.isFinite(residualScore))
-      return 'Belum dapat dinilai';
-    if (actualScore < residualScore) return 'Efektif';
-    if (actualScore > residualScore) return 'Belum Efektif';
-    return 'Belum dapat dinilai';
+    const token = normalized.match(/\b(people|process|system|external)\b/i);
+    return token ? map[token[1].toLowerCase()] : 'Belum Tersedia';
   };
 
   const inferEfektivitasPengendalian = ({ actualScore, residualScore, raw }) => {
@@ -2936,17 +2990,20 @@ const getEfektivitasPengendalian = async (contextId, options = {}) => {
   };
 
   const inferKeterangan = ({ statusEfektivitas, actualScore, residualScore }) => {
+    if (!Number.isFinite(actualScore) || !Number.isFinite(residualScore)) {
+      return 'Lengkapi data monitoring aktual, bukti realisasi, dan hasil evaluasi pengendalian.';
+    }
     if (statusEfektivitas === 'Belum dapat dinilai') {
       return 'Lengkapi data monitoring aktual, bukti realisasi, dan hasil evaluasi pengendalian.';
     }
     if (statusEfektivitas === 'Belum Efektif') {
       return 'Perkuat pelaksanaan pengendalian dan lakukan tindak lanjut atas deviasi risiko aktual.';
     }
+    if (statusEfektivitas === 'Belum menunjukkan perubahan') {
+      return 'Risiko aktual belum menunjukkan penurunan dibanding residu; lanjutkan pemantauan dan pertimbangkan penguatan pengendalian jika kondisi menetap.';
+    }
     if (statusEfektivitas === 'Efektif') {
       return 'Pertahankan pengendalian dan lanjutkan pemantauan berkala.';
-    }
-    if (!Number.isFinite(actualScore) || !Number.isFinite(residualScore)) {
-      return 'Lengkapi data monitoring aktual, bukti realisasi, dan hasil evaluasi pengendalian.';
     }
     return '-';
   };
@@ -2958,23 +3015,23 @@ const getEfektivitasPengendalian = async (contextId, options = {}) => {
         r.kode_risiko,
         r.nama_risiko,
         ${selectColumn({
-          columns: await getTableColumns('mr_planning_monitoring'),
-          alias: 'mon',
+          columns: await getTableColumns('mr_planning_mitigation'),
+          alias: 'mit',
           column: 'kegiatan_pengendalian',
         })},
         ${selectColumn({
-          columns: await getTableColumns('mr_planning_monitoring'),
-          alias: 'mon',
+          columns: await getTableColumns('mr_planning_mitigation'),
+          alias: 'mit',
           column: 'target_output',
         })},
         ${selectColumn({
-          columns: await getTableColumns('mr_planning_monitoring'),
-          alias: 'mon',
+          columns: await getTableColumns('mr_planning_root_cause'),
+          alias: 'rc',
           column: 'akar_penyebab',
         })},
         ${selectColumn({
-          columns: await getTableColumns('mr_planning_monitoring'),
-          alias: 'mon',
+          columns: await getTableColumns('mr_planning_root_cause'),
+          alias: 'rc',
           column: 'kode_penyebab',
         })},
         ${selectColumn({
@@ -2993,8 +3050,8 @@ const getEfektivitasPengendalian = async (contextId, options = {}) => {
           column: 'kategori_akar_masalah',
         })},
         ${selectColumn({
-          columns: await getTableColumns('mr_planning_monitoring'),
-          alias: 'mon',
+          columns: await getTableColumns('mr_planning_root_cause'),
+          alias: 'rc',
           column: 'kategori_penyebab',
         })},
         r.skor_risiko AS risiko_direspons_score,
@@ -3020,26 +3077,10 @@ const getEfektivitasPengendalian = async (contextId, options = {}) => {
           alias: 'mon',
           column: 'actual_impact',
         })},
-        ${selectColumn({
-          columns: await getTableColumns('mr_planning_monitoring'),
-          alias: 'mon',
-          column: 'residual_score',
-        })},
-        ${selectColumn({
-          columns: await getTableColumns('mr_planning_monitoring'),
-          alias: 'mon',
-          column: 'residual_level',
-        })},
-        ${selectColumn({
-          columns: await getTableColumns('mr_planning_monitoring'),
-          alias: 'mon',
-          column: 'residual_likelihood',
-        })},
-        ${selectColumn({
-          columns: await getTableColumns('mr_planning_monitoring'),
-          alias: 'mon',
-          column: 'residual_impact',
-        })},
+        a.residual_score,
+        a.residual_level,
+        a.residual_likelihood,
+        a.residual_impact,
         ${selectColumn({
           columns: await getTableColumns('mr_planning_monitoring'),
           alias: 'mon',
@@ -3093,6 +3134,16 @@ const getEfektivitasPengendalian = async (contextId, options = {}) => {
     FROM mr_planning_monitoring mon
     JOIN mr_planning_risk r
       ON r.id = mon.mr_planning_risk_id
+    LEFT JOIN mr_planning_risk_analysis a
+      ON a.mr_planning_risk_id = r.id
+      AND a.is_active = 1
+      AND a.is_latest = 1
+    LEFT JOIN mr_planning_mitigation mit
+      ON mit.id = mon.mr_planning_mitigation_id
+    LEFT JOIN mr_planning_root_cause rc
+      ON rc.id = mit.root_cause_id
+      AND rc.is_active = 1
+      AND rc.is_latest = 1
     WHERE ${riskScopeWhere}
       AND mon.is_active = 1
       AND mon.is_latest = 1
@@ -3116,16 +3167,19 @@ const getEfektivitasPengendalian = async (contextId, options = {}) => {
       item.kategori_penyebab ||
       item.kode_penyebab;
     const kodePenyebab6m = normalize6mCode(raw6m);
-    const statusEfektivitas = inferStatusEfektivitas({
-      actualScore,
-      residualScore,
-      raw: item.status_efektivitas,
-    });
     const efektivitasPengendalian = inferEfektivitasPengendalian({
       actualScore,
       residualScore,
       raw: item.efektivitas_pengendalian,
     });
+    // PENTING: dulu ada 2 fungsi terpisah utk status efektivitas — satu cek
+    // `item.status_efektivitas` yg TIDAK PERNAH di-SELECT di query (selalu
+    // undefined) sehingga SELALU override raw & murni pakai perbandingan skor.
+    // Akibatnya kolom "Efektivitas Pengendalian" (Lampiran 11.3, pakai raw)
+    // bisa bilang "Efektif" sementara "Keterangan" (pakai status yg
+    // dikomputasi ulang) bilang "Lengkapi data..." — dua kolom bertentangan
+    // di baris yang sama. Sekarang keduanya WAJIB 1 sumber kebenaran.
+    const statusEfektivitas = efektivitasPengendalian;
     const deviasiLevel = inferDeviasiLevel({
       actualLevel: item.actual_level,
       residualLevel: item.residual_level,
@@ -3177,9 +3231,11 @@ const getEfektivitasPengendalian = async (contextId, options = {}) => {
           ? 'Lengkapi data monitoring aktual, bukti realisasi, dan hasil evaluasi pengendalian.'
           : statusEfektivitas === 'Belum Efektif'
             ? 'Perkuat pelaksanaan pengendalian dan lakukan tindak lanjut atas deviasi risiko aktual.'
-            : statusEfektivitas === 'Efektif'
-              ? 'Pertahankan pengendalian dan lanjutkan pemantauan berkala.'
-              : 'Belum Tersedia'),
+            : statusEfektivitas === 'Belum menunjukkan perubahan'
+              ? 'Lanjutkan pemantauan berkala dan pertimbangkan penguatan pengendalian jika risiko aktual tidak kunjung menurun.'
+              : statusEfektivitas === 'Efektif'
+                ? 'Pertahankan pengendalian dan lanjutkan pemantauan berkala.'
+                : 'Belum Tersedia'),
       keterangan,
       field_origin: buildReportFieldOriginMeta({
         userInputFields: [
@@ -4051,11 +4107,12 @@ const getFinalReportStatus = ({
   pedomanOverallStatus = PEDOMAN_STATUS.MERAH,
   globalBlockingIssues = [],
 } = {}) => {
-  if (
-    finalReport &&
-    pedomanOverallStatus === PEDOMAN_STATUS.HIJAU &&
-    !globalBlockingIssues.length
-  ) {
+  // R-FASE-A: catatan non-blocking (kuning) tidak boleh menghalangi PDF final —
+  // hanya blockingIssues (merah) yang menghalangi. Menyelaraskan perilaku dengan
+  // penamaan "non_blocking_notes" itu sendiri, dan dengan Pedoman Manajemen Risiko
+  // (Pergub Malut No 10/2022) yang tidak mensyaratkan Peta Risiko Aktual
+  // (Pedoman 11/12, siklus pemantauan lanjutan) untuk laporan tahunan pertama.
+  if (finalReport && !globalBlockingIssues.length) {
     return 'ready_for_pdf';
   }
 
@@ -4942,9 +4999,10 @@ const buildReportQualityGate = ({
 
   const globalNonBlockingNotes = [...pedomanNonBlockingNotes];
 
+  // R-FASE-A: sejalan dengan getFinalReportStatus, kuning (non-blocking) tidak
+  // menghalangi pdf_ready — hanya blockingIssues (merah) yang menghalangi.
   const pdfReady =
     finalReport &&
-    pedomanOverallStatus === PEDOMAN_STATUS.HIJAU &&
     !pedomanBlockingIssues.length &&
     !finalReportBlockingIssues.length;
 

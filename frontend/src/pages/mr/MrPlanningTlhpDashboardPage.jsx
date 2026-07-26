@@ -2,7 +2,7 @@
 // Modul TLHP — Dashboard & Laporan Pemantauan Tindak Lanjut Hasil Pemeriksaan
 
 import React from "react";
-import { Alert, Button, Card, Col, Row, Select, Space, Statistic, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Divider, Row, Select, Space, Statistic, Table, Tag, Typography } from "antd";
 import { FilePdfOutlined, FileWordOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 
@@ -48,13 +48,21 @@ export default function MrPlanningTlhpDashboardPage() {
   const summaryData = summary?.data;
   const historyRows = Array.isArray(exportHistory?.data) ? exportHistory.data : [];
 
-  const handleExport = async (type) => {
-    setDownloading(type);
+  const EXPORTERS = {
+    word: mrPlanningTlhpReportService.exportWord,
+    pdf: mrPlanningTlhpReportService.exportPdf,
+    word_draft: mrPlanningTlhpReportService.exportWordDraft,
+    pdf_draft: mrPlanningTlhpReportService.exportPdfDraft,
+  };
+
+  const handleExport = async (key) => {
+    setDownloading(key);
     try {
-      const response = type === "word" ? await mrPlanningTlhpReportService.exportWord(scope) : await mrPlanningTlhpReportService.exportPdf(scope);
+      const isPdf = key.startsWith("pdf");
+      const response = await EXPORTERS[key](scope);
       const contentDisposition = response.headers?.["content-disposition"] || "";
       const match = contentDisposition.match(/filename="?([^"]+)"?/);
-      const filename = match?.[1] || `Laporan_Pemantauan_TLHP_${scope.tahun}.${type === "word" ? "docx" : "pdf"}`;
+      const filename = match?.[1] || `Laporan_Pemantauan_TLHP_${scope.tahun}.${isPdf ? "pdf" : "docx"}`;
       triggerDownload(response.data, decodeURIComponent(filename));
     } catch (error) {
       const msg = error?.response?.data?.message || error?.message || "Gagal mengunduh laporan.";
@@ -84,9 +92,31 @@ export default function MrPlanningTlhpDashboardPage() {
             <Button icon={<FilePdfOutlined />} loading={downloading === "pdf"} onClick={() => handleExport("pdf")}>
               Unduh PDF
             </Button>
+            <Divider type="vertical" />
+            <Button
+              icon={<FileWordOutlined />}
+              loading={downloading === "word_draft"}
+              onClick={() => handleExport("word_draft")}
+            >
+              Unduh Draft (Word)
+            </Button>
+            <Button
+              icon={<FilePdfOutlined />}
+              loading={downloading === "pdf_draft"}
+              onClick={() => handleExport("pdf_draft")}
+            >
+              Unduh Draft (PDF)
+            </Button>
           </Space>
         </Col>
       </Row>
+
+      <Alert
+        type="warning"
+        showIcon
+        message="Unduh Word/PDF final memerlukan seluruh Temuan pada cakupan tahun terpilih berstatus Disetujui."
+        description='Gunakan tombol "Unduh Draft" untuk meninjau isi laporan lebih dulu — dokumen draft tetap dapat diunduh meski sebagian Temuan belum disetujui, dan akan menampilkan status "DRAFT" pada bagian penutup.'
+      />
 
       <Card size="small">
         <Space wrap>

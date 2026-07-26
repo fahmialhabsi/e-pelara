@@ -554,6 +554,8 @@ export default function StepContext({ contextId, onStepComplete }) {
   const [submitting, setSubmitting] = useState(false);
   const [selectedSasaranIndikator, setSelectedSasaranIndikator] = useState(null);
   const [selectedLakipItem, setSelectedLakipItem] = useState(null);
+  const [selectedLaporanKeuanganItem, setSelectedLaporanKeuanganItem] = useState(null);
+  const [selectedTemuanItem, setSelectedTemuanItem] = useState(null);
 
   // Pola sama dengan "selectedContextDetailResponse" di MrPlanningRiskForm.jsx:
   // fetch-detail-by-id lewat useQuery (react-query), bukan useEffect+useState
@@ -579,6 +581,14 @@ export default function StepContext({ contextId, onStepComplete }) {
   const periodeTypeWatched = Form.useWatch('periode_type', form);
   const isRenstraSource = jenisSumberWatched === 'Renstra';
   const isLakipSource = jenisSumberWatched === 'Lakip';
+  const isLaporanKeuanganSource = jenisSumberWatched === 'Laporan Keuangan';
+  const ENTITAS_PEMERIKSA_BY_JENIS_SUMBER = {
+    'Tindak Lanjut BPK': 'BPK',
+    'Tindak Lanjut BPKP': 'BPKP',
+    'Tindak Lanjut Inspektorat': 'INSPEKTORAT',
+  };
+  const entitasPemeriksaWatched = ENTITAS_PEMERIKSA_BY_JENIS_SUMBER[jenisSumberWatched] || null;
+  const isTemuanSource = Boolean(entitasPemeriksaWatched);
 
   const { data: sasaranIndikatorOptions = [], isLoading: loadingSasaranIndikator } = useQuery({
     queryKey: ['mr-wizard', 'sasaran-indikator-options', opdIdWatched],
@@ -602,6 +612,28 @@ export default function StepContext({ contextId, onStepComplete }) {
     enabled: isLakipSource && Boolean(opdIdWatched) && Boolean(tahunWatched),
   });
 
+  const { data: laporanKeuanganOptions = [], isLoading: loadingLaporanKeuangan } = useQuery({
+    queryKey: ['mr-wizard', 'laporan-keuangan-options', opdIdWatched, tahunWatched],
+    queryFn: async () => {
+      const res = await api.get('/mr-autofill/options/laporan-keuangan', {
+        params: { renstraId: opdIdWatched, tahun: tahunWatched },
+      });
+      return res.data?.data || [];
+    },
+    enabled: isLaporanKeuanganSource && Boolean(opdIdWatched) && Boolean(tahunWatched),
+  });
+
+  const { data: temuanOptions = [], isLoading: loadingTemuan } = useQuery({
+    queryKey: ['mr-wizard', 'temuan-options', opdIdWatched, entitasPemeriksaWatched, tahunWatched],
+    queryFn: async () => {
+      const res = await api.get('/mr-autofill/options/temuan', {
+        params: { renstraId: opdIdWatched, entitas: entitasPemeriksaWatched, tahun: tahunWatched },
+      });
+      return res.data?.data || [];
+    },
+    enabled: isTemuanSource && Boolean(opdIdWatched),
+  });
+
   // Reuse persis dari MrPlanningContextPage.jsx useEffect #1
   useEffect(() => {
     api
@@ -617,6 +649,8 @@ export default function StepContext({ contextId, onStepComplete }) {
     const {
       sasaran_indikator_ref: _sasaranIndikatorRefValue,
       lakip_ref: _lakipRefValue,
+      laporan_keuangan_ref: _laporanKeuanganRefValue,
+      temuan_ref: _temuanRefValue,
       ...restValues
     } = values;
     setSubmitting(true);
@@ -677,6 +711,9 @@ export default function StepContext({ contextId, onStepComplete }) {
         jenis_sumber: values.jenis_sumber,
         ...(selectedSasaranIndikator || {}),
         ...(selectedLakipItem || {}),
+        ...(selectedLaporanKeuanganItem || {}),
+        ...(selectedTemuanItem || {}),
+        ...(selectedTemuanItem ? { entitas_pemeriksa: entitasPemeriksaWatched } : {}),
       };
       onStepComplete(contextForNextStep);
     } catch (err) {
@@ -806,6 +843,62 @@ export default function StepContext({ contextId, onStepComplete }) {
                 }))}
                 onChange={(_value, option) => setSelectedLakipItem(option?.data || null)}
                 onClear={() => setSelectedLakipItem(null)}
+              />
+            </Form.Item>
+          )}
+          {isLaporanKeuanganSource && (
+            <Form.Item
+              name="laporan_keuangan_ref"
+              label="Pilih Data Laporan Keuangan"
+              extra={
+                !opdIdWatched
+                  ? 'Pilih OPD terlebih dahulu untuk memuat daftar akun laporan keuangan.'
+                  : !loadingLaporanKeuangan && laporanKeuanganOptions.length === 0
+                    ? `Belum ada data laporan keuangan untuk tahun ${tahunWatched || '-'}. Coba ganti Tahun di atas.`
+                    : undefined
+              }
+            >
+              <Select
+                showSearch
+                optionFilterProp="label"
+                loading={loadingLaporanKeuangan}
+                placeholder="Pilih akun/pos laporan keuangan"
+                allowClear
+                options={laporanKeuanganOptions.map((item) => ({
+                  value: item.kode_rekening || item.nama_rekening,
+                  label: [item.kode_rekening, item.nama_rekening].filter(Boolean).join(' | ') || '-',
+                  data: item,
+                }))}
+                onChange={(_value, option) => setSelectedLaporanKeuanganItem(option?.data || null)}
+                onClear={() => setSelectedLaporanKeuanganItem(null)}
+              />
+            </Form.Item>
+          )}
+          {isTemuanSource && (
+            <Form.Item
+              name="temuan_ref"
+              label={`Pilih Data Temuan ${entitasPemeriksaWatched || ''}`}
+              extra={
+                !opdIdWatched
+                  ? 'Pilih OPD terlebih dahulu untuk memuat daftar temuan.'
+                  : !loadingTemuan && temuanOptions.length === 0
+                    ? `Belum ada data temuan ${entitasPemeriksaWatched || ''} untuk OPD ini.`
+                    : undefined
+              }
+            >
+              <Select
+                showSearch
+                optionFilterProp="label"
+                loading={loadingTemuan}
+                placeholder="Pilih temuan"
+                allowClear
+                options={temuanOptions.map((item) => ({
+                  value: item.temuan_id,
+                  label: [item.nomor_temuan, item.judul_temuan].filter(Boolean).join(' | ') || '-',
+                  data: item,
+                }))}
+                onChange={(_value, option) => setSelectedTemuanItem(option?.data || null)}
+                onClear={() => setSelectedTemuanItem(null)}
               />
             </Form.Item>
           )}

@@ -86,6 +86,58 @@ const removeDuplicatedVerbPrefix = (value = "") => {
     .trim();
 };
 
+// Ambil baris bullet PERTAMA dari teks bullet-list (mis. rencana_tindak_lanjut_awal
+// yang diisi LLM/rule-based draft di Step 2 wizard — lihat StepRiskAnalysis.jsx)
+// sebagai kalimat aksi utama yang GENUINELY spesifik per risiko, dipakai
+// sebagai basis utama "Kegiatan Pengendalian" (bukan nama indikator/objek
+// risiko yang berujung jadi pola "X atas X dalam konteks X").
+const extractFirstBulletLine = (text) => {
+  const lines = String(text || "")
+    .split("\n")
+    .map((line) => line.replace(/^[-•]\s*/, "").trim())
+    .filter(Boolean);
+
+  return lines[0] || "";
+};
+
+// Nuansa kegiatan pengendalian berdasarkan Kategori Akar Penyebab (RootCause.
+// kategori_penyebab — label dari reference group ROOT_CAUSE_CATEGORY:
+// SDM/Proses/Sistem/Eksternal, lihat mrPlanningRootCauseService.js) supaya
+// kegiatan pengendalian ikut spesifik ke JENIS akar masalahnya, bukan generik.
+const resolveKategoriPenyebabAction = (kategoriPenyebabLabel) => {
+  const t = String(kategoriPenyebabLabel || "").toLowerCase();
+
+  if (t.includes("sdm"))
+    return "meningkatkan kompetensi dan kapasitas SDM terkait melalui pembinaan/pelatihan";
+  if (t.includes("proses"))
+    return "memperbaiki dan menegakkan SOP/prosedur pengendalian terkait";
+  if (t.includes("sistem"))
+    return "memperbaiki dan memutakhirkan sistem/aplikasi serta validitas data pendukung";
+  if (t.includes("eksternal"))
+    return "memperkuat koordinasi dengan pihak eksternal terkait dan menyiapkan mitigasi atas faktor di luar kendali";
+
+  return null;
+};
+
+// Nuansa kegiatan pengendalian berdasarkan Area Dampak (RiskAnalysis.
+// dampak_area — label dari reference group IMPACT_AREA, 5 area Pedoman No 2).
+const resolveDampakAreaAction = (dampakAreaLabel) => {
+  const t = String(dampakAreaLabel || "").toLowerCase();
+
+  if (t.includes("keuangan"))
+    return "memperkuat verifikasi dan pengendalian anggaran/pertanggungjawaban keuangan";
+  if (t.includes("reputasi"))
+    return "menyiapkan strategi komunikasi dan penanganan keluhan pemangku kepentingan";
+  if (t.includes("kesehatan") || t.includes("keselamatan"))
+    return "menerapkan standar dan pemeriksaan berkala terkait kesehatan dan keselamatan kerja";
+  if (t.includes("kinerja"))
+    return "mempercepat capaian target kinerja melalui percepatan pelaksanaan program/kegiatan";
+  if (t.includes("temuan") || t.includes("pemeriksaan"))
+    return "menindaklanjuti rekomendasi hasil pemeriksaan/pengawasan secara tuntas dan terukur";
+
+  return null;
+};
+
 const parseJsonSafe = (value) => {
   if (!value) return {};
   if (typeof value === "object") return value;
@@ -345,6 +397,38 @@ const getReferenceItemByKeywords = async (groupCode, keywords = []) => {
       return normalizedKeywords.some((keyword) => haystack.includes(keyword));
     }) || null
   );
+};
+
+// Lookup EXACT by kode_item — dipakai saat targetnya deterministik/tidak
+// ambigu (mis. SPIP_ELEMENT utk RTP SELALU "Kegiatan Pengendalian"), supaya
+// tidak kena bug tabrakan substring seperti getReferenceItemByKeywords (mis.
+// keyword "pengendalian" generik ikut cocok ke "Lingkungan Pengendalian"
+// yang urutan-nya lebih dulu daripada "Kegiatan Pengendalian" yang dituju).
+const getReferenceItemByKodeItem = async (groupCode, kodeItem) => {
+  const rows = await sequelize.query(
+    `
+    SELECT
+      i.id,
+      i.kode_item,
+      i.nama_item,
+      i.nilai_numeric,
+      i.nilai_text,
+      i.urutan
+    FROM mr_reference_items i
+    JOIN mr_reference_groups g
+      ON g.id = i.group_id
+    WHERE g.kode_group = :groupCode
+      AND i.kode_item = :kodeItem
+      AND COALESCE(i.is_active, 1) = 1
+    LIMIT 1
+    `,
+    {
+      type: QueryTypes.SELECT,
+      replacements: { groupCode, kodeItem },
+    }
+  );
+
+  return rows[0] || null;
 };
 
 const getReferenceItemByNumericValue = async (groupCode, numericValue) => {
@@ -824,29 +908,44 @@ const buildDraftPreview = async (riskId, options = {}) => {
 
   const actionParts = buildActionParts(textBundle);
 
+  // Respons/Unsur/Sub Unsur/Output RTP sebelumnya SELALU sama utk semua
+  // risiko — bukan krn regulasi mewajibkan sama, tapi krn bug: keempatnya
+  // dicari via getReferenceItemByKeywords() dgn keyword STATIS (tidak pernah
+  // berubah per risiko), dan utk SPIP_ELEMENT keyword generik "pengendalian"
+  // malah salah tabrakan ke "Lingkungan Pengendalian" (urutan lebih awal)
+  // padahal yg dituju "Kegiatan Pengendalian". Sekarang data-driven:
+  const isAboveAppetite = Boolean(Number(safeAnalysis.is_above_appetite));
+  const kategoriPenyebabLabel = String(safeRootCause.kategori_penyebab || "").toLowerCase();
+
+  // Respons Risiko: dalam praktik manajemen risiko pemerintah (SPIP), respons
+  // Menghindari/Mentransfer jarang berlaku (sulit menghentikan tupoksi wajib
+  // atau memindahkan risiko ke pihak ketiga) — beda yang genuinely defensible
+  // dari data yang ada adalah Mengurangi (risiko di atas selera risiko, perlu
+  // pengendalian aktif) vs Menerima (sudah di bawah selera, cukup dipantau).
+  const mitigationResponseKode = isAboveAppetite ? "REDUCE" : "ACCEPT";
+
+  // Sub Unsur SPIP: akar penyebab kategori Sistem -> Pengendalian Aplikasi
+  // (kontrol sistem/TI); selain itu -> Pengendalian Umum (kontrol
+  // manual/prosedural) — sesuai taksonomi SPIP_SUB_ELEMENT yang ada.
+  const spipSubElementKode = kategoriPenyebabLabel.includes("sistem")
+    ? "APPLICATION_CONTROL"
+    : "GENERAL_CONTROL";
+
+  // Output RTP: respons Mengurangi (perlu aksi aktif) -> Rencana Aksi;
+  // respons Menerima (cukup dipantau) -> Dokumen Pengendalian sbg dasar
+  // pemantauan.
+  const rtpOutputKode = mitigationResponseKode === "REDUCE" ? "ACTION_PLAN" : "CONTROL_DOCUMENT";
+
   const [responseRef, spipElementRef, spipSubElementRef, outputRef] =
     await Promise.all([
-      getReferenceItemByKeywords("MITIGATION_RESPONSE", [
-        "mengurangi",
-        "mitigasi",
-        "reduce",
-      ]),
-      getReferenceItemByKeywords("SPIP_ELEMENT", [
-        "kegiatan pengendalian",
-        "pengendalian",
-      ]),
-      getReferenceItemByKeywords("SPIP_SUB_ELEMENT", [
-        "pengendalian umum",
-        "umum",
-        "monitoring",
-        "dokumen",
-      ]),
-      getReferenceItemByKeywords("RTP_OUTPUT", [
-        "rencana aksi",
-        "dokumen",
-        "rtp",
-        "output",
-      ]),
+      getReferenceItemByKodeItem("MITIGATION_RESPONSE", mitigationResponseKode),
+      // Unsur SPIP utk RTP/Mitigasi SELALU "Kegiatan Pengendalian" (unsur
+      // SPIP ke-3, PP 60/2008) — ini BUKAN kasus "harus bervariasi per
+      // risiko", tapi konstanta yang benar; sebelumnya salah resolve ke
+      // "Lingkungan Pengendalian" krn bug keyword substring di atas.
+      getReferenceItemByKodeItem("SPIP_ELEMENT", "CONTROL_ACTIVITY"),
+      getReferenceItemByKodeItem("SPIP_SUB_ELEMENT", spipSubElementKode),
+      getReferenceItemByKodeItem("RTP_OUTPUT", rtpOutputKode),
     ]);
 
   const currentLikelihood = getCurrentLikelihoodValue(risk, safeAnalysis);
@@ -867,7 +966,48 @@ const buildDraftPreview = async (riskId, options = {}) => {
     getReferenceItemByNumericValue("IMPACT", afterImpactNumeric),
   ]);
 
-  const actionSentence = removeDuplicatedVerbPrefix(actionParts.join(", "));
+  // Kegiatan Pengendalian sebelumnya sering berujung "X atas X dalam konteks
+  // X" karena slot aksi jatuh ke nama indikator/objek risiko yang sama
+  // (rencana_tindak_lanjut_awal tidak pernah tersimpan). Sekarang slot aksi
+  // diutamakan dari: (1) baris pertama rencana_tindak_lanjut_awal — paling
+  // spesifik per risiko, (2) nuansa Kategori Akar Penyebab (SDM/Proses/
+  // Sistem/Eksternal), (3) nuansa Area Dampak (Pedoman No 2), lalu (4)
+  // actionParts hasil keyword-matching sbg pelengkap — bukan generic label
+  // objek/indikator lagi.
+  const primaryAction = extractFirstBulletLine(risk.rencana_tindak_lanjut_awal);
+  const kategoriAction = resolveKategoriPenyebabAction(safeRootCause.kategori_penyebab);
+  const dampakAction = resolveDampakAreaAction(safeAnalysis.dampak_area);
+
+  const combinedActionParts = [];
+  const pushUniqueAction = (text) => {
+    const trimmed = stripEndingPunctuation(text || "").trim();
+    if (
+      trimmed &&
+      !combinedActionParts.some((item) => item.toLowerCase() === trimmed.toLowerCase())
+    ) {
+      combinedActionParts.push(trimmed);
+    }
+  };
+
+  pushUniqueAction(primaryAction);
+  pushUniqueAction(kategoriAction);
+  pushUniqueAction(dampakAction);
+  actionParts.forEach(pushUniqueAction);
+
+  const boundedActionParts = combinedActionParts.slice(0, 4);
+  const lowerFirst = (value = "") => {
+    const text = String(value || "").trim();
+    return text ? text.charAt(0).toLowerCase() + text.slice(1) : text;
+  };
+  const joinActionParts = (parts) => {
+    if (!parts.length) return "";
+    if (parts.length === 1) return parts[0];
+    const last = lowerFirst(parts[parts.length - 1]);
+    const rest = parts.slice(0, -1).map((item, index) => (index === 0 ? item : lowerFirst(item)));
+    return `${rest.join(", ")}, serta ${last}`;
+  };
+
+  const actionSentence = removeDuplicatedVerbPrefix(joinActionParts(boundedActionParts));
 
   const kegiatanPengendalian = `${capitalizeFirst(
     actionSentence
@@ -929,9 +1069,19 @@ const buildDraftPreview = async (riskId, options = {}) => {
     sub_unsur_spip_ref_id: spipSubElementRef?.id || null,
     output_rtp_ref_id: outputRef?.id || null,
 
-    kegiatan_pengendalian: contextFallbackDraft.kegiatanPengendalian || kegiatanPengendalian,
-    target_output: contextFallbackDraft.targetOutput || targetOutput,
-    indikator_keluaran: contextFallbackDraft.indikatorKeluaran || indikatorKeluaran,
+    // PENTING: `kegiatanPengendalian` (dari actionParts/RCA-aware, di atas)
+    // DIUTAMAKAN — sebelumnya urutan OR ini kebalik (`contextFallbackDraft...
+    // || kegiatanPengendalian`), dan karena contextFallbackDraft.kegiatanPengendalian
+    // SELALU truthy (fallback generik via safeText), jalur RCA-aware yang
+    // lebih spesifik itu jadi TIDAK PERNAH terpakai sama sekali.
+    kegiatan_pengendalian: kegiatanPengendalian || contextFallbackDraft.kegiatanPengendalian,
+    // Sama seperti kegiatan_pengendalian di atas — urutan OR ini SEBELUMNYA
+    // kebalik, jadi target_output/indikator_keluaran SELALU jatuh ke teks
+    // generik contextFallbackDraft (itu sebabnya semua risiko tampil sama:
+    // "Dokumen rencana aksi dan bukti tindak lanjut"). Sekarang versi yang
+    // lebih deskriptif (targetOutput/indikatorKeluaran di atas) diutamakan.
+    target_output: targetOutput || contextFallbackDraft.targetOutput,
+    indikator_keluaran: indikatorKeluaran || contextFallbackDraft.indikatorKeluaran,
     target_keluaran: "1 paket tindak lanjut",
     satuan_keluaran: "Dokumen",
     penanggung_jawab: penanggungJawab,

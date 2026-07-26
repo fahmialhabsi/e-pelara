@@ -3,7 +3,7 @@
 
 import React from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { App, Button, Card, Col, DatePicker, Form, Input, InputNumber, Row, Select, Space, Typography } from "antd";
+import { App, Button, Card, Col, DatePicker, Form, Input, InputNumber, Radio, Row, Select, Space, Typography } from "antd";
 import { ArrowLeftOutlined, SaveOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -52,7 +52,12 @@ export default function MrPlanningTindakLanjutForm() {
 
   React.useEffect(() => {
     if (!tindakLanjut) return;
-    form.setFieldsValue({ ...tindakLanjut, tanggal_pemantauan: tindakLanjut.tanggal_pemantauan ? dayjs(tindakLanjut.tanggal_pemantauan) : null });
+    form.setFieldsValue({
+      ...tindakLanjut,
+      tanggal_pemantauan: tindakLanjut.tanggal_pemantauan ? dayjs(tindakLanjut.tanggal_pemantauan) : null,
+      tanggal_setoran: tindakLanjut.tanggal_setoran ? dayjs(tindakLanjut.tanggal_setoran) : null,
+      target_waktu_berikutnya: tindakLanjut.target_waktu_berikutnya ? dayjs(tindakLanjut.target_waktu_berikutnya) : null,
+    });
     const item = statusItems.find((i) => i.id === tindakLanjut.status_tindak_lanjut_ref_id);
     setStatusKode(item?.kode_item || null);
   }, [tindakLanjut, statusItems, form]);
@@ -73,7 +78,8 @@ export default function MrPlanningTindakLanjutForm() {
     saveMutation.mutate({
       ...values,
       tanggal_pemantauan: values.tanggal_pemantauan ? values.tanggal_pemantauan.format("YYYY-MM-DD") : null,
-      target_waktu_berikutnya: values.target_waktu_berikutnya ? dayjs(values.target_waktu_berikutnya).format("YYYY-MM-DD") : null,
+      tanggal_setoran: values.tanggal_setoran ? values.tanggal_setoran.format("YYYY-MM-DD") : null,
+      target_waktu_berikutnya: values.target_waktu_berikutnya ? values.target_waktu_berikutnya.format("YYYY-MM-DD") : null,
     });
   };
 
@@ -144,6 +150,12 @@ export default function MrPlanningTindakLanjutForm() {
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
+              <Form.Item label="Tanggal Setoran" name="tanggal_setoran">
+                <DatePicker style={{ width: "100%" }} format="YYYY-MM-DD" />
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} md={8}>
               <Form.Item label="PIC" name="pic_nama">
                 <Input />
               </Form.Item>
@@ -154,8 +166,54 @@ export default function MrPlanningTindakLanjutForm() {
                 <Input.TextArea rows={2} />
               </Form.Item>
             </Col>
-            <Col span={24}>
+            <Col xs={24} md={12}>
               <Form.Item label="Rencana Tindak Lanjut Berikutnya" name="rencana_tindak_lanjut_berikutnya">
+                <Input.TextArea rows={2} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item label="Target Waktu Berikutnya" name="target_waktu_berikutnya">
+                <DatePicker style={{ width: "100%" }} format="YYYY-MM-DD" />
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} md={12}>
+              <Form.Item
+                label="Status (Matriks TLHP)"
+                name="status_matriks"
+                extra="Sesuai kolom Status pada Matriks Pemantauan TLHP BPK: apakah tindak lanjut sudah Ada atau masih Belum."
+              >
+                <Radio.Group>
+                  <Radio value="belum">Belum (N)</Radio>
+                  <Radio value="ada">Ada (Ad)</Radio>
+                </Radio.Group>
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item
+                label="Status SPJ"
+                name="status_spj"
+                extra="Kelengkapan Surat Pertanggungjawaban (bukti keuangan), relevan terutama untuk rekomendasi bernilai uang/setoran."
+              >
+                <Radio.Group>
+                  <Radio value="belum">Belum (N)</Radio>
+                  <Radio value="ada">Ada (Ad)</Radio>
+                </Radio.Group>
+              </Form.Item>
+            </Col>
+
+            <Col span={24}>
+              <Form.Item
+                label="Rencana Aksi — Dokumen Pendukung"
+                name="daftar_dokumen_pendukung"
+                extra="Daftar dokumen pendukung penyelesaian, 1 baris = 1 dokumen. Contoh: 'Surat Instruksi Gubernur kepada Kepala Dinas Pangan'."
+              >
+                <Input.TextArea rows={3} placeholder={"Contoh:\nSurat Instruksi Gubernur kepada Kepala Dinas Pangan\nSurat perintah kepala ke Kepala Subbagian Perencanaan"} />
+              </Form.Item>
+            </Col>
+
+            <Col span={24}>
+              <Form.Item label="Keterangan" name="keterangan">
                 <Input.TextArea rows={2} />
               </Form.Item>
             </Col>

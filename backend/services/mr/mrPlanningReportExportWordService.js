@@ -160,6 +160,9 @@ const formatBusinessSourceLabel = (value) => {
     temuan_inspektorat: 'Tindak Lanjut Hasil Pengawasan Inspektorat',
     tindak_lanjut_inspektorat: 'Tindak Lanjut Hasil Pengawasan Inspektorat',
     'tindak lanjut inspektorat': 'Tindak Lanjut Hasil Pengawasan Inspektorat',
+    temuan_bpkp: 'Tindak Lanjut Hasil Pengawasan BPKP',
+    tindak_lanjut_bpkp: 'Tindak Lanjut Hasil Pengawasan BPKP',
+    'tindak lanjut bpkp': 'Tindak Lanjut Hasil Pengawasan BPKP',
     pelaksanaan_kegiatan: 'Pelaksanaan Kegiatan',
     pertanggungjawaban_keuangan: 'Pertanggungjawaban Keuangan',
     pengaduan_masyarakat: 'Pengaduan Masyarakat',
@@ -832,6 +835,7 @@ const buildContextScopeText = ({ context, contextItems = [] }) => {
     `Ruang lingkup laporan ini mencakup pengelolaan Manajemen Risiko Terpadu pada ${namaOpd} ` +
     `berdasarkan sumber data risiko yang tersedia dalam cakupan laporan. Sumber data risiko dapat berasal dari Renstra, LAKIP, ` +
     `Laporan Keuangan, Tindak Lanjut Hasil Pemeriksaan BPK, Tindak Lanjut Hasil Pengawasan Inspektorat, ` +
+    `Tindak Lanjut Hasil Pengawasan BPKP, ` +
     `Pelaksanaan Kegiatan, Pertanggungjawaban Keuangan, SPIP/e-SIGAP, Input Manual Pengelola Risiko, atau sumber lain yang sah. ` +
     `Sumber data risiko yang tersedia dalam laporan ini adalah: ${sourceText}. ` +
     `Objek risiko non-Renstra tidak diklaim sebagai indikator Renstra, melainkan ditampilkan sebagai Indikator / Objek Risiko sesuai sumber datanya.`
@@ -1029,11 +1033,18 @@ const buildMatriks5x5Table = (report = {}) => {
     return [makeParagraph('Data matriks risiko belum tersedia dalam Setting Parameter.')];
   }
 
-  // Index: key = "likelihood_dampak"
+  // Index: key = "likelihood_dampak" — mr_risk_matrix (getRiskMatrix,
+  // mrPlanningReportQueryService.js) SELECT rm.* langsung, kolom aslinya
+  // likelihood_value/impact_value (dicek db.MrRiskMatrix.rawAttributes
+  // 2026-07-25) — BUKAN likelihood/kemungkinan/baris atau impact/dampak/kolom,
+  // itu sebabnya tabel 7.1C selalu tampil kosong ("-" di semua 25 sel) walau
+  // matrixRows.length > 0 (skor & level risiko di register/lampiran lain tetap
+  // benar karena dihitung backend langsung dari mr_risk_matrix, bukan dari
+  // rendering tabel ini — cuma tabel referensinya yang tidak pernah terisi).
   const cellMap = {};
   matrixRows.forEach((row) => {
-    const lk = Number(row.likelihood || row.kemungkinan || row.baris || 0);
-    const dp = Number(row.impact || row.dampak || row.kolom || 0);
+    const lk = Number(row.likelihood_value ?? row.likelihood ?? row.kemungkinan ?? row.baris ?? 0);
+    const dp = Number(row.impact_value ?? row.impact ?? row.dampak ?? row.kolom ?? 0);
     if (lk >= 1 && lk <= 5 && dp >= 1 && dp <= 5) {
       cellMap[`${lk}_${dp}`] = row;
     }
@@ -1049,11 +1060,11 @@ const buildMatriks5x5Table = (report = {}) => {
 
   const impactHeaders = [
     'Frekuensi \\ Dampak',
-    '1 Tdk Signifikan',
-    '2 Minor',
-    '3 Moderat',
-    '4 Signifikan',
-    '5 Sangat Signifikan',
+    '1. Tidak Signifikan',
+    '2. Minor',
+    '3. Moderat',
+    '4. Signifikan',
+    '5. Sangat Signifikan',
   ];
 
   const tableRows = [5, 4, 3, 2, 1].map((lk) => {
@@ -1103,16 +1114,16 @@ const buildPetaRisikoGrid = (riskMap = {}, mapType = 'inherent', label = 'Peta R
     4: '4 — Sering',
     3: '3 — Kadang',
     2: '2 — Jarang',
-    1: '1 — Tdk Terjadi',
+    1: '1 — Tidak Terjadi',
   };
 
   const headers = [
     'Frek \\ Dampak',
-    '1 Tdk Sig.',
-    '2 Minor',
-    '3 Moderat',
-    '4 Signifikan',
-    '5 Sgt Signifikan',
+    '1. Tidak Signifikan.',
+    '2. Minor',
+    '3. Moderat',
+    '4. Signifikan',
+    '5. Sangat Signifikan',
   ];
 
   const tableRows = [5, 4, 3, 2, 1].map((lk) => {
@@ -1677,9 +1688,28 @@ const makeRenstraTable = (contextItems = []) => {
   });
 };
 
+// 4.1A/4.1B.1 sengaja HANYA menampilkan indikator Renstra level Sasaran (kode
+// "ISASTR...") — indikator level lain (Tujuan "ITUT...", Program "IP...", dst)
+// dikeluarkan dari kedua tabel ini atas permintaan user, karena risiko Renstra
+// di modul MR memang selalu dibuat dari indikator level Sasaran ("Risiko
+// Ketidakpencapaian Target [Nama Indikator]" — lihat getSasaranIndikatorOptions
+// di mrAutoFillAggregatorService.js), jadi indikator non-Sasaran cuma noise
+// (contoh nyata: laporan 2025 tampil 115 baris Sumber Data Risiko padahal
+// cuma 1 yang benar-benar jadi risiko). Sumber non-Renstra (BPK/Inspektorat/
+// BPKP/Lakip/dst, section 4.1B.2 dst) TIDAK terpengaruh filter ini.
+const isSasaranRenstraContextItem = (item = {}) =>
+  String(item.kode_indikator || '')
+    .trim()
+    .toUpperCase()
+    .startsWith('ISASTR');
+
+const filterContextItemsForSumberDataLampiran = (contextItems = []) =>
+  contextItems.filter((item) => isNonRenstraContextItem(item) || isSasaranRenstraContextItem(item));
+
 const buildContextSection = ({ context, contextItems = [], report = {} }) => {
   const approvalGate = getReportApprovalGate(report);
   const sumberData = getUniqueContextSources(contextItems).map(formatBusinessSourceLabel);
+  const sumberDataLampiranItems = filterContextItemsForSumberDataLampiran(contextItems);
 
   return [
     makeHeading1('4. Informasi Umum Laporan'),
@@ -1711,7 +1741,7 @@ const buildContextSection = ({ context, contextItems = [], report = {} }) => {
       headers: ['No', 'Sumber Data Risiko', 'Referensi Sumber', 'Indikator / Objek Risiko'],
       widths: [6, 20, 18, 56],
       fontSize: 14,
-      rows: contextItems.map((item, index) => [
+      rows: sumberDataLampiranItems.map((item, index) => [
         index + 1,
         formatBusinessSourceLabel(item.jenis_konteks || item.source_table || item.stage),
         getContextSummaryReferenceText(item),
@@ -1727,11 +1757,11 @@ const buildContextSection = ({ context, contextItems = [], report = {} }) => {
 
     makeHeading2('4.1B Jejak Keterkaitan Sumber Data Risiko'),
     makeSmallNote(
-      'Jejak keterkaitan sumber data risiko disajikan sesuai karakteristik sumber datanya. Sumber Renstra memuat informasi indikator, satuan, baseline, dan target. Sumber non-Renstra memuat nomor/referensi, objek risiko, dan keterangan dokumen sumber tanpa memaksakan kolom baseline atau target.',
+      'Jejak keterkaitan sumber data risiko disajikan sesuai karakteristik sumber datanya. Sumber Renstra memuat informasi indikator, satuan, baseline, dan target (khusus indikator level Sasaran). Sumber non-Renstra memuat nomor/referensi, objek risiko, dan keterangan dokumen sumber tanpa memaksakan kolom baseline atau target.',
     ),
 
     makeHeading2('4.1B.1 Detail Sumber Data Renstra'),
-    makeRenstraTable(contextItems),
+    makeRenstraTable(sumberDataLampiranItems),
 
     makeSpacer(),
 
@@ -1768,7 +1798,10 @@ const buildSummarySection = ({ summary, contextItems = [] }) => [
     'Total Sumber Data Risiko menunjukkan jumlah sumber informasi, objek risiko, dan jejak keterkaitan data yang menjadi dasar penyusunan risiko dalam laporan. Total Risiko dan Total Usulan Risiko menunjukkan jumlah register risiko yang tercatat dalam cakupan laporan.',
   ),
   makeKeyValueTable([
-    ['Total Sumber Data Risiko', contextItems.length],
+    // Selaras dgn filter 4.1A/4.1B.1 (isSasaranRenstraContextItem) — supaya
+    // angka ringkasan tidak lebih besar dari jumlah baris yg benar-benar
+    // tampil di tabel Sumber Data Risiko.
+    ['Total Sumber Data Risiko', filterContextItemsForSumberDataLampiran(contextItems).length],
     ['Total Risiko', summary.total_risiko],
     ['Total Usulan Risiko', summary.total_usulan_risiko],
     ['Risiko di Atas Selera Risiko', summary.total_risiko_di_atas_selera],
@@ -2133,17 +2166,19 @@ const buildLampiranAnalisis = ({ analisisRisiko = [], daftarRisiko = [] }) => {
       headers: [
         'No',
         'Kode Risiko',
+        'Area Dampak',
         'Pengendalian Ada?',
         'Memadai?',
         'Inheren (K / D â†’ Skor / Level)',
         'Residu (Skor / Level)',
         'Di Atas Selera',
       ],
-      widths: [5, 14, 13, 13, 25, 16, 14],
+      widths: [5, 12, 14, 11, 11, 22, 14, 11],
       fontSize: 12,
       rows: analisisRisiko.map((item, index) => [
         index + 1,
         formatRiskCodeDisplayForWord(item.kode_risiko),
+        safeFilledText(item.dampak_area),
         safeExistingControl(item),
         safeAdequacy(item),
         safeInherent(item),
@@ -2382,37 +2417,46 @@ const buildLampiranPrioritas = ({ risikoPrioritas = [], contextSeleraRisiko = nu
 };
 // â”€â”€â”€ end R17C-2E â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+// PENTING: taksonomi kategori akar penyebab di sistem ini BUKAN "6M"
+// Man/Money/Method/Material/Machine/External — reference group
+// ROOT_CAUSE_CATEGORY cuma punya 4 kode_item nyata: PEOPLE/PROCESS/SYSTEM/
+// EXTERNAL (dicek db 2026-07-25, sama seperti fix normalize6mCode di
+// mrPlanningReportQueryService.js/getEfektivitasPengendalian — fungsi INI
+// (dipakai Lampiran 4B) duplikat terpisah yg sempat kelewatan waktu itu).
+// Label kolom laporan "Kode Penyebab 6M" tetap dipertahankan (istilah
+// historis Form Coaching Clinic), tapi mapping-nya ikut 4 kategori nyata.
 const resolve6mCode = (value) => {
   const normalized = String(value || '')
     .trim()
     .toLowerCase();
   const map = {
-    man: 'Man',
-    manusia: 'Man',
-    money: 'Money',
-    uang: 'Money',
-    method: 'Method',
-    metode: 'Method',
-    material: 'Material',
-    bahan: 'Material',
-    machine: 'Machine',
-    mesin: 'Machine',
-    external: 'External',
-    lingkungan: 'External',
+    people: 'SDM (People)',
+    man: 'SDM (People)',
+    manusia: 'SDM (People)',
+    sdm: 'SDM (People)',
+    process: 'Proses (Process)',
+    proses: 'Proses (Process)',
+    method: 'Proses (Process)',
+    metode: 'Proses (Process)',
+    system: 'Sistem (System)',
+    sistem: 'Sistem (System)',
+    external: 'Eksternal (External)',
+    eksternal: 'Eksternal (External)',
+    lingkungan: 'Eksternal (External)',
   };
 
   if (map[normalized]) return map[normalized];
 
-  const token = normalized.match(/\b(man|money|method|material|machine|external)\b/i);
-  return token ? token[1][0].toUpperCase() + token[1].slice(1).toLowerCase() : 'Belum Tersedia';
+  const token = normalized.match(/\b(people|process|system|external)\b/i);
+  return token ? map[token[1].toLowerCase()] : 'Belum Tersedia';
 };
 
 const buildLampiranRca = ({ rootCauseAnalysis = [] }) => [
-  makeHeading1('Lampiran 3 — Analisis Akar Masalah/RCA'),
+  makeHeading1('Lampiran 4 — Analisis Akar Masalah/RCA'),
   ...makeLampiranIntro(
     'RCA dipisah menjadi tiga tabel agar lebih mudah dibaca: urutan Why, akar penyebab, dan tindak pengendalian.',
   ),
-  makeHeading2('Lampiran 3A — Urutan Why'),
+  makeHeading2('Lampiran 4A — Urutan Why'),
   makeTable({
     headers: ['No', 'Kode Risiko', 'Kode Penyebab', 'Why 1', 'Why 2', 'Why 3', 'Why 4', 'Why 5'],
     widths: [4, 12, 12, 12, 12, 12, 12, 12],
@@ -2431,7 +2475,7 @@ const buildLampiranRca = ({ rootCauseAnalysis = [] }) => [
 
   makeSpacer(),
 
-  makeHeading2('Lampiran 3B — Akar Penyebab dan 6M'),
+  makeHeading2('Lampiran 4B — Akar Penyebab dan 6M'),
   makeTable({
     headers: ['No', 'Kode Risiko', 'Akar Penyebab', 'Kode Penyebab 6M'],
     widths: [4, 12, 52, 16],
@@ -2446,7 +2490,7 @@ const buildLampiranRca = ({ rootCauseAnalysis = [] }) => [
 
   makeSpacer(),
 
-  makeHeading2('Lampiran 3C — Kegiatan Pengendalian'),
+  makeHeading2('Lampiran 4C — Kegiatan Pengendalian'),
   makeTable({
     headers: ['No', 'Kode Risiko', 'Kegiatan Pengendalian'],
     widths: [4, 12, 68],
@@ -2460,12 +2504,12 @@ const buildLampiranRca = ({ rootCauseAnalysis = [] }) => [
 ];
 
 const buildLampiranRtp = ({ rencanaPengendalian = [], context = {} }) => [
-  makeHeading1('Lampiran 4 — Rencana Tindak Pengendalian'),
+  makeHeading1('Lampiran 5 — Rencana Tindak Pengendalian'),
   ...makeLampiranIntro(
     'Rencana tindak pengendalian dipecah menjadi ringkasan mitigasi, detail kegiatan pengendalian, dan indikator keluaran sesuai Pedoman No 9.',
   ),
 
-  makeHeading2('Lampiran 4A â€” Ringkasan Mitigasi'),
+  makeHeading2('Lampiran 5A â€” Ringkasan Mitigasi'),
   makeTable({
     headers: [
       'No',
@@ -2498,7 +2542,7 @@ const buildLampiranRtp = ({ rencanaPengendalian = [], context = {} }) => [
 
   makeSpacer(),
 
-  makeHeading2('Lampiran 4B â€” Detail Kegiatan dan Output Pengendalian'),
+  makeHeading2('Lampiran 5B â€” Detail Kegiatan dan Output Pengendalian'),
   makeTable({
     headers: ['No', 'Kode Risiko', 'Kegiatan Pengendalian', 'Target Output', 'Target Waktu'],
     widths: [5, 14, 33, 24, 18],
@@ -2508,13 +2552,13 @@ const buildLampiranRtp = ({ rencanaPengendalian = [], context = {} }) => [
       formatRiskCodeDisplayForWord(item.kode_risiko),
       safeFilledText(item.kegiatan_pengendalian),
       safeFilledText(item.target_output),
-      safeFilledText(item.target_waktu),
+      item.target_waktu ? formatDate(item.target_waktu) : 'Belum Diisi',
     ]),
   }),
 
   makeSpacer(),
 
-  makeHeading2('Lampiran 4C â€” Indikator Keluaran dan Penanggung Jawab'),
+  makeHeading2('Lampiran 5C â€” Indikator Keluaran dan Penanggung Jawab'),
   makeTable({
     headers: ['No', 'Kode Risiko', 'Indikator Keluaran', 'Penanggung Jawab'],
     widths: [5, 15, 41, 39],
@@ -2529,7 +2573,7 @@ const buildLampiranRtp = ({ rencanaPengendalian = [], context = {} }) => [
 
   makeSpacer(),
 
-  makeHeading2('Lampiran 4D — Risiko Setelah Respons'),
+  makeHeading2('Lampiran 5D — Risiko Setelah Respons'),
   makeTable({
     headers: ['No', 'Kode Risiko', 'Frekuensi', 'Dampak', 'Level'],
     widths: [5, 15, 15, 15, 18],
@@ -2545,12 +2589,12 @@ const buildLampiranRtp = ({ rencanaPengendalian = [], context = {} }) => [
 ];
 
 const buildLampiranRealisasi = ({ realisasiPengendalian = [], context = {} }) => [
-  makeHeading1('Lampiran 5 — Realisasi/Pemantauan Pengendalian'),
+  makeHeading1('Lampiran 6 — Realisasi/Pemantauan Pengendalian'),
   ...makeLampiranIntro(
     'Realisasi pengendalian dipecah menjadi ringkasan progres dan detail hasil pemantauan.',
   ),
 
-  makeHeading2('Lampiran 5A — Ringkasan Progres Pengendalian'),
+  makeHeading2('Lampiran 6A — Ringkasan Progres Pengendalian'),
   makeTable({
     headers: [
       'No',
@@ -2583,7 +2627,7 @@ const buildLampiranRealisasi = ({ realisasiPengendalian = [], context = {} }) =>
 
   makeSpacer(),
 
-  makeHeading2('Lampiran 5B — Hasil Monitoring dan Realisasi Mitigasi'),
+  makeHeading2('Lampiran 6B — Hasil Monitoring dan Realisasi Mitigasi'),
   makeTable({
     headers: ['No', 'Kode Risiko', 'Hasil Monitoring', 'Realisasi Mitigasi'],
     widths: [5, 17, 39, 39],
@@ -2598,7 +2642,7 @@ const buildLampiranRealisasi = ({ realisasiPengendalian = [], context = {} }) =>
 
   makeSpacer(),
 
-  makeHeading2('Lampiran 5C — Kendala, Tindak Lanjut, dan Rekomendasi'),
+  makeHeading2('Lampiran 6C — Kendala, Tindak Lanjut, dan Rekomendasi'),
   makeTable({
     headers: ['No', 'Kode Risiko', 'Kendala', 'Tindak Lanjut', 'Rekomendasi'],
     widths: [5, 17, 26, 26, 26],
@@ -2614,7 +2658,7 @@ const buildLampiranRealisasi = ({ realisasiPengendalian = [], context = {} }) =>
 ];
 
 const buildLampiranMonitoringLevel = ({ monitoringLevelRisiko = [] }) => [
-  makeHeading1('Lampiran 6 — Monitoring Level Risiko'),
+  makeHeading1('Lampiran 8 — Monitoring Level Risiko'),
   ...makeLampiranIntro(
     'Monitoring level risiko disajikan dalam tabel agar frekuensi kejadian, level aktual, deviasi, dan rekomendasi terbaca eksplisit sesuai Pedoman No 12.',
   ),
@@ -2667,7 +2711,7 @@ const buildLampiranPedoman13ReviuUsulanRisiko = ({ report }) => {
   };
 
   return [
-    makeHeading1('Lampiran 8 — Pedoman No 13 Reviu Usulan Risiko Baru'),
+    makeHeading1('Lampiran 9 — Pedoman No 13 Reviu Usulan Risiko Baru'),
     makeSmallNote(
       'Lampiran ini menyajikan hasil reviu usulan risiko baru sesuai Pedoman No 13. ' +
         'Untuk menjaga keterbacaan, lampiran dipecah menjadi dua tabel: ' +
@@ -2675,7 +2719,7 @@ const buildLampiranPedoman13ReviuUsulanRisiko = ({ report }) => {
         'sedangkan Lampiran 8.2 menyajikan alasan penolakan dan keterangan tambahan per risiko.',
     ),
 
-    makeHeading2('Lampiran 8.1 — Ringkasan Status Reviu Usulan Risiko'),
+    makeHeading2('Lampiran 9.1 — Ringkasan Status Reviu Usulan Risiko'),
     makeSmallNote(`Total usulan risiko yang direviu: ${rows.length} usulan.`),
     makeTable({
       headers: [
@@ -2700,7 +2744,7 @@ const buildLampiranPedoman13ReviuUsulanRisiko = ({ report }) => {
 
     makeSpacer(),
 
-    makeHeading2('Lampiran 8.2 — Detail Alasan dan Keterangan Reviu'),
+    makeHeading2('Lampiran 9.2 — Detail Alasan dan Keterangan Reviu'),
     makeSmallNote(
       'Kolom Alasan Ditolak diisi apabila keputusan reviu adalah Ditolak. ' +
         'Kolom Keterangan memuat catatan tambahan dari proses reviu usulan risiko.',
@@ -2741,7 +2785,7 @@ const buildLampiranPedoman14PengendalianBelumTerealisasi = ({ report }) => {
   };
 
   return [
-    makeHeading1('Lampiran 9 — Pedoman No 14 Pengendalian Belum Terealisasi'),
+    makeHeading1('Lampiran 10 — Pedoman No 14 Pengendalian Belum Terealisasi'),
     makeSmallNote(
       'Lampiran ini menyajikan pengendalian yang belum terealisasi sesuai Pedoman No 14. ' +
         'Untuk menjaga keterbacaan, lampiran dipecah menjadi dua tabel: ' +
@@ -2751,7 +2795,7 @@ const buildLampiranPedoman14PengendalianBelumTerealisasi = ({ report }) => {
 
     ...(rows.length
       ? [
-          makeHeading2('Lampiran 9.1 — Ringkasan Status Pengendalian Belum Terealisasi'),
+          makeHeading2('Lampiran 10.1 — Ringkasan Status Pengendalian Belum Terealisasi'),
           makeSmallNote(`Total pengendalian belum terealisasi: ${rows.length} kegiatan.`),
           makeTable({
             headers: [
@@ -2780,7 +2824,7 @@ const buildLampiranPedoman14PengendalianBelumTerealisasi = ({ report }) => {
 
           makeSpacer(),
 
-          makeHeading2('Lampiran 9.2 — Kendala, Keterangan, dan Tindak Lanjut'),
+          makeHeading2('Lampiran 10.2 — Kendala, Keterangan, dan Tindak Lanjut'),
           makeSmallNote(
             'Kolom Kendala memuat hambatan pelaksanaan pengendalian. ' +
               'Kolom Keterangan Belum Terealisasi memuat penjelasan mengapa kegiatan belum selesai. ' +
@@ -2827,7 +2871,7 @@ const buildLampiranPedoman15EfektivitasPengendalian = ({ report }) => {
   );
 
   return [
-    makeHeading1('Lampiran 10 — Pedoman No 15 Pemantauan Efektivitas Pengendalian'),
+    makeHeading1('Lampiran 11 — Pedoman No 15 Pemantauan Efektivitas Pengendalian'),
     makeSmallNote(
       'Lampiran ini menyajikan pemantauan efektivitas pengendalian sesuai Pedoman No 15. ' +
         'Untuk menjaga keterbacaan, lampiran dipecah menjadi tiga tabel: ' +
@@ -2836,7 +2880,7 @@ const buildLampiranPedoman15EfektivitasPengendalian = ({ report }) => {
         'sedangkan Lampiran 10.3 menyajikan efektivitas, rekomendasi, dan keterangan.',
     ),
 
-    makeHeading2('Lampiran 10.1 — Identifikasi Risiko dan Kegiatan Pengendalian'),
+    makeHeading2('Lampiran 11.1 — Identifikasi Risiko dan Kegiatan Pengendalian'),
     makeSmallNote(`Total data pemantauan efektivitas: ${rows.length} entri.`),
     makeTable({
       headers: [
@@ -2861,7 +2905,7 @@ const buildLampiranPedoman15EfektivitasPengendalian = ({ report }) => {
 
     makeSpacer(),
 
-    makeHeading2('Lampiran 10.2 — Perbandingan Nilai Residu, Aktual, dan Deviasi'),
+    makeHeading2('Lampiran 11.2 — Perbandingan Nilai Residu, Aktual, dan Deviasi'),
     makeSmallNote(
       'Kolom Residu menunjukkan nilai risiko setelah pengendalian direncanakan. ' +
         'Kolom Aktual menunjukkan nilai risiko yang terjadi sesungguhnya. ' +
@@ -2888,7 +2932,7 @@ const buildLampiranPedoman15EfektivitasPengendalian = ({ report }) => {
 
     makeSpacer(),
 
-    makeHeading2('Lampiran 10.3 — Efektivitas, Rekomendasi, dan Keterangan'),
+    makeHeading2('Lampiran 11.3 — Efektivitas, Rekomendasi, dan Keterangan'),
     makeSmallNote(
       'Kolom Efektivitas menunjukkan penilaian efektivitas pengendalian berdasarkan perbandingan residu dan aktual. ' +
         'Kolom Rekomendasi memuat saran tindak lanjut. ' +
@@ -2970,6 +3014,202 @@ const buildLampiranKejadian = ({ kejadianRisiko = [] }) => {
   ];
 };
 
+// PENTING: halaman ini dirancang agar Pejabat (Kepala Dinas/pemilik risiko)
+// bisa langsung tahu risiko mana yang butuh keputusan/tindak lanjut segera
+// tanpa perlu membaca seluruh lampiran satu per satu. Kriteria "perlu segera":
+// (1) level Tinggi/Ekstrem DAN di atas selera risiko — butuh keputusan respons
+// risiko; (2) efektivitas pengendalian "Belum Efektif" (hasil perbandingan
+// aktual vs residu, konsisten dgn fix Lampiran 11.3); (3) rencana pengendalian
+// sudah lewat target waktu tapi progres < 100%; (4) risiko benar-benar sudah
+// terjadi (Lampiran 7, bukan sekadar potensi). Satu risiko bisa kena >1
+// kriteria — semakin banyak alasan, semakin tinggi prioritas ditampilkan.
+const buildRingkasanEksekutif = ({ report = {} }) => {
+  const daftarRisiko = report.lampiran?.daftar_risiko || [];
+  const efektivitasPengendalian = getSectionRows(
+    report,
+    'pedoman_no_15_efektivitas_pengendalian',
+    report.lampiran?.efektivitas_pengendalian || [],
+  );
+  const pengendalianBelumTerealisasiSection = report.lampiran?.pengendalian_belum_terealisasi;
+  const pengendalianBelumTerealisasi = Array.isArray(pengendalianBelumTerealisasiSection?.rows)
+    ? pengendalianBelumTerealisasiSection.rows
+    : Array.isArray(pengendalianBelumTerealisasiSection)
+      ? pengendalianBelumTerealisasiSection
+      : getSectionRows(report, 'pedoman_no_14_pengendalian_belum_terealisasi', []);
+  const kejadianRisiko = report.lampiran?.kejadian_risiko || [];
+  const summary = report.summary || {};
+
+  const isAboveAppetite = (value) => value === true || Number(value) === 1;
+  const today = new Date();
+
+  const items = new Map();
+  const ensureItem = (kodeRisiko, namaRisiko, levelRisiko, skorRisiko) => {
+    const kode = safeReportText(kodeRisiko, '');
+    if (!kode || kode === 'Belum Tersedia') return null;
+    if (!items.has(kode)) {
+      items.set(kode, {
+        kode_risiko: kode,
+        nama_risiko: safeReportText(namaRisiko),
+        level_risiko: safeReportText(levelRisiko),
+        skor_risiko: skorRisiko,
+        alasan: [],
+        rekomendasi: [],
+      });
+    }
+    const item = items.get(kode);
+    if (levelRisiko && (!item.level_risiko || item.level_risiko === 'Belum Tersedia')) {
+      item.level_risiko = safeReportText(levelRisiko);
+    }
+    return item;
+  };
+
+  daftarRisiko
+    .filter(
+      (r) =>
+        isAboveAppetite(r.is_above_appetite) &&
+        ['tinggi', 'ekstrem'].includes(String(r.level_risiko || '').trim().toLowerCase()),
+    )
+    .forEach((r) => {
+      const item = ensureItem(r.kode_risiko, r.nama_risiko, r.level_risiko, r.skor_risiko);
+      if (!item) return;
+      item.alasan.push(
+        `Level risiko ${safeReportText(r.level_risiko)} dan berada di atas selera risiko yang ditetapkan.`,
+      );
+      item.rekomendasi.push(
+        'Perlu keputusan pejabat terkait strategi respons risiko (mitigasi/penerimaan) dan penguatan pengendalian.',
+      );
+    });
+
+  efektivitasPengendalian
+    .filter((r) => String(r.efektivitas_pengendalian || '').trim() === 'Belum Efektif')
+    .forEach((r) => {
+      const item = ensureItem(r.kode_risiko, r.nama_risiko, null, null);
+      if (!item) return;
+      item.alasan.push(
+        'Pengendalian yang berjalan belum efektif menurunkan risiko aktual dibanding residu.',
+      );
+      if (r.rekomendasi && r.rekomendasi !== 'Belum Tersedia') {
+        item.rekomendasi.push(safeReportText(r.rekomendasi));
+      }
+    });
+
+  pengendalianBelumTerealisasi
+    .filter((r) => {
+      const targetRaw = r.target_waktu;
+      if (!targetRaw || targetRaw === 'Belum Tersedia') return false;
+      const target = new Date(targetRaw);
+      if (Number.isNaN(target.getTime())) return false;
+      return target < today && safeNumber(r.progress_persen, 0) < 100;
+    })
+    .forEach((r) => {
+      const item = ensureItem(r.kode_risiko, r.nama_risiko, null, null);
+      if (!item) return;
+      item.alasan.push(
+        `Rencana tindak pengendalian sudah melewati target waktu (${formatDate(r.target_waktu)}) namun progres baru ${safeNumber(r.progress_persen)}%.`,
+      );
+      item.rekomendasi.push(
+        'Perlu keputusan pejabat untuk percepatan realisasi atau revisi target waktu pengendalian.',
+      );
+    });
+
+  kejadianRisiko.forEach((r) => {
+    const item = ensureItem(r.kode_risiko, r.nama_risiko, null, null);
+    if (!item) return;
+    item.alasan.push(
+      'Risiko telah benar-benar terjadi (bukan sekadar potensi) dan memerlukan evaluasi tindak lanjut.',
+    );
+    if (r.tindak_lanjut_kejadian) {
+      item.rekomendasi.push(safeReportText(r.tindak_lanjut_kejadian));
+    }
+  });
+
+  const prioritized = Array.from(items.values())
+    .map((item) => ({
+      ...item,
+      jumlah_alasan: item.alasan.length,
+      alasan_text: item.alasan.join(' '),
+      rekomendasi_text: Array.from(new Set(item.rekomendasi)).join(' '),
+      prioritas: item.alasan.length >= 2 ? 'Tinggi' : 'Sedang',
+    }))
+    .sort(
+      (a, b) =>
+        b.jumlah_alasan - a.jumlah_alasan ||
+        String(a.kode_risiko).localeCompare(String(b.kode_risiko)),
+    );
+
+  return {
+    total_risiko: safeNumber(summary.total_risiko, daftarRisiko.length),
+    total_di_atas_selera: safeNumber(
+      summary.total_risiko_di_atas_selera,
+      daftarRisiko.filter((r) => isAboveAppetite(r.is_above_appetite)).length,
+    ),
+    total_pengendalian_belum_terealisasi: pengendalianBelumTerealisasi.length,
+    total_belum_efektif: efektivitasPengendalian.filter(
+      (r) => String(r.efektivitas_pengendalian || '').trim() === 'Belum Efektif',
+    ).length,
+    total_kejadian_aktual: safeNumber(summary.total_kejadian_risiko, kejadianRisiko.length),
+    risiko_perlu_tindak_lanjut: prioritized,
+  };
+};
+
+const buildRingkasanEksekutifSection = ({ report = {} }) => {
+  const ringkasan = buildRingkasanEksekutif({ report });
+  const rows = ringkasan.risiko_perlu_tindak_lanjut;
+
+  return [
+    makeHeading1('Ringkasan Eksekutif'),
+    makeSmallNote(
+      'Halaman ini merangkum risiko-risiko yang memerlukan perhatian dan keputusan segera dari pejabat, ' +
+        'disusun otomatis dari data register risiko, efektivitas pengendalian, realisasi pengendalian, ' +
+        'dan kejadian risiko aktual dalam cakupan laporan ini. Uraian lengkap tersedia pada lampiran terkait.',
+    ),
+
+    makeKeyValueTable([
+      ['Total Risiko dalam Cakupan Laporan', String(ringkasan.total_risiko)],
+      ['Risiko di Atas Selera Risiko', String(ringkasan.total_di_atas_selera)],
+      ['Pengendalian Belum Terealisasi', String(ringkasan.total_pengendalian_belum_terealisasi)],
+      ['Pengendalian Belum Efektif', String(ringkasan.total_belum_efektif)],
+      ['Kejadian Risiko Aktual Terjadi', String(ringkasan.total_kejadian_aktual)],
+      ['Risiko Perlu Tindak Lanjut/Keputusan Segera', String(rows.length)],
+    ]),
+
+    makeSpacer(),
+
+    makeHeading2('Daftar Risiko Perlu Tindak Lanjut/Keputusan Segera'),
+
+    ...(rows.length
+      ? [
+          makeTable({
+            headers: [
+              'No',
+              'Kode Risiko',
+              'Nama Risiko',
+              'Level',
+              'Prioritas',
+              'Alasan Perlu Ditindaklanjuti',
+              'Rekomendasi Tindakan',
+            ],
+            widths: [4, 12, 18, 8, 8, 25, 25],
+            fontSize: 12,
+            rows: rows.map((item, index) => [
+              index + 1,
+              formatRiskCodeDisplayForWord(item.kode_risiko),
+              safeFilledText(item.nama_risiko),
+              safeFilledText(item.level_risiko, 'Belum Tersedia'),
+              item.prioritas,
+              safeFilledText(item.alasan_text, '-'),
+              safeRecommendationText(item.rekomendasi_text),
+            ]),
+          }),
+        ]
+      : [
+          makeSmallNote(
+            'Tidak terdapat risiko yang memerlukan tindak lanjut atau keputusan segera pada cakupan laporan ini.',
+          ),
+        ]),
+  ];
+};
+
 const buildConclusionSection = ({ summary }) => [
   makeHeading1('8. Kesimpulan'),
   makeParagraph(
@@ -2997,25 +3237,27 @@ const buildWordDocument = async (contextId) => {
 
   const { context, context_items: contextItems, summary, narasi, lampiran } = report;
 
-    const mainChildren = [
-      ...buildCoverAndIntro({ context, contextItems }),
-      ...buildContextSection({ context, contextItems, report }),
-      ...buildDataQualityWarningSection(report),
-      ...buildSummarySection({ summary, contextItems }),
-      ...buildNarrativeSection({
-        narasi,
-        daftarRisiko: lampiran.daftar_risiko || [],
-        context,
-        summary,
-      }),
-      ...buildFinalPedomanSummarySection(report),
-      ...buildConclusionSection({ summary }),
+  const mainChildren = [
+    ...buildCoverAndIntro({ context, contextItems }),
+    ...buildRingkasanEksekutifSection({ report }),
+    makeSpacer(),
+    ...buildContextSection({ context, contextItems, report }),
+    ...buildDataQualityWarningSection(report),
+    ...buildSummarySection({ summary, contextItems }),
+    ...buildNarrativeSection({
+      narasi,
+      daftarRisiko: lampiran.daftar_risiko || [],
+      context,
+      summary,
+    }),
+    ...buildFinalPedomanSummarySection(report),
+    ...buildConclusionSection({ summary }),
 
-      makeHeading1('10. Daftar Lampiran'),
-      makeParagraph(
-        'Lampiran berikut merupakan ringkasan data Manajemen Risiko yang dihasilkan dari proses pengelolaan risiko terpadu. Untuk menjaga keterbacaan dokumen, beberapa lampiran disajikan pada halaman landscape dan tabel yang terlalu lebar dipecah menjadi tabel ringkasan dan tabel detail.',
-      ),
-    ];
+    makeHeading1('10. Daftar Lampiran'),
+    makeParagraph(
+      'Lampiran berikut merupakan ringkasan data Manajemen Risiko yang dihasilkan dari proses pengelolaan risiko terpadu. Untuk menjaga keterbacaan dokumen, beberapa lampiran disajikan pada halaman landscape dan tabel yang terlalu lebar dipecah menjadi tabel ringkasan dan tabel detail.',
+    ),
+  ];
 
   const lampiranChildren = [
     ...buildLampiranRisiko({
@@ -3031,14 +3273,14 @@ const buildWordDocument = async (contextId) => {
     }),
     makeSpacer(),
 
-    ...buildLampiranRca({
-      rootCauseAnalysis: lampiran.root_cause_analysis || [],
-    }),
-    makeSpacer(),
-
     ...buildLampiranPrioritas({
       risikoPrioritas: lampiran.risiko_prioritas || [],
       contextSeleraRisiko: context?.selera_risiko ?? null,
+    }),
+    makeSpacer(),
+
+    ...buildLampiranRca({
+      rootCauseAnalysis: lampiran.root_cause_analysis || [],
     }),
     makeSpacer(),
 
@@ -3051,6 +3293,11 @@ const buildWordDocument = async (contextId) => {
     ...buildLampiranRealisasi({
       realisasiPengendalian: lampiran.realisasi_pengendalian || [],
       context,
+    }),
+    makeSpacer(),
+
+    ...buildLampiranKejadian({
+      kejadianRisiko: lampiran.kejadian_risiko || [],
     }),
     makeSpacer(),
 
@@ -3071,11 +3318,6 @@ const buildWordDocument = async (contextId) => {
 
     ...buildLampiranPedoman15EfektivitasPengendalian({
       report,
-    }),
-    makeSpacer(),
-
-    ...buildLampiranKejadian({
-      kejadianRisiko: lampiran.kejadian_risiko || [],
     }),
   ];
 

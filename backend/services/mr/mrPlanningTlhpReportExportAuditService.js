@@ -55,6 +55,7 @@ const buildBasePayload = ({
   error,
 } = {}) => {
   const normalizedFormat = normalizeExportFormat(format);
+  const isDraft = String(format || "").toLowerCase().endsWith("_draft");
   const namaOpd = report?.report_scope?.nama_opd || scope?.nama_opd;
 
   return {
@@ -83,6 +84,7 @@ const buildBasePayload = ({
 
     metadata_json: {
       exported_via: "mr_planningTlhpReportController",
+      is_draft: isDraft,
       report_quality_gate: report?.report_quality_gate || null,
       report_approval_gate: report?.report_approval_gate || null,
       error_code: error?.code || null,

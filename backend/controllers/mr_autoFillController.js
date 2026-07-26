@@ -83,8 +83,45 @@ const getLakipOptions = async (req, res) => {
   }
 };
 
+const getPenatausahaanAkunOptions = async (req, res) => {
+  try {
+    const result = await mrAutoFillAggregatorService.getPenatausahaanAkunOptions(
+      req.query.renstraId,
+      req.query.tahun,
+    );
+
+    return successResponse({
+      res,
+      message: 'Opsi akun laporan keuangan berhasil dimuat.',
+      data: result,
+    });
+  } catch (error) {
+    return errorResponse({ res, error });
+  }
+};
+
+const getTemuanOptions = async (req, res) => {
+  try {
+    const result = await mrAutoFillAggregatorService.getTemuanOptions(
+      req.query.renstraId,
+      req.query.entitas,
+      req.query.tahun,
+    );
+
+    return successResponse({
+      res,
+      message: 'Opsi temuan tindak lanjut berhasil dimuat.',
+      data: result,
+    });
+  } catch (error) {
+    return errorResponse({ res, error });
+  }
+};
+
 module.exports = {
   getAutoFill,
   getSasaranIndikatorOptions,
   getLakipOptions,
+  getPenatausahaanAkunOptions,
+  getTemuanOptions,
 };

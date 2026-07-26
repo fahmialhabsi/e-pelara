@@ -257,13 +257,31 @@ const AKAR_PENYEBAB_SUFFIX =
 const applyRootCauseDefaultsFromRisk = (payload = {}, risk = {}) => {
   const result = { ...payload };
   const penyebabRisiko = String(risk.penyebab_risiko || "").trim();
+  const why5 = String(result.why_5 || "").trim();
 
   if (!result.uraian_penyebab && penyebabRisiko) {
     result.uraian_penyebab = penyebabRisiko;
   }
 
-  if (!result.akar_penyebab && penyebabRisiko) {
-    result.akar_penyebab = `${penyebabRisiko} ${AKAR_PENYEBAB_SUFFIX}`;
+  // PENTING: akar_penyebab dulu HANYA fallback ke penyebab_risiko+disclaimer
+  // generik saat kosong, dan tidak pernah disinkron ulang meski why_1-5
+  // (analisis 5-Why) sudah lengkap diisi belakangan — akibatnya kolom Akar
+  // Penyebab (Lampiran 11.1 dkk) tetap menampilkan disclaimer usang walau RCA
+  // sudah selesai (ditemukan 2026-07-25, risk 53/RC-0053-001: why_5 terisi
+  // lengkap tapi akar_penyebab masih placeholder). why_5 (akar terdalam pada
+  // rantai 5-Why) adalah kesimpulan akar penyebab yang benar secara
+  // metodologis — prioritaskan itu, TAPI jangan timpa isian akar_penyebab
+  // custom yang sudah pernah ditulis manual oleh user (bukan placeholder).
+  const currentAkarPenyebab = String(result.akar_penyebab || "").trim();
+  const isPlaceholderAkarPenyebab =
+    !currentAkarPenyebab || currentAkarPenyebab.endsWith(AKAR_PENYEBAB_SUFFIX);
+
+  if (isPlaceholderAkarPenyebab) {
+    if (why5) {
+      result.akar_penyebab = why5;
+    } else if (penyebabRisiko) {
+      result.akar_penyebab = `${penyebabRisiko} ${AKAR_PENYEBAB_SUFFIX}`;
+    }
   }
 
   return result;

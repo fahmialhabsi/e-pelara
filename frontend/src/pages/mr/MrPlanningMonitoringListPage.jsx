@@ -17,6 +17,7 @@ import {
   InputNumber,
   Modal,
   Progress,
+  Radio,
   Row,
   Select,
   Space,
@@ -279,6 +280,31 @@ export default function MrPlanningMonitoringListPage({ riskId: riskIdProp, onBac
     label: item.nama_item || item.nilai_text || item.kode_item,
   }));
 
+  // Kemungkinan/Dampak Aktual sebelumnya TIDAK PUNYA field input sama sekali
+  // (cuma kolom baca "Level Aktual" di tabel) — akibatnya Peta Risiko Aktual &
+  // Lampiran 11.2 (Pedoman No 15) selalu "Belum Tersedia"/0. Default-nya
+  // dikirim backend (buildDraftPreviewFromRisk, mrPlanningMonitoringService.js)
+  // dari Residu RiskAnalysis, tetap editable di sini sebelum disimpan.
+  const { data: likelihoodOptionsRaw } = useQuery({
+    queryKey: ['mr-monitoring', 'reference', 'LIKELIHOOD'],
+    queryFn: () => mrPlanningRiskService.getReferenceItemsByGroup('LIKELIHOOD'),
+  });
+
+  const { data: impactOptionsRaw } = useQuery({
+    queryKey: ['mr-monitoring', 'reference', 'IMPACT'],
+    queryFn: () => mrPlanningRiskService.getReferenceItemsByGroup('IMPACT'),
+  });
+
+  const likelihoodOptions = unwrapReferenceItems(likelihoodOptionsRaw).map((item) => ({
+    value: item.id,
+    label: item.nama_item || item.nilai_text || item.kode_item,
+  }));
+
+  const impactOptions = unwrapReferenceItems(impactOptionsRaw).map((item) => ({
+    value: item.id,
+    label: item.nama_item || item.nilai_text || item.kode_item,
+  }));
+
   const risk = riskResponse?.data || riskResponse || null;
   const rows = getRows(monitoringResponse);
 
@@ -419,8 +445,20 @@ export default function MrPlanningMonitoringListPage({ riskId: riskIdProp, onBac
         tindak_lanjut: draft.tindak_lanjut,
         rekomendasi: draft.rekomendasi,
         efektivitas_pengendalian_ref_id: draft.efektivitas_pengendalian_ref_id || undefined,
+        actual_likelihood_ref_id: draft.actual_likelihood_ref_id || undefined,
+        actual_impact_ref_id: draft.actual_impact_ref_id || undefined,
         status_monitoring: draft.status_monitoring || 'draft',
         terjadi_risiko: false,
+
+        // Draft kejadian disimpan di form sejak awal meski tersembunyi (Terjadi
+        // Risiko masih "Tidak") — begitu user pilih "Ya", isian ini langsung
+        // tampil terisi dan tetap bisa diubah sebelum disimpan.
+        tanggal_kejadian: draft.tanggal_kejadian ? dayjs(draft.tanggal_kejadian) : undefined,
+        tempat_kejadian: draft.tempat_kejadian,
+        uraian_kejadian: draft.uraian_kejadian,
+        pemicu_kejadian: draft.pemicu_kejadian,
+        dampak_kejadian: draft.dampak_kejadian,
+        tindak_lanjut_kejadian: draft.tindak_lanjut_kejadian,
       });
 
       setMonitoringDraftNote(
@@ -484,7 +522,15 @@ export default function MrPlanningMonitoringListPage({ riskId: riskIdProp, onBac
       tindak_lanjut: record?.tindak_lanjut,
       rekomendasi: record?.rekomendasi,
       efektivitas_pengendalian_ref_id: record?.efektivitas_pengendalian_ref_id || undefined,
+      actual_likelihood_ref_id: record?.actual_likelihood_ref_id || undefined,
+      actual_impact_ref_id: record?.actual_impact_ref_id || undefined,
       terjadi_risiko: record?.terjadi_risiko || false,
+      tanggal_kejadian: record?.tanggal_kejadian ? dayjs(record.tanggal_kejadian) : undefined,
+      tempat_kejadian: record?.tempat_kejadian,
+      uraian_kejadian: record?.uraian_kejadian,
+      pemicu_kejadian: record?.pemicu_kejadian,
+      dampak_kejadian: record?.dampak_kejadian,
+      tindak_lanjut_kejadian: record?.tindak_lanjut_kejadian,
     });
 
     setIsCreateMonitoringModalOpen(true);
@@ -510,6 +556,9 @@ export default function MrPlanningMonitoringListPage({ riskId: riskIdProp, onBac
         monitoring_date: values.monitoring_date?.format
           ? values.monitoring_date.format('YYYY-MM-DD')
           : values.monitoring_date,
+        tanggal_kejadian: values.tanggal_kejadian?.format
+          ? values.tanggal_kejadian.format('YYYY-MM-DD')
+          : values.tanggal_kejadian,
       };
 
       if (monitoringFormMode === 'edit' && editingMonitoring) {
@@ -1140,6 +1189,39 @@ export default function MrPlanningMonitoringListPage({ riskId: riskIdProp, onBac
             />
           </Form.Item>
 
+          <Row gutter={16}>
+            <Col xs={24} md={12}>
+              <Form.Item
+                name="actual_likelihood_ref_id"
+                label="Kemungkinan Aktual"
+                extra="Hasil pemantauan riil, bukan rencana. Default diambil dari Residu, sesuaikan bila ada bukti/hasil berbeda."
+              >
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={likelihoodOptions}
+                  placeholder="Pilih kemungkinan aktual"
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item
+                name="actual_impact_ref_id"
+                label="Dampak Aktual"
+                extra="Hasil pemantauan riil, bukan rencana. Default diambil dari Residu, sesuaikan bila ada bukti/hasil berbeda."
+              >
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  options={impactOptions}
+                  placeholder="Pilih dampak aktual"
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
           <Form.Item
             name="efektivitas_pengendalian_ref_id"
             label="Efektivitas Pengendalian"
@@ -1170,6 +1252,63 @@ export default function MrPlanningMonitoringListPage({ riskId: riskIdProp, onBac
 
           <Form.Item name="rekomendasi" label="Rekomendasi">
             <TextArea rows={2} placeholder="Tuliskan rekomendasi hasil pemantauan jika ada." />
+          </Form.Item>
+
+          <Form.Item
+            name="terjadi_risiko"
+            label="Terjadi Risiko"
+            initialValue={false}
+            extra="Apakah pada periode pemantauan ini risiko benar-benar terjadi (bukan sekadar berpotensi)? Jika dipilih Ya, isian di bawah sudah terisi otomatis oleh sistem berdasarkan data Risiko — sesuaikan bila belum tepat."
+          >
+            <Radio.Group>
+              <Radio value={true}>Ya</Radio>
+              <Radio value={false}>Tidak</Radio>
+            </Radio.Group>
+          </Form.Item>
+
+          <Form.Item shouldUpdate={(prev, cur) => prev.terjadi_risiko !== cur.terjadi_risiko}>
+            {({ getFieldValue }) =>
+              getFieldValue('terjadi_risiko') ? (
+                <>
+                  <Row gutter={16}>
+                    <Col xs={24} md={12}>
+                      <Form.Item
+                        name="tanggal_kejadian"
+                        label="Tanggal Kejadian"
+                        rules={[{ required: true, message: 'Tanggal Kejadian wajib diisi.' }]}
+                      >
+                        <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <Form.Item name="tempat_kejadian" label="Tempat Kejadian">
+                        <Input placeholder="Contoh: Kantor Dinas Pangan" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Form.Item
+                    name="uraian_kejadian"
+                    label="Uraian Kejadian"
+                    rules={[{ required: true, message: 'Uraian Kejadian wajib diisi.' }]}
+                  >
+                    <TextArea rows={3} placeholder="Tuliskan kronologi kejadian risiko secara faktual." />
+                  </Form.Item>
+
+                  <Form.Item name="pemicu_kejadian" label="Pemicu Kejadian">
+                    <TextArea rows={2} placeholder="Tuliskan pemicu/penyebab langsung kejadian." />
+                  </Form.Item>
+
+                  <Form.Item name="dampak_kejadian" label="Dampak Kejadian">
+                    <TextArea rows={2} placeholder="Tuliskan dampak aktual yang timbul akibat kejadian." />
+                  </Form.Item>
+
+                  <Form.Item name="tindak_lanjut_kejadian" label="Tindak Lanjut atas Kejadian">
+                    <TextArea rows={2} placeholder="Tuliskan tindak lanjut yang telah/akan dilakukan atas kejadian ini." />
+                  </Form.Item>
+                </>
+              ) : null
+            }
           </Form.Item>
         </Form>
       </Modal>

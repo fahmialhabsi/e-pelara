@@ -45,6 +45,158 @@ const hasGenericOnlyNarrative = (value = '') => {
   return genericPhrases.some((phrase) => text.includes(phrase));
 };
 
+// Kategori akar penyebab HARUS salah satu dari 4 kode_item di reference group
+// ROOT_CAUSE_CATEGORY (PEOPLE/PROCESS/SYSTEM/EXTERNAL) — BUKAN "6M"
+// Man/Money/Method/Material/Machine/External walau laporan MR menyebutnya
+// "Kode Penyebab 6M" secara historis (istilah lama, taksonomi aktualnya beda).
+const inferKategoriPenyebabKode = (text) => {
+  const t = String(text || '').toLowerCase();
+
+  if (
+    includesAny(t, [
+      'sdm',
+      'personil',
+      'kompetensi',
+      'staf',
+      'pegawai',
+      'keterampilan',
+      'pelatihan',
+      'sumber daya manusia',
+    ])
+  )
+    return 'PEOPLE';
+
+  if (
+    includesAny(t, [
+      'sistem',
+      'aplikasi',
+      'teknologi',
+      'infrastruktur',
+      'basis data',
+      'perangkat lunak',
+    ])
+  )
+    return 'SYSTEM';
+
+  if (
+    includesAny(t, [
+      'eksternal',
+      'pihak ketiga',
+      'regulasi',
+      'kebijakan pusat',
+      'mitra',
+      'vendor',
+      'force majeure',
+      'bencana',
+      'pemerintah pusat',
+    ])
+  )
+    return 'EXTERNAL';
+
+  return 'PROCESS';
+};
+
+// Area Dampak — HARUS persis sama dengan kode_item di reference group
+// IMPACT_AREA (backend/seeders/20260725100100-...), 5 area sesuai Pedoman
+// No 2 Form Coaching Clinic Inspektorat. sourceType dicek DULU (paling andal
+// — mis. sumber BPK/BPKP/Inspektorat hampir pasti berujung ke area Temuan
+// Pemeriksaan itu sendiri), baru fallback ke keyword matching teks dampak.
+const inferDampakAreaKode = ({ sourceType, text }) => {
+  const source = String(sourceType || '').toUpperCase();
+
+  if (
+    ['TINDAK_LANJUT_BPK', 'TINDAK_LANJUT_BPKP', 'TINDAK_LANJUT_INSPEKTORAT'].includes(source)
+  ) {
+    return 'TEMUAN_PEMERIKSAAN';
+  }
+
+  if (['LAPORAN_KEUANGAN', 'PERTANGGUNGJAWABAN_KEUANGAN'].includes(source)) {
+    return 'BEBAN_KEUANGAN';
+  }
+
+  const t = String(text || '').toLowerCase();
+
+  if (
+    includesAny(t, [
+      'anggaran',
+      'keuangan',
+      'belanja',
+      'apbd',
+      'kerugian negara',
+      'penyimpangan',
+    ])
+  )
+    return 'BEBAN_KEUANGAN';
+
+  if (
+    includesAny(t, ['reputasi', 'kepercayaan', 'citra', 'keluhan', 'pemberitaan', 'media'])
+  )
+    return 'REPUTASI';
+
+  if (
+    includesAny(t, [
+      'kesehatan',
+      'keselamatan',
+      'k3',
+      'kecelakaan',
+      'cedera',
+      'gizi',
+      'pangan aman',
+    ])
+  )
+    return 'K3';
+
+  if (includesAny(t, ['temuan', 'pemeriksaan', 'audit', 'pengawasan'])) return 'TEMUAN_PEMERIKSAAN';
+
+  return 'KINERJA';
+};
+
+/**
+ * Analisis Akar Permasalahan metode 5-Why + Area Dampak (fallback
+ * rule-based) — dipakai kedua builder narasi di bawah supaya why_1..why_5,
+ * kategori_penyebab_kode, & dampak_area_kode SELALU terisi (wajib, lihat
+ * REQUIRED_OUTPUT_FIELDS/VALID_DAMPAK_AREA_KODE di mrNarrativeDraftService.js
+ * — tanpa ini fallback rule_enhanced akan gagal validasi "Draft narasi belum
+ * lengkap: why_1, ...").
+ *
+ * Setiap why_N MERUJUK EKSPLISIT ke pernyataan why_(N-1) ("Mengapa <why
+ * sebelumnya> bisa terjadi, karena <penyebab lebih dalam>") — bukan 5 kalimat
+ * lepas — supaya satu baris RCA terbaca sebagai satu rantai sebab-akibat yang
+ * nyambung dari akar permasalahan sampai ke gejala permukaan. Pola & contoh
+ * kalimat persis diminta user (2026-07-25, referensi RC-0053-001).
+ */
+const buildRcaFields = ({ namaRisiko, objekRisiko, causes = [], impacts = [], sourceType }) => {
+  const kode = inferKategoriPenyebabKode(`${objekRisiko} ${causes.join(' ')}`);
+  const dampakAreaKode = inferDampakAreaKode({
+    sourceType,
+    text: `${objekRisiko} ${impacts.join(' ')}`,
+  });
+  const cause1 = causes[0]
+    ? sentenceTrim(causes[0])
+    : `Pengendalian awal atas ${objekRisiko} belum berjalan optimal`;
+  const cause2 = causes[1]
+    ? sentenceTrim(causes[1])
+    : 'Mekanisme monitoring dan verifikasi berkala atas pelaksanaan pengendalian belum berjalan efektif';
+  const cause3 =
+    'Pembagian peran, PIC, dan target waktu penyelesaian tindak lanjut belum sepenuhnya jelas dan dipahami oleh pelaksana';
+  const cause4 =
+    'Keterbatasan sumber daya (SDM, anggaran, atau sarana pendukung) menghambat penguatan pengendalian secara berkelanjutan';
+  const cause5 =
+    'Belum ada evaluasi berkala dan tindak lanjut sistemik di tingkat perangkat daerah atas akar permasalahan ini';
+
+  const namaRisikoText = sentenceTrim(namaRisiko) || `Risiko ${objekRisiko}`;
+
+  return {
+    why_1: `Akar penyebab risiko dari ${namaRisikoText}, karena adanya ${cause1}.`,
+    why_2: `Mengapa ${cause1} bisa terjadi, karena adanya ${cause2}.`,
+    why_3: `Mengapa ${cause2} bisa terjadi, karena ${cause3}.`,
+    why_4: `Mengapa ${cause3} bisa terjadi, karena ${cause4}.`,
+    why_5: `Mengapa ${cause4} bisa terjadi, karena ${cause5}, sehingga risiko berpotensi berulang.`,
+    kategori_penyebab_kode: kode,
+    dampak_area_kode: dampakAreaKode,
+  };
+};
+
 const buildQualityNotes = ({ payload = {}, draft = {}, focus = [] }) => {
   const notes = [];
 
@@ -357,8 +509,21 @@ const buildRenstraSasaranIndikatorNarrative = (payload = {}) => {
     rencana_tindak_lanjut_awal: toBulletText(actions),
     pic: namaOpd ? `Penanggung jawab ${namaOpd}` : 'Penanggung jawab unit terkait',
     target_waktu: '',
-    catatan:
-      'Draft ini dihasilkan oleh provider rule_enhanced (fallback) berdasarkan data sasaran & indikator Renstra. User tetap wajib melakukan review substantif sebelum menyimpan.',
+    // PENTING: field ini masuk permanen ke laporan resmi (RiskAnalysis.
+    // analysis_note, Lampiran 2B1 "Catatan Analisis") — WAJIB substantif,
+    // bukan disclaimer proses ("draft dihasilkan otomatis, wajib direview").
+    // Disclaimer semacam itu sudah disampaikan terpisah lewat toast/Alert di
+    // StepRiskAnalysis.jsx, tidak boleh ikut tersimpan ke dokumen resmi.
+    catatan: `Analisis risiko didasarkan pada data capaian indikator "${namaIndikator}"${
+      isiSasaran ? ` yang mendukung sasaran strategis "${sentenceTrim(isiSasaran)}"` : ''
+    }. Perlu koordinasi dengan unit pengampu indikator untuk pemutakhiran data capaian secara berkala serta kelengkapan bukti dukung pemantauan.`,
+    ...buildRcaFields({
+      namaRisiko,
+      objekRisiko: namaIndikator,
+      causes,
+      impacts,
+      sourceType: 'RENSTRA_SASARAN_INDIKATOR',
+    }),
     confidence: namaIndikator && isiSasaran ? 0.55 : 0.45,
     needs_user_review: true,
     basis_ringkasan: unique([
@@ -401,6 +566,7 @@ const buildRuleEnhancedNarrative = async ({ payload = {} } = {}) => {
   const sourceLabelMap = {
     TINDAK_LANJUT_BPK: 'temuan pemeriksaan BPK',
     TINDAK_LANJUT_INSPEKTORAT: 'hasil pemeriksaan/pengawasan Inspektorat',
+    TINDAK_LANJUT_BPKP: 'hasil pengawasan/evaluasi BPKP',
     LAKIP: 'evaluasi kinerja/LAKIP',
     LAPORAN_KEUANGAN: 'laporan keuangan',
     PELAKSANAAN_KEGIATAN: 'pelaksanaan kegiatan',
@@ -432,18 +598,24 @@ const buildRuleEnhancedNarrative = async ({ payload = {} } = {}) => {
         .join('; ')}.`
     : '';
 
+  const namaRisiko = `Risiko ketidakmemadaian pengendalian atas ${objekRisiko}.`;
+
   const draft = {
     rekomendasi: `Menindaklanjuti ${sourceLabel} terkait ${objekRisiko} secara terukur, rasional, dan dapat dipertanggungjawabkan.${statusClause}${focusClause}${recommendationActionClause} Setiap tindak lanjut perlu dilengkapi dengan PIC, target penyelesaian, bukti dukung, dan monitoring berkala sampai risiko terkendali.`,
     objek_risiko: objekRisiko,
-    nama_risiko: `Risiko ketidakmemadaian pengendalian atas ${objekRisiko}.`,
+    nama_risiko: namaRisiko,
     uraian_risiko: `Terdapat risiko bahwa ${objekRisiko} belum dikelola secara memadai pada ${periode}, sehingga dapat memengaruhi pencapaian tujuan, kepatuhan, akuntabilitas, efektivitas pelaksanaan kegiatan, serta kualitas layanan perangkat daerah.`,
     penyebab_risiko: toBulletText(causes),
     dampak_risiko: toBulletText(impacts),
     rencana_tindak_lanjut_awal: toBulletText(actions),
     pic: unit ? `Penanggung jawab ${unit}` : 'Penanggung jawab unit terkait',
     target_waktu: '',
-    catatan:
-      'Draft ini dihasilkan oleh provider rule_enhanced berbasis aturan/kata kunci. User tetap wajib melakukan review substantif sebelum menyimpan.',
+    // PENTING: field ini masuk permanen ke laporan resmi (RiskAnalysis.
+    // analysis_note, Lampiran 2B1 "Catatan Analisis") — WAJIB substantif,
+    // bukan disclaimer proses. Lihat catatan sama di
+    // buildRenstraSasaranIndikatorNarrative di atas.
+    catatan: `Analisis risiko didasarkan pada data ${sourceLabel} terkait ${objekRisiko}. Perlu koordinasi dengan pihak terkait, kelengkapan bukti dukung, dan pemutakhiran data secara berkala untuk memastikan validitas penilaian.`,
+    ...buildRcaFields({ namaRisiko, objekRisiko, causes, impacts, sourceType }),
     confidence: calculateQualityConfidence({
       payload,
       focus,

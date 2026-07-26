@@ -26,6 +26,7 @@ const {
   MrPlanningContext,
   MrPlanningMitigation,
   MrPlanningMonitoring,
+  MrPlanningRiskAnalysis,
   MrReferenceItem,
   MrReferenceGroup,
   MrRiskMatrix,
@@ -766,10 +767,10 @@ const buildRenstraMonitoringDraft = ({ base, progress }) => ({
     `Bukti Realisasi dapat berupa laporan progres kegiatan, dokumen capaian indikator, notulen koordinasi, dokumentasi pelaksanaan, atau dokumen pendukung capaian kinerja.`,
 
   kendala:
-    "Kendala yang perlu dipantau meliputi keterlambatan pelaksanaan kegiatan, belum lengkapnya data capaian indikator, keterbatasan koordinasi, atau belum optimalnya dokumentasi pendukung capaian kinerja.",
+    `Kendala pada ${base.namaRisiko} yang perlu dipantau di ${base.unitKerja} meliputi keterlambatan pelaksanaan kegiatan, belum lengkapnya data capaian indikator, keterbatasan koordinasi, atau belum optimalnya dokumentasi pendukung capaian kinerja.`,
 
   tindak_lanjut:
-    "Melakukan pemantauan berkala atas capaian indikator, memperbarui data realisasi, memperkuat koordinasi antar pelaksana, dan melengkapi dokumen pendukung capaian kinerja.",
+    `Melakukan pemantauan berkala atas capaian indikator terkait ${base.namaRisiko} melalui ${base.kegiatanPengendalian}, memperbarui data realisasi, memperkuat koordinasi antar pelaksana, dan melengkapi dokumen pendukung capaian kinerja.`,
 
   rekomendasi:
     `Disarankan agar ${base.penanggungJawab} memastikan pelaksanaan rencana tindak pengendalian selaras dengan target perencanaan, memperbarui progres capaian, dan melengkapi Bukti Realisasi secara berkala.`,
@@ -789,10 +790,10 @@ const buildLakipMonitoringDraft = ({ base, progress }) => ({
     `Bukti Realisasi dapat berupa matriks capaian kinerja, dokumen evaluasi kinerja, data dukung indikator, notulen pembahasan, atau draft/lampiran pelaporan kinerja.`,
 
   kendala:
-    "Kendala yang perlu dipantau meliputi belum lengkapnya data dukung indikator, keterlambatan pemutakhiran capaian kinerja, atau belum konsistennya narasi capaian dengan bukti pendukung.",
+    `Kendala pada ${base.namaRisiko} yang perlu dipantau meliputi belum lengkapnya data dukung indikator, keterlambatan pemutakhiran capaian kinerja, atau belum konsistennya narasi capaian dengan bukti pendukung di ${base.unitKerja}.`,
 
   tindak_lanjut:
-    "Melengkapi data dukung capaian kinerja, melakukan rekonsiliasi capaian indikator, memperbaiki narasi kinerja, dan memastikan dokumen pendukung LAKIP tersedia secara tertib.",
+    `Melengkapi data dukung capaian kinerja terkait ${base.namaRisiko}, melakukan rekonsiliasi capaian indikator, memperbaiki narasi kinerja, dan memastikan dokumen pendukung LAKIP tersedia secara tertib.`,
 
   rekomendasi:
     `Disarankan agar ${base.penanggungJawab} memperkuat pengendalian penyusunan data kinerja, memastikan validitas bukti dukung, dan melakukan reviu berkala atas capaian indikator.`,
@@ -812,10 +813,10 @@ const buildLaporanKeuanganMonitoringDraft = ({ base, progress }) => ({
     `Bukti Realisasi dapat berupa dokumen pertanggungjawaban, berita acara, bukti pembayaran, rekonsiliasi, daftar koreksi, atau dokumen verifikasi keuangan.`,
 
   kendala:
-    "Kendala yang perlu dipantau meliputi belum lengkapnya dokumen pertanggungjawaban, keterlambatan verifikasi, perbedaan pencatatan, atau belum lengkapnya bukti transaksi.",
+    `Kendala pada ${base.namaRisiko} yang perlu dipantau meliputi belum lengkapnya dokumen pertanggungjawaban, keterlambatan verifikasi, perbedaan pencatatan, atau belum lengkapnya bukti transaksi pada ${base.unitKerja}.`,
 
   tindak_lanjut:
-    "Melengkapi dokumen pertanggungjawaban, melakukan verifikasi bukti transaksi, memperbaiki pencatatan, dan memperkuat pengendalian administrasi keuangan.",
+    `Melengkapi dokumen pertanggungjawaban terkait ${base.namaRisiko}, melakukan verifikasi bukti transaksi, memperbaiki pencatatan, dan memperkuat pengendalian administrasi keuangan.`,
 
   rekomendasi:
     `Disarankan agar ${base.penanggungJawab} memastikan seluruh dokumen keuangan lengkap, sah, tertelusur, dan sesuai ketentuan pertanggungjawaban.`,
@@ -835,10 +836,10 @@ const buildPertanggungjawabanMonitoringDraft = ({ base, progress }) => ({
     `Bukti Realisasi dapat berupa SPJ, bukti pembayaran, berita acara, dokumentasi kegiatan, daftar hadir, notulen, atau laporan pelaksanaan kegiatan.`,
 
   kendala:
-    "Kendala yang perlu dipantau meliputi dokumen pertanggungjawaban belum lengkap, bukti pelaksanaan belum terdokumentasi, atau dokumen belum sesuai dengan ketentuan administrasi.",
+    `Kendala pada ${base.namaRisiko} yang perlu dipantau meliputi dokumen pertanggungjawaban belum lengkap, bukti pelaksanaan belum terdokumentasi, atau dokumen belum sesuai dengan ketentuan administrasi di ${base.unitKerja}.`,
 
   tindak_lanjut:
-    "Melengkapi dokumen pertanggungjawaban, mengumpulkan bukti pelaksanaan, melakukan verifikasi dokumen, dan memperbaiki administrasi kegiatan sebelum pelaporan final.",
+    `Melengkapi dokumen pertanggungjawaban terkait ${base.namaRisiko}, mengumpulkan bukti pelaksanaan, melakukan verifikasi dokumen, dan memperbaiki administrasi kegiatan sebelum pelaporan final.`,
 
   rekomendasi:
     `Disarankan agar ${base.penanggungJawab} memastikan seluruh bukti pertanggungjawaban lengkap, tertib, sah, dan dapat ditelusuri.`,
@@ -858,10 +859,10 @@ const buildPelaksanaanKegiatanMonitoringDraft = ({ base, progress }) => ({
     `Bukti Realisasi dapat berupa laporan progres kegiatan, dokumentasi pelaksanaan, berita acara, daftar hadir, notulen koordinasi, atau dokumen output kegiatan.`,
 
   kendala:
-    "Kendala yang perlu dipantau meliputi keterlambatan pelaksanaan, keterbatasan sumber daya, hambatan koordinasi, atau belum lengkapnya bukti pelaksanaan kegiatan.",
+    `Kendala pada ${base.namaRisiko} yang perlu dipantau meliputi keterlambatan pelaksanaan, keterbatasan sumber daya, hambatan koordinasi, atau belum lengkapnya bukti pelaksanaan kegiatan di ${base.unitKerja}.`,
 
   tindak_lanjut:
-    "Memperkuat koordinasi pelaksana, memperbarui jadwal pelaksanaan, melengkapi bukti kegiatan, dan melakukan pemantauan progres secara berkala.",
+    `Memperkuat koordinasi pelaksana terkait ${base.namaRisiko} melalui ${base.kegiatanPengendalian}, memperbarui jadwal pelaksanaan, melengkapi bukti kegiatan, dan melakukan pemantauan progres secara berkala.`,
 
   rekomendasi:
     `Disarankan agar ${base.penanggungJawab} memastikan pelaksanaan kegiatan berjalan sesuai rencana, output tercapai, dan bukti pelaksanaan terdokumentasi dengan baik.`,
@@ -881,10 +882,10 @@ const buildPengaduanMasyarakatMonitoringDraft = ({ base, progress }) => ({
     `Bukti Realisasi dapat berupa register pengaduan, dokumentasi klarifikasi, berita acara tindak lanjut, tanggapan resmi, atau laporan penyelesaian pengaduan.`,
 
   kendala:
-    "Kendala yang perlu dipantau meliputi belum lengkapnya informasi pengaduan, keterlambatan tindak lanjut, koordinasi lintas unit, atau belum tersedia bukti penyelesaian.",
+    `Kendala pada ${base.namaRisiko} yang perlu dipantau meliputi belum lengkapnya informasi pengaduan, keterlambatan tindak lanjut, koordinasi lintas unit, atau belum tersedia bukti penyelesaian di ${base.unitKerja}.`,
 
   tindak_lanjut:
-    "Melakukan klarifikasi, menetapkan tindak lanjut, mendokumentasikan proses penyelesaian, dan menyampaikan hasil penanganan sesuai ketentuan layanan.",
+    `Melakukan klarifikasi atas ${base.namaRisiko}, menetapkan tindak lanjut, mendokumentasikan proses penyelesaian, dan menyampaikan hasil penanganan sesuai ketentuan layanan.`,
 
   rekomendasi:
     `Disarankan agar ${base.penanggungJawab} memastikan pengaduan ditindaklanjuti secara akuntabel, terdokumentasi, dan digunakan sebagai bahan perbaikan layanan.`,
@@ -905,18 +906,41 @@ const buildPengawasanMonitoringDraft = ({ base, progress, sourceLabel }) => ({
     `Bukti Realisasi dapat berupa laporan progres, berita acara, notulen, dokumentasi pelaksanaan, bukti pertanggungjawaban, dokumen output aktual, atau bukti verifikasi tindak lanjut.`,
 
   kendala:
-    "Kendala yang perlu dipantau meliputi belum lengkapnya bukti tindak lanjut, belum optimalnya dokumentasi pelaksanaan, atau perlunya koordinasi lanjutan dengan pihak terkait.",
+    `Kendala pada ${base.namaRisiko} yang perlu dipantau meliputi belum lengkapnya bukti tindak lanjut, belum optimalnya dokumentasi pelaksanaan, atau perlunya koordinasi lanjutan dengan pihak terkait terhadap ${sourceLabel}.`,
 
   tindak_lanjut:
-    "Melengkapi bukti tindak lanjut, memperbarui progres penyelesaian, melakukan koordinasi dengan pihak terkait, dan menyiapkan bukti verifikasi atas pelaksanaan rencana tindak pengendalian.",
+    `Melengkapi bukti tindak lanjut atas ${base.namaRisiko} melalui ${base.kegiatanPengendalian}, memperbarui progres penyelesaian, melakukan koordinasi dengan pihak terkait, dan menyiapkan bukti verifikasi atas pelaksanaan rencana tindak pengendalian.`,
 
   rekomendasi:
     `Disarankan agar ${base.penanggungJawab} melaksanakan tindak lanjut secara terukur, melengkapi Bukti Realisasi, dan melakukan verifikasi berkala agar risiko tetap terkendali.`,
 });
 
-const buildMonitoringNarrativeDraft = ({ risk, mitigation, body = {} }) => {
+// Draft kejadian risiko aktual (Lampiran 7A/7B) — dihitung dari data risiko/mitigasi
+// yang sama seperti draft hasil_monitoring, sehingga terisi otomatis sejak awal.
+// Field ini tersimpan di form meski tersembunyi (Terjadi Risiko belum dipilih "Ya"),
+// user WAJIB review dan boleh mengganti sebelum disimpan.
+const buildKejadianDraft = ({ base, monitoringDate }) => ({
+  tanggal_kejadian: monitoringDate,
+
+  tempat_kejadian: base.unitKerja,
+
+  uraian_kejadian: cleanNarrative(
+    `Kejadian terkait ${base.namaRisiko} tercatat terjadi pada ${base.unitKerja}. ${base.uraianRisiko}.`
+  ),
+
+  pemicu_kejadian: cleanNarrative(`Kejadian dipicu oleh ${base.penyebabRisiko}.`),
+
+  dampak_kejadian: cleanNarrative(base.dampakRisiko),
+
+  tindak_lanjut_kejadian: cleanNarrative(
+    `Tindak lanjut atas kejadian mengacu pada rencana tindak pengendalian yaitu ${base.kegiatanPengendalian}, dengan penanggung jawab ${base.penanggungJawab}.`
+  ),
+});
+
+const buildMonitoringNarrativeDraft = ({ risk, mitigation, body = {}, monitoringDate }) => {
   const sourceType = resolveMonitoringSourceType({ risk, mitigation });
   const base = buildMonitoringBaseContext({ risk, mitigation });
+  const kejadianDraft = buildKejadianDraft({ base, monitoringDate });
 
   const progress = Math.max(
     0,
@@ -969,6 +993,8 @@ const buildMonitoringNarrativeDraft = ({ risk, mitigation, body = {} }) => {
     kendala: cleanNarrative(draft.kendala),
     tindak_lanjut: cleanNarrative(draft.tindak_lanjut),
     rekomendasi: cleanNarrative(draft.rekomendasi),
+
+    ...kejadianDraft,
 
     catatan_preview:
       "Draft ini dihasilkan otomatis oleh sistem berdasarkan sumber risiko, data Risiko, dan Rencana Tindak Pengendalian. User wajib melakukan review substantif sebelum menyimpan.",
@@ -1184,6 +1210,20 @@ const buildDraftPreviewFromRisk = async ({ riskId, body = {} }) => {
 
   const plainRisk = toPlain(risk);
 
+  // Aktual (Kemungkinan/Dampak) sebelumnya TIDAK PERNAH ada field input di form
+  // manapun (cuma kolom baca "Level Aktual" di daftar) — akibatnya Peta Risiko
+  // Aktual & Lampiran 11.2 selalu "Belum Tersedia"/0. Default-nya diambil dari
+  // Residu (RiskAnalysis) sebagai titik awal wajar selama belum ada hasil
+  // pemantauan baru yang membantahnya — tetap editable user sebelum disimpan.
+  const latestAnalysis = await MrPlanningRiskAnalysis.findOne({
+    where: {
+      mr_planning_risk_id: plainRisk.id,
+      is_active: true,
+      is_latest: true,
+    },
+    order: [["id", "DESC"]],
+  });
+
   let mitigation = null;
 
   if (body.mr_planning_mitigation_id) {
@@ -1220,6 +1260,7 @@ const buildDraftPreviewFromRisk = async ({ riskId, body = {} }) => {
     risk,
     mitigation,
     body,
+    monitoringDate,
   });
 
   return {
@@ -1232,6 +1273,9 @@ const buildDraftPreviewFromRisk = async ({ riskId, body = {} }) => {
       monitoring_date: monitoringDate,
 
       status_monitoring: "draft",
+
+      actual_likelihood_ref_id: latestAnalysis?.residual_likelihood_ref_id || undefined,
+      actual_impact_ref_id: latestAnalysis?.residual_impact_ref_id || undefined,
 
       ...narrativeDraft,
 

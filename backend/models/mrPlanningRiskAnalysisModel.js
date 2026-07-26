@@ -140,6 +140,20 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
 
+      // Area dampak dominan (Pedoman No 2 Form Coaching Clinic Inspektorat —
+      // 5 area: Beban Keuangan Negara/Penurunan Reputasi/Kesehatan &
+      // Keselamatan Kerja/Realisasi Capaian Kinerja/Temuan BPK-Inspektorat).
+      // Dasar penelusuran (traceability) kenapa Dampak dinilai level tertentu.
+      dampak_area_ref_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+
+      dampak_area: {
+        type: DataTypes.STRING(150),
+        allowNull: true,
+      },
+
       residual_likelihood: {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: true,

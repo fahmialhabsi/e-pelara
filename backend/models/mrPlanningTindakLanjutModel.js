@@ -112,6 +112,29 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
 
+      // =====================================================
+      // MATRIKS PEMANTAUAN TLHP BPK (Inspektorat Prov. Maluku Utara)
+      // =====================================================
+      status_matriks: {
+        type: DataTypes.ENUM("belum", "ada"),
+        allowNull: true,
+      },
+
+      status_spj: {
+        type: DataTypes.ENUM("belum", "ada"),
+        allowNull: true,
+      },
+
+      daftar_dokumen_pendukung: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
+
+      keterangan: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+      },
+
       status_revisi: {
         type: DataTypes.ENUM("draft", "verifikasi", "approved", "ditolak"),
         allowNull: false,

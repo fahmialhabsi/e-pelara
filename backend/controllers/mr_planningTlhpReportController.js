@@ -89,21 +89,32 @@ const getExportHistory = async (req, res) => {
   }
 };
 
+const isDraftRequest = (req) => ["1", "true", "yes"].includes(String(req.query.draft || "").toLowerCase());
+
 const exportWord = async (req, res) => {
   const scope = reportQueryService.resolveScope(req.query);
+  const draft = isDraftRequest(req);
+  const format = draft ? "docx_draft" : "docx";
   let report = null;
 
   try {
-    const result = await runWithHeavyExportGuard(() => reportExportWordService.buildTlhpWordDocument(req.query));
+    const result = await runWithHeavyExportGuard(() =>
+      reportExportWordService.buildTlhpWordDocument(req.query, { draft }),
+    );
     report = result.report;
 
-    assertReportExportPolicy({ report, format: "docx" });
+    // Mode draft (Unduh Draft) sengaja tidak melalui assertReportExportPolicy —
+    // dipakai untuk meninjau isi laporan sebelum semua Temuan disetujui.
+    // Dokumen itu sendiri tetap menampilkan status "DRAFT" di bagian penutup.
+    if (!draft) {
+      assertReportExportPolicy({ report, format });
+    }
 
     await recordExportSuccessSafely({
       req,
       scope,
       report,
-      format: "docx",
+      format,
       filename: result.filename,
       mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       fileSize: result.buffer.length,
@@ -116,26 +127,32 @@ const exportWord = async (req, res) => {
     res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(result.filename)}"`);
     return res.send(result.buffer);
   } catch (error) {
-    await recordExportFailureSafely({ req, scope, report, format: "docx", error });
+    await recordExportFailureSafely({ req, scope, report, format, error });
     return sendError(res, error);
   }
 };
 
 const exportPdf = async (req, res) => {
   const scope = reportQueryService.resolveScope(req.query);
+  const draft = isDraftRequest(req);
+  const format = draft ? "pdf_draft" : "pdf";
   let report = null;
 
   try {
-    const result = await runWithHeavyExportGuard(() => reportExportPdfService.buildTlhpPdfFromWord(req.query));
+    const result = await runWithHeavyExportGuard(() =>
+      reportExportPdfService.buildTlhpPdfFromWord(req.query, { draft }),
+    );
     report = result.report;
 
-    assertReportExportPolicy({ report, format: "pdf" });
+    if (!draft) {
+      assertReportExportPolicy({ report, format });
+    }
 
     await recordExportSuccessSafely({
       req,
       scope,
       report,
-      format: "pdf",
+      format,
       filename: result.filename,
       mimeType: "application/pdf",
       fileSize: result.buffer.length,
@@ -145,7 +162,7 @@ const exportPdf = async (req, res) => {
     res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(result.filename)}"`);
     return res.send(result.buffer);
   } catch (error) {
-    await recordExportFailureSafely({ req, scope, report, format: "pdf", error });
+    await recordExportFailureSafely({ req, scope, report, format, error });
     return sendError(res, error);
   }
 };

@@ -65,6 +65,7 @@ const TECHNICAL_BLOCKED_FIELDS = [
 const ALLOWED_SOURCE_TYPES = [
   'TINDAK_LANJUT_BPK',
   'TINDAK_LANJUT_INSPEKTORAT',
+  'TINDAK_LANJUT_BPKP',
   'LAKIP',
   'LAPORAN_KEUANGAN',
   'PELAKSANAAN_KEGIATAN',
@@ -86,6 +87,13 @@ const OUTPUT_FIELDS = [
   'pic',
   'target_waktu',
   'catatan',
+  'why_1',
+  'why_2',
+  'why_3',
+  'why_4',
+  'why_5',
+  'kategori_penyebab_kode',
+  'dampak_area_kode',
 ];
 
 const REQUIRED_OUTPUT_FIELDS = [
@@ -98,6 +106,28 @@ const REQUIRED_OUTPUT_FIELDS = [
   'rencana_tindak_lanjut_awal',
   'pic',
   'catatan',
+  'why_1',
+  'why_2',
+  'why_3',
+  'why_4',
+  'why_5',
+];
+
+// Kategori akar penyebab — HARUS persis sama dengan kode_item di reference
+// group ROOT_CAUSE_CATEGORY (backend/seeders — 4 kategori, BUKAN "6M"
+// Man/Money/Method/Material/Machine/External walau laporan menyebutnya
+// "Kode Penyebab 6M" secara historis).
+const VALID_KATEGORI_PENYEBAB_KODE = ['PEOPLE', 'PROCESS', 'SYSTEM', 'EXTERNAL'];
+
+// Area Dampak — HARUS persis sama dengan kode_item di reference group
+// IMPACT_AREA (backend/seeders/20260725100100-...), 5 area sesuai Pedoman
+// No 2 Form Coaching Clinic Inspektorat (Lampiran 7.1B laporan MR).
+const VALID_DAMPAK_AREA_KODE = [
+  'BEBAN_KEUANGAN',
+  'REPUTASI',
+  'K3',
+  'KINERJA',
+  'TEMUAN_PEMERIKSAAN',
 ];
 
 class NarrativeDraftError extends Error {
@@ -166,7 +196,11 @@ const assertNoBlockedFields = (payload = {}) => {
 const getRequiredFieldsBySource = (payload) => {
   const sourceType = normalizeSourceType(payload.proposal_source_type);
 
-  if (sourceType === 'TINDAK_LANJUT_BPK' || sourceType === 'TINDAK_LANJUT_INSPEKTORAT') {
+  if (
+    sourceType === 'TINDAK_LANJUT_BPK' ||
+    sourceType === 'TINDAK_LANJUT_INSPEKTORAT' ||
+    sourceType === 'TINDAK_LANJUT_BPKP'
+  ) {
     return ['proposal_source_type', 'judul_temuan', 'ringkasan_temuan', 'status_tindak_lanjut'];
   }
 
@@ -223,6 +257,8 @@ Tugas:
       'Fokus pada tindak lanjut temuan pemeriksaan BPK, rekomendasi pemeriksaan, penguatan pengendalian, bukti tindak lanjut, PIC, target waktu, dan akuntabilitas penyelesaian.',
     TINDAK_LANJUT_INSPEKTORAT:
       'Fokus pada hasil pengawasan internal, perbaikan pengendalian intern, kepatuhan, penyelesaian rekomendasi, dan bukti tindak lanjut.',
+    TINDAK_LANJUT_BPKP:
+      'Fokus pada tindak lanjut hasil pengawasan/evaluasi BPKP (mis. akuntabilitas keuangan, kapabilitas APIP, maturitas SPIP), rekomendasi pengawasan, penguatan pengendalian, bukti tindak lanjut, PIC, target waktu, dan akuntabilitas penyelesaian.',
     LAKIP:
       'Fokus pada akuntabilitas kinerja: penyusunan dan penyampaian LAKIP, indikator kinerja, target dan capaian, output/outcome, perjanjian kinerja, evaluasi SAKIP/APIP, kelengkapan bukti dukung, dan konsistensi data kinerja. Gunakan pola narasi pengawasan BPKP/BPK (bukan ringkasan generik).',
     LAPORAN_KEUANGAN:
@@ -267,6 +303,13 @@ Format:
   "pic": "string",
   "target_waktu": "string",
   "catatan": "string",
+  "why_1": "string",
+  "why_2": "string",
+  "why_3": "string",
+  "why_4": "string",
+  "why_5": "string",
+  "kategori_penyebab_kode": "PEOPLE | PROCESS | SYSTEM | EXTERNAL",
+  "dampak_area_kode": "BEBAN_KEUANGAN | REPUTASI | K3 | KINERJA | TEMUAN_PEMERIKSAAN",
   "confidence": 0.0,
   "needs_user_review": true,
   "basis_ringkasan": ["string"]
@@ -276,6 +319,15 @@ Ketentuan:
 - Semua field string wajib terisi.
 - Gunakan bahasa Indonesia formal.
 - Gunakan bullet list untuk penyebab_risiko, dampak_risiko, rencana_tindak_lanjut_awal, dan catatan bila substansinya banyak.
+- why_1 sampai why_5 adalah Analisis Akar Permasalahan metode 5-Why, dan WAJIB DITULIS SEBAGAI RANTAI KALIMAT YANG SALING MERUJUK (bukan 5 kalimat lepas yang berdiri sendiri) — setiap why_N (N>1) HARUS mengulang persis pernyataan sebab dari why_(N-1) sebelum melanjutkan ke penyebab yang lebih dalam, memakai pola berikut:
+  * why_1: "Akar penyebab risiko dari [nama_risiko], karena adanya [penyebab langsung/permukaan]."
+  * why_2: "Mengapa [penyebab dari why_1] bisa terjadi, karena adanya [penyebab lebih dalam]."
+  * why_3: "Mengapa [penyebab dari why_2] bisa terjadi, karena [penyebab lebih dalam lagi]."
+  * why_4: "Mengapa [penyebab dari why_3] bisa terjadi, karena [penyebab lebih dalam lagi]."
+  * why_5: "Mengapa [penyebab dari why_4] bisa terjadi, karena [akar penyebab paling sistemik, mis. kelemahan proses/SDM/sistem yang mendasar], sehingga risiko berpotensi berulang."
+  Tujuannya supaya satu baris RCA terbaca sebagai satu alur sebab-akibat yang nyambung dari akar sampai gejala permukaan, bukan daftar poin terpisah. Setiap why wajib kalimat utuh, bukan satu kata. Jangan mengarang fakta/angka baru yang tidak ada di input; gunakan perkiraan wajar yang lazim pada perangkat daerah bila perlu berasumsi.
+- kategori_penyebab_kode WAJIB salah satu dari 4 nilai persis: PEOPLE (penyebab terkait SDM/kompetensi/personil), PROCESS (penyebab terkait prosedur/mekanisme/tata kelola), SYSTEM (penyebab terkait sistem/aplikasi/teknologi/data), EXTERNAL (penyebab dari luar kendali perangkat daerah, mis. regulasi/pihak ketiga). Pilih SATU yang paling dominan berdasarkan akar penyebab (why_5).
+- dampak_area_kode WAJIB salah satu dari 5 nilai persis sesuai Pedoman No 2: BEBAN_KEUANGAN (dampak finansial/anggaran), REPUTASI (dampak citra/kepercayaan publik), K3 (dampak kesehatan & keselamatan kerja), KINERJA (dampak terhadap capaian target/IKU), TEMUAN_PEMERIKSAAN (dampak berupa temuan/penyimpangan hasil pemeriksaan BPK/Inspektorat). Pilih SATU area yang paling relevan dengan dampak_risiko yang dijelaskan — jangan mengarang area baru di luar 5 ini.
 - confidence bernilai 0 sampai 1.
 - needs_user_review wajib true.
 `;
@@ -397,6 +449,13 @@ const validateNarrativeResult = (result = {}) => {
     );
   }
 
+  const kategoriPenyebabKode = String(result.kategori_penyebab_kode || '')
+    .trim()
+    .toUpperCase();
+  const dampakAreaKode = String(result.dampak_area_kode || '')
+    .trim()
+    .toUpperCase();
+
   return {
     rekomendasi: cleanText(result.rekomendasi),
     objek_risiko: cleanText(result.objek_risiko),
@@ -408,6 +467,15 @@ const validateNarrativeResult = (result = {}) => {
     pic: cleanText(result.pic),
     target_waktu: cleanText(result.target_waktu),
     catatan: cleanText(result.catatan),
+    why_1: cleanText(result.why_1),
+    why_2: cleanText(result.why_2),
+    why_3: cleanText(result.why_3),
+    why_4: cleanText(result.why_4),
+    why_5: cleanText(result.why_5),
+    kategori_penyebab_kode: VALID_KATEGORI_PENYEBAB_KODE.includes(kategoriPenyebabKode)
+      ? kategoriPenyebabKode
+      : 'PROCESS',
+    dampak_area_kode: VALID_DAMPAK_AREA_KODE.includes(dampakAreaKode) ? dampakAreaKode : 'KINERJA',
     confidence:
       typeof result.confidence === 'number' ? Math.max(0, Math.min(1, result.confidence)) : 0,
     needs_user_review: true,

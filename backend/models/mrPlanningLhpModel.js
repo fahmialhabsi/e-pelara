@@ -95,6 +95,24 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
 
+      // Surat pengantar (transmittal) Inspektorat yang menyampaikan Matriks
+      // Pemantauan TLHP ke SKPD — BEDA dari surat_tugas (penugasan tim
+      // pemeriksa) di atas.
+      nomor_surat_pengantar: {
+        type: DataTypes.STRING(150),
+        allowNull: true,
+      },
+
+      tanggal_surat_pengantar: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+      },
+
+      perihal_surat_pengantar: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+      },
+
       tanggal_terima_lhp: {
         type: DataTypes.DATEONLY,
         allowNull: true,

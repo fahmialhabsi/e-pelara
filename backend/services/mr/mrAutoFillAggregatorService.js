@@ -11,7 +11,79 @@
  */
 
 const db = require('../../models');
+const { Op } = db.Sequelize;
 const realisasiIndikatorRenstraController = require('../../controllers/realisasiIndikatorRenstraController');
+
+/**
+ * Resolusi label nama OPD dari RenstraOPD.id — dipakai untuk memfilter tabel
+ * modul lain (Dpa, MrPlanningTemuan) yang TIDAK berbagi ruang id yang sama
+ * dengan RenstraOPD/OpdPenanggungJawab (lihat catatan di getLakipSuggestion:
+ * OpdPenanggungJawab punya banyak baris duplikat per OPD, jadi filter by id
+ * antar modul tidak andal). Cocok dengan pola nama-based matching yang sudah
+ * dipakai renstraOpdProgramFilter.js & migrationService.js.
+ */
+const resolveRenstraOpdNamaOpd = async (renstraId) => {
+  const renstraOpd = await db.RenstraOPD.findByPk(renstraId, {
+    include: [
+      { model: db.OpdPenanggungJawab, as: 'opd', attributes: ['nama_opd'], required: false },
+    ],
+  });
+
+  if (!renstraOpd) return null;
+
+  return (
+    (renstraOpd.nama_opd && String(renstraOpd.nama_opd).trim()) ||
+    (renstraOpd.opd?.nama_opd && String(renstraOpd.opd.nama_opd).trim()) ||
+    null
+  );
+};
+
+/**
+ * Resolusi seluruh OpdPenanggungJawab.id yang berbagi nama OPD yang sama
+ * dengan RenstraOPD.id tertentu — dipakai untuk memfilter Dpa.opd_id, yang
+ * hidup di ruang id OpdPenanggungJawab (BUKAN RenstraOPD.id). Mengembalikan
+ * semua id yang cocok (bukan cuma renstraOpd.opd_id tunggal) karena
+ * OpdPenanggungJawab TERBUKTI punya banyak baris duplikat untuk OPD yang sama
+ * (mis. "Dinas Pangan" = id 107/109/110/111/112/348/349/350 — dicek langsung
+ * ke DB 2026-07-25) — pola sibling-id yang sama dipakai renstraOpdProgramFilter.js.
+ *
+ * CATATAN: awalnya fungsi ini (getPenatausahaanAkunOptions) memfilter Dpa
+ * lewat kolom string `opd_penanggung_jawab`, tapi dicek langsung ke DB kolom
+ * itu SELALU NULL di semua baris Dpa (tidak pernah diisi) — itu sebabnya
+ * dropdown "Pilih Data Laporan Keuangan" selalu kosong. Diganti filter by
+ * opd_id numerik (yang terbukti terisi & datanya ada).
+ */
+const resolveOpdPenanggungJawabIds = async (renstraId) => {
+  const renstraOpd = await db.RenstraOPD.findByPk(renstraId, {
+    include: [
+      { model: db.OpdPenanggungJawab, as: 'opd', attributes: ['id', 'nama_opd'], required: false },
+    ],
+  });
+
+  if (!renstraOpd) return [];
+
+  const idSet = new Set();
+
+  if (renstraOpd.opd_id != null) {
+    idSet.add(renstraOpd.opd_id);
+  }
+
+  const label =
+    (renstraOpd.nama_opd && String(renstraOpd.nama_opd).trim()) ||
+    (renstraOpd.opd?.nama_opd && String(renstraOpd.opd.nama_opd).trim()) ||
+    null;
+
+  if (label) {
+    const siblings = await db.OpdPenanggungJawab.findAll({
+      where: { nama_opd: label },
+      attributes: ['id'],
+      raw: true,
+    });
+    siblings.forEach((row) => idSet.add(row.id));
+  }
+
+  return [...idSet];
+};
 
 /**
  * realisasiIndikatorRenstraController.getHierarchy adalah Express handler
@@ -312,8 +384,232 @@ const getLakipOptions = async (renstraId, tahun) => {
   }));
 };
 
+/**
+ * Pisahkan "5.1.02.01.01.0039 - Belanja Barang untuk Dijual..." (format yang
+ * dipakai saat import realisasi PDF SIPD, lihat realisasiImportController.js)
+ * jadi kode rekening & nama rekening terpisah. Duplikasi persis dari
+ * `pisahKodeUraian` di frontend/src/features/penatausahaan/components/
+ * BukuKasUmum.jsx — HARUS tetap sinkron kalau salah satu diubah.
+ */
+const pisahKodeUraian = (uraian) => {
+  const raw = String(uraian || '');
+  const match = raw.match(/^([\d.]{9,})\s*-\s*(.*)$/);
+  if (match) return { kode_rekening: match[1], nama_rekening: match[2] };
+  return { kode_rekening: null, nama_rekening: raw };
+};
+
+/**
+ * Opsi akun/pos laporan keuangan (dari Penatausahaan, hasil OCR SIPD — lihat
+ * project_penatausahaan_realisasi_import) untuk sebuah Renstra, dipakai
+ * dropdown "Pilih Data Laporan Keuangan" di StepContext. Dpa difilter lewat
+ * opd_id numerik (lihat resolveOpdPenanggungJawabIds) — BUKAN kolom string
+ * `opd_penanggung_jawab` (dicek langsung ke DB: kolom itu selalu NULL).
+ *
+ * Dikelompokkan per KODE REKENING rinci (diambil dari prefix kolom `uraian`,
+ * lihat pisahKodeUraian) — BUKAN per kolom `kode_akun`. `kode_akun` sengaja
+ * di-hardcode sama ("5.1.02") untuk SEMUA baris oleh `realisasiImportController.js`
+ * (satu-satunya kode induk level-3 yang ada di KodeAkunBas saat itu), jadi
+ * mengelompokkan per kode_akun selalu menghasilkan 1 opsi saja walau ada
+ * puluhan rincian belanja berbeda — dicek langsung ke DB 2026-07-25 (213 baris
+ * Penatausahaan, semua kode_akun='5.1.02', tapi uraian-nya beda-beda).
+ *
+ * tahun bersifat opsional (selaras field "Tahun" di form Step 1); jika kosong
+ * seluruh baris Penatausahaan lintas tahun untuk OPD tsb digabung.
+ */
+const getPenatausahaanAkunOptions = async (renstraId, tahun) => {
+  if (!renstraId) {
+    const error = new Error('renstraId wajib diisi.');
+    error.statusCode = 400;
+    error.code = 'MR_AUTOFILL_RENSTRA_ID_REQUIRED';
+    throw error;
+  }
+
+  const opdIds = await resolveOpdPenanggungJawabIds(renstraId);
+
+  if (!opdIds.length) {
+    return [];
+  }
+
+  const dpaWhere = {
+    is_active_version: true,
+    opd_id: { [Op.in]: opdIds },
+  };
+
+  if (tahun) {
+    dpaWhere.tahun = String(tahun);
+  }
+
+  const dpaRows = await db.Dpa.findAll({ where: dpaWhere, attributes: ['id'] });
+  const dpaIds = dpaRows.map((row) => row.id);
+
+  if (!dpaIds.length) {
+    return [];
+  }
+
+  const penatausahaanRows = await db.Penatausahaan.findAll({
+    where: { dpa_id: { [Op.in]: dpaIds } },
+    attributes: ['uraian', 'jumlah', 'kode_akun', 'tahun'],
+    raw: true,
+  });
+
+  if (!penatausahaanRows.length) {
+    return [];
+  }
+
+  const grouped = new Map();
+
+  penatausahaanRows.forEach((row) => {
+    const { kode_rekening, nama_rekening } = pisahKodeUraian(row.uraian);
+    const key = kode_rekening || nama_rekening || `row-${row.kode_akun}`;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        kode_rekening,
+        nama_rekening,
+        kode_akun: row.kode_akun,
+        total_jumlah: 0,
+        tahun: row.tahun,
+      });
+    }
+
+    grouped.get(key).total_jumlah += Number(row.jumlah) || 0;
+  });
+
+  return [...grouped.values()].sort((a, b) =>
+    String(a.kode_rekening || a.nama_rekening).localeCompare(
+      String(b.kode_rekening || b.nama_rekening),
+    ),
+  );
+};
+
+/**
+ * Opsi temuan tindak lanjut (BPK/BPKP/Inspektorat) untuk sebuah Renstra,
+ * dipakai dropdown "Pilih Data Temuan" di StepContext. MrPlanningTemuan sudah
+ * punya kolom nama_opd sendiri (didenormalisasi dari MrPlanningLhp saat
+ * dibuat), jadi difilter langsung lewat label nama OPD yang sama seperti
+ * getPenatausahaanAkunOptions (bukan opd_id — sama alasannya).
+ *
+ * entitasPemeriksa wajib salah satu dari 'BPK' | 'BPKP' | 'INSPEKTORAT'
+ * (kode_item grup referensi MR_TLHP_ENTITAS_PEMERIKSA).
+ */
+const getTemuanOptions = async (renstraId, entitasPemeriksa, tahun) => {
+  if (!renstraId) {
+    const error = new Error('renstraId wajib diisi.');
+    error.statusCode = 400;
+    error.code = 'MR_AUTOFILL_RENSTRA_ID_REQUIRED';
+    throw error;
+  }
+
+  if (!entitasPemeriksa) {
+    const error = new Error('entitasPemeriksa wajib diisi.');
+    error.statusCode = 400;
+    error.code = 'MR_AUTOFILL_ENTITAS_PEMERIKSA_REQUIRED';
+    throw error;
+  }
+
+  const namaOpd = await resolveRenstraOpdNamaOpd(renstraId);
+
+  if (!namaOpd) {
+    return [];
+  }
+
+  const temuanWhere = {
+    [Op.and]: [
+      db.sequelize.where(
+        db.sequelize.fn('LOWER', db.sequelize.fn('TRIM', db.sequelize.col('MrPlanningTemuan.nama_opd'))),
+        namaOpd.toLowerCase(),
+      ),
+    ],
+  };
+
+  const lhpInclude = {
+    model: db.MrPlanningLhp,
+    as: 'lhp',
+    attributes: ['id', 'tahun', 'tahun_lhp'],
+    required: Boolean(tahun),
+    ...(tahun ? { where: { tahun: String(tahun) } } : {}),
+  };
+
+  // entitas_pemeriksa (kolom denormalisasi di MrPlanningTemuan) menyimpan LABEL
+  // penuh ("Badan Pemeriksa Keuangan"), BUKAN kode singkat ("BPK") — dicek
+  // langsung ke DB 2026-07-25 (resolveLabelsForPayload di
+  // mrPlanningLhpService.js mengisi `entitas_pemeriksa` dari `nama_item`
+  // reference, bukan `kode_item`). Jadi filter WAJIB lewat join
+  // entitas_pemeriksa_ref_id -> kode_item, bukan bandingkan teks kolom
+  // entitas_pemeriksa langsung dengan 'BPK'/'BPKP'/'INSPEKTORAT'.
+  const entitasInclude = {
+    model: db.MrReferenceItem,
+    as: 'entitas_pemeriksa_ref',
+    attributes: [],
+    required: true,
+    where: db.sequelize.where(
+      db.sequelize.fn('UPPER', db.sequelize.col('entitas_pemeriksa_ref.kode_item')),
+      String(entitasPemeriksa).toUpperCase(),
+    ),
+  };
+
+  const rows = await db.MrPlanningTemuan.findAll({
+    where: temuanWhere,
+    include: [lhpInclude, entitasInclude],
+    limit: 100,
+    order: [['id', 'DESC']],
+  });
+
+  const temuanIds = rows.map((row) => row.id);
+
+  // PENTING: sebelumnya wizard MR hanya tahu nilai_temuan_rupiah (nilai
+  // temuan kotor) — anggaran risiko yang diusulkan dari Temuan BPK selalu
+  // memakai angka penuh walau sebagian/seluruhnya sudah disetor lewat
+  // MrPlanningTindakLanjut (modul TLHP). Sisa = eksposur yang genuinely
+  // masih perlu dikelola sebagai risiko, jadi disertakan sebagai opsi kedua
+  // di samping nilai_temuan_rupiah (frontend yang memutuskan mana dipakai).
+  const setoranByTemuan = temuanIds.length
+    ? await db.MrPlanningTindakLanjut.findAll({
+        where: {
+          mr_planning_temuan_id: { [Op.in]: temuanIds },
+          is_active: true,
+          is_latest: true,
+        },
+        attributes: [
+          'mr_planning_temuan_id',
+          [db.sequelize.fn('SUM', db.sequelize.col('nilai_setoran_rupiah')), 'total_setoran'],
+        ],
+        group: ['mr_planning_temuan_id'],
+        raw: true,
+      })
+    : [];
+
+  const totalSetoranByTemuanId = setoranByTemuan.reduce((acc, row) => {
+    acc[row.mr_planning_temuan_id] = Number(row.total_setoran) || 0;
+    return acc;
+  }, {});
+
+  return rows.map((row) => {
+    const nilaiTemuan = Number(row.nilai_temuan_rupiah) || 0;
+    const totalSetoran = totalSetoranByTemuanId[row.id] || 0;
+
+    return {
+      temuan_id: row.id,
+      nomor_temuan: row.nomor_temuan,
+      kode_temuan: row.kode_temuan,
+      judul_temuan: row.judul_temuan,
+      uraian_temuan: row.uraian_temuan,
+      kondisi: row.kondisi,
+      sebab: row.sebab,
+      akibat: row.akibat,
+      status_rollup: row.status_rollup,
+      entitas_pemeriksa: row.entitas_pemeriksa,
+      nilai_temuan_rupiah: row.nilai_temuan_rupiah,
+      nilai_sisa_rupiah: row.nilai_temuan_rupiah ? Math.max(0, nilaiTemuan - totalSetoran) : null,
+      tahun: row.lhp?.tahun || row.lhp?.tahun_lhp || tahun || null,
+    };
+  });
+};
+
 module.exports = {
   getAutoFillData,
   getSasaranIndikatorOptions,
   getLakipOptions,
+  getPenatausahaanAkunOptions,
+  getTemuanOptions,
 };

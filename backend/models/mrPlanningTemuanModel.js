@@ -80,6 +80,30 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
 
+      // Rincian bertingkat per Kondisi/Kriteria/Sebab/Akibat — array item
+      // {letter, judul, uraian, table: {title, columns[], rows[][]} | null}.
+      // JSON (bukan tabel relasional) krn jumlah kolom/baris tabel per item
+      // genuinely bebas ditentukan user (lihat migrasi 20260727090000).
+      sub_kondisi: {
+        type: DataTypes.JSON,
+        allowNull: true,
+      },
+
+      sub_kriteria: {
+        type: DataTypes.JSON,
+        allowNull: true,
+      },
+
+      sub_sebab: {
+        type: DataTypes.JSON,
+        allowNull: true,
+      },
+
+      sub_akibat: {
+        type: DataTypes.JSON,
+        allowNull: true,
+      },
+
       nilai_temuan_rupiah: {
         type: DataTypes.DECIMAL(20, 2),
         allowNull: true,
@@ -92,6 +116,12 @@ module.exports = (sequelize, DataTypes) => {
 
       kategori_temuan: {
         type: DataTypes.STRING(150),
+        allowNull: true,
+      },
+
+      // Diisi hanya kalau kategori_temuan_ref_id merujuk item "Lainnya".
+      kategori_temuan_lainnya: {
+        type: DataTypes.STRING(255),
         allowNull: true,
       },
 

@@ -327,6 +327,7 @@ const mrPlanningLhpRoutes = require('./routes/mr_planningLhpRoutes');
 const mrPlanningTemuanRoutes = require('./routes/mr_planningTemuanRoutes');
 const mrPlanningTindakLanjutRoutes = require('./routes/mr_planningTindakLanjutRoutes');
 const mrPlanningTlhpReportRoutes = require('./routes/mr_planningTlhpReportRoutes');
+const mrPlanningTlhpImportRoutes = require('./routes/mr_planningTlhpImportRoutes');
 
 // USE RPKD
 const rkpdRoutes = require('./routes/rkpdRoutes');
@@ -518,6 +519,7 @@ app.use('/api/mr-planning-lhp', mrPlanningLhpRoutes);
 app.use('/api/mr-planning-temuan', mrPlanningTemuanRoutes);
 app.use('/api/mr-planning-tindak-lanjut', mrPlanningTindakLanjutRoutes);
 app.use('/api/mr-tlhp-report', mrPlanningTlhpReportRoutes);
+app.use('/api/mr-planning-tlhp-import', mrPlanningTlhpImportRoutes);
 
 // USE RKPD
 app.use('/api/rkpd', rkpdRoutes);

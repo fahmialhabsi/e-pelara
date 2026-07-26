@@ -39,11 +39,54 @@ const ALLOWED_CREATE_UPDATE_FIELDS = new Set([
   "kriteria",
   "sebab",
   "akibat",
+  "sub_kondisi",
+  "sub_kriteria",
+  "sub_sebab",
+  "sub_akibat",
   "nilai_temuan_rupiah",
   "kategori_temuan_ref_id",
+  "kategori_temuan_lainnya",
   "unsur_spip_ref_id",
   "alasan_revisi",
 ]);
+
+const SUB_FIELD_KEYS = ["sub_kondisi", "sub_kriteria", "sub_sebab", "sub_akibat"];
+
+// Validasi ringan (bukan skema ketat) — cukup pastikan bentuk dasarnya benar
+// (array item {letter, judul, uraian, table?}) supaya data yang benar-benar
+// rusak tidak lolos tersimpan, TANPA membatasi kebebasan kolom/baris tabel
+// per item (itu justru poin utama fiturnya — lihat migrasi 20260727090000).
+const validateSubField = (fieldName, value) => {
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value)) {
+    throwValidation(`${fieldName} harus berupa daftar (array).`, { field: fieldName }, "MR_TEMUAN_SUB_FIELD_INVALID");
+  }
+  value.forEach((item, index) => {
+    if (!item || typeof item !== "object") {
+      throwValidation(`${fieldName}[${index}] harus berupa objek.`, { field: fieldName, index }, "MR_TEMUAN_SUB_FIELD_INVALID");
+    }
+    if (item.table) {
+      const { columns, rows } = item.table;
+      if (columns !== undefined && !Array.isArray(columns)) {
+        throwValidation(`${fieldName}[${index}].table.columns harus berupa array.`, { field: fieldName, index }, "MR_TEMUAN_SUB_FIELD_INVALID");
+      }
+      if (rows !== undefined && !Array.isArray(rows)) {
+        throwValidation(`${fieldName}[${index}].table.rows harus berupa array.`, { field: fieldName, index }, "MR_TEMUAN_SUB_FIELD_INVALID");
+      }
+      if (item.table.explanation !== undefined && item.table.explanation !== null && typeof item.table.explanation !== "string") {
+        throwValidation(`${fieldName}[${index}].table.explanation harus berupa teks.`, { field: fieldName, index }, "MR_TEMUAN_SUB_FIELD_INVALID");
+      }
+    }
+  });
+};
+
+const validateSubFields = (payload = {}) => {
+  SUB_FIELD_KEYS.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      validateSubField(key, payload[key]);
+    }
+  });
+};
 
 const REKOMENDASI_ALLOWED_FIELDS = new Set([
   "nomor_rekomendasi",
@@ -140,6 +183,13 @@ const resolveLabelsForPayload = async (payload = {}, options = {}) => {
     const ref = await resolveReferenceLabel(payload.kategori_temuan_ref_id, options);
     ensureReferenceGroup(ref, "MR_TLHP_KATEGORI_TEMUAN", "kategori_temuan_ref_id");
     resolved.kategori_temuan = ref?.label || null;
+
+    // kategori_temuan_lainnya cuma relevan kalau kategorinya "Lainnya" —
+    // dibersihkan otomatis kalau user ganti ke kategori lain, supaya teks
+    // custom lama tidak nyangkut diam-diam di baris yg sudah ganti kategori.
+    if (ref?.kode_item !== "LAINNYA") {
+      resolved.kategori_temuan_lainnya = null;
+    }
   }
 
   if (payload.unsur_spip_ref_id) {
@@ -213,6 +263,7 @@ const generateKodeTemuan = async ({ lhp, tahun, transaction }) => {
 const createTemuanFromLhp = async ({ lhpId, body = {}, user } = {}) => {
   const userId = getActorId(user);
   const allowedPayload = pickAllowedFields(body);
+  validateSubFields(allowedPayload);
 
   if (!allowedPayload.nomor_temuan || !allowedPayload.judul_temuan || !allowedPayload.uraian_temuan) {
     throwValidation("Nomor, judul, dan uraian temuan wajib diisi.", {
@@ -301,6 +352,7 @@ const ensureDraftOrRejected = (temuan) => {
 const updateDraftTemuan = async ({ temuanId, body = {}, user } = {}) => {
   const userId = getActorId(user);
   const allowedPayload = pickAllowedFields(body);
+  validateSubFields(allowedPayload);
 
   return sequelize.transaction(async (transaction) => {
     const temuan = await findTemuanOrFail(temuanId, { transaction });
@@ -384,6 +436,7 @@ const submitTemuanForVerification = async ({ temuanId, user, note } = {}) => {
 const createRevisionFromApprovedTemuan = async ({ temuanId, body = {}, user } = {}) => {
   const userId = getActorId(user);
   const allowedPayload = pickAllowedFields(body);
+  validateSubFields(allowedPayload);
 
   return sequelize.transaction(async (transaction) => {
     const temuan = await findTemuanOrFail(temuanId, { transaction });
@@ -464,6 +517,13 @@ const approveHistory = async ({ historyId, userId, note, request }) => {
     { is_locked: true },
     { where: { mr_planning_temuan_id: result.activeRecord.id } },
   );
+
+  // approveHistory generik menimpa active record dari after_json snapshot yg
+  // direkam saat "Ajukan untuk Verifikasi" — kalau Rekomendasi ditambah/diubah
+  // SETELAH submit tapi SEBELUM approve, jumlah_rekomendasi ikut ketimpa nilai
+  // basi dari snapshot itu. Recompute ulang dari data Rekomendasi yg sebenarnya
+  // supaya rollup Temuan & LHP selalu mencerminkan kondisi terkini.
+  await recomputeTemuanRollup(result.activeRecord.id);
 
   return result;
 };
@@ -652,6 +712,17 @@ const recomputeTemuanRollup = async (temuanId, { transaction } = {}) => {
     },
     { where: { id: temuanId }, transaction },
   );
+
+  const temuan = await MrPlanningTemuan.findByPk(temuanId, { attributes: ["mr_planning_lhp_id"], transaction });
+  if (temuan) await recomputeLhpRekomendasiRollup(temuan.mr_planning_lhp_id, { transaction });
+};
+
+// Jml Rekomendasi pada LHP adalah agregat (SUM) dari jumlah_rekomendasi tiap
+// Temuan di bawahnya — beda dgn jumlah_temuan yg langsung di-increment saat
+// Temuan dibuat, karena Rekomendasi berubah lewat recomputeTemuanRollup per-Temuan.
+const recomputeLhpRekomendasiRollup = async (lhpId, { transaction } = {}) => {
+  const total = await MrPlanningTemuan.sum("jumlah_rekomendasi", { where: { mr_planning_lhp_id: lhpId }, transaction });
+  await MrPlanningLhp.update({ jumlah_rekomendasi: total || 0 }, { where: { id: lhpId }, transaction });
 };
 
 // =====================================================
@@ -855,6 +926,7 @@ module.exports = {
   cancelRekomendasi,
   listRekomendasiByTemuan,
   recomputeTemuanRollup,
+  recomputeLhpRekomendasiRollup,
   escalateToRisk,
   getTemuanDetail,
   listTemuanByLhp,

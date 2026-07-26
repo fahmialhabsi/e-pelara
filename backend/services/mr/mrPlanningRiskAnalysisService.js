@@ -32,6 +32,7 @@ const ALLOWED_CREATE_UPDATE_FIELDS = new Set([
   'inherent_impact_ref_id',
   'residual_likelihood_ref_id',
   'residual_impact_ref_id',
+  'dampak_area_ref_id',
   'selera_risiko_ref_id',
   'analysis_note',
   'rekomendasi',
@@ -65,6 +66,8 @@ const BLOCKED_TECHNICAL_FIELDS = new Set([
   'residual_level_ref_id',
   'residual_level',
   'residual_color',
+
+  'dampak_area',
 
   'selera_risiko',
   'appetite_threshold',
@@ -301,6 +304,14 @@ const resolveLabelsForPayload = async (payload = {}, options = {}) => {
 
     resolved.selera_risiko = ref.label || null;
     resolved.appetite_threshold = toNumber(ref.nilai, 9);
+  }
+
+  if (payload.dampak_area_ref_id) {
+    const ref = await resolveReferenceLabel(payload.dampak_area_ref_id, options);
+
+    ensureReferenceGroup(ref, 'IMPACT_AREA', 'dampak_area_ref_id');
+
+    resolved.dampak_area = ref.label || null;
   }
 
   return resolved;

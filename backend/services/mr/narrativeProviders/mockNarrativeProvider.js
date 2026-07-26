@@ -46,8 +46,19 @@ const buildMockNarrative = async ({ payload = {} } = {}) => {
     ].join("\n"),
     pic: unit,
     target_waktu: cleanText(payload.target_waktu) || "",
-    catatan:
-      "Draft ini dihasilkan oleh provider mock untuk pengujian kontrak endpoint. Aktifkan provider AI atau rule-enhanced agar narasi lebih substantif dan sesuai ringkasan.",
+    // PENTING: field ini masuk permanen ke laporan resmi (RiskAnalysis.
+    // analysis_note, Lampiran 2B1 "Catatan Analisis") — WAJIB substantif,
+    // bukan disclaimer proses/provider.
+    catatan: `Analisis risiko didasarkan pada data terkait ${title}. Perlu koordinasi dengan pihak terkait, kelengkapan bukti dukung, dan pemutakhiran data secara berkala untuk memastikan validitas penilaian.`,
+    // Rantai 5-Why saling merujuk (bukan 5 kalimat lepas) — lihat buildRcaFields
+    // di ruleEnhancedNarrativeProvider.js utk pola & alasan yang sama.
+    why_1: `Akar penyebab risiko dari Risiko ketidakmemadaian pengendalian atas ${title}, karena adanya pengendalian yang belum sepenuhnya terdokumentasi dan terukur.`,
+    why_2: "Mengapa pengendalian yang belum sepenuhnya terdokumentasi dan terukur bisa terjadi, karena adanya pembagian peran, PIC, dan target penyelesaian yang belum berjalan optimal.",
+    why_3: "Mengapa pembagian peran, PIC, dan target penyelesaian yang belum berjalan optimal bisa terjadi, karena monitoring dan verifikasi bukti tindak lanjut belum dilakukan secara berkala.",
+    why_4: "Mengapa monitoring dan verifikasi bukti tindak lanjut belum dilakukan secara berkala bisa terjadi, karena keterbatasan sumber daya (SDM, anggaran, atau sarana pendukung) menghambat penguatan pengendalian.",
+    why_5: "Mengapa keterbatasan sumber daya menghambat penguatan pengendalian bisa terjadi, karena belum ada evaluasi sistemik di tingkat perangkat daerah atas akar permasalahan ini, sehingga risiko berpotensi berulang.",
+    kategori_penyebab_kode: "PROCESS",
+    dampak_area_kode: "KINERJA",
     confidence: 0.25,
     needs_user_review: true,
     basis_ringkasan: [

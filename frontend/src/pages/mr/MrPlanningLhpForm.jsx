@@ -10,6 +10,7 @@ import dayjs from "dayjs";
 
 import mrPlanningLhpService, { MR_PLANNING_LHP_QUERY_KEYS } from "@/services/mrPlanningLhpService";
 import mrPlanningRiskService from "@/services/mrPlanningRiskService";
+import api from "@/services/api";
 
 const { Title, Text } = Typography;
 
@@ -51,6 +52,21 @@ export default function MrPlanningLhpForm() {
     queryFn: () => mrPlanningRiskService.getReferenceItemsByGroup("MR_TLHP_JENIS_PEMERIKSAAN"),
   });
 
+  // opd_id di LHP memakai RenstraOPD.id (konvensi sama dengan opd_id di Step 1
+  // wizard MR, lihat StepContext.jsx) — bukan OpdPenanggungJawab.id. Temuan yang
+  // dibuat di bawah LHP ini mewarisi opd_id/nama_opd-nya (createTemuanFromLhp,
+  // mrPlanningTemuanService.js), dan dropdown "Pilih Data Temuan" di wizard MR
+  // (getTemuanOptions) mencocokkan berdasar nama_opd — tanpa field ini Temuan
+  // selalu punya nama_opd kosong dan tidak pernah muncul di dropdown wizard.
+  const { data: opdList = [] } = useQuery({
+    queryKey: ["renstra-opd-list"],
+    queryFn: async () => {
+      const res = await api.get("/renstra-opd");
+      const data = res.data?.data || res.data || [];
+      return Array.isArray(data) ? data : [];
+    },
+  });
+
   React.useEffect(() => {
     if (!lhp) return;
     form.setFieldsValue({
@@ -58,6 +74,7 @@ export default function MrPlanningLhpForm() {
       tanggal_lhp: lhp.tanggal_lhp ? dayjs(lhp.tanggal_lhp) : null,
       surat_tugas_tanggal: lhp.surat_tugas_tanggal ? dayjs(lhp.surat_tugas_tanggal) : null,
       tanggal_terima_lhp: lhp.tanggal_terima_lhp ? dayjs(lhp.tanggal_terima_lhp) : null,
+      tanggal_surat_pengantar: lhp.tanggal_surat_pengantar ? dayjs(lhp.tanggal_surat_pengantar) : null,
       periode_pemeriksaan: lhp.periode_pemeriksaan_awal && lhp.periode_pemeriksaan_akhir
         ? [dayjs(lhp.periode_pemeriksaan_awal), dayjs(lhp.periode_pemeriksaan_akhir)]
         : undefined,
@@ -93,6 +110,7 @@ export default function MrPlanningLhpForm() {
       tanggal_lhp: values.tanggal_lhp ? values.tanggal_lhp.format("YYYY-MM-DD") : null,
       surat_tugas_tanggal: values.surat_tugas_tanggal ? values.surat_tugas_tanggal.format("YYYY-MM-DD") : null,
       tanggal_terima_lhp: values.tanggal_terima_lhp ? values.tanggal_terima_lhp.format("YYYY-MM-DD") : null,
+      tanggal_surat_pengantar: values.tanggal_surat_pengantar ? values.tanggal_surat_pengantar.format("YYYY-MM-DD") : null,
       periode_pemeriksaan_awal: periode_pemeriksaan?.[0] ? periode_pemeriksaan[0].format("YYYY-MM-DD") : null,
       periode_pemeriksaan_akhir: periode_pemeriksaan?.[1] ? periode_pemeriksaan[1].format("YYYY-MM-DD") : null,
     });
@@ -120,6 +138,16 @@ export default function MrPlanningLhpForm() {
         <Form form={form} layout="vertical" disabled={!isDraft}>
           <Row gutter={16}>
             <Col xs={24} md={8}>
+              <Form.Item label="OPD" name="opd_id" rules={[{ required: true, message: "OPD wajib dipilih." }]}>
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  options={opdList.map((o) => ({ value: o.id, label: o.nama_opd }))}
+                  placeholder="Pilih OPD"
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
               <Form.Item label="Entitas Pemeriksa" name="entitas_pemeriksa_ref_id" rules={[{ required: true, message: "Entitas pemeriksa wajib dipilih." }]}>
                 <Select options={getRefOptions(entitasItems)} placeholder="BPK / BPKP / Inspektorat" />
               </Form.Item>
@@ -129,12 +157,12 @@ export default function MrPlanningLhpForm() {
                 <Select options={getRefOptions(jenisItems)} allowClear placeholder="Pemeriksaan Keuangan / Kinerja / PDTT / dst" />
               </Form.Item>
             </Col>
+
             <Col xs={24} md={8}>
               <Form.Item label="Tahun Pemantauan" name="tahun" rules={[{ required: true, message: "Tahun wajib diisi." }]}>
                 <InputNumber style={{ width: "100%" }} min={2000} max={2100} />
               </Form.Item>
             </Col>
-
             <Col xs={24} md={8}>
               <Form.Item label="Nomor LHP" name="nomor_lhp" rules={[{ required: true, message: "Nomor LHP wajib diisi." }]}>
                 <Input />
@@ -175,6 +203,26 @@ export default function MrPlanningLhpForm() {
             <Col xs={24} md={6}>
               <Form.Item label="Tanggal Surat Tugas" name="surat_tugas_tanggal">
                 <DatePicker style={{ width: "100%" }} format="YYYY-MM-DD" />
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} md={8}>
+              <Form.Item
+                label="Nomor Surat Pengantar"
+                name="nomor_surat_pengantar"
+                extra="Surat pengantar Inspektorat yang menyampaikan Matriks Pemantauan TLHP ke SKPD (beda dari Surat Tugas pemeriksaan)."
+              >
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item label="Tanggal Surat Pengantar" name="tanggal_surat_pengantar">
+                <DatePicker style={{ width: "100%" }} format="YYYY-MM-DD" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item label="Perihal Surat Pengantar" name="perihal_surat_pengantar">
+                <Input placeholder="Contoh: Penyampaian Matriks Tindak Lanjut Temuan dan Rekomendasi BPK" />
               </Form.Item>
             </Col>
 

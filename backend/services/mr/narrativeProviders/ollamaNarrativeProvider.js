@@ -104,6 +104,9 @@ Aturan isi:
 - Rekomendasi jangan menyalin mentah ringkasan temuan.
 - User tetap final reviewer.
 - target_waktu boleh kosong.
+- why_1 sampai why_5 adalah Analisis Akar Permasalahan metode 5-Why, WAJIB rantai kalimat yang saling merujuk (bukan 5 kalimat lepas): why_1 = "Akar penyebab risiko dari [nama_risiko], karena adanya [penyebab langsung]."; why_2 = "Mengapa [penyebab why_1] bisa terjadi, karena adanya [penyebab lebih dalam]."; why_3 s.d. why_5 lanjutkan pola yang sama ("Mengapa [penyebab why sebelumnya] bisa terjadi, karena ...") sampai why_5 sebagai akar penyebab paling sistemik. Setiap why wajib kalimat utuh.
+- kategori_penyebab_kode wajib salah satu persis: PEOPLE (SDM/kompetensi), PROCESS (prosedur/mekanisme/tata kelola), SYSTEM (sistem/aplikasi/teknologi/data), EXTERNAL (di luar kendali perangkat daerah). Pilih yang paling dominan berdasarkan why_5.
+- dampak_area_kode wajib salah satu persis sesuai Pedoman No 2: BEBAN_KEUANGAN (finansial/anggaran), REPUTASI (citra/kepercayaan publik), K3 (kesehatan & keselamatan kerja), KINERJA (capaian target/IKU), TEMUAN_PEMERIKSAAN (temuan/penyimpangan hasil pemeriksaan BPK/Inspektorat). Pilih area paling relevan dengan dampak_risiko.
 
 Wajib balas dengan struktur JSON ini:
 {
@@ -117,6 +120,13 @@ Wajib balas dengan struktur JSON ini:
   "pic": "unit terkait atau pihak penanggung jawab",
   "target_waktu": "",
   "catatan": "catatan review singkat",
+  "why_1": "penyebab langsung",
+  "why_2": "mengapa why_1 terjadi",
+  "why_3": "mengapa why_2 terjadi",
+  "why_4": "mengapa why_3 terjadi",
+  "why_5": "akar penyebab paling sistemik",
+  "kategori_penyebab_kode": "PEOPLE | PROCESS | SYSTEM | EXTERNAL",
+  "dampak_area_kode": "BEBAN_KEUANGAN | REPUTASI | K3 | KINERJA | TEMUAN_PEMERIKSAAN",
   "confidence": 0.7,
   "needs_user_review": true,
   "basis_ringkasan": ["ringkasan dasar 1", "ringkasan dasar 2"]

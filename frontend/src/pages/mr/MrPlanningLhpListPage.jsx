@@ -4,19 +4,24 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  Alert,
   App,
   Button,
   Card,
   Col,
   Input,
+  InputNumber,
+  List,
+  Modal,
   Row,
   Select,
   Space,
   Table,
   Tag,
   Typography,
+  Upload,
 } from "antd";
-import { PlusOutlined, ReloadOutlined, FileTextOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, FileTextOutlined, UploadOutlined, InboxOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import mrPlanningLhpService, { MR_PLANNING_LHP_QUERY_KEYS } from "@/services/mrPlanningLhpService";
@@ -35,6 +40,10 @@ export default function MrPlanningLhpListPage() {
 
   const [filters, setFilters] = React.useState({ tahun: "", status_dokumen: "" });
   const [search, setSearch] = React.useState("");
+  const [isImportModalOpen, setIsImportModalOpen] = React.useState(false);
+  const [importFileList, setImportFileList] = React.useState([]);
+  const [importTahun, setImportTahun] = React.useState(undefined);
+  const [importResult, setImportResult] = React.useState(null);
 
   const { data: allData = [], isFetching, refetch } = useQuery({
     queryKey: MR_PLANNING_LHP_QUERY_KEYS.list(filters),
@@ -58,6 +67,28 @@ export default function MrPlanningLhpListPage() {
     },
     onError: (error) => message.error(error?.response?.data?.message || "Gagal mengarsipkan LHP."),
   });
+
+  const importMutation = useMutation({
+    mutationFn: () => mrPlanningLhpService.importMatriksPdf(importFileList[0]?.originFileObj || importFileList[0], { tahun: importTahun }),
+    onSuccess: (data) => {
+      setImportResult(data);
+      queryClient.invalidateQueries({ queryKey: MR_PLANNING_LHP_QUERY_KEYS.all });
+    },
+    onError: (error) => message.error(error?.response?.data?.message || "Import PDF Matriks TLHP gagal."),
+  });
+
+  const handleOpenImportModal = () => {
+    setImportFileList([]);
+    setImportTahun(undefined);
+    setImportResult(null);
+    setIsImportModalOpen(true);
+  };
+
+  const handleCloseImportModal = () => {
+    setIsImportModalOpen(false);
+    setImportFileList([]);
+    setImportResult(null);
+  };
 
   const rows = allData.filter((r) => {
     if (!search) return true;
@@ -124,6 +155,9 @@ export default function MrPlanningLhpListPage() {
             <Button icon={<ReloadOutlined />} loading={isFetching} onClick={() => refetch()}>
               Refresh
             </Button>
+            <Button icon={<UploadOutlined />} onClick={handleOpenImportModal}>
+              Import PDF Matriks TLHP
+            </Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate("/mr/planning-lhp/create")}>
               Tambah LHP
             </Button>
@@ -152,6 +186,116 @@ export default function MrPlanningLhpListPage() {
       <Card>
         <Table rowKey="id" columns={columns} dataSource={rows} loading={isFetching} scroll={{ x: 1100 }} />
       </Card>
+
+      <Modal
+        title="Import PDF Matriks Pemantauan TLHP BPK"
+        open={isImportModalOpen}
+        onCancel={handleCloseImportModal}
+        footer={
+          importResult
+            ? [
+                <Button key="close" type="primary" onClick={handleCloseImportModal}>
+                  Selesai
+                </Button>,
+              ]
+            : [
+                <Button key="cancel" onClick={handleCloseImportModal}>
+                  Batal
+                </Button>,
+                <Button
+                  key="import"
+                  type="primary"
+                  loading={importMutation.isPending}
+                  disabled={!importFileList.length}
+                  onClick={() => importMutation.mutate()}
+                >
+                  Import
+                </Button>,
+              ]
+        }
+        width={640}
+      >
+        {!importResult ? (
+          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            <Alert
+              type="info"
+              showIcon
+              message="Unggah file PDF Matriks Pemantauan Tindak Lanjut Hasil Pemeriksaan BPK (format resmi Inspektorat)."
+              description="Data Temuan, Rekomendasi, dan Tindak Lanjut akan otomatis dibaca dan dimasukkan ke database. Data yang sudah pernah diimpor sebelumnya (Temuan/Rekomendasi yang sama) akan otomatis dilewati, tidak dobel."
+            />
+
+            <Upload.Dragger
+              accept="application/pdf"
+              maxCount={1}
+              fileList={importFileList}
+              beforeUpload={() => false}
+              onChange={({ fileList }) => setImportFileList(fileList)}
+            >
+              <p className="ant-upload-drag-icon">
+                <InboxOutlined />
+              </p>
+              <p className="ant-upload-text">Klik atau seret file PDF Matriks TLHP ke sini</p>
+            </Upload.Dragger>
+
+            <div>
+              <Typography.Text>Tahun (opsional — kosongkan untuk deteksi otomatis dari isi PDF):</Typography.Text>
+              <InputNumber
+                style={{ width: "100%", marginTop: 4 }}
+                min={2000}
+                max={2100}
+                placeholder="Contoh: 2025"
+                value={importTahun}
+                onChange={setImportTahun}
+              />
+            </div>
+          </Space>
+        ) : (
+          <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+            <Alert
+              type="success"
+              showIcon
+              message={`Import selesai untuk SKPD: ${safeText(importResult.skpd)}`}
+              description={`${importResult.temuan_added} Temuan baru, ${importResult.rekomendasi_added} Rekomendasi baru, ${importResult.tindak_lanjut_added} Tindak Lanjut baru ditambahkan.`}
+            />
+
+            <List
+              size="small"
+              bordered
+              dataSource={[
+                `LHP dibuat baru: ${importResult.lhp_created?.length || 0}`,
+                `LHP sudah ada (dipakai ulang): ${importResult.lhp_reused?.length || 0}`,
+                `Temuan ditambahkan: ${importResult.temuan_added}`,
+                `Temuan dilewati (sudah ada sebelumnya): ${importResult.temuan_skipped_duplicate}`,
+                `Rekomendasi ditambahkan: ${importResult.rekomendasi_added}`,
+                `Tindak Lanjut ditambahkan: ${importResult.tindak_lanjut_added}`,
+              ]}
+              renderItem={(item) => <List.Item>{item}</List.Item>}
+            />
+
+            {importResult.warnings?.length > 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                message="Beberapa baris perlu dicek manual"
+                description={
+                  <List
+                    size="small"
+                    dataSource={importResult.warnings}
+                    renderItem={(item) => <List.Item>{item}</List.Item>}
+                  />
+                }
+              />
+            )}
+
+            <Alert
+              type="info"
+              showIcon
+              message="Data hasil import berstatus Draft."
+              description="Silakan cek dan lengkapi (Nomor LHP, Surat Tugas, dll) lewat menu Ubah sebelum LHP diaktifkan/disetujui."
+            />
+          </Space>
+        )}
+      </Modal>
     </Space>
   );
 }

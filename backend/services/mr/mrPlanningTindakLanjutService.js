@@ -43,6 +43,10 @@ const ALLOWED_CREATE_UPDATE_FIELDS = new Set([
   "target_waktu_berikutnya",
   "pic_user_id",
   "pic_nama",
+  "status_matriks",
+  "status_spj",
+  "daftar_dokumen_pendukung",
+  "keterangan",
   "alasan_revisi",
 ]);
 

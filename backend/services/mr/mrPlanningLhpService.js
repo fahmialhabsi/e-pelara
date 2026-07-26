@@ -22,6 +22,7 @@ const {
   MrPlanningLhp,
   MrReferenceItem,
   MrReferenceGroup,
+  RenstraOPD,
 } = require("../../models");
 
 const ALLOWED_CREATE_UPDATE_FIELDS = new Set([
@@ -39,6 +40,9 @@ const ALLOWED_CREATE_UPDATE_FIELDS = new Set([
   "surat_tugas_nomor",
   "surat_tugas_tanggal",
   "tanggal_terima_lhp",
+  "nomor_surat_pengantar",
+  "tanggal_surat_pengantar",
+  "perihal_surat_pengantar",
   "context_id",
   "alasan_revisi",
 ]);
@@ -133,6 +137,19 @@ const resolveLabelsForPayload = async (payload = {}, options = {}) => {
     resolved.jenis_pemeriksaan = ref?.label || null;
   }
 
+  // opd_id di LHP memakai RenstraOPD.id (konvensi sama dengan opd_id di form
+  // Step 1 wizard MR — lihat StepContext.jsx), BUKAN OpdPenanggungJawab.id.
+  // nama_opd diresolusi & didenormalisasi di sini (bukan disimpan langsung dari
+  // frontend) supaya Temuan yang mewarisi opd_id/nama_opd dari LHP (lihat
+  // createTemuan di mrPlanningTemuanService.js) selalu punya label yang PERSIS
+  // sama dengan RenstraOPD.nama_opd — dropdown "Pilih Data Temuan" di wizard MR
+  // (getTemuanOptions, mrAutoFillAggregatorService.js) mencocokkan by nama_opd,
+  // bukan opd_id, karena OpdPenanggungJawab punya banyak baris duplikat per OPD.
+  if (payload.opd_id) {
+    const renstraOpd = await RenstraOPD.findByPk(payload.opd_id);
+    resolved.nama_opd = renstraOpd?.nama_opd || null;
+  }
+
   return resolved;
 };
 
@@ -202,6 +219,7 @@ const updateDraftLhp = async ({ lhpId, body = {}, user } = {}) => {
     ...allowedPayload,
     entitas_pemeriksa: labelPayload.entitas_pemeriksa,
     jenis_pemeriksaan: labelPayload.jenis_pemeriksaan,
+    nama_opd: labelPayload.nama_opd,
     last_revised_at: new Date(),
     last_revised_by: userId,
     updated_by: userId,
@@ -228,6 +246,7 @@ const activateLhp = async ({ lhpId, user } = {}) => {
   await lhp.update({
     entitas_pemeriksa: labelPayload.entitas_pemeriksa,
     jenis_pemeriksaan: labelPayload.jenis_pemeriksaan,
+    nama_opd: labelPayload.nama_opd,
     batas_waktu_tindak_lanjut: batasWaktu,
     status_dokumen: "aktif",
     last_revised_at: new Date(),

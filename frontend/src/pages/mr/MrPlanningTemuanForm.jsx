@@ -20,12 +20,14 @@ import {
   Tag,
   Typography,
 } from "antd";
-import { ArrowLeftOutlined, HistoryOutlined, PlusOutlined, SaveOutlined, ThunderboltOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, HistoryOutlined, PlusOutlined, SaveOutlined, ThunderboltOutlined, UndoOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import dayjs from "dayjs";
 
 import mrPlanningLhpService, { MR_PLANNING_LHP_QUERY_KEYS } from "@/services/mrPlanningLhpService";
 import mrPlanningTemuanService, { MR_PLANNING_TEMUAN_QUERY_KEYS } from "@/services/mrPlanningTemuanService";
 import mrPlanningRiskService from "@/services/mrPlanningRiskService";
+import MrTemuanSubItemsEditor from "@/features/mr/components/MrTemuanSubItemsEditor";
 
 const { Title, Text } = Typography;
 
@@ -45,6 +47,33 @@ const getRefOptions = (response) => getRefRows(response).map((item) => ({ value:
 
 const STATUS_COLOR = { draft: "default", verifikasi: "processing", approved: "success", ditolak: "error" };
 const STATUS_LABEL = { draft: "Draft", verifikasi: "Dalam Verifikasi", approved: "Disetujui", ditolak: "Ditolak" };
+
+// Perkiraan Dampak dari Nilai Temuan (Rp) yang sudah diinput di form Temuan —
+// ambang batas bisa disesuaikan lewat dropdown, ini hanya usulan awal.
+const dampakLevelFromNilaiTemuan = (nilai) => {
+  const num = Number(nilai) || 0;
+  if (num >= 1_000_000_000) return "sangat_tinggi";
+  if (num >= 250_000_000) return "tinggi";
+  if (num >= 50_000_000) return "sedang";
+  if (num >= 10_000_000) return "rendah";
+  if (num > 0) return "sangat_rendah";
+  return "sedang";
+};
+
+// Cari id item referensi berdasarkan nilai_text (mis. "tinggi"); kalau data
+// referensi tidak punya nilai_text yang cocok, jatuh ke fallbackLevel, lalu ke
+// posisi proporsional dalam urutan supaya tetap masuk akal di skala berapa pun.
+const findRefIdByLevel = (refResponse, levelText, fallbackLevel = "sedang") => {
+  const rows = getRefRows(refResponse);
+  if (!rows.length) return undefined;
+  const sorted = [...rows].sort((a, b) => (a.urutan ?? 0) - (b.urutan ?? 0));
+  const norm = (v) => String(v || "").toLowerCase();
+  return (
+    sorted.find((i) => norm(i.nilai_text) === levelText)?.id ??
+    sorted.find((i) => norm(i.nilai_text) === fallbackLevel)?.id ??
+    sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.6) - 1)]?.id
+  );
+};
 
 export default function MrPlanningTemuanForm() {
   const { lhpId, id } = useParams();
@@ -88,18 +117,22 @@ export default function MrPlanningTemuanForm() {
   const { data: likelihoodItems = [] } = useQuery({
     queryKey: ["mr-reference-items", "group", "LIKELIHOOD"],
     queryFn: () => mrPlanningRiskService.getReferenceItemsByGroup("LIKELIHOOD"),
-    enabled: isEscalateModalOpen,
   });
 
   const { data: impactItems = [] } = useQuery({
     queryKey: ["mr-reference-items", "group", "IMPACT"],
     queryFn: () => mrPlanningRiskService.getReferenceItemsByGroup("IMPACT"),
-    enabled: isEscalateModalOpen,
   });
 
   React.useEffect(() => {
     if (temuan) form.setFieldsValue(temuan);
   }, [temuan, form]);
+
+  const selectedKategoriRefId = Form.useWatch("kategori_temuan_ref_id", form);
+  const kategoriKode = React.useMemo(() => {
+    const item = getRefRows(kategoriItems).find((i) => i.id === selectedKategoriRefId);
+    return item?.kode_item || null;
+  }, [kategoriItems, selectedKategoriRefId]);
 
   const isDraftOrRejected = !isEdit || ["draft", "ditolak"].includes(temuan?.status_revisi);
 
@@ -119,6 +152,16 @@ export default function MrPlanningTemuanForm() {
     onSuccess: () => {
       message.success("Temuan berhasil diajukan untuk verifikasi.");
       queryClient.invalidateQueries({ queryKey: MR_PLANNING_TEMUAN_QUERY_KEYS.detail(id) });
+    },
+    onError: (error) => message.error(getBackendErrorMessage(error)),
+  });
+
+  const revisiMutation = useMutation({
+    mutationFn: () => mrPlanningTemuanService.createRevisi(id),
+    onSuccess: () => {
+      message.success("Temuan dikembalikan ke status Draft — silakan edit lalu simpan kembali.");
+      queryClient.invalidateQueries({ queryKey: MR_PLANNING_TEMUAN_QUERY_KEYS.detail(id) });
+      queryClient.invalidateQueries({ queryKey: MR_PLANNING_LHP_QUERY_KEYS.all });
     },
     onError: (error) => message.error(getBackendErrorMessage(error)),
   });
@@ -169,7 +212,12 @@ export default function MrPlanningTemuanForm() {
             disabled={record.is_locked}
             onClick={() => {
               setEditingRekomendasi(record);
-              rekomendasiForm.setFieldsValue(record);
+              rekomendasiForm.setFieldsValue({
+                ...record,
+                target_waktu_penyelesaian: record.target_waktu_penyelesaian
+                  ? dayjs(record.target_waktu_penyelesaian)
+                  : null,
+              });
               setRekomendasiModalOpen(true);
             }}
           >
@@ -205,8 +253,37 @@ export default function MrPlanningTemuanForm() {
                 Riwayat
               </Button>
             )}
+            {isEdit && temuan?.status_revisi === "approved" && (
+              <Button
+                icon={<UndoOutlined />}
+                loading={revisiMutation.isPending}
+                onClick={() => {
+                  Modal.confirm({
+                    title: "Buat Revisi?",
+                    content: "Temuan ini akan dikembalikan ke status Draft (versi baru) supaya bisa diedit. Riwayat persetujuan sebelumnya tetap tersimpan di Riwayat, tidak dihapus.",
+                    okText: "Ya, Buat Revisi",
+                    cancelText: "Batal",
+                    onOk: () => revisiMutation.mutate(),
+                  });
+                }}
+              >
+                Buat Revisi (Kembalikan ke Draft)
+              </Button>
+            )}
             {isEdit && temuan?.status_revisi === "approved" && temuan?.risk_escalation_status === "none" && (
-              <Button type="primary" icon={<ThunderboltOutlined />} onClick={() => setEscalateModalOpen(true)}>
+              <Button
+                type="primary"
+                icon={<ThunderboltOutlined />}
+                onClick={() => {
+                  escalateForm.setFieldsValue({
+                    objek_risiko: temuan?.judul_temuan || "",
+                    kemungkinan_ref_id: findRefIdByLevel(likelihoodItems, "tinggi"),
+                    dampak_ref_id: findRefIdByLevel(impactItems, dampakLevelFromNilaiTemuan(temuan?.nilai_temuan_rupiah)),
+                    periode_type: "tahunan",
+                  });
+                  setEscalateModalOpen(true);
+                }}
+              >
                 Eskalasi ke Risk Register
               </Button>
             )}
@@ -240,24 +317,36 @@ export default function MrPlanningTemuanForm() {
               </Form.Item>
             </Col>
 
-            <Col xs={24} md={12}>
+            <Col span={24}>
               <Form.Item label="Kondisi" name="kondisi">
                 <Input.TextArea rows={2} />
               </Form.Item>
+              <Form.Item name="sub_kondisi" style={{ marginBottom: 20 }}>
+                <MrTemuanSubItemsEditor label="Sub Kondisi" />
+              </Form.Item>
             </Col>
-            <Col xs={24} md={12}>
+            <Col span={24}>
               <Form.Item label="Kriteria" name="kriteria">
                 <Input.TextArea rows={2} />
               </Form.Item>
+              <Form.Item name="sub_kriteria" style={{ marginBottom: 20 }}>
+                <MrTemuanSubItemsEditor label="Sub Kriteria" />
+              </Form.Item>
             </Col>
-            <Col xs={24} md={12}>
+            <Col span={24}>
               <Form.Item label="Sebab" name="sebab">
                 <Input.TextArea rows={2} />
               </Form.Item>
+              <Form.Item name="sub_sebab" style={{ marginBottom: 20 }}>
+                <MrTemuanSubItemsEditor label="Sub Sebab" />
+              </Form.Item>
             </Col>
-            <Col xs={24} md={12}>
+            <Col span={24}>
               <Form.Item label="Akibat" name="akibat">
                 <Input.TextArea rows={2} />
+              </Form.Item>
+              <Form.Item name="sub_akibat" style={{ marginBottom: 20 }}>
+                <MrTemuanSubItemsEditor label="Sub Akibat" />
               </Form.Item>
             </Col>
 
@@ -265,6 +354,15 @@ export default function MrPlanningTemuanForm() {
               <Form.Item label="Kategori Temuan" name="kategori_temuan_ref_id">
                 <Select options={getRefOptions(kategoriItems)} allowClear />
               </Form.Item>
+              {kategoriKode === "LAINNYA" && (
+                <Form.Item
+                  label="Sebutkan Kategori Lain"
+                  name="kategori_temuan_lainnya"
+                  rules={[{ required: true, message: "Kategori lain wajib diisi." }]}
+                >
+                  <Input placeholder="Sebutkan kategori temuan lainnya" />
+                </Form.Item>
+              )}
             </Col>
             <Col xs={24} md={8}>
               <Form.Item label="Nilai Temuan (Rp)" name="nilai_temuan_rupiah">
@@ -312,7 +410,15 @@ export default function MrPlanningTemuanForm() {
         onCancel={() => setRekomendasiModalOpen(false)}
         onOk={async () => {
           const values = await rekomendasiForm.validateFields();
-          rekomendasiMutation.mutate({ rekomendasiId: editingRekomendasi?.id, payload: values });
+          rekomendasiMutation.mutate({
+            rekomendasiId: editingRekomendasi?.id,
+            payload: {
+              ...values,
+              target_waktu_penyelesaian: values.target_waktu_penyelesaian
+                ? values.target_waktu_penyelesaian.format("YYYY-MM-DD")
+                : null,
+            },
+          });
         }}
         confirmLoading={rekomendasiMutation.isPending}
       >
@@ -327,7 +433,7 @@ export default function MrPlanningTemuanForm() {
             <Input />
           </Form.Item>
           <Form.Item label="Target Waktu Penyelesaian" name="target_waktu_penyelesaian">
-            <DatePicker style={{ width: "100%" }} format="YYYY-MM-DD" onChange={(_, dateString) => rekomendasiForm.setFieldsValue({ target_waktu_penyelesaian: dateString })} />
+            <DatePicker style={{ width: "100%" }} format="YYYY-MM-DD" />
           </Form.Item>
           <Form.Item label="Nilai Rekomendasi (Rp)" name="nilai_rekomendasi_rupiah">
             <InputNumber style={{ width: "100%" }} min={0} />
@@ -347,7 +453,9 @@ export default function MrPlanningTemuanForm() {
         width={640}
       >
         <Text type="secondary">
-          Nomor temuan, judul, ringkasan, dan rekomendasi akan terisi otomatis dari Temuan ini. Lengkapi field yang belum tersedia di bawah ini.
+          Nomor temuan, judul, ringkasan, dan rekomendasi akan terisi otomatis dari Temuan ini. Objek Risiko diambil dari
+          Judul Temuan, sedangkan Kemungkinan dan Dampak adalah perkiraan awal berdasarkan data Temuan (Dampak dari Nilai
+          Temuan) — silakan sesuaikan bila perlu.
         </Text>
         <Form form={escalateForm} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item label="Objek Risiko" name="objek_risiko" rules={[{ required: true, message: "Objek risiko wajib diisi." }]}>

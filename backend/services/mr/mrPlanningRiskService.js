@@ -1565,6 +1565,18 @@ const ensureProposalContextItem = async ({ context, payload, sourceRef, userId, 
     is_primary: false,
     is_active: true,
 
+    // Nilai anggaran/nilai terkait sumber non-Renstra (nilai_temuan utk
+    // BPK/BPKP/Inspektorat, nilai_transaksi utk Laporan Keuangan/
+    // Pertanggungjawaban Keuangan) — dipakai kolom "Anggaran" di Lampiran 1D
+    // (getDaftarRisiko -> anggaran_terkait, mrPlanningReportQueryService.js).
+    // Sebelumnya HANYA disimpan di metadata_json (opaque, tidak pernah dibaca
+    // laporan) — kolom asli yg dibaca laporan (`mr_planning_context_item`
+    // TIDAK PUNYA kolom `nilai_terkait` sama sekali, cuma `pagu_tahun_1..6`
+    // yg didesain utk Renstra) selalu NULL utk proposal-intake, makanya
+    // Anggaran selalu "Belum Tersedia" utk sumber non-Renstra.
+    pagu_tahun_1:
+      toNumberOrNull(payload.nilai_temuan) ?? toNumberOrNull(payload.nilai_transaksi) ?? null,
+
     metadata_json: buildMetadata(payload.metadata_json, {
       generated_by: 'proposal_intake',
       proposal_source_type: sourceRef.nilai_text,

@@ -78,6 +78,20 @@ const mrPlanningLhpService = {
     const response = await api.delete(`${ENDPOINT}/${id}`);
     return getResponseData(response);
   },
+
+  async importMatriksPdf(file, { tahun } = {}) {
+    if (!file) throw new Error('Berkas PDF wajib diisi.');
+
+    const formData = new FormData();
+    formData.append('file', file);
+    if (tahun) formData.append('tahun', tahun);
+
+    const response = await api.post('/mr-planning-tlhp-import/matriks-pdf', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+
+    return getResponseData(response);
+  },
 };
 
 export const {
@@ -89,6 +103,7 @@ export const {
   archive,
   uploadDocument,
   remove,
+  importMatriksPdf,
 } = mrPlanningLhpService;
 
 export default mrPlanningLhpService;

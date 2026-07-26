@@ -80,6 +80,19 @@ const getTemuanRekomendasiDetail = async (lhpIds) => {
         where: { is_active: true },
         include: [
           { model: MrReferenceItem, as: "status_tindak_lanjut_ref", required: false },
+          // PENTING: sebelumnya laporan TLHP TIDAK PERNAH menarik data
+          // MrPlanningTindakLanjut sama sekali — hanya baca ringkasan
+          // status_tindak_lanjut/persentase_penyelesaian yang di-rollup ke
+          // Rekomendasi. Akibatnya uraian tindak lanjut, setor, kendala,
+          // rencana aksi (dokumen pendukung), status matriks, dan SPJ tidak
+          // pernah muncul di laporan walau datanya sudah tersimpan lengkap.
+          // Ditemukan 2026-07-26 saat menyelaraskan format Matriks BPK.
+          {
+            model: MrPlanningTindakLanjut,
+            as: "tindak_lanjuts",
+            required: false,
+            where: { is_active: true, is_latest: true },
+          },
         ],
       },
     ],
@@ -95,16 +108,42 @@ const getTemuanRekomendasiDetail = async (lhpIds) => {
       rows.push({
         temuan,
         rekomendasi: null,
+        tindakLanjut: null,
       });
       return;
     }
 
     rekomendasis.forEach((rekomendasi) => {
-      rows.push({ temuan, rekomendasi });
+      const tindakLanjut = (rekomendasi.tindak_lanjuts || [])[0] || null;
+      rows.push({ temuan, rekomendasi, tindakLanjut });
     });
   });
 
   return rows;
+};
+
+// Sisa = nilai temuan dikurangi total setoran yang sudah tercatat di seluruh
+// entri Tindak Lanjut TERBARU per rekomendasi milik temuan itu. Tidak
+// disimpan sebagai kolom fisik (dihitung di sini) supaya selalu konsisten
+// dengan data setoran terbaru, tidak pernah stale.
+const computeSisaByTemuan = (detail) => {
+  const totalSetoranByTemuan = new Map();
+
+  detail.forEach(({ temuan, tindakLanjut }) => {
+    if (!tindakLanjut?.nilai_setoran_rupiah) return;
+    const current = totalSetoranByTemuan.get(temuan.id) || 0;
+    totalSetoranByTemuan.set(temuan.id, current + Number(tindakLanjut.nilai_setoran_rupiah));
+  });
+
+  const sisaByTemuan = {};
+  detail.forEach(({ temuan }) => {
+    if (Object.prototype.hasOwnProperty.call(sisaByTemuan, temuan.id)) return;
+    const nilaiTemuan = Number(temuan.nilai_temuan_rupiah) || 0;
+    const totalSetoran = totalSetoranByTemuan.get(temuan.id) || 0;
+    sisaByTemuan[temuan.id] = Math.max(0, nilaiTemuan - totalSetoran);
+  });
+
+  return sisaByTemuan;
 };
 
 const getEvidenceCountsByRekomendasi = async (rekomendasiIds) => {
@@ -277,11 +316,13 @@ const getFullReport = async (scopeParams) => {
   const namaOpd = namaOpdCandidates.length === 1 ? namaOpdCandidates[0] : null;
 
   const officials = await getReportOfficials({ tahun: scope.tahun, opd_id: scope.opd_id, nama_opd: namaOpd });
+  const sisaByTemuan = computeSisaByTemuan(detail);
 
   return {
     report_scope: { ...scope, nama_opd: namaOpd, is_multi_opd: namaOpdCandidates.length > 1 },
     lhp_list: lhpList,
     temuan_rekomendasi_detail: detail,
+    sisa_by_temuan: sisaByTemuan,
     evidence_counts_by_rekomendasi: evidenceCounts,
     summary,
     report_quality_gate: buildTlhpDataQualityGate(detail),
@@ -301,5 +342,6 @@ module.exports = {
   buildTlhpApprovalGate,
   buildTlhpDataQualityGate,
   getReportOfficials,
+  computeSisaByTemuan,
   getFullReport,
 };
