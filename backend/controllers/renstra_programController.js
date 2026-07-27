@@ -94,14 +94,23 @@ exports.create = async (req, res) => {
   }
 
   try {
-    // Cek duplikasi
+    // Cek duplikasi — cakupannya per Arah Kebijakan, bukan per Renstra saja.
+    // Satu Program sah menopang lebih dari satu Arah Kebijakan (Permendagri 86/2017);
+    // di skema ini relasi tersebut disimpan sebagai baris terpisah dengan
+    // kebijakan_id berbeda. Kunci duplikat yang benar: renstra_id + kode_program + kebijakan_id.
+    const kebijakanIdNum = normalizePositiveInt(renstra_kebijakan_id);
     const existing = await RenstraProgram.findOne({
-      where: { kode_program, renstra_id: renstraIdNum },
+      where: {
+        kode_program,
+        renstra_id: renstraIdNum,
+        kebijakan_id: kebijakanIdNum ?? null,
+      },
     });
 
     if (existing) {
       return res.status(400).json({
-        error: 'Program dengan kode ini sudah ada di Renstra terkait',
+        error:
+          'Program dengan kode ini sudah terdaftar pada Arah Kebijakan yang sama di Renstra terkait',
       });
     }
 
@@ -112,7 +121,7 @@ exports.create = async (req, res) => {
       rpjmd_program_id: rpjmd_program_id.trim(),
       // Model RenstraProgram tidak punya kolom rpjmd_arah_id/renstra_kebijakan_id —
       // kolom aslinya kebijakan_id (rpjmd_arah_id cuma helper filter di frontend).
-      kebijakan_id: normalizePositiveInt(renstra_kebijakan_id),
+      kebijakan_id: kebijakanIdNum,
       opd_penanggung_jawab: opd_penanggung_jawab || '',
       bidang_opd_penanggung_jawab: bidang_opd_penanggung_jawab || '',
     });
@@ -152,6 +161,7 @@ exports.findAll = async (req, res) => {
         'nama_program',
         'renstra_id',
         'rpjmd_program_id',
+        'kebijakan_id',
         'opd_penanggung_jawab',
         'bidang_opd_penanggung_jawab',
       ],
@@ -174,6 +184,10 @@ exports.findAll = async (req, res) => {
       nama_program: item.nama_program,
       renstra_id: item.renstra_id,
       rpjmd_program_id: item.rpjmd_program_id,
+      // Tautan ke Arah Kebijakan Renstra — dipakai halaman Daftar Program untuk
+      // menyusun cascading Tujuan → Sasaran → Strategi → Arah Kebijakan → Program.
+      kebijakan_id: item.kebijakan_id,
+      renstra_kebijakan_id: item.kebijakan_id,
       opd_penanggung_jawab: item.opd_penanggung_jawab || '',
       bidang_opd_penanggung_jawab: item.bidang_opd_penanggung_jawab || '',
       renstra: item.renstra,

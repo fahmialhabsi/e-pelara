@@ -19,7 +19,9 @@ export default function StepMonitoring({ riskId, onStepComplete }) {
       return unwrapRows(res);
     },
     enabled: Boolean(riskId),
-    refetchInterval: 4000,
+    // Berhenti polling begitu minimal satu entri pemantauan sudah ada — tidak
+    // perlu terus hit endpoint ini tiap 4 detik selama user diam di step ini.
+    refetchInterval: (query) => ((query.state.data?.length || 0) > 0 ? false : 8000),
   });
 
   const hasEntry = (entryRows?.length || 0) > 0;

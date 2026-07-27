@@ -742,7 +742,12 @@ const createSummarySheet = ({ workbook, report }) => {
       ['Risiko Disetujui', safeText(approvalGate.approved_count)],
       ['Risiko Belum Disetujui', safeText(approvalGate.not_approved_count)],
       ['Catatan Status Dokumen', safeText(approvalGate.cover_note)],
-      ['Catatan Governance Excel', approvalGate.ready_to_sign ? 'Dokumen siap final.' : 'Dokumen ini mode draft/review dan belum boleh diklaim final.'],
+      [
+        'Catatan Governance Excel',
+        approvalGate.ready_to_sign
+          ? 'Dokumen siap final.'
+          : 'Dokumen ini mode draft/review dan belum boleh diklaim final.',
+      ],
     ],
   });
 
@@ -2252,8 +2257,8 @@ const createOfficialInspektoratSheets = ({ workbook, report }) => {
   createSettingParameterSheet({ workbook, report });
 };
 
-const buildExcelWorkbook = async (contextId) => {
-  const report = await reportQueryService.getFullReport(contextId);
+const buildExcelWorkbook = async (contextId, options = {}) => {
+  const report = await reportQueryService.getFullReport(contextId, { signal: options.signal });
 
   const workbook = new ExcelJS.Workbook();
 
@@ -2290,11 +2295,11 @@ const buildExcelWorkbook = async (contextId) => {
   };
 };
 
-const buildExcelWorkbookInspektorat = async (contextId) => {
+const buildExcelWorkbookInspektorat = async (contextId, options = {}) => {
   // R16C:
   // Endpoint lama export-excel-inspektorat dipertahankan untuk backward compatibility.
   // Namun hasilnya tetap satu file Laporan MR final, bukan workbook terpisah.
-  return buildExcelWorkbook(contextId);
+  return buildExcelWorkbook(contextId, options);
 };
 
 module.exports = {

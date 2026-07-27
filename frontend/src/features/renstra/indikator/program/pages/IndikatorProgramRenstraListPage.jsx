@@ -1,8 +1,11 @@
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Table, Button, Popconfirm, message, Spin, Alert, Empty } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
+
+// Total kolom tabel (No, Nama Indikator, Satuan, Baseline, Th.1-5, Aksi) — dipakai untuk colSpan baris judul kelompok Program.
+const TOTAL_KOLOM = 10;
 
 const IndikatorProgramRenstraListPage = () => {
   const navigate = useNavigate();
@@ -28,6 +31,76 @@ const IndikatorProgramRenstraListPage = () => {
     },
   });
 
+  // Data Program (Kode Program + Nama Program) untuk baris judul kelompok.
+  const { data: programList } = useQuery({
+    queryKey: ['renstra-program-for-indikator-list', renstraAktif?.id],
+    enabled: !!renstraAktif?.id,
+    queryFn: async () => {
+      const res = await api.get('/renstra-program', {
+        params: { renstra_id: renstraAktif?.id },
+      });
+      return res.data?.data || res.data;
+    },
+  });
+
+  // Susun ulang data indikator: dikelompokkan per Program, diselingi baris judul
+  // "Kode Program - Nama Program" sebelum daftar indikator program tersebut.
+  const groupedData = useMemo(() => {
+    if (!data) return [];
+    const programs = Array.isArray(programList) ? programList : [];
+    const sorted = [...programs].sort((a, b) =>
+      String(a.kode_program || '').localeCompare(String(b.kode_program || ''), undefined, {
+        numeric: true,
+      }),
+    );
+    const rows = [];
+    const usedIds = new Set();
+
+    // Bandingkan hanya angka-angka di dalam kode_indikator (abaikan pemisah seperti
+    // "." atau ".."), karena beberapa kode di data lama tidak konsisten jumlah titiknya
+    // (mis. "IP2.09.03..02" vs "IP2.09.03.01") — localeCompare numeric biasa akan
+    // membandingkan pemisahnya dulu sehingga urutan angka jadi salah.
+    const digitGroups = (str) => (String(str || '').match(/\d+/g) || []).map(Number);
+    const byKodeIndikator = (a, b) => {
+      const A = digitGroups(a.kode_indikator);
+      const B = digitGroups(b.kode_indikator);
+      const len = Math.max(A.length, B.length);
+      for (let i = 0; i < len; i++) {
+        const diff = (A[i] ?? 0) - (B[i] ?? 0);
+        if (diff !== 0) return diff;
+      }
+      return String(a.kode_indikator || '').localeCompare(String(b.kode_indikator || ''));
+    };
+
+    sorted.forEach((prog) => {
+      const items = data
+        .filter((d) => Number(d.ref_id) === Number(prog.id))
+        .sort(byKodeIndikator);
+      if (items.length === 0) return;
+      rows.push({
+        __group: true,
+        id: `group-${prog.id}`,
+        label: `${prog.kode_program || ''} - ${prog.nama_program || ''}`.trim(),
+      });
+      items.forEach((it) => {
+        rows.push(it);
+        usedIds.add(it.id);
+      });
+    });
+
+    const orphans = data.filter((d) => !usedIds.has(d.id)).sort(byKodeIndikator);
+    if (orphans.length > 0) {
+      rows.push({
+        __group: true,
+        id: 'group-lainnya',
+        label: 'Lainnya (Program tidak ditemukan)',
+      });
+      orphans.forEach((it) => rows.push(it));
+    }
+
+    return rows;
+  }, [data, programList]);
+
   const deleteMutation = useMutation({
     mutationFn: async (id) => {
       await api.delete(`/indikator-renstra/${id}`);
@@ -43,20 +116,59 @@ const IndikatorProgramRenstraListPage = () => {
 
   const handleDelete = (id) => deleteMutation.mutate(id);
 
+  // Sembunyikan sel kolom lain (colSpan 0) saat baris adalah judul kelompok Program.
+  const hideIfGroup = (renderFn) => (text, record) => {
+    if (record.__group) return { children: null, props: { colSpan: 0 } };
+    return renderFn ? renderFn(text, record) : text;
+  };
+
   const columns = [
-    { title: 'No', dataIndex: 'kode_indikator', key: 'no' },
-    { title: 'Nama Indikator', dataIndex: 'nama_indikator', key: 'nama' },
-    { title: 'Satuan', dataIndex: 'satuan', key: 'satuan' },
-    { title: 'Baseline', dataIndex: 'baseline', key: 'baseline' },
-    { title: 'Th. 1', dataIndex: 'target_tahun_1', key: 'target_tahun_1' },
-    { title: 'Th. 2', dataIndex: 'target_tahun_2', key: 'target_tahun_2' },
-    { title: 'Th. 3', dataIndex: 'target_tahun_3', key: 'target_tahun_3' },
-    { title: 'Th. 4', dataIndex: 'target_tahun_4', key: 'target_tahun_4' },
-    { title: 'Th. 5', dataIndex: 'target_tahun_5', key: 'target_tahun_5' },
+    {
+      title: 'No',
+      dataIndex: 'kode_indikator',
+      key: 'no',
+      render: (text, record) =>
+        record.__group
+          ? { children: <strong>{record.label}</strong>, props: { colSpan: TOTAL_KOLOM } }
+          : text,
+    },
+    { title: 'Nama Indikator', dataIndex: 'nama_indikator', key: 'nama', render: hideIfGroup() },
+    { title: 'Satuan', dataIndex: 'satuan', key: 'satuan', render: hideIfGroup() },
+    { title: 'Baseline', dataIndex: 'baseline', key: 'baseline', render: hideIfGroup() },
+    {
+      title: 'Th. 1',
+      dataIndex: 'target_tahun_1',
+      key: 'target_tahun_1',
+      render: hideIfGroup(),
+    },
+    {
+      title: 'Th. 2',
+      dataIndex: 'target_tahun_2',
+      key: 'target_tahun_2',
+      render: hideIfGroup(),
+    },
+    {
+      title: 'Th. 3',
+      dataIndex: 'target_tahun_3',
+      key: 'target_tahun_3',
+      render: hideIfGroup(),
+    },
+    {
+      title: 'Th. 4',
+      dataIndex: 'target_tahun_4',
+      key: 'target_tahun_4',
+      render: hideIfGroup(),
+    },
+    {
+      title: 'Th. 5',
+      dataIndex: 'target_tahun_5',
+      key: 'target_tahun_5',
+      render: hideIfGroup(),
+    },
     {
       title: 'Aksi',
       key: 'aksi',
-      render: (_, record) => (
+      render: hideIfGroup((_, record) => (
         <>
           <Button
             type="link"
@@ -73,7 +185,7 @@ const IndikatorProgramRenstraListPage = () => {
             </Button>
           </Popconfirm>
         </>
-      ),
+      )),
     },
   ];
 
@@ -126,12 +238,15 @@ const IndikatorProgramRenstraListPage = () => {
         </Button>
       </div>
       <Table
-        dataSource={data}
+        dataSource={groupedData}
         columns={columns}
         rowKey="id"
         bordered
+        pagination={false}
         scroll={{ x: 900 }}
+        onRow={(record) => (record.__group ? { style: { background: '#eaf4fb' } } : {})}
         expandable={{
+          rowExpandable: (record) => !record.__group,
           expandedRowRender: (record) => (
             <div style={{ padding: '12px 24px', background: '#fafafa' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -196,7 +311,6 @@ const IndikatorProgramRenstraListPage = () => {
               </table>
             </div>
           ),
-          rowExpandable: () => true,
         }}
       />
     </div>

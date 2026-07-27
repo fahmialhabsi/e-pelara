@@ -9,6 +9,25 @@ const safeText = (value, fallback = '') => {
 
 const normalizeDedupeText = (value) => safeText(value).toLowerCase().replace(/\s+/g, ' ').trim();
 
+// buildReportGovernanceContract() memanggil beberapa fungsi murni di bawah ini
+// (isBpkpReportScope, collectBpkpEvidenceBasis, dst) berkali-kali untuk objek
+// `report` yang SAMA dalam satu kali build (mis. buildBpkpPedomanComplianceRows
+// sendiri dipanggil 2x di top-level, masing-masing memicu ulang seluruh rantai
+// evidence-basis). Untuk context dengan banyak risiko/context item ini jadi
+// jutaan komparasi berulang per request. WeakMap di-key oleh referensi `report`
+// supaya cache otomatis ikut ter-GC begitu `report` (objek transient per-call)
+// tidak lagi direferensikan — tidak menambah leak baru.
+const memoizeByReport = (fn) => {
+  const cache = new WeakMap();
+  return (report = {}) => {
+    if (!report || typeof report !== 'object') return fn(report);
+    if (cache.has(report)) return cache.get(report);
+    const result = fn(report);
+    cache.set(report, result);
+    return result;
+  };
+};
+
 const normalizeSourceCode = (value) =>
   safeText(value)
     .toUpperCase()
@@ -91,7 +110,7 @@ const isExplicitNonBpkpDocument = (value) => {
   ].includes(lower);
 };
 
-const isBpkpReportScope = (report = {}) => {
+const isBpkpReportScope = memoizeByReport((report = {}) => {
   const context = toPlainObject(report.context);
   const reportScope = toPlainObject(report.report_scope);
   const contextMetadata = parseJsonObject(context.metadata_json);
@@ -147,7 +166,7 @@ const isBpkpReportScope = (report = {}) => {
   }
 
   return false;
-};
+});
 
 const toBool = (value) => {
   if (value === null || value === undefined) return false;
@@ -155,23 +174,30 @@ const toBool = (value) => {
   return String(value).trim().length > 0;
 };
 
-const collectBpkpEvidenceBasis = (report = {}) => {
+const collectBpkpEvidenceBasis = memoizeByReport((report = {}) => {
   if (!isBpkpReportScope(report)) return [];
   const contextItems = safeArray(report.context_items);
   const risks = safeArray(report.lampiran?.daftar_risiko);
   const rows = [];
 
+  // Dulu risks.find() dipanggil di dalam contextItems.forEach() — O(n*m) untuk
+  // tiap context item mencari risiko yang cocok. Untuk context dengan ratusan
+  // risiko/context item ini bisa jutaan komparasi. Index dulu risiko BPKP per
+  // context_id (ambil kemunculan pertama, sama seperti semantik .find() asli).
+  const bpkpRiskByContextId = new Map();
+  risks.forEach((risk) => {
+    if (safeText(risk.stage).toLowerCase() !== 'temuan_bpkp') return;
+    const key = String(risk.context_id || '');
+    if (!bpkpRiskByContextId.has(key)) {
+      bpkpRiskByContextId.set(key, risk);
+    }
+  });
+
   contextItems.forEach((item) => {
     if (!isBpkpSourceRow(item)) return;
     const metadata = safeObject(item.metadata_json);
     const linkedRisk =
-      risks.find((risk) => {
-        return (
-          safeText(risk.stage).toLowerCase() === 'temuan_bpkp' &&
-          String(risk.context_id || '') ===
-            String(item.context_id || item.mr_planning_context_id || '')
-        );
-      }) || {};
+      bpkpRiskByContextId.get(String(item.context_id || item.mr_planning_context_id || '')) || {};
 
     rows.push({
       proposal_source_code: metadata.proposal_source_code || null,
@@ -196,9 +222,9 @@ const collectBpkpEvidenceBasis = (report = {}) => {
   });
 
   return rows;
-};
+});
 
-const buildBpkpEvidenceReadinessGate = (report = {}) => {
+const buildBpkpEvidenceReadinessGate = memoizeByReport((report = {}) => {
   if (!isBpkpReportScope(report)) return null;
   const basisRows = collectBpkpEvidenceBasis(report);
   if (!basisRows.length) {
@@ -261,7 +287,7 @@ const buildBpkpEvidenceReadinessGate = (report = {}) => {
     basis_fields: basisFields,
     notes,
   };
-};
+});
 
 const getMonitoringRiskId = (row = {}) =>
   safeText(
@@ -407,7 +433,7 @@ const hasEffectivenessReviewSignal = (row = {}) =>
     row.outcome_pengendalian,
   ].some(toBool);
 
-const collectBpkpMonitoringEvidenceBasis = (report = {}) => {
+const collectBpkpMonitoringEvidenceBasis = memoizeByReport((report = {}) => {
   if (!isBpkpReportScope(report)) {
     return {
       monitoring_rows: [],
@@ -502,7 +528,7 @@ const collectBpkpMonitoringEvidenceBasis = (report = {}) => {
     has_effectiveness_review: matchedRows.some(hasEffectivenessReviewSignal),
     evidence_status_counts: evidenceStatusCounts,
   };
-};
+});
 
 const buildSourceSummaryRows = (report = {}) => {
   const contextItems = safeArray(report.context_items);
@@ -554,7 +580,6 @@ const buildDedupeRows = (rows = [], keyBuilder = () => '', options = {}) => {
 
   const raw_rows = source;
   const display_rows = [];
-  const detail_rows = [];
   const duplicate_audit = [];
 
   grouped.forEach((items, key) => {
@@ -573,11 +598,9 @@ const buildDedupeRows = (rows = [], keyBuilder = () => '', options = {}) => {
       source_row_ids: rowIds,
       dedupe_key: key,
       dedupe_note: items.length > 1 ? 'deduped_for_display' : 'unique',
-      raw_items: items,
     };
 
     display_rows.push(merged);
-    detail_rows.push(merged);
 
     if (items.length > 1) {
       duplicate_audit.push({
@@ -589,7 +612,7 @@ const buildDedupeRows = (rows = [], keyBuilder = () => '', options = {}) => {
     }
   });
 
-  return { raw_rows, display_rows, detail_rows, duplicate_audit };
+  return { raw_rows, display_rows, duplicate_audit };
 };
 
 const buildFieldKey = (row = {}, fields = []) =>
@@ -764,7 +787,7 @@ const buildHistoryVisibilityContract = (report = {}) => {
   };
 };
 
-const buildEvidenceAdequacyGate = (report = {}) => {
+const buildEvidenceAdequacyGate = memoizeByReport((report = {}) => {
   const monitoring = safeArray(report.lampiran?.realisasi_pengendalian);
   const missing = monitoring.filter((row) => {
     const status = normalizeDedupeText(row.evidence_status || row.status_evidence || 'missing');
@@ -794,7 +817,7 @@ const buildEvidenceAdequacyGate = (report = {}) => {
   }
 
   return result;
-};
+});
 
 const buildReportReadinessGate = (report = {}) => {
   const finalInfo = resolveFinalReportRecords(report);
@@ -849,7 +872,7 @@ const buildExceptionRegister = (report = {}) => {
   return [...new Set(list)];
 };
 
-const buildBpkpPedomanComplianceRows = (report = {}) => {
+const buildBpkpPedomanComplianceRows = memoizeByReport((report = {}) => {
   if (!isBpkpReportScope(report)) return [];
 
   const evidenceGate = safeObject(
@@ -1024,7 +1047,7 @@ const buildBpkpPedomanComplianceRows = (report = {}) => {
       },
     };
   });
-};
+});
 
 const buildBpkpComplianceSummary = (rows = []) => {
   const all = safeArray(rows);
@@ -1125,8 +1148,7 @@ const buildReportDedupeContract = (report = {}) => {
   };
 };
 
-const buildOfficialReportPayload = (report = {}) => {
-  const dedupe = buildReportDedupeContract(report);
+const buildOfficialReportPayload = (report = {}, dedupe = buildReportDedupeContract(report)) => {
   return {
     context: safeObject(report.context),
     context_items: dedupe.context_items.ringkasan_41a.display_rows,
@@ -1142,8 +1164,7 @@ const buildOfficialReportPayload = (report = {}) => {
   };
 };
 
-const buildAuditTrailPayload = (report = {}) => {
-  const dedupe = buildReportDedupeContract(report);
+const buildAuditTrailPayload = (report = {}, dedupe = buildReportDedupeContract(report)) => {
   return {
     duplicate_audit: [
       ...safeArray(dedupe.context_items.ringkasan_41a.duplicate_audit),
@@ -1205,15 +1226,17 @@ const buildReportGovernanceContract = (report = {}) => {
 
   const status = readiness.status === 'ready' && evidence.status === 'hijau' ? 'hijau' : 'kuning';
 
+  const officialPayload = buildOfficialReportPayload(report, dedupe);
+  const auditPayload = buildAuditTrailPayload(report, dedupe);
+
   return {
-    constOfficialPayload: buildOfficialReportPayload(report),
     official_report_contract: {
       source_summary: {
         ...safeObject(report.summary),
         display_rows: sourceSummaryRows,
       },
       context_items: dedupe.context_items,
-      lampiran: buildOfficialReportPayload(report).lampiran,
+      lampiran: officialPayload.lampiran,
       lampiran_dedupe_contract: {
         daftar_risiko: dedupe.daftar_risiko,
         analisis_risiko: dedupe.analisis_risiko,
@@ -1232,7 +1255,7 @@ const buildReportGovernanceContract = (report = {}) => {
       operational_integrity_summary: operational,
     },
     audit_report_contract: {
-      duplicate_audit: buildAuditTrailPayload(report).duplicate_audit,
+      duplicate_audit: auditPayload.duplicate_audit,
       history_rows: [],
       rebuild_rows: [],
       repair_placeholder_rows: [],
@@ -1246,7 +1269,7 @@ const buildReportGovernanceContract = (report = {}) => {
     report_governance_gate: {
       overall_status: status,
       readiness_status: readiness.status,
-      duplicate_gate: { duplicate_count: buildAuditTrailPayload(report).duplicate_audit.length },
+      duplicate_gate: { duplicate_count: auditPayload.duplicate_audit.length },
       data_quality_gate: safeObject(report.data_quality_gate),
       evidence_gate: evidence,
       history_visibility_gate: historyContract,

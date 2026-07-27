@@ -9,6 +9,8 @@ import api from '@/services/api';
 import SelectWithLabelValue from '@/shared/components/form/SelectWithLabelValue';
 import TextAreaField from '@/shared/components/form/TextAreaField';
 import InputField from '@/shared/components/form/InputField';
+import SumberDataReferensiField from '@/features/renstra/indikator/components/SumberDataReferensiField';
+import { buildSumberDataText } from '@/features/renstra/indikator/components/sumberDataUtils';
 const { Text } = Typography;
 
 const IndikatorSubKegiatanRenstraForm = ({ initialData = null, renstraAktif }) => {
@@ -48,6 +50,9 @@ const IndikatorSubKegiatanRenstraForm = ({ initialData = null, renstraAktif }) =
       definisi_operasional: '',
       metode_penghitungan: '',
       sumber_data: '',
+      sumber_data_mode: 'teks',
+      sumber_data_tabel: null,
+      referensi: [],
       penanggung_jawab: '',
       pagu_tahun_1: '',
       pagu_tahun_2: '',
@@ -98,7 +103,10 @@ const IndikatorSubKegiatanRenstraForm = ({ initialData = null, renstraAktif }) =
       ref_id: data.sub_kegiatan_renstra_id,
       definisi_operasional: data.definisi_operasional,
       metode_penghitungan: data.metode_penghitungan,
-      sumber_data: data.sumber_data,
+      sumber_data: buildSumberDataText(data),
+      sumber_data_mode: data.sumber_data_mode || 'teks',
+      sumber_data_tabel: data.sumber_data_mode === 'tabel' ? data.sumber_data_tabel : null,
+      referensi: (data.referensi || []).filter((r) => r && r.trim()),
       penanggung_jawab: data.penanggung_jawab,
       pagu_tahun_1: data.pagu_tahun_1 ? Number(data.pagu_tahun_1) : null,
       pagu_tahun_2: data.pagu_tahun_2 ? Number(data.pagu_tahun_2) : null,
@@ -317,7 +325,7 @@ const IndikatorSubKegiatanRenstraForm = ({ initialData = null, renstraAktif }) =
           errors={errors}
           rows={3}
         />
-        <InputField name="sumber_data" label="Sumber Data" control={control} errors={errors} />
+        <SumberDataReferensiField watch={watch} setValue={setValue} />
         <SelectWithLabelValue
           name="penanggung_jawab"
           label="Penanggung Jawab"

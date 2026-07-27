@@ -117,10 +117,31 @@ const telemetryLite = {
   by_route: {},
 };
 
+// by_route dulu dikunci oleh path mentah (termasuk ID numerik resource, mis.
+// "/api/mr-planning-risk/38", "/39", dst) — key baru terus ditambahkan tanpa
+// batas selama proses hidup dan tidak pernah dibersihkan (slow memory leak).
+// Normalisasi ID -> ":id" supaya key mengikuti bentuk route (jumlahnya kecil
+// & tetap), plus hard cap sebagai jaring pengaman kalau ada bentuk path lain
+// yang tak terduga.
+const MAX_TELEMETRY_ROUTE_KEYS = 500;
+const normalizeRouteKey = (method, rawPath) => {
+  const cleanPath = String(rawPath || '/').split('?')[0];
+  const normalized = cleanPath
+    .replace(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g, ':id')
+    .replace(/\/\d+(?=\/|$)/g, '/:id');
+  return `${method} ${normalized}`;
+};
+
 app.use('/api', (req, res, next) => {
   telemetryLite.total_requests += 1;
-  const routeKey = `${req.method} ${req.baseUrl || ''}${req.path || req.url || ''}`;
-  telemetryLite.by_route[routeKey] = (telemetryLite.by_route[routeKey] || 0) + 1;
+  const routeKey = normalizeRouteKey(
+    req.method,
+    `${req.baseUrl || ''}${req.path || req.url || ''}`,
+  );
+  const isKnownKey = Object.prototype.hasOwnProperty.call(telemetryLite.by_route, routeKey);
+  if (isKnownKey || Object.keys(telemetryLite.by_route).length < MAX_TELEMETRY_ROUTE_KEYS) {
+    telemetryLite.by_route[routeKey] = (telemetryLite.by_route[routeKey] || 0) + 1;
+  }
   res.on('finish', () => {
     const statusKey = String(res.statusCode || 0);
     telemetryLite.by_status[statusKey] = (telemetryLite.by_status[statusKey] || 0) + 1;
@@ -202,11 +223,12 @@ app.use('/api/mr-planning-monitoring', mrSensitiveLimiter);
 app.use('/api/mr-planning-tindak-lanjut', mrSensitiveLimiter);
 app.use('/api/mr-tlhp-report', mrSensitiveLimiter);
 
-// Morgan log ke file
-const accessLogStream = fs.createWriteStream(path.join(__dirname, 'combined.log'), { flags: 'a' });
+// Morgan log lewat winston logger (satu writer, satu file yang sudah di-rotate)
+// alih-alih fs.createWriteStream terpisah ke combined.log — dulu ada dua writer
+// menulis ke file yang sama tanpa rotasi sehingga file membengkak tak terbatas.
 app.use(
   morgan('[:date[iso]] :method :url :status :res[content-length] - :response-time ms', {
-    stream: accessLogStream,
+    stream: { write: (msg) => logger.info(msg.trim()) },
   }),
 );
 if (process.env.NODE_ENV !== 'production') {
@@ -369,6 +391,7 @@ const lkDispangRoutes = require('./routes/lkDispangRoutes');
 
 // USE LAKIP
 const lakipRoutes = require('./routes/lakipRoutes');
+const lakipPkRoutes = require('./routes/lakipPkRoutes');
 
 // USE APPROVAL WORKFLOW
 const approvalRoutes = require('./routes/approvalRoutes');
@@ -566,6 +589,7 @@ app.use('/api/lk-dispang', lkDispangRoutes);
 
 // USE LAKIP
 app.use('/api/lakip', lakipRoutes);
+app.use('/api/lakip-pk', lakipPkRoutes);
 app.use('/api/lakip-realisasi-anggaran', require('./routes/lakipRealisasiAnggaranRoutes'));
 app.use('/api/realisasi-indikator-renstra', realisasiIndikatorRenstraRoutes);
 

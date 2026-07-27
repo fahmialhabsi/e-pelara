@@ -13,8 +13,12 @@ const {
   TableLayoutType,
   TableRow,
   TextRun,
+  UnderlineType,
   WidthType,
 } = require('docx');
+
+const NO_BORDER = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+const NO_BORDER_SET = { top: NO_BORDER, bottom: NO_BORDER, left: NO_BORDER, right: NO_BORDER };
 
 const reportQueryService = require('./mrPlanningReportQueryService');
 const { buildReportFilename } = require('../../helpers/mr/mrReportFilenameHelper');
@@ -443,6 +447,7 @@ const makeParagraph = (text, options = {}) =>
       makeText(text, {
         bold: options.bold,
         italics: options.italics,
+        underline: options.underline,
         size: options.size || 22,
       }),
     ],
@@ -801,19 +806,6 @@ const getGovernmentSummaryText = ({ context = {}, summary = {} } = {}) =>
     summary.total_risiko,
     0,
   )} risiko. Informasi cakupan laporan disajikan sebagai keterangan resmi laporan terpadu.`;
-
-const getDocumentStatusNote = (report = {}) => {
-  const approvalGate = getReportApprovalGate(report);
-
-  if (approvalGate.ready_to_sign) {
-    return 'Seluruh data risiko dalam laporan ini telah melalui proses persetujuan dan dokumen FINAL — SIAP DITANDATANGANI untuk diajukan kepada Kepala Dinas.';
-  }
-
-  return (
-    'Dokumen ini masih berstatus DRAFT — BELUM SIAP DITANDATANGANI karena masih terdapat risiko yang belum melalui proses persetujuan. ' +
-    'Pemilik Risiko dan Koordinator Manajemen Risiko perlu menyelesaikan proses verifikasi dan persetujuan sebelum dokumen diajukan sebagai naskah final.'
-  );
-};
 
 const getSigningOfficialName = (context = {}) =>
   safeText(context.nama_penandatangan || context.nama_pemilik_risiko, 'Nama Pejabat');
@@ -3067,7 +3059,11 @@ const buildRingkasanEksekutif = ({ report = {} }) => {
     .filter(
       (r) =>
         isAboveAppetite(r.is_above_appetite) &&
-        ['tinggi', 'ekstrem'].includes(String(r.level_risiko || '').trim().toLowerCase()),
+        ['tinggi', 'ekstrem'].includes(
+          String(r.level_risiko || '')
+            .trim()
+            .toLowerCase(),
+        ),
     )
     .forEach((r) => {
       const item = ensureItem(r.kode_risiko, r.nama_risiko, r.level_risiko, r.skor_risiko);
@@ -3232,8 +3228,8 @@ const buildConclusionSection = ({ summary }) => [
   ),
 ];
 
-const buildWordDocument = async (contextId) => {
-  const report = await reportQueryService.getFullReport(contextId);
+const buildWordDocument = async (contextId, options = {}) => {
+  const report = await reportQueryService.getFullReport(contextId, { signal: options.signal });
 
   const { context, context_items: contextItems, summary, narasi, lampiran } = report;
 
@@ -3321,42 +3317,49 @@ const buildWordDocument = async (contextId) => {
     }),
   ];
 
-  const approvalGate = getReportApprovalGate(report);
-
   const closingChildren = [
     makeHeading1('11. Penutup'),
     makeParagraph(
       'Laporan Manajemen Risiko Terpadu ini disusun sebagai dokumentasi hasil pengelolaan risiko, evaluasi, dan tindak lanjut pengendalian risiko pada perangkat daerah. Laporan ini menjadi bahan bagi Pemilik Risiko dan pejabat terkait dalam memperkuat pengendalian, meningkatkan akuntabilitas, serta mendukung pencapaian tujuan perangkat daerah.',
     ),
-    makeParagraph(getDocumentStatusNote(report), {
-      bold: true,
-    }),
-    makeKeyValueTable([
-      ['Status Dokumen', safeText(approvalGate.document_status_label)],
-      ['Risiko Disetujui', safeText(approvalGate.approved_count)],
-      ['Risiko Belum Disetujui', safeText(approvalGate.not_approved_count)],
-      ['Catatan Persetujuan', cleanApprovalNoteForWord(approvalGate.closing_note)],
-    ]),
 
     makeSpacer(),
 
-    makeParagraph(`Sofifi, ${formatIndonesianReportDate()}`, {
-      alignment: AlignmentType.RIGHT,
-    }),
-    makeParagraph('KEPALA DINAS PANGAN', {
-      alignment: AlignmentType.RIGHT,
-      bold: true,
-    }),
-    makeParagraph('PROVINSI MALUKU UTARA', {
-      alignment: AlignmentType.RIGHT,
-      bold: true,
-    }),
-    makeParagraph(`\n\n\n${getSigningOfficialName(context)}`, {
-      alignment: AlignmentType.RIGHT,
-      bold: true,
-    }),
-    makeParagraph(`NIP. ${getSigningOfficialNip(context)}`, {
-      alignment: AlignmentType.RIGHT,
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              borders: NO_BORDER_SET,
+              width: { size: 55, type: WidthType.PERCENTAGE },
+              children: [new Paragraph({ text: '' })],
+            }),
+            new TableCell({
+              borders: NO_BORDER_SET,
+              width: { size: 45, type: WidthType.PERCENTAGE },
+              children: [
+                makeParagraph(`Sofifi, ${formatIndonesianReportDate()}`, {
+                  alignment: AlignmentType.CENTER,
+                }),
+                makeParagraph(`${getSigningOfficialTitle(context)},`, {
+                  alignment: AlignmentType.CENTER,
+                }),
+                makeSpacer(),
+                makeSpacer(),
+                makeParagraph(`${getSigningOfficialName(context)}`, {
+                  alignment: AlignmentType.CENTER,
+                  bold: true,
+                  underline: { type: UnderlineType.SINGLE },
+                }),
+                makeParagraph(`NIP. ${getSigningOfficialNip(context)}`, {
+                  alignment: AlignmentType.CENTER,
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
     }),
   ];
 

@@ -142,6 +142,17 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
     queryFn: async () => normalizeListItems((await api.get('/opd-penanggung-jawab')).data),
   });
 
+  // Program yang sudah terdaftar di Renstra ini — dipakai untuk memeriksa
+  // konsistensi urusan dan mendeteksi program yang menopang >1 Arah Kebijakan.
+  const { data: programTerdaftar = [] } = useQuery({
+    queryKey: ['renstra-program-terdaftar', renstraAktif?.id],
+    queryFn: async () =>
+      normalizeListItems(
+        (await api.get('/renstra-program', { params: { renstra_id: renstraAktif?.id } })).data,
+      ),
+    enabled: !!renstraAktif?.id,
+  });
+
   useEffect(() => {
     if (!programId) return;
 
@@ -169,6 +180,38 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
       label: item.nama_bidang_opd,
       value: item.nama_bidang_opd,
     }));
+
+  // ── Pemeriksaan konsistensi urusan Program vs Arah Kebijakan ───────────────
+  // Kode program mengikuti nomenklatur Kepmendagri 050-5889/2021 dengan format
+  // <urusan>.<bidang urusan>.<program>, mis. 2.09.02 → urusan "2.09" (Pangan).
+  // Satu Arah Kebijakan boleh dijabarkan ke lebih dari satu Program, tetapi lompat
+  // ke URUSAN berbeda hampir selalu tanda salah pilih nomenklatur — jadi diberi
+  // peringatan saja (tidak memblokir simpan; keputusan tetap di penyusun Renstra).
+  const urusanDari = (kode) =>
+    String(kode || '')
+      .split('.')
+      .slice(0, 2)
+      .join('.');
+
+  const programDipilih = programOptions.find((p) => String(p.id) === String(programId));
+  const kodeProgramDipilih = programDipilih?.kode_program || '';
+  const urusanDipilih = urusanDari(kodeProgramDipilih);
+
+  const urusanRenstra = Array.from(
+    new Set(programTerdaftar.map((p) => urusanDari(p.kode_program)).filter(Boolean)),
+  );
+
+  const peringatanBedaUrusan =
+    urusanDipilih && urusanRenstra.length > 0 && !urusanRenstra.includes(urusanDipilih)
+      ? `Program ${kodeProgramDipilih} berada di urusan ${urusanDipilih}, berbeda dari urusan yang sudah dipakai Renstra ini (${urusanRenstra.join(', ')}). Pastikan nomenklatur ini memang kewenangan OPD Anda.`
+      : '';
+
+  const programKembar = kodeProgramDipilih
+    ? programTerdaftar.filter(
+        (p) =>
+          p.kode_program === kodeProgramDipilih && String(p.id) !== String(initialData?.id ?? ''),
+      )
+    : [];
 
   if (!renstraAktif) {
     return (
@@ -255,6 +298,42 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
             }}
           >
             Pilih Arah Kebijakan terlebih dahulu agar Program dapat difilter sesuai chain.
+          </div>
+        )}
+
+        {peringatanBedaUrusan && (
+          <div
+            style={{
+              marginTop: 12,
+              marginBottom: 12,
+              padding: '10px 12px',
+              borderRadius: 6,
+              background: '#fff2e8',
+              border: '1px solid #ffbb96',
+              color: '#873800',
+              fontSize: 13,
+            }}
+          >
+            ⚠️ <strong>Peringatan konsistensi urusan.</strong> {peringatanBedaUrusan}
+          </div>
+        )}
+
+        {programKembar.length > 0 && (
+          <div
+            style={{
+              marginTop: 12,
+              marginBottom: 12,
+              padding: '10px 12px',
+              borderRadius: 6,
+              background: '#e6f4ff',
+              border: '1px solid #91caff',
+              color: '#003a8c',
+              fontSize: 13,
+            }}
+          >
+            ℹ️ Program <strong>{kodeProgramDipilih}</strong> sudah terdaftar {programKembar.length}{' '}
+            kali di Renstra ini untuk Arah Kebijakan lain. Ini <strong>diperbolehkan</strong> — satu
+            Program sah menjabarkan beberapa Arah Kebijakan. Pastikan memang disengaja.
           </div>
         )}
 

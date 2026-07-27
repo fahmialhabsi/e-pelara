@@ -22,6 +22,7 @@ const {
   MrPlanningTindakLanjut,
   MrPlanningTindakLanjutDocument,
   MrReferenceItem,
+  PejabatPenandatangan,
 } = require("../../models");
 
 class MrPlanningTlhpReportError extends Error {
@@ -254,13 +255,24 @@ const buildTlhpDataQualityGate = (detail) => {
   };
 };
 
+const getPenandatanganFromMasterData = async (tahun) => {
+  if (!tahun) return null;
+  const row = await PejabatPenandatangan.findOne({
+    where: { tahun: Number(tahun), role: "KEPALA_DINAS" },
+  });
+  if (!row) return null;
+  return { nama: row.nama || null, nip: row.nip || null, jabatan: row.jabatan || null };
+};
+
 const getReportOfficials = async ({ tahun, opd_id, nama_opd } = {}) => {
+  const penandatanganMaster = await getPenandatanganFromMasterData(tahun);
+
   if (!nama_opd) {
     return {
       pemilik_risiko: null,
       koordinator_risiko: null,
-      penandatangan_laporan: null,
-      source: "opd_penanggung_jawab",
+      penandatangan_laporan: penandatanganMaster,
+      source: penandatanganMaster ? "pejabat_penandatangan" : "opd_penanggung_jawab",
       warning: "nama_opd belum tersedia untuk cakupan laporan ini.",
     };
   }
@@ -297,8 +309,8 @@ const getReportOfficials = async ({ tahun, opd_id, nama_opd } = {}) => {
   return {
     pemilik_risiko: kepalaDinas,
     koordinator_risiko: sekretaris,
-    penandatangan_laporan: kepalaDinas,
-    source: "opd_penanggung_jawab",
+    penandatangan_laporan: penandatanganMaster || kepalaDinas,
+    source: penandatanganMaster ? "pejabat_penandatangan" : "opd_penanggung_jawab",
     total_officials_found: rows.length,
   };
 };

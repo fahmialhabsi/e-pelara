@@ -58,6 +58,7 @@ import MonevDashboard from './features/monev/pages/MonevDashboard';
 import LpkDispangDashboard from './features/lpk-dispang/pages/LpkDispangDashboard';
 import LkDashboard from './features/lk-dispang/pages/LkDashboard';
 import LakipDashboard from './features/lakip/pages/LAKIPDashboard';
+import LakipPkFormPage from './features/lakip/pages/LakipPkFormPage';
 import CloningData from './admin/ClonePeriodePage';
 import ClonedDataTable from './admin/ClonedDataTable';
 import mrRoutes from './routes/mrRoutes';
@@ -486,12 +487,8 @@ function InnerApp() {
               }
             />
             <Route path="dashboard-penatausahaan" element={<PenatausahaanDashboard />} />
-            <Route path="dpa/:dpa_id/pergeseran"
-              element={<DpaPergeseranPage />}
-            />
-            <Route
-              path="dpa/:dpa_id/perubahan"
-              element={<DpaPerubahanPage />} />
+            <Route path="dpa/:dpa_id/pergeseran" element={<DpaPergeseranPage />} />
+            <Route path="dpa/:dpa_id/perubahan" element={<DpaPerubahanPage />} />
             <Route
               path="dpa/form/:id"
               element={
@@ -558,6 +555,16 @@ function InnerApp() {
                 <DokumenTahunGuard>
                   <RequireDokumenType dokType="lakip">
                     <LakipDashboard />
+                  </RequireDokumenType>
+                </DokumenTahunGuard>
+              }
+            />
+            <Route
+              path="lakip/perjanjian-kinerja"
+              element={
+                <DokumenTahunGuard>
+                  <RequireDokumenType dokType="lakip">
+                    <LakipPkFormPage />
                   </RequireDokumenType>
                 </DokumenTahunGuard>
               }

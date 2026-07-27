@@ -37,6 +37,23 @@ const fmt = (v) =>
   v !== null && v !== undefined && !isNaN(Number(v)) ? Number(v).toLocaleString('id-ID') : '-';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helper: urutan alami (natural sort) berdasarkan angka di dalam kode/nomor —
+// dipakai untuk mengurutkan Tujuan/Sasaran/Strategi/Kebijakan/Program/Kegiatan/
+// Sub-Kegiatan di BAB IV-VI, karena query-nya tidak selalu punya ORDER BY yang
+// mengikuti hierarki (urutan mentah ikut id/insert di database).
+const digitGroups = (str) => (String(str || '').match(/\d+/g) || []).map(Number);
+const compareNatural = (a, b) => {
+  const A = digitGroups(a);
+  const B = digitGroups(b);
+  const len = Math.max(A.length, B.length);
+  for (let i = 0; i < len; i++) {
+    const diff = (A[i] ?? 0) - (B[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return String(a || '').localeCompare(String(b || ''));
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Gather all Renstra data for a given renstra_id
 // ─────────────────────────────────────────────────────────────────────────────
 async function gatherData(renstraId) {
@@ -441,12 +458,26 @@ function buildBab5(data) {
       kbBySasaran[key].push(kb);
     });
 
+    // Urutkan Strategi mengikuti hierarki (per Sasaran, lalu per kode Strategi) —
+    // RenstraStrategi.findAll di atas tidak punya ORDER BY, jadi tanpa ini urutan
+    // baris ikut urutan insert/id di database (varian Strategi yang ditambah
+    // belakangan jadi tercecer di akhir, bukan berdekatan dengan Sasaran-nya).
+    const sortedStrategis = [...strategis].sort((stA, stB) => {
+      const sasA = sasarans.find((sas) => sas.id === stA.sasaran_id);
+      const sasB = sasarans.find((sas) => sas.id === stB.sasaran_id);
+      const diffSasaran = compareNatural(sasA?.nomor, sasB?.nomor);
+      if (diffSasaran !== 0) return diffSasaran;
+      return compareNatural(stA.kode_strategi, stB.kode_strategi);
+    });
+
     let no = 1;
-    if (strategis.length > 0) {
-      strategis.forEach((st) => {
+    if (sortedStrategis.length > 0) {
+      sortedStrategis.forEach((st) => {
         const sasaran = sasarans.find((s) => s.id === st.sasaran_id);
         const tujuan = tujuans.find((t) => t.id === sasaran?.tujuan_id);
-        const relKbs = kebijakans.filter((kb) => kb.strategi_id === st.id);
+        const relKbs = kebijakans
+          .filter((kb) => kb.strategi_id === st.id)
+          .sort((a, b) => compareNatural(a.kode_kebjkn, b.kode_kebjkn));
         rows += `<tr>
           <td>${no++}</td>
           <td>${tujuan ? `${s(tujuan.no_tujuan)} ${s(tujuan.isi_tujuan)}` : '-'}</td>
@@ -593,7 +624,9 @@ function buildBab6(data) {
         <td>-</td>
       </tr>`;
 
-      const tujSasaran = sasarans.filter((sas) => sas.tujuan_id === tuj.id);
+      const tujSasaran = sasarans
+        .filter((sas) => sas.tujuan_id === tuj.id)
+        .sort((a, b) => compareNatural(a.nomor, b.nomor));
       tujSasaran.forEach((sas) => {
         const sasInd = (indByRefStage[`sasaran_${sas.id}`] || [])[0];
         const sasPaguSums = sumPaguForSasaran(sas.id);
@@ -610,7 +643,9 @@ function buildBab6(data) {
           <td>-</td>
         </tr>`;
 
-        const sasStrategi = strategis.filter((st) => st.sasaran_id === sas.id);
+        const sasStrategi = strategis
+          .filter((st) => st.sasaran_id === sas.id)
+          .sort((a, b) => compareNatural(a.kode_strategi, b.kode_strategi));
         sasStrategi.forEach((strat) => {
           const stratInd = (indByRefStage[`strategi_${strat.id}`] || [])[0];
           const stratPaguSums = sumPaguForStrategi(strat.id);
@@ -627,7 +662,9 @@ function buildBab6(data) {
             <td>-</td>
           </tr>`;
 
-          const stratKebijakan = kebijakans.filter((keb) => keb.strategi_id === strat.id);
+          const stratKebijakan = kebijakans
+            .filter((keb) => keb.strategi_id === strat.id)
+            .sort((a, b) => compareNatural(a.kode_kebjkn, b.kode_kebjkn));
           stratKebijakan.forEach((keb) => {
             const kebInd = (indByRefStage[`kebijakan_${keb.id}`] || [])[0];
             const kebPaguSums = sumPaguForKebijakan(keb.id);
@@ -644,7 +681,9 @@ function buildBab6(data) {
               <td>-</td>
             </tr>`;
 
-            const kebProgram = programs.filter((p) => p.kebijakan_id === keb.id);
+            const kebProgram = programs
+              .filter((p) => p.kebijakan_id === keb.id)
+              .sort((a, b) => compareNatural(a.kode_program, b.kode_program));
             kebProgram.forEach((prog) => {
               const progInd = (indByRefStage[`program_${prog.id}`] || [])[0];
               const progPaguSums = sumPaguForProgram(prog.id);
@@ -661,7 +700,9 @@ function buildBab6(data) {
                 <td>${s(prog.opd_penanggung_jawab)}</td>
               </tr>`;
 
-              const progKegiatan = kegiatans.filter((k) => k.program_id === prog.id);
+              const progKegiatan = kegiatans
+                .filter((k) => k.program_id === prog.id)
+                .sort((a, b) => compareNatural(a.kode_kegiatan, b.kode_kegiatan));
               progKegiatan.forEach((keg) => {
                 const kegInd = (indByRefStage[`kegiatan_${keg.id}`] || [])[0];
                 const kegPaguSums = sumPaguForKegiatan(keg.id);
@@ -679,7 +720,14 @@ function buildBab6(data) {
                 </tr>`;
 
                 // RenstraSubkegiatan uses renstra_program_id + kegiatan_id
-                const kegSub = subkegiatans.filter((sk) => sk.kegiatan_id === keg.id);
+                const kegSub = subkegiatans
+                  .filter((sk) => sk.kegiatan_id === keg.id)
+                  .sort((a, b) =>
+                    compareNatural(
+                      a.kode_sub_kegiatan || a.kode_subkegiatan,
+                      b.kode_sub_kegiatan || b.kode_subkegiatan,
+                    ),
+                  );
                 kegSub.forEach((sub) => {
                   const subInd = (indByRefStage[`sub_kegiatan_${sub.id}`] || [])[0];
                   rows += `<tr>
@@ -786,6 +834,166 @@ function buildBab7(data) {
   </thead>
   <tbody>${rows}</tbody>
 </table>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAMPIRAN: Kartu/Lembar Indikator Kinerja (Definisi Operasional, Metode
+// Penghitungan, Sumber Data, Referensi) — mengikuti hierarki BAB VI
+// (Tujuan -> Sasaran -> Program -> Kegiatan -> Sub Kegiatan).
+// ─────────────────────────────────────────────────────────────────────────────
+function escHtml(v) {
+  return s(v, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function renderIndikatorParagraph(v) {
+  const text = s(v, '');
+  if (text === '-') return '<p style="margin:4px 0;color:#888;font-style:italic">-</p>';
+  return `<p style="margin:4px 0">${escHtml(text).replace(/\n/g, '<br/>')}</p>`;
+}
+
+function renderSumberDataBlock(ind) {
+  const mode = ind?.sumber_data_mode || 'teks';
+  const tabel = ind?.sumber_data_tabel;
+  const hasTabelRows = mode === 'tabel' && Array.isArray(tabel?.rows) && tabel.rows.length > 0;
+  if (!hasTabelRows) return renderIndikatorParagraph(ind?.sumber_data);
+
+  const columns = Array.isArray(tabel.columns) && tabel.columns.length ? tabel.columns : [];
+  let no = 0;
+  const rowsHtml = tabel.rows
+    .map((row) => {
+      if (row && row._type === 'group') {
+        const label = s(row._label, '');
+        if (label === '-') return '';
+        return `<tr><td colspan="${columns.length + 1}" style="background:#eaf4fb;font-weight:bold">${escHtml(label)}</td></tr>`;
+      }
+      const hasContent = columns.some((c) => row?.[c]);
+      if (!hasContent) return '';
+      no += 1;
+      const cells = columns.map((c) => `<td>${escHtml(row?.[c])}</td>`).join('');
+      return `<tr><td style="text-align:center">${no}</td>${cells}</tr>`;
+    })
+    .filter(Boolean)
+    .join('');
+
+  return `
+<table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:9px;margin:4px 0">
+  <thead style="background:#1a5276;color:white">
+    <tr><th style="width:30px">No</th>${columns.map((c) => `<th>${escHtml(c)}</th>`).join('')}</tr>
+  </thead>
+  <tbody>${rowsHtml || `<tr><td colspan="${columns.length + 1}" style="text-align:center;color:#888;font-style:italic">-</td></tr>`}</tbody>
+</table>`;
+}
+
+function renderReferensiBlock(ind) {
+  const refs = Array.isArray(ind?.referensi) ? ind.referensi.filter((r) => r && String(r).trim()) : [];
+  if (!refs.length) return '<p style="margin:4px 0;color:#888;font-style:italic">-</p>';
+  return `<ol style="margin:4px 0;padding-left:18px">${refs.map((r) => `<li>${escHtml(r)}</li>`).join('')}</ol>`;
+}
+
+function indikatorHasLampiranContent(ind) {
+  return (
+    s(ind.definisi_operasional, '') !== '-' ||
+    s(ind.metode_penghitungan, '') !== '-' ||
+    s(ind.sumber_data, '') !== '-' ||
+    (Array.isArray(ind.sumber_data_tabel?.rows) && ind.sumber_data_tabel.rows.length > 0) ||
+    (Array.isArray(ind.referensi) && ind.referensi.filter((r) => r && String(r).trim()).length > 0)
+  );
+}
+
+function buildLampiranIndikator(data) {
+  const { tujuans, sasarans, strategis, kebijakans, programs, kegiatans, subkegiatans, indikators, renstra } =
+    data;
+
+  const indByRefStage = {};
+  indikators.forEach((ind) => {
+    const key = `${ind.stage}_${ind.ref_id}`;
+    if (!indByRefStage[key]) indByRefStage[key] = [];
+    indByRefStage[key].push(ind);
+  });
+
+  const cards = [];
+  let cardNo = 0;
+  const renderCard = (ind, hierLabel) => {
+    cardNo += 1;
+    cards.push(`
+<div style="border:1px solid #1a5276;border-radius:4px;margin:10px 0;page-break-inside:avoid">
+  <div style="background:#1a5276;color:white;padding:6px 10px;font-weight:bold;font-size:10.5pt">
+    ${cardNo}. [${escHtml(ind.kode_indikator)}] ${escHtml(ind.nama_indikator)}
+  </div>
+  <div style="padding:8px 10px;font-size:10pt">
+    <p style="margin:2px 0;color:#555"><em>${escHtml(hierLabel)}</em></p>
+    <p style="margin:6px 0 2px"><strong>Definisi Operasional</strong></p>
+    ${renderIndikatorParagraph(ind.definisi_operasional)}
+    <p style="margin:6px 0 2px"><strong>Metode Penghitungan</strong></p>
+    ${renderIndikatorParagraph(ind.metode_penghitungan)}
+    <p style="margin:6px 0 2px"><strong>Sumber Data</strong></p>
+    ${renderSumberDataBlock(ind)}
+    <p style="margin:6px 0 2px"><strong>Referensi</strong></p>
+    ${renderReferensiBlock(ind)}
+  </div>
+</div>`);
+  };
+
+  const cardsFor = (key) => (indByRefStage[key] || []).filter(indikatorHasLampiranContent);
+
+  tujuans.forEach((tuj) => {
+    cardsFor(`tujuan_${tuj.id}`).forEach((ind) =>
+      renderCard(ind, `Tujuan: ${s(tuj.no_tujuan)} ${s(tuj.isi_tujuan)}`),
+    );
+    sasarans
+      .filter((sas) => sas.tujuan_id === tuj.id)
+      .forEach((sas) => {
+        cardsFor(`sasaran_${sas.id}`).forEach((ind) =>
+          renderCard(ind, `Sasaran: ${s(sas.nomor)} ${s(sas.isi_sasaran)}`),
+        );
+        strategis
+          .filter((st) => st.sasaran_id === sas.id)
+          .forEach((strat) => {
+            kebijakans
+              .filter((keb) => keb.strategi_id === strat.id)
+              .forEach((keb) => {
+                programs
+                  .filter((p) => p.kebijakan_id === keb.id)
+                  .forEach((prog) => {
+                    cardsFor(`program_${prog.id}`).forEach((ind) =>
+                      renderCard(ind, `Program: ${s(prog.kode_program)} ${s(prog.nama_program)}`),
+                    );
+                    kegiatans
+                      .filter((keg) => keg.program_id === prog.id)
+                      .forEach((keg) => {
+                        cardsFor(`kegiatan_${keg.id}`).forEach((ind) =>
+                          renderCard(ind, `Kegiatan: ${s(keg.kode_kegiatan)} ${s(keg.nama_kegiatan)}`),
+                        );
+                        subkegiatans
+                          .filter((sub) => sub.kegiatan_id === keg.id)
+                          .forEach((sub) => {
+                            cardsFor(`sub_kegiatan_${sub.id}`).forEach((ind) =>
+                              renderCard(
+                                ind,
+                                `Sub Kegiatan: ${s(sub.kode_sub_kegiatan || sub.kode_subkegiatan)} ${s(sub.nama_sub_kegiatan || sub.nama_subkegiatan)}`,
+                              ),
+                            );
+                          });
+                      });
+                  });
+              });
+          });
+      });
+  });
+
+  if (cards.length === 0) {
+    return `
+<h2>LAMPIRAN<br/>KARTU/LEMBAR INDIKATOR KINERJA</h2>
+<p><em style="color:#888">Belum ada indikator dengan Definisi Operasional, Metode Penghitungan, Sumber Data, atau Referensi yang terisi.</em></p>`;
+  }
+
+  return `
+<h2>LAMPIRAN<br/>KARTU/LEMBAR INDIKATOR KINERJA</h2>
+<p>Lampiran ini memuat definisi operasional, metode penghitungan, sumber data, dan referensi untuk setiap indikator kinerja ${s(renstra.nama_opd)} yang telah dilengkapi datanya, disusun mengikuti hierarki Tujuan &rarr; Sasaran &rarr; Program &rarr; Kegiatan &rarr; Sub Kegiatan sebagaimana pada BAB VI.</p>
+${cards.join('')}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1051,6 +1259,7 @@ function generateHTML(data) {
   // BAB VI: program+kegiatan + tabel prioritas (jika ada)
   const bab6 = buildBab6(data) + buildTabelPrioritas(data);
   const bab7 = buildBab7(data);
+  const lampiranIndikator = buildLampiranIndikator(data);
 
   // BAB I-III & VIII: gunakan konten dari DB jika sudah diisi, fallback ke template statis
   const bab1Content = babSection(
@@ -1209,6 +1418,7 @@ function generateHTML(data) {
     <li><span>BAB VI &nbsp; RENCANA PROGRAM DAN KEGIATAN</span><span>20</span></li>
     <li><span>BAB VII &nbsp; KINERJA PENYELENGGARAAN BIDANG URUSAN</span><span>25</span></li>
     <li><span>BAB VIII &nbsp; PENUTUP</span><span>28</span></li>
+    <li><span>LAMPIRAN &nbsp; KARTU/LEMBAR INDIKATOR KINERJA</span><span>29</span></li>
   </ul>
 </div>
 
@@ -1266,6 +1476,11 @@ ${bab8Content}
   <p><strong>Dheny Tjan, SH., M.Si</strong></p>
   <p>NIP. 197507302001121001</p>
 </div>
+</div>
+
+<!-- LAMPIRAN: KARTU/LEMBAR INDIKATOR KINERJA -->
+<div class="section pagebreak">
+${lampiranIndikator}
 </div>
 
 </body>

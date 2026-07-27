@@ -1,10 +1,33 @@
-const { assertFinalReportNotOverwrite, assertResidualRiskEvaluated, assertReportReadinessForFinalFlow } = require("./mrPolicyEngineService");
-const { ensureReportSnapshotForFlow } = require("./mrSnapshotService");
-const { buildReportGovernanceContract, dedupeRisikoPrioritas, dedupeRencanaPengendalian, dedupeRealisasiPengendalian, dedupeKejadianRisiko } = require("../../helpers/mr/mrReportGovernanceContractHelper");
+const {
+  assertFinalReportNotOverwrite,
+  assertResidualRiskEvaluated,
+  assertReportReadinessForFinalFlow,
+} = require('./mrPolicyEngineService');
+const { ensureReportSnapshotForFlow } = require('./mrSnapshotService');
+const {
+  buildReportGovernanceContract,
+  dedupeRisikoPrioritas,
+  dedupeRencanaPengendalian,
+  dedupeRealisasiPengendalian,
+  dedupeKejadianRisiko,
+} = require('../../helpers/mr/mrReportGovernanceContractHelper');
 // backend/services/mr/mrPlanningReportQueryService.js
 
-const { sequelize, MrPlanningSnapshot } = require('../../models');
+const { sequelize, MrPlanningSnapshot, PejabatPenandatangan } = require('../../models');
 const { QueryTypes } = require('sequelize');
+
+// Dipakai untuk cooperative cancellation — client (React Query) yang
+// membatalkan request via AbortSignal seharusnya benar-benar menghentikan
+// pipeline getFullReport/getLampiran di sini, bukan cuma diabaikan di FE
+// sementara komputasi berat tetap jalan penuh di backend.
+const throwIfAborted = (signal) => {
+  if (signal?.aborted) {
+    const err = new Error('Report computation aborted (client disconnected).');
+    err.name = 'AbortError';
+    err.code = 'REPORT_ABORTED';
+    throw err;
+  }
+};
 
 const toNumber = (value, fallback = 0) => {
   const number = Number(value);
@@ -82,14 +105,7 @@ const normalizeIssueValue = (value) => {
 };
 
 const buildPlaceholderIssueKey = (issue = {}) =>
-  [
-    issue.source,
-    issue.row_id,
-    issue.context_id,
-    issue.risk_id,
-    issue.field,
-    issue.value,
-  ].join('|');
+  [issue.source, issue.row_id, issue.context_id, issue.risk_id, issue.field, issue.value].join('|');
 
 const buildPlaceholderSummaryKey = (issue = {}) =>
   [issue.source, issue.field, issue.value].join('|');
@@ -1382,17 +1398,27 @@ const findOfficialByRole = (officials = [], role = '') => {
   return null;
 };
 
+const getPenandatanganFromMasterData = async (tahun) => {
+  if (!tahun) return null;
+  const row = await PejabatPenandatangan.findOne({
+    where: { tahun: Number(tahun), role: 'KEPALA_DINAS' },
+  });
+  if (!row) return null;
+  return { nama: row.nama || null, nip: row.nip || null, jabatan: row.jabatan || null };
+};
+
 const getReportOfficials = async (context = {}) => {
   const namaOpd = normalizeString(context.nama_opd);
   const tahun = Number(context.tahun);
   const jenisDokumen = normalizeDocType(context.jenis_dokumen);
+  const penandatanganMaster = await getPenandatanganFromMasterData(tahun);
 
   if (!namaOpd) {
     return {
       pemilik_risiko: null,
       koordinator_risiko: null,
-      penandatangan_laporan: null,
-      source: 'opd_penanggung_jawab',
+      penandatangan_laporan: penandatanganMaster,
+      source: penandatanganMaster ? 'pejabat_penandatangan' : 'opd_penanggung_jawab',
       warning: 'nama_opd pada context belum tersedia.',
     };
   }
@@ -1446,8 +1472,8 @@ const getReportOfficials = async (context = {}) => {
   return {
     pemilik_risiko: kepalaDinas,
     koordinator_risiko: sekretaris,
-    penandatangan_laporan: kepalaDinas,
-    source: 'opd_penanggung_jawab',
+    penandatangan_laporan: penandatanganMaster || kepalaDinas,
+    source: penandatanganMaster ? 'pejabat_penandatangan' : 'opd_penanggung_jawab',
     total_officials_found: rows.length,
   };
 };
@@ -4159,7 +4185,7 @@ const findRowsWithMissingFields = ({
   dedupeField = null,
 }) => {
   const seen = new Set();
-  const uniqueRows = rows.filter(row => {
+  const uniqueRows = rows.filter((row) => {
     const dedupeValue = dedupeField ? row?.[dedupeField] : null;
     const key = dedupeValue || row?.kode_risiko || row?.id || JSON.stringify(row);
     if (seen.has(key)) return false;
@@ -4195,7 +4221,9 @@ const buildReportQualityGate = ({
   const rootCauseAnalysis = getRows(lampiran.root_cause_analysis || []);
   const rootCauseAnalysisFiltered = rootCauseAnalysis.filter(
     (item) =>
-      (item?.is_active === undefined || item?.is_active === null || toBooleanFlag(item.is_active)) &&
+      (item?.is_active === undefined ||
+        item?.is_active === null ||
+        toBooleanFlag(item.is_active)) &&
       (item?.is_latest === undefined || item?.is_latest === null || toBooleanFlag(item.is_latest)),
   );
   const monitoringLevelRisiko = lampiran.monitoring_level_risiko || [];
@@ -4235,7 +4263,9 @@ const buildReportQualityGate = ({
 
     if (!contextItems.length) {
       if (daftarRisiko.length > 0) {
-        nonBlockingNotes.push('Context item/sumber risiko belum tersedia, namun data risiko sudah ada.');
+        nonBlockingNotes.push(
+          'Context item/sumber risiko belum tersedia, namun data risiko sudah ada.',
+        );
       } else {
         blockingIssues.push('Context item/sumber risiko belum tersedia.');
       }
@@ -4287,7 +4317,10 @@ const buildReportQualityGate = ({
     if (!isMeaningfulValue(context.jabatan_koordinator)) {
       nonBlockingNotes.push('Jabatan koordinator risiko belum tersedia.');
     }
-    const identityNotes = nonBlockingNotes.filter(n => n.includes('pemilik risiko') || n.includes('koordinator') || n.includes('penandatangan'));
+    const identityNotes = nonBlockingNotes.filter(
+      (n) =>
+        n.includes('pemilik risiko') || n.includes('koordinator') || n.includes('penandatangan'),
+    );
     if (finalReport && identityNotes.length) {
       blockingIssues.push(
         'Identitas pemilik risiko/koordinator/penandatangan masih belum lengkap untuk laporan final/PDF.',
@@ -4984,9 +5017,13 @@ const buildReportQualityGate = ({
 
   const finalReportBlockingIssues = [];
   // Residual Risk Gate — eksplisit mandiri
-  const residualRiskEvaluated = risikoPrioritas.every(r => r.residual_score !== null && r.residual_score !== undefined);
+  const residualRiskEvaluated = risikoPrioritas.every(
+    (r) => r.residual_score !== null && r.residual_score !== undefined,
+  );
   if (finalReport && !residualRiskEvaluated) {
-    finalReportBlockingIssues.push('Residual risk belum dievaluasi pada seluruh risiko prioritas. Finalisasi laporan tidak diizinkan.');
+    finalReportBlockingIssues.push(
+      'Residual risk belum dievaluasi pada seluruh risiko prioritas. Finalisasi laporan tidak diizinkan.',
+    );
   }
 
   if (!finalReport) {
@@ -5002,9 +5039,7 @@ const buildReportQualityGate = ({
   // R-FASE-A: sejalan dengan getFinalReportStatus, kuning (non-blocking) tidak
   // menghalangi pdf_ready — hanya blockingIssues (merah) yang menghalangi.
   const pdfReady =
-    finalReport &&
-    !pedomanBlockingIssues.length &&
-    !finalReportBlockingIssues.length;
+    finalReport && !pedomanBlockingIssues.length && !finalReportBlockingIssues.length;
 
   const finalReportStatus = getFinalReportStatus({
     finalReport,
@@ -5094,6 +5129,7 @@ const buildNarasi = ({ context, summary }) => {
 
 const getLampiran = async (contextId, options = {}) => {
   const id = assertContextId(contextId);
+  throwIfAborted(options.signal);
 
   const anchorContext = options.context || (await getContext(id));
   const reportScope =
@@ -5124,6 +5160,8 @@ const getLampiran = async (contextId, options = {}) => {
     getContextItems(id, { reportScope }),
     getSettingParameter(),
   ]);
+
+  throwIfAborted(options.signal);
 
   const generatedSections = await getGeneratedSections({
     context,
@@ -5187,10 +5225,13 @@ const getLampiran = async (contextId, options = {}) => {
   return lampiranPayload;
 };
 
-const getFullReport = async (contextId, options = {}) => {
+const computeFullReport = async (contextId, options = {}) => {
   const id = assertContextId(contextId);
+  const { signal } = options;
+  throwIfAborted(signal);
 
   const anchorContext = await getContext(id);
+  throwIfAborted(signal);
 
   const reportScope = buildReportScope({
     context: anchorContext,
@@ -5199,21 +5240,23 @@ const getFullReport = async (contextId, options = {}) => {
 
   const context = enrichContextWithReportScope(anchorContext, reportScope);
 
-  const flow = String(options.flow || "report").toLowerCase();
-  const mode = String(options.snapshot_mode || "prefer_existing").toLowerCase();
+  const flow = String(options.flow || 'report').toLowerCase();
+  const mode = String(options.snapshot_mode || 'prefer_existing').toLowerCase();
   const snapshotMode =
-    mode !== "prefer_existing"
+    mode !== 'prefer_existing'
       ? mode
-      : ["export_word", "export_pdf", "correction", "addendum", "final_export"].includes(flow)
-        ? "final_export"
-        : "prefer_existing";
+      : ['export_word', 'export_pdf', 'correction', 'addendum', 'final_export'].includes(flow)
+        ? 'final_export'
+        : 'prefer_existing';
 
   const [contextItems, summary, lampiran, settingParameter] = await Promise.all([
     getContextItems(id, { reportScope }),
     getSummary(id, { reportScope }),
-    getLampiran(id, { context, reportScope }),
+    getLampiran(id, { context, reportScope, signal }),
     getSettingParameter(),
   ]);
+
+  throwIfAborted(signal);
 
   const reportDataQualityGate = buildReportDataQualityGate({
     context,
@@ -5235,6 +5278,8 @@ const getFullReport = async (contextId, options = {}) => {
   const reportApprovalGate = buildUnifiedReportApprovalGate({
     daftarRisiko: lampiran.daftar_risiko || [],
   });
+
+  throwIfAborted(signal);
 
   const governanceContract = buildReportGovernanceContract({
     context,
@@ -5259,6 +5304,11 @@ const getFullReport = async (contextId, options = {}) => {
     },
     flow,
   });
+
+  // Jangan tulis snapshot untuk request yang sudah dibatalkan client — cek di
+  // sini juga (bukan cuma sebelum governance contract) karena snapshot adalah
+  // DB write, paling penting untuk tidak dieksekusi sia-sia/salah konteks.
+  throwIfAborted(signal);
 
   await ensureReportSnapshotForFlow({
     SnapshotModel: MrPlanningSnapshot,
@@ -5317,7 +5367,9 @@ const getFullReport = async (contextId, options = {}) => {
     report_quality_gate: reportQualityGate,
 
     // Non-breaking additive governance contract output
-    governance_contract: governanceContract,
+    // (diekspos flat, bukan lewat wrapper governance_contract, supaya isinya
+    // tidak ikut ter-serialize dua kali di payload JSON — lihat lampiran_dedupe
+    // fix di mrReportGovernanceContractHelper.js)
     official_report_contract: governanceContract.official_report_contract,
     audit_report_contract: governanceContract.audit_report_contract,
     report_governance_gate: governanceContract.report_governance_gate,
@@ -5325,6 +5377,140 @@ const getFullReport = async (contextId, options = {}) => {
     // R16B — generated report sections dengan metadata field origin.
     generated_sections: lampiran.generated_sections,
   };
+};
+
+// Endpoint ini berat (banyak query + dedupe) dan sering ter-hit berkali-kali
+// dalam hitungan detik untuk context yang sama (polling FE, integrity-scan,
+// export word/excel yang semuanya memanggil getFullReport). Tanpa ini setiap
+// panggilan menghitung ulang dari nol dan beberapa panggilan yang overlap
+// menahan payload besar di memori bersamaan — salah satu penyebab OOM.
+// Cache singkat + in-flight dedup di sini menaungi SEMUA caller (controller,
+// integrity scan, export excel/word) tanpa mengubah logic masing-masing.
+const FULL_REPORT_CACHE_TTL_MS = 20_000;
+const FULL_REPORT_CACHE_SWEEP_AFTER_MS = 5 * 60 * 1000;
+const fullReportCache = new Map();
+
+const buildFullReportCacheKey = (contextId, options = {}) =>
+  JSON.stringify({
+    contextId: String(contextId),
+    flow: options.flow || null,
+    scope_mode: options.scope_mode || null,
+    snapshot_mode: options.snapshot_mode || null,
+  });
+
+const sweepExpiredFullReportCache = (now) => {
+  for (const [key, entry] of fullReportCache) {
+    if (now - entry.expiresAt > FULL_REPORT_CACHE_SWEEP_AFTER_MS) {
+      fullReportCache.delete(key);
+    }
+  }
+};
+
+// Cache + refcount di atas cuma mengurangi komputasi REDUNDAN untuk contextId
+// yang sama. Tapi context BERBEDA yang di-refresh bersamaan (mis. submit/
+// verify/approve yang saling susul di banyak tab, atau beberapa user) tetap
+// bisa memicu beberapa computeFullReport() independen berjalan bersamaan —
+// tiap satu menahan payload besar (~2.8MB + objek antara jauh lebih besar
+// dari itu) di memori sekaligus. Berapa pun cepatnya satu komputasi, N yang
+// jalan bersamaan tetap N kali lipat tekanan memori. Batasi konkurensi
+// pipeline berat ini secara global sebagai jaring pengaman terakhir — ini
+// justru yang paling langsung menjawab kenapa OOM "terus terjadi": bukan
+// lambatnya satu request, tapi berapa banyak yang boleh menumpuk sekaligus.
+const MAX_CONCURRENT_FULL_REPORT_COMPUTATIONS = 2;
+let activeFullReportComputations = 0;
+const fullReportComputationQueue = [];
+
+const acquireFullReportComputationSlot = () => {
+  if (activeFullReportComputations < MAX_CONCURRENT_FULL_REPORT_COMPUTATIONS) {
+    activeFullReportComputations += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    fullReportComputationQueue.push(resolve);
+  }).then(() => {
+    activeFullReportComputations += 1;
+  });
+};
+
+const releaseFullReportComputationSlot = () => {
+  activeFullReportComputations -= 1;
+  const next = fullReportComputationQueue.shift();
+  if (next) next();
+};
+
+// Beberapa caller (controller /full, integrity-scan, export excel/word) bisa
+// berbagi satu entry cache/in-flight computation yang sama untuk contextId
+// yang sama. Kalau HANYA salah satu caller yang batal (mis. user pindah tab
+// sebelum request /full selesai, sementara proses export lain untuk context
+// yang sama masih butuh hasilnya), kita TIDAK boleh ikut membatalkan
+// komputasi yang masih ditunggu caller lain. Maka di-refcount: signal milik
+// tiap caller cuma boleh memicu abort computeFullReport kalau caller itu
+// adalah SATU-SATUNYA yang masih menunggu (subscribers turun ke 0).
+const subscribeToFullReportEntry = (entry, callerSignal, cacheKey) => {
+  entry.subscribers += 1;
+  let detached = false;
+
+  const detach = () => {
+    if (detached) return;
+    detached = true;
+    entry.subscribers -= 1;
+    if (entry.subscribers <= 0) {
+      entry.controller.abort();
+      // Buang entry yang baru di-abort SEKARANG (bukan menunggu promise
+      // reject lalu di-catch) supaya caller lain yang subscribe di celah
+      // antara abort() dan settle tidak ikut gagal tanpa response (client
+      // menerima request pending selamanya).
+      if (fullReportCache.get(cacheKey) === entry) {
+        fullReportCache.delete(cacheKey);
+      }
+    }
+  };
+
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      detach();
+    } else {
+      callerSignal.addEventListener('abort', detach, { once: true });
+    }
+  }
+
+  return entry.promise.finally(() => {
+    if (callerSignal) callerSignal.removeEventListener('abort', detach);
+    detach();
+  });
+};
+
+const getFullReport = async (contextId, options = {}) => {
+  const { signal: callerSignal, ...cacheableOptions } = options;
+  const now = Date.now();
+  sweepExpiredFullReportCache(now);
+
+  const cacheKey = buildFullReportCacheKey(contextId, cacheableOptions);
+  let entry = fullReportCache.get(cacheKey);
+
+  if (!entry || entry.expiresAt <= now) {
+    const controller = new AbortController();
+    const promise = acquireFullReportComputationSlot()
+      .then(async () => {
+        try {
+          return await computeFullReport(contextId, {
+            ...cacheableOptions,
+            signal: controller.signal,
+          });
+        } finally {
+          releaseFullReportComputationSlot();
+        }
+      })
+      .catch((err) => {
+        if (fullReportCache.get(cacheKey) === entry) fullReportCache.delete(cacheKey);
+        throw err;
+      });
+
+    entry = { promise, expiresAt: now + FULL_REPORT_CACHE_TTL_MS, controller, subscribers: 0 };
+    fullReportCache.set(cacheKey, entry);
+  }
+
+  return subscribeToFullReportEntry(entry, callerSignal, cacheKey);
 };
 
 module.exports = {

@@ -65,7 +65,13 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
     queryKeys: ['renstra-kebijakan'],
     redirectPath: '/renstra/kebijakan',
     fetchOptions: {
-      'renstra-strategi': () => api.get('/renstra-strategi').then((res) => res.data?.data || []),
+      // Difilter per Renstra aktif agar user tidak bisa memilih Strategi milik
+      // Renstra/OPD/tahun lain — Kebijakan yang ter-link ke Strategi renstra_id
+      // berbeda tidak akan ikut ter-generate di Dokumen Renstra (PDF/Word).
+      'renstra-strategi': () =>
+        api
+          .get('/renstra-strategi', { params: { renstra_id: renstraAktif?.id } })
+          .then((res) => res.data?.data || []),
     },
     onMutationSuccess: (data) => setMutationResultData(data),
   });
@@ -79,9 +85,19 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
 
   useEffect(() => {
     const loadArahKebijakan = async () => {
+      // Selama strategi_id masih sama persis dengan data tersimpan (initialData), ini
+      // bukan aksi ganti-strategi oleh user (bisa jadi baru selesai reset(initialData),
+      // atau render ulang lain yang tidak mengubah nilainya) — jangan hapus
+      // rpjmd_arah_id/kode_kebjkn/deskripsi yang sudah benar. Baru bersihkan begitu
+      // nilainya benar-benar berbeda dari data tersimpan.
+      const isAtInitialStrategi =
+        !!initialData && normalizeId(selectedStrategiId) === normalizeId(initialData.strategi_id);
+
       if (!selectedStrategiId) {
         setArahKebijakanFiltered([]);
-        setValue('rpjmd_arah_id', '');
+        if (!isAtInitialStrategi) {
+          setValue('rpjmd_arah_id', '');
+        }
         return;
       }
 
@@ -97,11 +113,14 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
         });
 
         setArahKebijakanFiltered(res.data?.data || []);
-        setValue('rpjmd_arah_id', '');
-        setValue('no_arah_rpjmd', '');
-        setValue('isi_arah_rpjmd', '');
-        setValue('kode_kebjkn', '');
-        setValue('deskripsi', '');
+
+        if (!isAtInitialStrategi) {
+          setValue('rpjmd_arah_id', '');
+          setValue('no_arah_rpjmd', '');
+          setValue('isi_arah_rpjmd', '');
+          setValue('kode_kebjkn', '');
+          setValue('deskripsi', '');
+        }
       } catch (err) {
         console.error('Gagal load arah kebijakan filtered:', err);
         setArahKebijakanFiltered([]);
@@ -109,7 +128,7 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
     };
 
     loadArahKebijakan();
-  }, [selectedStrategiId, initialData?.tahun, renstraAktif?.tahun_mulai, setValue]);
+  }, [selectedStrategiId, initialData, renstraAktif?.tahun_mulai, setValue]);
 
   useEffect(() => {
     if (!initialData) {
@@ -134,14 +153,23 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
         ? arahKebijakanFiltered
         : dropdowns?.['arah-kebijakan'] || [];
 
+    // Sama seperti effect strategi di atas: selama rpjmd_arah_id masih persis nilai
+    // tersimpan, jangan timpa deskripsi/kode dengan teks mentah Arah Kebijakan RPJMD
+    // atau memicu regenerasi AI — itu hanya boleh terjadi saat user benar-benar
+    // memilih Arah Kebijakan yang berbeda dari data tersimpan.
+    const isAtInitialArah =
+      !!initialData && normalizeId(selectedId) === normalizeId(initialData.rpjmd_arah_id);
+
     if (!selectedId) {
-      setValue('kode_kebjkn', '');
+      if (!isAtInitialArah) {
+        setValue('kode_kebjkn', '');
+      }
       return;
     }
 
     const selected = arahOptions.find((item) => normalizeId(item.id) === normalizeId(selectedId));
 
-    if (selected) {
+    if (selected && !isAtInitialArah) {
       setValue('no_arah_rpjmd', selected.kode_arah || '');
       setValue('isi_arah_rpjmd', selected.deskripsi || '');
       setValue('deskripsi', selected.deskripsi || '');

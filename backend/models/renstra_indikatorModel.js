@@ -1,59 +1,59 @@
-"use strict";
-const { Model } = require("sequelize");
+'use strict';
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class IndikatorRenstra extends Model {
     static associate(models) {
       IndikatorRenstra.belongsTo(models.RenstraOPD, {
-        foreignKey: "renstra_id",
-        targetKey: "id",
-        as: "renstra",
+        foreignKey: 'renstra_id',
+        targetKey: 'id',
+        as: 'renstra',
       });
 
       IndikatorRenstra.belongsTo(models.RenstraKebijakan, {
-        foreignKey: "ref_id",
-        targetKey: "id",
-        as: "kebijakan",
+        foreignKey: 'ref_id',
+        targetKey: 'id',
+        as: 'kebijakan',
       });
 
       IndikatorRenstra.hasMany(models.RenstraTabelArahKebijakan, {
-        foreignKey: "indikator_id",
-        as: "tabel_arah_kebijakan",
+        foreignKey: 'indikator_id',
+        as: 'tabel_arah_kebijakan',
       });
 
       IndikatorRenstra.belongsTo(models.RenstraStrategi, {
-        foreignKey: "ref_id",
-        targetKey: "id",
+        foreignKey: 'ref_id',
+        targetKey: 'id',
         constraints: false,
-        as: "strategi",
+        as: 'strategi',
       });
 
       IndikatorRenstra.hasMany(models.RenstraTabelStrategi, {
-        foreignKey: "indikator_id",
-        as: "tabel_strategi",
+        foreignKey: 'indikator_id',
+        as: 'tabel_strategi',
       });
 
       IndikatorRenstra.belongsTo(models.RenstraKegiatan, {
-        foreignKey: "ref_id",
-        targetKey: "id",
+        foreignKey: 'ref_id',
+        targetKey: 'id',
         constraints: false,
-        as: "kegiatan",
+        as: 'kegiatan',
       });
 
       IndikatorRenstra.hasMany(models.RenstraTabelKegiatan, {
-        foreignKey: "indikator_id",
-        as: "tabel_kegiatan",
+        foreignKey: 'indikator_id',
+        as: 'tabel_kegiatan',
       });
       IndikatorRenstra.belongsTo(models.RenstraSubkegiatan, {
-        foreignKey: "ref_id",
-        targetKey: "id",
+        foreignKey: 'ref_id',
+        targetKey: 'id',
         constraints: false,
-        as: "sub_kegiatan",
+        as: 'sub_kegiatan',
       });
 
       IndikatorRenstra.hasMany(models.RenstraTabelSubkegiatan, {
-        foreignKey: "indikator_id",
-        as: "tabel_sub_kegiatan",
+        foreignKey: 'indikator_id',
+        as: 'tabel_sub_kegiatan',
       });
     }
   }
@@ -64,13 +64,13 @@ module.exports = (sequelize, DataTypes) => {
       ref_id: { type: DataTypes.INTEGER, allowNull: false },
       source_indikator_id: DataTypes.INTEGER,
       stage: DataTypes.ENUM(
-        "tujuan",
-        "sasaran",
-        "strategi",
-        "kebijakan",
-        "program",
-        "kegiatan",
-        "sub_kegiatan"
+        'tujuan',
+        'sasaran',
+        'strategi',
+        'kebijakan',
+        'program',
+        'kegiatan',
+        'sub_kegiatan',
       ),
       kode_indikator: { type: DataTypes.STRING, allowNull: false },
       nama_indikator: { type: DataTypes.TEXT, allowNull: false },
@@ -91,31 +91,35 @@ module.exports = (sequelize, DataTypes) => {
       pagu_tahun_4: DataTypes.DECIMAL(20, 2),
       pagu_tahun_5: DataTypes.DECIMAL(20, 2),
       pagu_tahun_6: DataTypes.DECIMAL(20, 2),
-      jenis_indikator: DataTypes.ENUM("Kuantitatif", "Kualitatif"),
-      tipe_indikator: DataTypes.ENUM("Impact", "Outcome", "Output", "Proses"),
+      jenis_indikator: DataTypes.ENUM('Kuantitatif', 'Kualitatif'),
+      tipe_indikator: DataTypes.ENUM('Impact', 'Outcome', 'Output', 'Proses'),
       kriteria_kuantitatif: DataTypes.STRING,
       kriteria_kualitatif: DataTypes.STRING,
-      sumber_data: DataTypes.STRING,
+      sumber_data: DataTypes.TEXT,
+      sumber_data_mode: {
+        type: DataTypes.ENUM('teks', 'tabel'),
+        allowNull: false,
+        defaultValue: 'teks',
+      },
+      sumber_data_tabel: DataTypes.JSON,
+      referensi: DataTypes.JSON,
       penanggung_jawab: DataTypes.STRING,
       keterangan: DataTypes.TEXT,
       tahun: DataTypes.STRING,
       jenis_dokumen: DataTypes.STRING,
       renstra_id: DataTypes.INTEGER,
+      is_iku_pk: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     },
     {
       sequelize,
-      modelName: "IndikatorRenstra",
-      tableName: "indikator_renstra", // sesuai nama tabel di DB
+      modelName: 'IndikatorRenstra',
+      tableName: 'indikator_renstra', // sesuai nama tabel di DB
       underscored: true,
       timestamps: true, // karena tabel ada created_at & updated_at
-      createdAt: "created_at",
-      updatedAt: "updated_at",
-    }
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+    },
   );
-
-  
 
   return IndikatorRenstra;
 };
-
-

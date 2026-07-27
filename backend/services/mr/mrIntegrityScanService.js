@@ -213,6 +213,7 @@ const scanContextIntegrity = async (contextId, options = {}) => {
     source_endpoint: options.source_endpoint || null,
     request_id: options.request_id || null,
     idempotency_key: options.idempotency_key || null,
+    signal: options.signal,
   });
 
   const qualityGate = report?.report_quality_gate || {};

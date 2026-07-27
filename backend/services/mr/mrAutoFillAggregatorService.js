@@ -516,7 +516,10 @@ const getTemuanOptions = async (renstraId, entitasPemeriksa, tahun) => {
   const temuanWhere = {
     [Op.and]: [
       db.sequelize.where(
-        db.sequelize.fn('LOWER', db.sequelize.fn('TRIM', db.sequelize.col('MrPlanningTemuan.nama_opd'))),
+        db.sequelize.fn(
+          'LOWER',
+          db.sequelize.fn('TRIM', db.sequelize.col('MrPlanningTemuan.nama_opd')),
+        ),
         namaOpd.toLowerCase(),
       ),
     ],
@@ -612,4 +615,6 @@ module.exports = {
   getLakipOptions,
   getPenatausahaanAkunOptions,
   getTemuanOptions,
+  resolveOpdPenanggungJawabIds,
+  resolveRenstraOpdNamaOpd,
 };

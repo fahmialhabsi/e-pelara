@@ -63,10 +63,10 @@ const mrPlanningReportService = {
     return getResponseData(response);
   },
 
-  async getFullReport(contextId) {
+  async getFullReport(contextId, { signal } = {}) {
     assertContextId(contextId);
 
-    const response = await api.get(`${ENDPOINT}/context/${contextId}/full`);
+    const response = await api.get(`${ENDPOINT}/context/${contextId}/full`, { signal });
     return getResponseData(response);
   },
 

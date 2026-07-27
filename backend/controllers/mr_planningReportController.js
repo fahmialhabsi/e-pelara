@@ -43,6 +43,30 @@ const getSourceEndpoint = (req) => {
   return req?.originalUrl || req?.url || null;
 };
 
+// getFullReport (dan segala yang memanggilnya: integrity-scan, export
+// excel/word/pdf) berat dan sering di-refetch React Query saat user pindah
+// tab/route sebelum request sebelumnya selesai. Sebelumnya request yang sudah
+// "dibatalkan" di FE tetap jalan penuh di backend karena tidak ada yang
+// memberi tahu service layer bahwa client sudah pergi. req 'close' terpicu
+// begitu koneksi terputus lebih awal (res.writableEnded masih false berarti
+// kita belum sempat merespons — client benar-benar pergi, bukan sekadar
+// request selesai normal).
+const createRequestAbortController = (req, res) => {
+  const controller = new AbortController();
+  const onClose = () => {
+    if (!res.writableEnded) {
+      controller.abort();
+    }
+  };
+  req.on("close", onClose);
+  return {
+    signal: controller.signal,
+    cleanup: () => req.off("close", onClose),
+  };
+};
+
+const isClientAbortError = (error) => error?.name === "AbortError" || error?.code === "REPORT_ABORTED";
+
 const {
   runWithHeavyExportGuard,
 } = require("../services/mr/mrHeavyExportGuardService");
@@ -138,6 +162,7 @@ const getLampiran = async (req, res) => {
 };
 
 const getFullReport = async (req, res) => {
+  const { signal, cleanup } = createRequestAbortController(req, res);
   try {
     const { contextId } = req.params;
 
@@ -148,6 +173,7 @@ const getFullReport = async (req, res) => {
       source_endpoint: getSourceEndpoint(req),
       request_id: req.headers["x-request-id"] || null,
       idempotency_key: req.headers["idempotency-key"] || null,
+      signal,
     });
 
     return res.status(200).json({
@@ -157,11 +183,15 @@ const getFullReport = async (req, res) => {
       meta: {},
     });
   } catch (error) {
+    if (isClientAbortError(error)) return;
     return sendError(res, error);
+  } finally {
+    cleanup();
   }
 };
 
 const getIntegrityScan = async (req, res) => {
+  const { signal, cleanup } = createRequestAbortController(req, res);
   try {
     const { contextId } = req.params;
     const data = await mrIntegrityScanService.scanContextIntegrity(contextId, {
@@ -171,6 +201,7 @@ const getIntegrityScan = async (req, res) => {
       idempotency_key: req.headers["idempotency-key"] || null,
       flow: req.query?.flow,
       snapshot_mode: req.query?.snapshot_mode,
+      signal,
     });
 
     await logActivity(
@@ -196,7 +227,10 @@ const getIntegrityScan = async (req, res) => {
       meta: {},
     });
   } catch (error) {
+    if (isClientAbortError(error)) return;
     return sendError(res, error);
+  } finally {
+    cleanup();
   }
 };
 
@@ -262,10 +296,11 @@ const getExportHistory = async (req, res) => {
 const exportExcel = async (req, res) => {
   const { contextId } = req.params;
   const isFinalExcel = String(req.query?.final || "").toLowerCase() === "true";
+  const { signal, cleanup } = createRequestAbortController(req, res);
 
   try {
     const { workbook, filename, report } =
-      await reportExportExcelService.buildExcelWorkbook(contextId);
+      await reportExportExcelService.buildExcelWorkbook(contextId, { signal });
     assertReportExportPolicy({ report, format: isFinalExcel ? "excel_final" : "excel" });
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -305,6 +340,8 @@ const exportExcel = async (req, res) => {
 
     return res.status(200).send(buffer);
   } catch (error) {
+    if (isClientAbortError(error)) return;
+
     await recordExportFailureSafely({
       req,
       contextId,
@@ -316,16 +353,19 @@ const exportExcel = async (req, res) => {
     });
 
     return sendError(res, error);
+  } finally {
+    cleanup();
   }
 };
 
 const exportExcelInspektorat = async (req, res) => {
   const { contextId } = req.params;
   const isFinalExcel = String(req.query?.final || "").toLowerCase() === "true";
+  const { signal, cleanup } = createRequestAbortController(req, res);
 
   try {
     const { workbook, filename, report } =
-      await reportExportExcelService.buildExcelWorkbookInspektorat(contextId);
+      await reportExportExcelService.buildExcelWorkbookInspektorat(contextId, { signal });
     assertReportExportPolicy({ report, format: isFinalExcel ? "excel_final" : "excel" });
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -365,6 +405,8 @@ const exportExcelInspektorat = async (req, res) => {
 
     return res.status(200).send(buffer);
   } catch (error) {
+    if (isClientAbortError(error)) return;
+
     await recordExportFailureSafely({
       req,
       contextId,
@@ -376,15 +418,18 @@ const exportExcelInspektorat = async (req, res) => {
     });
 
     return sendError(res, error);
+  } finally {
+    cleanup();
   }
 };
 
 const exportWord = async (req, res) => {
   const { contextId } = req.params;
+  const { signal, cleanup } = createRequestAbortController(req, res);
 
   try {
     const { buffer, filename, report } = await runWithHeavyExportGuard(() =>
-      reportExportWordService.buildWordDocument(contextId)
+      reportExportWordService.buildWordDocument(contextId, { signal })
     );
     assertReportExportPolicy({ report, format: "docx" });
 
@@ -421,6 +466,8 @@ const exportWord = async (req, res) => {
 
     return res.status(200).send(buffer);
   } catch (error) {
+    if (isClientAbortError(error)) return;
+
     await recordExportFailureSafely({
       req,
       contextId,
@@ -432,15 +479,18 @@ const exportWord = async (req, res) => {
     });
 
     return sendError(res, error);
+  } finally {
+    cleanup();
   }
 };
 
 const exportPdf = async (req, res) => {
   const { contextId } = req.params;
+  const { signal, cleanup } = createRequestAbortController(req, res);
 
   try {
     const { buffer, filename, report } = await runWithHeavyExportGuard(() =>
-      reportExportPdfService.buildPdfFromWord(contextId)
+      reportExportPdfService.buildPdfFromWord(contextId, { signal })
     );
     assertReportExportPolicy({ report, format: "pdf" });
 
@@ -477,6 +527,8 @@ const exportPdf = async (req, res) => {
 
     return res.status(200).send(buffer);
   } catch (error) {
+    if (isClientAbortError(error)) return;
+
     await recordExportFailureSafely({
       req,
       contextId,
@@ -489,6 +541,8 @@ const exportPdf = async (req, res) => {
     });
 
     return sendError(res, error);
+  } finally {
+    cleanup();
   }
 };
 

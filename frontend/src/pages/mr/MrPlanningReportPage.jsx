@@ -956,7 +956,10 @@ const MrPlanningReportPage = () => {
     refetch: refetchReport,
   } = useQuery({
     queryKey: QUERY_KEYS.fullReport(selectedContextId),
-    queryFn: () => mrPlanningReportService.getFullReport(selectedContextId),
+    // Teruskan signal dari react-query ke axios supaya request yang
+    // di-supersede (refetch/unmount sebelum request lama selesai) benar-benar
+    // dibatalkan sampai ke backend, bukan cuma diabaikan hasilnya di FE.
+    queryFn: ({ signal }) => mrPlanningReportService.getFullReport(selectedContextId, { signal }),
     enabled: Boolean(selectedContextId),
   });
 
@@ -982,8 +985,10 @@ const MrPlanningReportPage = () => {
     refetch: refetchIntegrityScan,
   } = useQuery({
     queryKey: QUERY_KEYS.integrityScan(selectedContextId),
-    queryFn: async () => {
-      const response = await api.get(`/mr-report/context/${selectedContextId}/integrity-scan`);
+    queryFn: async ({ signal }) => {
+      const response = await api.get(`/mr-report/context/${selectedContextId}/integrity-scan`, {
+        signal,
+      });
       return response?.data;
     },
     enabled: Boolean(selectedContextId),
@@ -995,10 +1000,7 @@ const MrPlanningReportPage = () => {
   // — jadi tidak bisa dipakai untuk menentukan progres tombol Ajukan/Verifikasi/
   // Setujui. Ambil field itu lewat endpoint detail context terpisah (row model
   // penuh, sudah dipakai wizard) supaya tidak perlu mengubah SQL laporan.
-  const {
-    data: contextDetailResponse,
-    refetch: refetchContextDetail,
-  } = useQuery({
+  const { data: contextDetailResponse, refetch: refetchContextDetail } = useQuery({
     queryKey: QUERY_KEYS.contextDetail(selectedContextId),
     queryFn: async () => {
       const result = await getMrPlanningContextDetail(selectedContextId);
@@ -1374,7 +1376,13 @@ const MrPlanningReportPage = () => {
       setContextWorkflowLoading('submit');
       const result = await submitMrPlanningContext(contextId);
       message.success(result?.message || 'Context berhasil diajukan untuk verifikasi.');
-      await Promise.all([refetchReport(), refetchContexts(), refetchContextDetail()]);
+      // Tombol Submit/Verifikasi cuma butuh contextDetail (lihat komentar di
+      // atas contextWorkflowDetail) — bukan report/full yang berat (2-10 detik,
+      // pernah OOM). Jangan tunggu itu sebelum tombol berhenti loading; jalankan
+      // di background saja supaya tampilan report ikut ter-refresh tanpa
+      // menahan/mengunci tombol kalau backend sedang lambat.
+      await Promise.all([refetchContexts(), refetchContextDetail()]);
+      refetchReport().catch(() => {});
     } catch (error) {
       message.error(getBackendErrorMessage(error, 'Gagal mengajukan context untuk verifikasi.'));
     } finally {
@@ -1393,7 +1401,10 @@ const MrPlanningReportPage = () => {
       setContextWorkflowLoading('verify');
       const result = await verifyMrPlanningContext(contextId);
       message.success(result?.message || 'Context berhasil diverifikasi.');
-      await Promise.all([refetchReport(), refetchContexts(), refetchContextDetail()]);
+      // Sama seperti submit — status tombol dibaca dari contextDetail (ringan),
+      // bukan dari report/full (berat). Refresh report di background saja.
+      await Promise.all([refetchContexts(), refetchContextDetail()]);
+      refetchReport().catch(() => {});
     } catch (error) {
       message.error(getBackendErrorMessage(error, 'Gagal memverifikasi context.'));
     } finally {
@@ -1426,12 +1437,14 @@ const MrPlanningReportPage = () => {
       setContextWorkflowLoading('approve');
       const result = await approveMrPlanningContext(contextId);
       message.success(result?.message || 'Context berhasil disetujui.');
-      await Promise.all([
-        refetchReport(),
-        refetchContexts(),
-        refetchIntegrityScan(),
-        refetchContextDetail(),
-      ]);
+      // Approve mengunci laporan (is_locked, download Word/PDF aktif) jadi
+      // report/full & integrity-scan memang perlu di-refresh — tapi keduanya
+      // berat (bisa 6-10+ detik, pernah OOM di backend), jadi jangan tahan
+      // tombol menunggu itu. Status tombol sendiri sudah cukup dari
+      // contextDetail (ringan) yang tetap ditunggu di bawah.
+      await Promise.all([refetchContexts(), refetchContextDetail()]);
+      refetchReport().catch(() => {});
+      refetchIntegrityScan().catch(() => {});
     } catch (error) {
       message.error(getBackendErrorMessage(error, 'Gagal menyetujui context.'));
     } finally {

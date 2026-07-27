@@ -9,6 +9,8 @@ import * as Yup from 'yup';
 import SelectWithLabelValue from '@/shared/components/form/SelectWithLabelValue';
 import InputField from '@/shared/components/form/InputField';
 import TextAreaField from '@/shared/components/form/TextAreaField';
+import SumberDataReferensiField from '@/features/renstra/indikator/components/SumberDataReferensiField';
+import { buildSumberDataText } from '@/features/renstra/indikator/components/sumberDataUtils';
 
 const { Text } = Typography;
 
@@ -110,6 +112,9 @@ const IndikatorTujuanRenstraForm = ({ initialData = null, renstraAktif }) => {
       definisi_operasional: '',
       metode_penghitungan: '',
       sumber_data: '',
+      sumber_data_mode: 'teks',
+      sumber_data_tabel: null,
+      referensi: [],
       penanggung_jawab: '',
     },
     schema: () =>
@@ -143,7 +148,10 @@ const IndikatorTujuanRenstraForm = ({ initialData = null, renstraAktif }) => {
       ref_id: formData.tujuan_renstra_id,
       definisi_operasional: formData.definisi_operasional,
       metode_penghitungan: formData.metode_penghitungan,
-      sumber_data: formData.sumber_data,
+      sumber_data: buildSumberDataText(formData),
+      sumber_data_mode: formData.sumber_data_mode || 'teks',
+      sumber_data_tabel: formData.sumber_data_mode === 'tabel' ? formData.sumber_data_tabel : null,
+      referensi: (formData.referensi || []).filter((r) => r && r.trim()),
       penanggung_jawab: formData.penanggung_jawab,
     }),
     kodeGenerator: (watch, setValue) => {
@@ -296,7 +304,7 @@ const IndikatorTujuanRenstraForm = ({ initialData = null, renstraAktif }) => {
           errors={errors}
           rows={3}
         />
-        <InputField name="sumber_data" label="Sumber Data" control={control} errors={errors} />
+        <SumberDataReferensiField watch={watch} setValue={setValue} />
         <InputField
           name="penanggung_jawab"
           label="Penanggung Jawab"

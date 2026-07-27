@@ -2,10 +2,11 @@
  * LAKIPDashboard.jsx
  * Dashboard LAKIP/LKj — entri data + generator dokumen
  */
-import React from "react";
-import { Container, Row, Col, Card } from "react-bootstrap";
-import { FileEarmarkText } from "react-bootstrap-icons";
-import LakipGeneratorPanel from "../components/LakipGeneratorPanel";
+import React from 'react';
+import { Container, Row, Col, Card } from 'react-bootstrap';
+import { FileEarmarkText } from 'react-bootstrap-icons';
+import { Link } from 'react-router-dom';
+import LakipGeneratorPanel from '../components/LakipGeneratorPanel';
 
 const LAKIPDashboard = () => {
   return (
@@ -14,14 +15,17 @@ const LAKIPDashboard = () => {
         <FileEarmarkText size={28} className="text-primary" />
         <div>
           <h4 className="mb-0 fw-bold">LAKIP / LKj</h4>
-          <p className="mb-0 small text-muted">
-            Laporan Akuntabilitas Kinerja Instansi Pemerintah
-          </p>
+          <p className="mb-0 small text-muted">Laporan Akuntabilitas Kinerja Instansi Pemerintah</p>
         </div>
       </div>
 
       <Row className="g-4">
         <Col md={12}>
+          <div className="mb-3">
+            <Link to="/lakip/perjanjian-kinerja" className="btn btn-outline-primary btn-sm">
+              📄 Buka Perjanjian Kinerja (PK)
+            </Link>
+          </div>
           <LakipGeneratorPanel />
         </Col>
       </Row>
@@ -34,20 +38,22 @@ const LAKIPDashboard = () => {
             </Card.Header>
             <Card.Body className="small text-muted" style={{ lineHeight: 1.8 }}>
               <p>
-                <strong>LAKIP (Laporan Akuntabilitas Kinerja Instansi Pemerintah)</strong> atau
-                yang kini lebih dikenal sebagai <strong>LKj (Laporan Kinerja)</strong> adalah
-                dokumen pertanggungjawaban OPD atas penggunaan anggaran dan pencapaian
-                target kinerja selama satu tahun anggaran.
+                <strong>LAKIP (Laporan Akuntabilitas Kinerja Instansi Pemerintah)</strong> atau yang
+                kini lebih dikenal sebagai <strong>LKj (Laporan Kinerja)</strong> adalah dokumen
+                pertanggungjawaban OPD atas penggunaan anggaran dan pencapaian target kinerja selama
+                satu tahun anggaran.
               </p>
-              <p><strong>Dasar Hukum:</strong></p>
+              <p>
+                <strong>Dasar Hukum:</strong>
+              </p>
               <ul>
                 <li>Perpres No. 29 Tahun 2014 tentang SAKIP</li>
                 <li>PermenpanRB No. 53 Tahun 2014 tentang Petunjuk Teknis Perjanjian Kinerja</li>
                 <li>PermenpanRB No. 88 Tahun 2021 tentang Evaluasi AKIP</li>
               </ul>
               <p>
-                Gunakan tombol <strong>Preview LAKIP</strong> di atas untuk membuka laporan
-                dalam format HTML yang siap dicetak. Gunakan <em>File → Print → Save as PDF</em>
+                Gunakan tombol <strong>Preview LAKIP</strong> di atas untuk membuka laporan dalam
+                format HTML yang siap dicetak. Gunakan <em>File → Print → Save as PDF</em>
                 di browser untuk menghasilkan file PDF.
               </p>
             </Card.Body>

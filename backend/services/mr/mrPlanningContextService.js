@@ -283,6 +283,20 @@ const buildWorkflowAuditMetadata = ({ currentMetadata = null, action, userId, no
   };
 };
 
+// PENTING: sepuluh include di bawah (items, stakeholders, risks,
+// risk_analyses, root_causes, mitigations, monitorings, deviations,
+// approvals, warnings) semuanya hasMany independen dari MrPlanningContext.
+// Tanpa `separate: true`, Sequelize menggabungkan SEMUANYA lewat satu query
+// dengan banyak LEFT JOIN sibling — hasilnya row mentah dari SQL adalah
+// PERKALIAN (cross-join-like) jumlah baris tiap relasi, bukan penjumlahan.
+// Context dengan mis. 6 risks x 6 risk_analyses x 4 mitigations x 10
+// monitorings x ... bisa menghasilkan ratusan ribu baris mentah yang harus
+// di-hydrate Sequelize jadi objek JS bersarang — inilah penyebab endpoint
+// "ringan" getContextDetail() ini justru yang memicu heap OOM (dipanggil
+// ulang setiap kali tombol submit/verify/approve diklik). `separate: true`
+// membuat Sequelize menjalankan query TERPISAH per relasi (pola yang sudah
+// dipakai di indikatorProgramController.js/renjaController.js untuk masalah
+// yang sama), menghilangkan perkalian tersebut.
 const contextDetailInclude = [
   {
     model: MrReferenceItem,
@@ -293,51 +307,61 @@ const contextDetailInclude = [
     model: MrPlanningContextItem,
     as: 'items',
     required: false,
+    separate: true,
   },
   {
     model: MrPlanningContextStakeholder,
     as: 'stakeholders',
     required: false,
+    separate: true,
   },
   {
     model: MrPlanningRisk,
     as: 'risks',
     required: false,
+    separate: true,
   },
   {
     model: MrPlanningRiskAnalysis,
     as: 'risk_analyses',
     required: false,
+    separate: true,
   },
   {
     model: MrPlanningRootCause,
     as: 'root_causes',
     required: false,
+    separate: true,
   },
   {
     model: MrPlanningMitigation,
     as: 'mitigations',
     required: false,
+    separate: true,
   },
   {
     model: MrPlanningMonitoring,
     as: 'monitorings',
     required: false,
+    separate: true,
   },
   {
     model: MrPlanningDeviation,
     as: 'deviations',
     required: false,
+    separate: true,
   },
   {
     model: MrPlanningApprovalMonitoring,
     as: 'approvals',
     required: false,
+    separate: true,
   },
   {
     model: MrPlanningWarning,
     as: 'warnings',
     required: false,
+    separate: true,
   },
 ];
 
@@ -512,12 +536,14 @@ const getContexts = async (query = {}) => {
         model: MrPlanningContextItem,
         as: 'items',
         required: false,
+        separate: true,
         limit: 5,
       },
       {
         model: MrPlanningRisk,
         as: 'risks',
         required: false,
+        separate: true,
         limit: 5,
       },
     ],
