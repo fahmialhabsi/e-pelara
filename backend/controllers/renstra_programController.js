@@ -226,6 +226,19 @@ exports.findOne = async (req, res) => {
 
     if (!data) return res.status(404).json({ message: 'Data not found' });
 
+    // Kolom rpjmd_arah_id tidak ada di renstra_program (hanya kebijakan_id yang
+    // disimpan). Form Edit membutuhkannya untuk memulihkan dropdown Arah Kebijakan
+    // RPJMD beserta rantai cascading di bawahnya, jadi diturunkan dari Arah
+    // Kebijakan Renstra yang tertaut.
+    let rpjmd_arah_id = null;
+    if (data.kebijakan_id) {
+      const { RenstraKebijakan } = require('../models');
+      const kebijakan = await RenstraKebijakan.findByPk(data.kebijakan_id, {
+        attributes: ['id', 'rpjmd_arah_id'],
+      });
+      rpjmd_arah_id = kebijakan?.rpjmd_arah_id ?? null;
+    }
+
     const formattedData = {
       id: data.id,
       kode_program: data.kode_program,
@@ -236,6 +249,7 @@ exports.findOne = async (req, res) => {
       bidang_opd_penanggung_jawab: data.bidang_opd_penanggung_jawab || '',
       // Alias sesuai nama field yang dipakai form frontend (ProgramRenstraForm.jsx).
       renstra_kebijakan_id: data.kebijakan_id,
+      rpjmd_arah_id,
       renstra: data.renstra,
     };
 

@@ -210,7 +210,13 @@ exports.generateKodeKebijakan = async (req, res) => {
       })
       .filter((n) => Number.isInteger(n) && n > 0);
 
-    const nextNo = suffixes.length > 0 ? Math.max(...suffixes) + 1 : 1;
+    // Isi celah nomor yang kosong lebih dulu, bukan melanjutkan dari nomor tertinggi.
+    // Setelah ada arah kebijakan yang dipindahkan ke Strategi lain (atau dihapus),
+    // nomornya menjadi lowong; melanjutkan dari max+1 akan menyisakan lubang pada
+    // penomoran dokumen Renstra.
+    const terpakai = new Set(suffixes);
+    let nextNo = 1;
+    while (terpakai.has(nextNo)) nextNo += 1;
     const noFormatted = String(nextNo).padStart(2, '0');
 
     const generatedKode = `AKR-${bagianAkhir}.${noFormatted}`;
@@ -228,8 +234,11 @@ exports.update = async (req, res) => {
 
     const updateData = {};
 
-    if (req.body.kode_kebjkn !== undefined) {
-      updateData.kode_kebjkn = req.body.kode_kebjkn;
+    // Jangan pernah menimpa kode yang sudah tersimpan dengan nilai kosong.
+    // Field ini read-only di form dan bisa ter-reset oleh efek cascading,
+    // sehingga payload dapat mengirim string kosong tanpa disengaja.
+    if (req.body.kode_kebjkn !== undefined && String(req.body.kode_kebjkn).trim() !== '') {
+      updateData.kode_kebjkn = String(req.body.kode_kebjkn).trim();
     }
     if (req.body.no_arah_rpjmd !== undefined) {
       updateData.no_arah_rpjmd = req.body.no_arah_rpjmd;

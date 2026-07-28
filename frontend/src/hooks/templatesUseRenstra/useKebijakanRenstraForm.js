@@ -95,7 +95,9 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
 
       if (!selectedStrategiId) {
         setArahKebijakanFiltered([]);
-        if (!isAtInitialStrategi) {
+        // Alasan sama seperti pada efek Arah Kebijakan di bawah: jangan bersihkan
+        // apa pun saat mode edit, karena render pertama selalu bernilai kosong.
+        if (!initialData) {
           setValue('rpjmd_arah_id', '');
         }
         return;
@@ -161,7 +163,11 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
       !!initialData && normalizeId(selectedId) === normalizeId(initialData.rpjmd_arah_id);
 
     if (!selectedId) {
-      if (!isAtInitialArah) {
+      // Mode tambah: kosongkan kode saat Arah Kebijakan RPJMD belum dipilih.
+      // Mode edit: JANGAN disentuh — pada render pertama nilai watch masih kosong
+      // karena reset(initialData) baru berlaku di render berikutnya, sehingga kode
+      // yang sudah tersimpan justru ikut terhapus dan tidak pernah dipulihkan.
+      if (!initialData) {
         setValue('kode_kebjkn', '');
       }
       return;
@@ -234,7 +240,6 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
       if (selected) {
         setValue('no_arah_rpjmd', selected.kode_arah || '');
         setValue('isi_arah_rpjmd', selected.deskripsi || '');
-        setValue('kode_kebjkn', selected.kode_arah || '');
         setValue('deskripsi', selected.deskripsi || '');
         setValue('jenisDokumen', selected.jenis_dokumen || '');
         setValue('tahun', selected.tahun || '');
@@ -243,11 +248,19 @@ export const useKebijakanRenstraForm = (initialData, renstraAktif) => {
         setValue('isi_arah_rpjmd', '');
         setValue('jenisDokumen', '');
         setValue('tahun', '');
-        setValue('kode_kebjkn', '');
         setValue('deskripsi', '');
       }
+
+      // kode_kebjkn sengaja TIDAK disalin dari kode Arah Kebijakan RPJMD —
+      // keduanya sistem penomoran yang berbeda.
+      // - Mode edit: kode Renstra sudah benar dan terikat posisinya pada Strategi,
+      //   sehingga mengganti tautan RPJMD tidak boleh mengubahnya.
+      // - Mode tambah: kode dihasilkan endpoint generate-kode-kebijakan lewat efek.
+      if (!initialData) {
+        setValue('kode_kebjkn', '');
+      }
     },
-    [dropdowns, setValue],
+    [dropdowns, initialData, setValue],
   );
 
   const handleStrategiChange = (value) => {

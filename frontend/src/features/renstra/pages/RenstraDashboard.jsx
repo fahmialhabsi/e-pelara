@@ -197,6 +197,18 @@ const RenstraDashboard = () => {
               Uji Keterhubungan
             </button>
           )}
+
+          {renstraAktif?.id && (
+            <button
+              className="btn btn-outline-warning btn-sm"
+              onClick={() => navigate('/renstra/review-konsistensi')}
+              disabled={loadingStats}
+              title="Catat hasil reviu konsistensi cascading beserta alasan dan dasar hukumnya"
+            >
+              Reviu Konsistensi
+            </button>
+          )}
+
           {renstraAktif?.id && (
             <GenerateRenstraButton
               renstraId={renstraAktif.id}
