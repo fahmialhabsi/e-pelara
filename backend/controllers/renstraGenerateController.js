@@ -111,6 +111,16 @@ async function gatherData(renstraId) {
           where: { renstra_id: renstraId },
         }).catch(() => []);
 
+  // Misi (RPJMD) sebagai puncak rantai cascading pada Lampiran II.
+  const misiIds = [...new Set(tujuans.map((t) => t.misi_id).filter(Boolean))];
+  let misis = [];
+  if (misiIds.length > 0) {
+    const { Misi } = require('../models');
+    if (Misi) {
+      misis = await Misi.findAll({ where: { id: misiIds } }).catch(() => []);
+    }
+  }
+
   // Indikator (semua stage sekaligus)
   const indikators = await IndikatorRenstra.findAll({
     where: { renstra_id: renstraId },
@@ -181,6 +191,7 @@ async function gatherData(renstraId) {
 
   return {
     renstra: renstra.toJSON(),
+    misis: misis.map((m) => (typeof m.toJSON === 'function' ? m.toJSON() : m)),
     tujuans: tujuans.map((t) => t.toJSON()),
     sasarans: sasarans.map((s) => s.toJSON()),
     programs: programs.map((p) => p.toJSON()),
@@ -227,8 +238,37 @@ function targetHeaderCols(tahunMulai) {
 // ─────────────────────────────────────────────────────────────────────────────
 function buildTabelTC23(data) {
   const { lakipData, renstra } = data;
+
+  // Kolom tahun dipatok lima tahun periode Renstra sebelumnya (Permendagri 86/2017),
+  // bukan diturunkan dari data, agar struktur tabel tetap baku walaupun datanya kosong.
+  const tahunAwalTC = Number(renstra.tahun_mulai) - 5;
+  const tahunsTC = [0, 1, 2, 3, 4].map((i) => String(tahunAwalTC + i));
+  const periodeTC = `${tahunsTC[0]}\u2013${tahunsTC[4]}`;
+  const headerTahunTC = tahunsTC.map((t) => `<th>${t}</th>`).join('');
+
   if (!lakipData || lakipData.length === 0) {
-    return `<p><em style="color:#888">Data T-C.23 belum tersedia. Isi melalui modul LAKIP lalu generate ulang.</em></p>`;
+    return `
+<p><strong>Tabel T-C.23 — Pencapaian Kinerja Pelayanan ${s(renstra.nama_opd)}</strong><br/><small style="color:#555">Periode Renstra sebelumnya: ${periodeTC}</small></p>
+<table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:9px">
+  <thead style="background:#1a5276;color:white">
+    <tr>
+      <th rowspan="2">No</th>
+      <th rowspan="2">Program</th>
+      <th rowspan="2">Indikator Kinerja</th>
+      <th colspan="5">Target</th>
+      <th colspan="5">Realisasi</th>
+      <th colspan="5">Rasio Capaian (%)</th>
+    </tr>
+    <tr>${headerTahunTC}${headerTahunTC}${headerTahunTC}</tr>
+  </thead>
+  <tbody>
+    <tr><td colspan="18" style="padding:20px 24px;text-align:left;color:#333;background:#fdfdfd">
+      <strong>Data belum tersedia untuk periode ${periodeTC}.</strong>
+      <p style="margin:8px 0 0">Tabel ini memuat capaian kinerja pelayanan ${s(renstra.nama_opd)} pada <strong>periode Renstra sebelumnya (${periodeTC})</strong> sebagaimana diatur dalam Peraturan Menteri Dalam Negeri Nomor 86 Tahun 2017. Data tahun-tahun tersebut belum terekam pada modul LAKIP, sehingga kolom capaian belum dapat disajikan.</p>
+      <p style="margin:8px 0 0"><em>Tindak lanjut: rekam data LAKIP tahun ${periodeTC} melalui menu LAKIP, kemudian lakukan generate ulang dokumen Renstra. Data tahun berjalan (${s(renstra.tahun_mulai)} dan sesudahnya) sengaja tidak ditampilkan di sini karena berada di luar cakupan tabel ini.</em></p>
+    </td></tr>
+  </tbody>
+</table>`;
   }
   const tahuns = [...new Set(lakipData.map((r) => r.tahun))].sort();
   const tahunHeaders = tahuns.map((t) => `<th>${t}</th>`).join('');
@@ -281,8 +321,35 @@ function buildTabelTC23(data) {
 // ─────────────────────────────────────────────────────────────────────────────
 function buildTabelTC24(data) {
   const { lkDispangData, renstra } = data;
+
+  const tahunAwalTC = Number(renstra.tahun_mulai) - 5;
+  const tahunsTC = [0, 1, 2, 3, 4].map((i) => String(tahunAwalTC + i));
+  const periodeTC = `${tahunsTC[0]}\u2013${tahunsTC[4]}`;
+  const headerTahunTC = tahunsTC.map((t) => `<th>${t}</th>`).join('');
+
   if (!lkDispangData || lkDispangData.length === 0) {
-    return `<p><em style="color:#888">Data T-C.24 belum tersedia. Isi melalui modul LK Dispang lalu generate ulang.</em></p>`;
+    return `
+<p><strong>Tabel T-C.24 — Anggaran dan Realisasi Pendanaan Pelayanan ${s(renstra.nama_opd)}</strong><br/><small style="color:#555">Periode Renstra sebelumnya: ${periodeTC}</small></p>
+<table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:9px">
+  <thead style="background:#1a5276;color:white">
+    <tr>
+      <th rowspan="2">No</th>
+      <th rowspan="2">Program</th>
+      <th rowspan="2">Kegiatan</th>
+      <th colspan="5">Anggaran (Rp)</th>
+      <th colspan="5">Realisasi (Rp)</th>
+      <th colspan="5">Rasio (%)</th>
+    </tr>
+    <tr>${headerTahunTC}${headerTahunTC}${headerTahunTC}</tr>
+  </thead>
+  <tbody>
+    <tr><td colspan="18" style="padding:20px 24px;text-align:left;color:#333;background:#fdfdfd">
+      <strong>Data belum tersedia untuk periode ${periodeTC}.</strong>
+      <p style="margin:8px 0 0">Tabel ini memuat anggaran dan realisasi pendanaan pelayanan ${s(renstra.nama_opd)} pada <strong>periode Renstra sebelumnya (${periodeTC})</strong> sebagaimana diatur dalam Peraturan Menteri Dalam Negeri Nomor 86 Tahun 2017. Data tahun-tahun tersebut belum terekam pada modul LK Dispang, sehingga kolom anggaran dan realisasi belum dapat disajikan.</p>
+      <p style="margin:8px 0 0"><em>Tindak lanjut: rekam data laporan keuangan tahun ${periodeTC} melalui menu LK Dispang, kemudian lakukan generate ulang dokumen Renstra. Data tahun berjalan (${s(renstra.tahun_mulai)} dan sesudahnya) sengaja tidak ditampilkan di sini karena berada di luar cakupan tabel ini.</em></p>
+    </td></tr>
+  </tbody>
+</table>`;
   }
   const tahuns = [...new Set(lkDispangData.map((r) => r.tahun))].sort();
   const tahunHeaders = tahuns.map((t) => `<th>${t}</th>`).join('');
@@ -519,7 +586,16 @@ function buildBab5(data) {
 // BAB VI: Rencana Program dan Kegiatan
 // ─────────────────────────────────────────────────────────────────────────────
 function buildBab6(data) {
-  const { tujuans, sasarans, strategis, kebijakans, programs, kegiatans, subkegiatans, indikators } = data;
+  const {
+    tujuans,
+    sasarans,
+    strategis,
+    kebijakans,
+    programs,
+    kegiatans,
+    subkegiatans,
+    indikators,
+  } = data;
 
   const indByRefStage = {};
   indikators.forEach((ind) => {
@@ -536,227 +612,319 @@ function buildBab6(data) {
     [1, 2, 3, 4, 5].map((i) => `<td>${ind ? fmtRp(ind[`pagu_tahun_${i}`]) : '-'}</td>`).join('');
   const kondisiAkhir = (ind) =>
     ind ? `${s(ind.target_tahun_5)} / Rp ${fmtRp(ind.pagu_tahun_5)}` : '-';
+  const paguCellsFromArray = (arr) => arr.map((v) => `<td>${fmtRp(v)}</td>`).join('');
+  const kondisiAkhirMixed = (targetVal, rpVal) => `${s(targetVal)} / Rp ${fmtRp(rpVal)}`;
 
-  // Agregasi Pendanaan Rp bottom-up: Sub Kegiatan -> Kegiatan -> Program -> Kebijakan -> Strategi -> Sasaran -> Tujuan
   const paguOf = (ind, i) => Number(ind?.[`pagu_tahun_${i}`]) || 0;
-  const sumPaguForKegiatan = (kegId) => {
-    const subs = subkegiatans.filter((sk) => sk.kegiatan_id === kegId);
+
+  /** Indikator bisa menempel pada baris kembaran mana pun — ambil yang pertama ada. */
+  const indikatorDari = (stage, ids) => {
+    for (const id of ids) {
+      const found = (indByRefStage[`${stage}_${id}`] || [])[0];
+      if (found) return found;
+    }
+    return null;
+  };
+
+  /**
+   * Dedupe berjenjang. Ketika satu Program tersimpan sebagai beberapa baris
+   * (karena menopang beberapa Arah Kebijakan), Kegiatan dan Sub Kegiatan sering
+   * ikut terekam terpisah di bawah masing-masing baris. Setelah Program digabung,
+   * turunannya harus ikut digabung per kode nomenklatur agar tidak tampil ganda
+   * dan pagunya tidak terhitung dua kali.
+   */
+  const kegiatanGroupsOfProgram = (progIds) => {
+    // Wakil kelompok dipilih baris yang paling lengkap datanya. Baris kembaran
+    // yang lahir saat Program ditautkan ke Arah Kebijakan lain umumnya kosong,
+    // sehingga kolom seperti Bidang OPD tidak boleh diambil dari baris tersebut.
+    const bobotKegiatan = (row) =>
+      subkegiatans.filter((sk) => sk.kegiatan_id === row.id).length +
+      ((indByRefStage[`kegiatan_${row.id}`] || []).length > 0 ? 1 : 0);
+
+    const grup = new Map();
+    kegiatans
+      .filter((k) => progIds.includes(k.program_id))
+      .forEach((k) => {
+        const kunci = String(k.kode_kegiatan || `#${k.id}`);
+        if (!grup.has(kunci)) grup.set(kunci, { utama: k, ids: [] });
+        const g = grup.get(kunci);
+        g.ids.push(k.id);
+        if (bobotKegiatan(k) > bobotKegiatan(g.utama)) g.utama = k;
+      });
+    return Array.from(grup.values()).sort((a, b) =>
+      compareNatural(a.utama.kode_kegiatan, b.utama.kode_kegiatan),
+    );
+  };
+
+  const subGroupsOfKegiatan = (kegIds) => {
+    const grup = new Map();
+    subkegiatans
+      .filter((sk) => kegIds.includes(sk.kegiatan_id))
+      .forEach((sk) => {
+        const kunci = String(sk.kode_sub_kegiatan || sk.kode_subkegiatan || `#${sk.id}`);
+        if (!grup.has(kunci)) grup.set(kunci, { utama: sk, ids: [] });
+        grup.get(kunci).ids.push(sk.id);
+      });
+    return Array.from(grup.values()).sort((a, b) =>
+      compareNatural(
+        a.utama.kode_sub_kegiatan || a.utama.kode_subkegiatan,
+        b.utama.kode_sub_kegiatan || b.utama.kode_subkegiatan,
+      ),
+    );
+  };
+
+  const sumPaguForKegiatanIds = (kegIds) => {
     const sums = [0, 0, 0, 0, 0];
-    subs.forEach((sub) => {
-      const subInd = (indByRefStage[`sub_kegiatan_${sub.id}`] || [])[0];
+    subGroupsOfKegiatan(kegIds).forEach((g) => {
+      const subInd = indikatorDari('sub_kegiatan', g.ids);
       [1, 2, 3, 4, 5].forEach((i, idx) => {
         sums[idx] += paguOf(subInd, i);
       });
     });
     return sums;
   };
-  const sumPaguForProgram = (progId) => {
-    const kegs = kegiatans.filter((k) => k.program_id === progId);
+
+  const sumPaguForProgramIds = (progIds) => {
     const sums = [0, 0, 0, 0, 0];
-    kegs.forEach((keg) => {
-      sumPaguForKegiatan(keg.id).forEach((v, idx) => {
+    kegiatanGroupsOfProgram(progIds).forEach((g) => {
+      sumPaguForKegiatanIds(g.ids).forEach((v, idx) => {
         sums[idx] += v;
       });
     });
     return sums;
   };
-  const sumPaguForKebijakan = (kebId) => {
-    const progs = programs.filter((p) => p.kebijakan_id === kebId);
-    const sums = [0, 0, 0, 0, 0];
-    progs.forEach((prog) => {
-      sumPaguForProgram(prog.id).forEach((v, idx) => {
-        sums[idx] += v;
-      });
+
+  /**
+   * Program milik satu Sasaran, dideduplikasi per kode nomenklatur.
+   * Satu Program sah menopang beberapa Arah Kebijakan sehingga tersimpan sebagai
+   * beberapa baris renstra_program. Pada T-C.27 ia harus tampil SEKALI saja —
+   * Kegiatan dari seluruh baris kembarannya digabung, agar tidak muncul baris
+   * duplikat berpagu Rp 0. Rantai Strategi dan Arah Kebijakan tidak ditampilkan
+   * di sini karena bukan bagian format baku T-C.27 (ada di T-C.26 dan Lampiran II).
+   */
+  const programGroupsOfSasaran = (sasId) => {
+    const stratIds = strategis.filter((st) => st.sasaran_id === sasId).map((st) => st.id);
+    const kebIds = kebijakans.filter((kb) => stratIds.includes(kb.strategi_id)).map((kb) => kb.id);
+    const rows = programs.filter((p) => kebIds.includes(p.kebijakan_id));
+
+    const grup = new Map();
+    rows.forEach((p) => {
+      const kunci = String(p.kode_program || `#${p.id}`);
+      if (!grup.has(kunci)) grup.set(kunci, { utama: p, ids: [] });
+      grup.get(kunci).ids.push(p.id);
     });
-    return sums;
+    return Array.from(grup.values()).sort((a, b) =>
+      compareNatural(a.utama.kode_program, b.utama.kode_program),
+    );
   };
-  const sumPaguForStrategi = (stratId) => {
-    const kebs = kebijakans.filter((k) => k.strategi_id === stratId);
-    const sums = [0, 0, 0, 0, 0];
-    kebs.forEach((keb) => {
-      sumPaguForKebijakan(keb.id).forEach((v, idx) => {
-        sums[idx] += v;
-      });
-    });
-    return sums;
-  };
+
   const sumPaguForSasaran = (sasId) => {
-    const strats = strategis.filter((st) => st.sasaran_id === sasId);
     const sums = [0, 0, 0, 0, 0];
-    strats.forEach((strat) => {
-      sumPaguForStrategi(strat.id).forEach((v, idx) => {
+    programGroupsOfSasaran(sasId).forEach((g) => {
+      sumPaguForProgramIds(g.ids).forEach((v, idx) => {
         sums[idx] += v;
       });
     });
     return sums;
   };
   const sumPaguForTujuan = (tujId) => {
-    const sass = sasarans.filter((sas) => sas.tujuan_id === tujId);
     const sums = [0, 0, 0, 0, 0];
-    sass.forEach((sas) => {
-      sumPaguForSasaran(sas.id).forEach((v, idx) => {
-        sums[idx] += v;
+    sasarans
+      .filter((sas) => sas.tujuan_id === tujId)
+      .forEach((sas) => {
+        sumPaguForSasaran(sas.id).forEach((v, idx) => {
+          sums[idx] += v;
+        });
       });
-    });
     return sums;
   };
-  const paguCellsFromArray = (arr) => arr.map((v) => `<td>${fmtRp(v)}</td>`).join('');
-  const kondisiAkhirMixed = (targetVal, rpVal) => `${s(targetVal)} / Rp ${fmtRp(rpVal)}`;
+
+  const programTerpakai = new Set();
+
+  const barisProgram = (grup) => {
+    const prog = grup.utama;
+    grup.ids.forEach((id) => programTerpakai.add(id));
+    const progInd = indikatorDari('program', grup.ids);
+    const progPaguSums = sumPaguForProgramIds(grup.ids);
+
+    let html = `<tr style="background:#eaf4fb">
+      <td></td>
+      <td>${s(prog.kode_program)}</td>
+      <td>${s(prog.nama_program)}</td>
+      <td>${progInd ? s(progInd.nama_indikator) : '-'}</td>
+      <td>${progInd ? s(progInd.satuan) : '-'}</td>
+      <td>${progInd ? s(progInd.baseline) : '-'}</td>
+      ${targetCells(progInd)}
+      ${paguCellsFromArray(progPaguSums)}
+      <td>${kondisiAkhirMixed(progInd?.target_tahun_5, progPaguSums[4])}</td>
+      <td>${s(prog.opd_penanggung_jawab)}</td>
+    </tr>`;
+
+    kegiatanGroupsOfProgram(grup.ids).forEach((gKeg) => {
+      const keg = gKeg.utama;
+      const kegInd = indikatorDari('kegiatan', gKeg.ids);
+      const kegPaguSums = sumPaguForKegiatanIds(gKeg.ids);
+      html += `<tr>
+        <td></td>
+        <td>${s(keg.kode_kegiatan)}</td>
+        <td>${s(keg.nama_kegiatan)}</td>
+        <td>${kegInd ? s(kegInd.nama_indikator) : '-'}</td>
+        <td>${kegInd ? s(kegInd.satuan) : '-'}</td>
+        <td>${kegInd ? s(kegInd.baseline) : '-'}</td>
+        ${targetCells(kegInd)}
+        ${paguCellsFromArray(kegPaguSums)}
+        <td>${kondisiAkhirMixed(kegInd?.target_tahun_5, kegPaguSums[4])}</td>
+        <td>${s(keg.bidang_opd)}</td>
+      </tr>`;
+
+      subGroupsOfKegiatan(gKeg.ids).forEach((gSub) => {
+        const sub = gSub.utama;
+        const subInd = indikatorDari('sub_kegiatan', gSub.ids);
+        html += `<tr>
+          <td></td>
+          <td>${s(sub.kode_sub_kegiatan || sub.kode_subkegiatan)}</td>
+          <td>${s(sub.nama_sub_kegiatan || sub.nama_subkegiatan)}</td>
+          <td>${subInd ? s(subInd.nama_indikator) : '-'}</td>
+          <td>${subInd ? s(subInd.satuan) : '-'}</td>
+          <td>${subInd ? s(subInd.baseline) : '-'}</td>
+          ${targetCells(subInd)}
+          ${paguCells(subInd)}
+          <td>${kondisiAkhir(subInd)}</td>
+          <td>${s(sub.sub_bidang_opd, '-')}</td>
+        </tr>`;
+      });
+    });
+
+    return html;
+  };
+
+  const totalPagu = [0, 0, 0, 0, 0];
 
   let rows = '';
   if (tujuans.length === 0) {
-    rows = `<tr><td colspan="18" style="text-align:center;color:#888;font-style:italic">Belum ada data Tujuan/Sasaran/Strategi/Kebijakan/Program/Kegiatan</td></tr>`;
+    rows = `<tr><td colspan="18" style="text-align:center;color:#888;font-style:italic">Belum ada data Tujuan/Sasaran/Program/Kegiatan</td></tr>`;
   } else {
     let no = 1;
-    tujuans.forEach((tuj) => {
-      const tujInd = (indByRefStage[`tujuan_${tuj.id}`] || [])[0];
-      const tujPaguSums = sumPaguForTujuan(tuj.id);
-      rows += `<tr style="background:#1a5276;color:#fff;font-weight:bold">
-        <td>${no++}</td>
-        <td>${s(tuj.no_tujuan)}</td>
-        <td>Tujuan: ${s(tuj.isi_tujuan)}</td>
-        <td>${tujInd ? s(tujInd.nama_indikator) : '-'}</td>
-        <td>${tujInd ? s(tujInd.satuan) : '-'}</td>
-        <td>${tujInd ? s(tujInd.baseline) : '-'}</td>
-        ${targetCells(tujInd)}
-        ${paguCellsFromArray(tujPaguSums)}
-        <td>${kondisiAkhirMixed(tujInd?.target_tahun_5, tujPaguSums[4])}</td>
-        <td>-</td>
-      </tr>`;
-
-      const tujSasaran = sasarans
-        .filter((sas) => sas.tujuan_id === tuj.id)
-        .sort((a, b) => compareNatural(a.nomor, b.nomor));
-      tujSasaran.forEach((sas) => {
-        const sasInd = (indByRefStage[`sasaran_${sas.id}`] || [])[0];
-        const sasPaguSums = sumPaguForSasaran(sas.id);
-        rows += `<tr style="background:#2e86c1;color:#fff;font-weight:bold">
-          <td></td>
-          <td>${s(sas.nomor)}</td>
-          <td>Sasaran: ${s(sas.isi_sasaran)}</td>
-          <td>${sasInd ? s(sasInd.nama_indikator) : '-'}</td>
-          <td>${sasInd ? s(sasInd.satuan) : '-'}</td>
-          <td>${sasInd ? s(sasInd.baseline) : '-'}</td>
-          ${targetCells(sasInd)}
-          ${paguCellsFromArray(sasPaguSums)}
-          <td>${kondisiAkhirMixed(sasInd?.target_tahun_5, sasPaguSums[4])}</td>
+    [...tujuans]
+      .sort((a, b) => compareNatural(a.no_tujuan, b.no_tujuan))
+      .forEach((tuj) => {
+        const tujInd = (indByRefStage[`tujuan_${tuj.id}`] || [])[0];
+        const tujPaguSums = sumPaguForTujuan(tuj.id);
+        tujPaguSums.forEach((v, idx) => {
+          totalPagu[idx] += v;
+        });
+        rows += `<tr style="background:#1a5276;color:#fff;font-weight:bold">
+          <td>${no++}</td>
+          <td>${s(tuj.no_tujuan)}</td>
+          <td>Tujuan: ${s(tuj.isi_tujuan)}</td>
+          <td>${tujInd ? s(tujInd.nama_indikator) : '-'}</td>
+          <td>${tujInd ? s(tujInd.satuan) : '-'}</td>
+          <td>${tujInd ? s(tujInd.baseline) : '-'}</td>
+          ${targetCells(tujInd)}
+          ${paguCellsFromArray(tujPaguSums)}
+          <td>${kondisiAkhirMixed(tujInd?.target_tahun_5, tujPaguSums[4])}</td>
           <td>-</td>
         </tr>`;
 
-        const sasStrategi = strategis
-          .filter((st) => st.sasaran_id === sas.id)
-          .sort((a, b) => compareNatural(a.kode_strategi, b.kode_strategi));
-        sasStrategi.forEach((strat) => {
-          const stratInd = (indByRefStage[`strategi_${strat.id}`] || [])[0];
-          const stratPaguSums = sumPaguForStrategi(strat.id);
-          rows += `<tr style="background:#85c1e9;font-weight:bold">
-            <td></td>
-            <td>${s(strat.kode_strategi)}</td>
-            <td>Strategi: ${s(strat.deskripsi)}</td>
-            <td>${stratInd ? s(stratInd.nama_indikator) : '-'}</td>
-            <td>${stratInd ? s(stratInd.satuan) : '-'}</td>
-            <td>${stratInd ? s(stratInd.baseline) : '-'}</td>
-            ${targetCells(stratInd)}
-            ${paguCellsFromArray(stratPaguSums)}
-            <td>${kondisiAkhirMixed(stratInd?.target_tahun_5, stratPaguSums[4])}</td>
-            <td>-</td>
-          </tr>`;
-
-          const stratKebijakan = kebijakans
-            .filter((keb) => keb.strategi_id === strat.id)
-            .sort((a, b) => compareNatural(a.kode_kebjkn, b.kode_kebjkn));
-          stratKebijakan.forEach((keb) => {
-            const kebInd = (indByRefStage[`kebijakan_${keb.id}`] || [])[0];
-            const kebPaguSums = sumPaguForKebijakan(keb.id);
-            rows += `<tr style="background:#d6eaf8;font-weight:bold">
+        sasarans
+          .filter((sas) => sas.tujuan_id === tuj.id)
+          .sort((a, b) => compareNatural(a.nomor, b.nomor))
+          .forEach((sas) => {
+            const sasInd = (indByRefStage[`sasaran_${sas.id}`] || [])[0];
+            const sasPaguSums = sumPaguForSasaran(sas.id);
+            rows += `<tr style="background:#2e86c1;color:#fff;font-weight:bold">
               <td></td>
-              <td>${s(keb.kode_kebjkn)}</td>
-              <td>Arah Kebijakan: ${s(keb.deskripsi)}</td>
-              <td>${kebInd ? s(kebInd.nama_indikator) : '-'}</td>
-              <td>${kebInd ? s(kebInd.satuan) : '-'}</td>
-              <td>${kebInd ? s(kebInd.baseline) : '-'}</td>
-              ${targetCells(kebInd)}
-              ${paguCellsFromArray(kebPaguSums)}
-              <td>${kondisiAkhirMixed(kebInd?.target_tahun_5, kebPaguSums[4])}</td>
+              <td>${s(sas.nomor)}</td>
+              <td>Sasaran: ${s(sas.isi_sasaran)}</td>
+              <td>${sasInd ? s(sasInd.nama_indikator) : '-'}</td>
+              <td>${sasInd ? s(sasInd.satuan) : '-'}</td>
+              <td>${sasInd ? s(sasInd.baseline) : '-'}</td>
+              ${targetCells(sasInd)}
+              ${paguCellsFromArray(sasPaguSums)}
+              <td>${kondisiAkhirMixed(sasInd?.target_tahun_5, sasPaguSums[4])}</td>
               <td>-</td>
             </tr>`;
 
-            const kebProgram = programs
-              .filter((p) => p.kebijakan_id === keb.id)
-              .sort((a, b) => compareNatural(a.kode_program, b.kode_program));
-            kebProgram.forEach((prog) => {
-              const progInd = (indByRefStage[`program_${prog.id}`] || [])[0];
-              const progPaguSums = sumPaguForProgram(prog.id);
-              rows += `<tr style="background:#eaf4fb">
-                <td></td>
-                <td>${s(prog.kode_program)}</td>
-                <td>${s(prog.nama_program)}</td>
-                <td>${progInd ? s(progInd.nama_indikator) : '-'}</td>
-                <td>${progInd ? s(progInd.satuan) : '-'}</td>
-                <td>${progInd ? s(progInd.baseline) : '-'}</td>
-                ${targetCells(progInd)}
-                ${paguCellsFromArray(progPaguSums)}
-                <td>${kondisiAkhirMixed(progInd?.target_tahun_5, progPaguSums[4])}</td>
-                <td>${s(prog.opd_penanggung_jawab)}</td>
-              </tr>`;
-
-              const progKegiatan = kegiatans
-                .filter((k) => k.program_id === prog.id)
-                .sort((a, b) => compareNatural(a.kode_kegiatan, b.kode_kegiatan));
-              progKegiatan.forEach((keg) => {
-                const kegInd = (indByRefStage[`kegiatan_${keg.id}`] || [])[0];
-                const kegPaguSums = sumPaguForKegiatan(keg.id);
-                rows += `<tr>
-                  <td></td>
-                  <td>${s(keg.kode_kegiatan)}</td>
-                  <td>${s(keg.nama_kegiatan)}</td>
-                  <td>${kegInd ? s(kegInd.nama_indikator) : '-'}</td>
-                  <td>${kegInd ? s(kegInd.satuan) : '-'}</td>
-                  <td>${kegInd ? s(kegInd.baseline) : '-'}</td>
-                  ${targetCells(kegInd)}
-                  ${paguCellsFromArray(kegPaguSums)}
-                  <td>${kondisiAkhirMixed(kegInd?.target_tahun_5, kegPaguSums[4])}</td>
-                  <td>${s(keg.bidang_opd)}</td>
-                </tr>`;
-
-                // RenstraSubkegiatan uses renstra_program_id + kegiatan_id
-                const kegSub = subkegiatans
-                  .filter((sk) => sk.kegiatan_id === keg.id)
-                  .sort((a, b) =>
-                    compareNatural(
-                      a.kode_sub_kegiatan || a.kode_subkegiatan,
-                      b.kode_sub_kegiatan || b.kode_subkegiatan,
-                    ),
-                  );
-                kegSub.forEach((sub) => {
-                  const subInd = (indByRefStage[`sub_kegiatan_${sub.id}`] || [])[0];
-                  rows += `<tr>
-                    <td></td>
-                    <td>${s(sub.kode_sub_kegiatan || sub.kode_subkegiatan)}</td>
-                    <td>${s(sub.nama_sub_kegiatan || sub.nama_subkegiatan)}</td>
-                    <td>${subInd ? s(subInd.nama_indikator) : '-'}</td>
-                    <td>${subInd ? s(subInd.satuan) : '-'}</td>
-                    <td>${subInd ? s(subInd.baseline) : '-'}</td>
-                    ${targetCells(subInd)}
-                    ${paguCells(subInd)}
-                    <td>${kondisiAkhir(subInd)}</td>
-                    <td>${s(sub.sub_bidang_opd, '-')}</td>
-                  </tr>`;
-                });
-              });
+            programGroupsOfSasaran(sas.id).forEach((grup) => {
+              rows += barisProgram(grup);
             });
           });
-        });
       });
-    });
+
+    // Program yang belum tertaut ke rantai Sasaran tetap ditampilkan agar tidak
+    // ada data yang hilang diam-diam dari dokumen resmi.
+    const yatim = programs.filter((p) => !programTerpakai.has(p.id));
+    if (yatim.length > 0) {
+      const grup = new Map();
+      yatim.forEach((p) => {
+        const kunci = String(p.kode_program || `#${p.id}`);
+        if (!grup.has(kunci)) grup.set(kunci, { utama: p, ids: [] });
+        grup.get(kunci).ids.push(p.id);
+      });
+      rows += `<tr style="background:#f5b7b1;font-weight:bold">
+        <td></td><td>-</td>
+        <td colspan="16">Program belum tertaut ke Sasaran / Strategi / Arah Kebijakan</td>
+      </tr>`;
+      Array.from(grup.values())
+        .sort((a, b) => compareNatural(a.utama.kode_program, b.utama.kode_program))
+        .forEach((g) => {
+          sumPaguForProgramIds(g.ids).forEach((v, idx) => {
+            totalPagu[idx] += v;
+          });
+          rows += barisProgram(g);
+        });
+    }
+
+    // Rekapitulasi: dijumlahkan dari agregat tiap Tujuan (yang sudah bottom-up
+    // dari Sub Kegiatan) ditambah Program yang belum tertaut ke rantai Sasaran.
+    rows += `<tr style="background:#0e2f44;color:#fff;font-weight:bold">
+      <td colspan="6" style="text-align:right">TOTAL PENDANAAN RENSTRA</td>
+      ${'<td>-</td>'.repeat(5)}
+      ${totalPagu.map((v) => `<td>${fmtRp(v)}</td>`).join('')}
+      <td>Rp ${fmtRp(totalPagu.reduce((a, b) => a + b, 0))}</td>
+      <td>-</td>
+    </tr>`;
   }
 
   const tahunMulai = data.renstra.tahun_mulai;
   const tahunAkhir = data.renstra.tahun_akhir;
 
+  // Ringkasan kuantitatif untuk pembuka BAB VI. Program/Kegiatan/Sub Kegiatan
+  // dihitung per KODE NOMENKLATUR UNIK, bukan per baris, karena satu Program
+  // dapat menopang beberapa Arah Kebijakan sehingga tersimpan berulang.
+  const kodeUnik = (arr, ambil) => new Set(arr.map(ambil).filter(Boolean)).size;
+  const jumlahProgram = kodeUnik(programs, (p) => p.kode_program);
+  const jumlahKegiatan = kodeUnik(kegiatans, (k) => k.kode_kegiatan);
+  const jumlahSubKegiatan = kodeUnik(
+    subkegiatans,
+    (sk) => sk.kode_sub_kegiatan || sk.kode_subkegiatan,
+  );
+  const totalSeluruh = totalPagu.reduce((a, b) => a + b, 0);
+  const romawi = ['I', 'II', 'III', 'IV', 'V'];
+  const barisTahun = totalPagu
+    .map(
+      (v, i) =>
+        `<tr><td style="text-align:center">${romawi[i]}</td><td style="text-align:center">${Number(tahunMulai) + i}</td><td style="text-align:right">${fmtRp(v)}</td></tr>`,
+    )
+    .join('');
+
   return `
 <h2>BAB VI<br/>RENCANA PROGRAM DAN KEGIATAN SERTA PENDANAAN</h2>
-<p>Rencana program dan kegiatan berikut merupakan penjabaran dari strategi dan arah kebijakan ${s(data.renstra.nama_opd)} dalam rangka pencapaian tujuan dan sasaran Renstra Periode ${s(tahunMulai)}–${s(tahunAkhir)}.</p>
+<p>Rencana program dan kegiatan berikut merupakan penjabaran dari strategi dan arah kebijakan ${s(data.renstra.nama_opd)} dalam rangka pencapaian tujuan dan sasaran Renstra Periode ${s(tahunMulai)}–${s(tahunAkhir)}. Keterhubungan lengkap sampai tingkat Strategi dan Arah Kebijakan disajikan pada Lampiran II.</p>
+<p>Secara keseluruhan, Renstra ${s(data.renstra.nama_opd)} Periode ${s(tahunMulai)}–${s(tahunAkhir)} memuat <strong>${tujuans.length} Tujuan</strong>, <strong>${sasarans.length} Sasaran</strong>, <strong>${jumlahProgram} Program</strong>, <strong>${jumlahKegiatan} Kegiatan</strong>, dan <strong>${jumlahSubKegiatan} Sub Kegiatan</strong>, dengan total kebutuhan pendanaan indikatif selama lima tahun sebesar <strong>Rp ${fmtRp(totalSeluruh)}</strong>. Rincian kebutuhan pendanaan per tahun disajikan sebagai berikut.</p>
+<table border="1" cellspacing="0" cellpadding="5" style="width:60%;border-collapse:collapse;font-size:10px;margin:12px 0">
+  <thead style="background:#1a5276;color:white">
+    <tr><th style="width:20%">Tahun Ke-</th><th style="width:25%">Tahun</th><th>Pendanaan Indikatif (Rp)</th></tr>
+  </thead>
+  <tbody>
+    ${barisTahun}
+    <tr style="background:#eaf4fb;font-weight:bold">
+      <td colspan="2" style="text-align:right">Total</td>
+      <td style="text-align:right">${fmtRp(totalSeluruh)}</td>
+    </tr>
+  </tbody>
+</table>
+<p>Jumlah Program, Kegiatan, dan Sub Kegiatan di atas dihitung berdasarkan kode nomenklatur sesuai Kepmendagri Nomor 050-5889 Tahun 2021. Satu Program dapat menopang lebih dari satu Arah Kebijakan, sehingga jumlah tersebut menghitung nomenklatur yang berbeda — bukan jumlah keterhubungannya, yang dapat dilihat pada Lampiran II.</p>
 <p><strong>Tabel T-C.27 — Rencana Program, Kegiatan, dan Pendanaan ${s(data.renstra.nama_opd)}</strong></p>
 <table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:9px;table-layout:fixed">
   <colgroup>
@@ -770,7 +938,7 @@ function buildBab6(data) {
     <tr>
       <th rowspan="2">No</th>
       <th rowspan="2">Kode</th>
-      <th rowspan="2">Tujuan / Sasaran / Strategi / Kebijakan / Program / Kegiatan / Sub-Kegiatan</th>
+      <th rowspan="2">Tujuan / Sasaran / Program / Kegiatan / Sub-Kegiatan</th>
       <th rowspan="2">Indikator Kinerja</th>
       <th rowspan="2">Satuan</th>
       <th rowspan="2">Kondisi Awal</th>
@@ -842,10 +1010,7 @@ function buildBab7(data) {
 // (Tujuan -> Sasaran -> Program -> Kegiatan -> Sub Kegiatan).
 // ─────────────────────────────────────────────────────────────────────────────
 function escHtml(v) {
-  return s(v, '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return s(v, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function renderIndikatorParagraph(v) {
@@ -888,7 +1053,9 @@ function renderSumberDataBlock(ind) {
 }
 
 function renderReferensiBlock(ind) {
-  const refs = Array.isArray(ind?.referensi) ? ind.referensi.filter((r) => r && String(r).trim()) : [];
+  const refs = Array.isArray(ind?.referensi)
+    ? ind.referensi.filter((r) => r && String(r).trim())
+    : [];
   if (!refs.length) return '<p style="margin:4px 0;color:#888;font-style:italic">-</p>';
   return `<ol style="margin:4px 0;padding-left:18px">${refs.map((r) => `<li>${escHtml(r)}</li>`).join('')}</ol>`;
 }
@@ -904,8 +1071,17 @@ function indikatorHasLampiranContent(ind) {
 }
 
 function buildLampiranIndikator(data) {
-  const { tujuans, sasarans, strategis, kebijakans, programs, kegiatans, subkegiatans, indikators, renstra } =
-    data;
+  const {
+    tujuans,
+    sasarans,
+    strategis,
+    kebijakans,
+    programs,
+    kegiatans,
+    subkegiatans,
+    indikators,
+    renstra,
+  } = data;
 
   const indByRefStage = {};
   indikators.forEach((ind) => {
@@ -965,7 +1141,10 @@ function buildLampiranIndikator(data) {
                       .filter((keg) => keg.program_id === prog.id)
                       .forEach((keg) => {
                         cardsFor(`kegiatan_${keg.id}`).forEach((ind) =>
-                          renderCard(ind, `Kegiatan: ${s(keg.kode_kegiatan)} ${s(keg.nama_kegiatan)}`),
+                          renderCard(
+                            ind,
+                            `Kegiatan: ${s(keg.kode_kegiatan)} ${s(keg.nama_kegiatan)}`,
+                          ),
                         );
                         subkegiatans
                           .filter((sub) => sub.kegiatan_id === keg.id)
@@ -986,7 +1165,7 @@ function buildLampiranIndikator(data) {
 
   if (cards.length === 0) {
     return `
-<h2>LAMPIRAN<br/>KARTU/LEMBAR INDIKATOR KINERJA</h2>
+<h2>LAMPIRAN I<br/>KARTU/LEMBAR INDIKATOR KINERJA</h2>
 <p><em style="color:#888">Belum ada indikator dengan Definisi Operasional, Metode Penghitungan, Sumber Data, atau Referensi yang terisi.</em></p>`;
   }
 
@@ -994,6 +1173,226 @@ function buildLampiranIndikator(data) {
 <h2>LAMPIRAN<br/>KARTU/LEMBAR INDIKATOR KINERJA</h2>
 <p>Lampiran ini memuat definisi operasional, metode penghitungan, sumber data, dan referensi untuk setiap indikator kinerja ${s(renstra.nama_opd)} yang telah dilengkapi datanya, disusun mengikuti hierarki Tujuan &rarr; Sasaran &rarr; Program &rarr; Kegiatan &rarr; Sub Kegiatan sebagaimana pada BAB VI.</p>
 ${cards.join('')}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAMPIRAN II: Matriks Keterhubungan Cascading
+// Misi -> Tujuan -> Sasaran -> Strategi -> Arah Kebijakan -> Program -> Kegiatan
+// ─────────────────────────────────────────────────────────────────────────────
+function buildLampiran2(data) {
+  const {
+    misis,
+    tujuans,
+    sasarans,
+    strategis,
+    kebijakans,
+    programs,
+    kegiatans,
+    subkegiatans,
+    indikators,
+    renstra,
+  } = data;
+
+  const indByRefStage = {};
+  indikators.forEach((ind) => {
+    const key = `${ind.stage}_${ind.ref_id}`;
+    if (!indByRefStage[key]) indByRefStage[key] = [];
+    indByRefStage[key].push(ind);
+  });
+
+  const fmtRp = (v) =>
+    v === null || v === undefined || v === '' ? '-' : Number(v).toLocaleString('id-ID');
+  const targetCells = (ind) =>
+    [1, 2, 3, 4, 5].map((i) => `<td>${ind ? s(ind[`target_tahun_${i}`]) : '-'}</td>`).join('');
+  const kosong5 = '<td>-</td>'.repeat(5);
+
+  const paguOf = (ind, i) => Number(ind?.[`pagu_tahun_${i}`]) || 0;
+  const sumPaguForKegiatan = (kegId) => {
+    const sums = [0, 0, 0, 0, 0];
+    subkegiatans
+      .filter((sk) => sk.kegiatan_id === kegId)
+      .forEach((sub) => {
+        const subInd = (indByRefStage[`sub_kegiatan_${sub.id}`] || [])[0];
+        [1, 2, 3, 4, 5].forEach((i, idx) => {
+          sums[idx] += paguOf(subInd, i);
+        });
+      });
+    return sums;
+  };
+  const sumPaguForProgram = (progId) => {
+    const sums = [0, 0, 0, 0, 0];
+    kegiatans
+      .filter((k) => k.program_id === progId)
+      .forEach((keg) => {
+        sumPaguForKegiatan(keg.id).forEach((v, idx) => {
+          sums[idx] += v;
+        });
+      });
+    return sums;
+  };
+  const paguCellsFromArray = (arr) => arr.map((v) => `<td>${fmtRp(v)}</td>`).join('');
+
+  const baris = (opts) => `<tr style="${opts.style || ''}">
+    <td>${opts.no ?? ''}</td>
+    <td>${escHtml(opts.kode)}</td>
+    <td>${opts.label ? `${opts.label}: ` : ''}${escHtml(opts.uraian)}</td>
+    <td>${opts.indikator ? escHtml(opts.indikator.nama_indikator) : '-'}</td>
+    <td>${opts.indikator ? escHtml(opts.indikator.satuan) : '-'}</td>
+    <td>${opts.indikator ? escHtml(opts.indikator.baseline) : '-'}</td>
+    ${opts.indikator ? targetCells(opts.indikator) : kosong5}
+    ${opts.pagu ? paguCellsFromArray(opts.pagu) : kosong5}
+    <td>${escHtml(opts.keterangan || '-')}</td>
+  </tr>`;
+
+  // Program yang menopang lebih dari satu Arah Kebijakan hanya diberi angka pagu
+  // pada kemunculan pertama, agar kolom Pendanaan tidak terbaca ganda.
+  const paguSudahTampil = new Map();
+
+  let rows = '';
+  let no = 1;
+
+  const daftarMisi = Array.isArray(misis) && misis.length > 0 ? misis : [null];
+
+  daftarMisi.forEach((misi) => {
+    const tujuanMisi = misi
+      ? tujuans.filter((t) => Number(t.misi_id) === Number(misi.id))
+      : tujuans.filter((t) => !t.misi_id);
+    if (tujuanMisi.length === 0) return;
+
+    if (misi) {
+      const kodeMisi = misi.no_misi || misi.nomor || misi.kode_misi || '';
+      const isiMisi = misi.isi_misi || misi.nama_misi || misi.deskripsi || '';
+      rows += baris({
+        no: no++,
+        kode: kodeMisi,
+        label: 'Misi',
+        uraian: isiMisi,
+        style: 'background:#154360;color:#fff;font-weight:bold',
+      });
+    }
+
+    [...tujuanMisi]
+      .sort((a, b) => compareNatural(a.no_tujuan, b.no_tujuan))
+      .forEach((tuj) => {
+        rows += baris({
+          kode: tuj.no_tujuan,
+          label: 'Tujuan',
+          uraian: tuj.isi_tujuan,
+          indikator: (indByRefStage[`tujuan_${tuj.id}`] || [])[0],
+          style: 'background:#1a5276;color:#fff;font-weight:bold',
+        });
+
+        sasarans
+          .filter((sas) => sas.tujuan_id === tuj.id)
+          .sort((a, b) => compareNatural(a.nomor, b.nomor))
+          .forEach((sas) => {
+            rows += baris({
+              kode: sas.nomor,
+              label: 'Sasaran',
+              uraian: sas.isi_sasaran,
+              indikator: (indByRefStage[`sasaran_${sas.id}`] || [])[0],
+              style: 'background:#2e86c1;color:#fff;font-weight:bold',
+            });
+
+            strategis
+              .filter((st) => st.sasaran_id === sas.id)
+              .sort((a, b) => compareNatural(a.kode_strategi, b.kode_strategi))
+              .forEach((strat) => {
+                rows += baris({
+                  kode: strat.kode_strategi,
+                  label: 'Strategi',
+                  uraian: strat.deskripsi,
+                  indikator: (indByRefStage[`strategi_${strat.id}`] || [])[0],
+                  style: 'background:#85c1e9;font-weight:bold',
+                });
+
+                kebijakans
+                  .filter((keb) => keb.strategi_id === strat.id)
+                  .sort((a, b) => compareNatural(a.kode_kebjkn, b.kode_kebjkn))
+                  .forEach((keb) => {
+                    rows += baris({
+                      kode: keb.kode_kebjkn,
+                      label: 'Arah Kebijakan',
+                      uraian: keb.deskripsi,
+                      indikator: (indByRefStage[`kebijakan_${keb.id}`] || [])[0],
+                      style: 'background:#d6eaf8;font-weight:bold',
+                    });
+
+                    programs
+                      .filter((p) => p.kebijakan_id === keb.id)
+                      .sort((a, b) => compareNatural(a.kode_program, b.kode_program))
+                      .forEach((prog) => {
+                        const kodeProg = String(prog.kode_program || '');
+                        const pertama = !paguSudahTampil.has(kodeProg);
+                        if (pertama) paguSudahTampil.set(kodeProg, keb.kode_kebjkn);
+
+                        rows += baris({
+                          kode: prog.kode_program,
+                          uraian: prog.nama_program,
+                          indikator: (indByRefStage[`program_${prog.id}`] || [])[0],
+                          pagu: pertama ? sumPaguForProgram(prog.id) : null,
+                          keterangan: pertama
+                            ? s(prog.opd_penanggung_jawab)
+                            : `Dianggarkan pada ${paguSudahTampil.get(kodeProg)}`,
+                          style: 'background:#eaf4fb',
+                        });
+
+                        if (!pertama) return;
+
+                        kegiatans
+                          .filter((k) => k.program_id === prog.id)
+                          .sort((a, b) => compareNatural(a.kode_kegiatan, b.kode_kegiatan))
+                          .forEach((keg) => {
+                            rows += baris({
+                              kode: keg.kode_kegiatan,
+                              uraian: keg.nama_kegiatan,
+                              indikator: (indByRefStage[`kegiatan_${keg.id}`] || [])[0],
+                              pagu: sumPaguForKegiatan(keg.id),
+                              keterangan: s(keg.bidang_opd),
+                            });
+                          });
+                      });
+                  });
+              });
+          });
+      });
+  });
+
+  if (!rows) {
+    rows = `<tr><td colspan="18" style="text-align:center;color:#888;font-style:italic">Belum ada data cascading</td></tr>`;
+  }
+
+  return `
+<h2>LAMPIRAN II<br/>MATRIKS KETERHUBUNGAN CASCADING RENSTRA</h2>
+<p>Lampiran ini menyajikan keterhubungan lengkap Misi &rarr; Tujuan &rarr; Sasaran &rarr; Strategi &rarr; Arah Kebijakan &rarr; Program &rarr; Kegiatan pada ${s(renstra.nama_opd)} Periode ${s(renstra.tahun_mulai)}&ndash;${s(renstra.tahun_akhir)}, dan merupakan bagian yang tidak terpisahkan dari dokumen Renstra ini.</p>
+<p style="font-size:9px;color:#555"><em>Catatan: satu Program dapat menopang lebih dari satu Arah Kebijakan. Angka Pendanaan hanya dicantumkan pada kemunculan pertama Program agar tidak terhitung ganda; kemunculan berikutnya diberi keterangan rujukan. Lampiran ini menyajikan keterhubungan, bukan rekapitulasi anggaran &mdash; rekapitulasi anggaran merujuk pada Tabel T-C.27.</em></p>
+<table border="1" cellspacing="0" cellpadding="6" style="width:100%;border-collapse:collapse;font-size:9px;table-layout:fixed">
+  <colgroup>
+    <col style="width:2%"><col style="width:8%"><col style="width:9%"><col style="width:8%">
+    <col style="width:6%"><col style="width:4%">
+    <col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:4%"><col style="width:4%">
+    <col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:6%">
+    <col style="width:13%">
+  </colgroup>
+  <thead style="background:#1a5276;color:white">
+    <tr>
+      <th rowspan="2">No</th>
+      <th rowspan="2">Kode</th>
+      <th rowspan="2">Misi / Tujuan / Sasaran / Strategi / Arah Kebijakan / Program / Kegiatan</th>
+      <th rowspan="2">Indikator Kinerja</th>
+      <th rowspan="2">Satuan</th>
+      <th rowspan="2">Kondisi Awal</th>
+      <th colspan="5">Target</th>
+      <th colspan="5">Pendanaan (Rp)</th>
+      <th rowspan="2">OPD PJ / Bidang / Keterangan</th>
+    </tr>
+    <tr>
+      <th>I</th><th>II</th><th>III</th><th>IV</th><th>V</th>
+      <th>I</th><th>II</th><th>III</th><th>IV</th><th>V</th>
+    </tr>
+  </thead>
+  <tbody>${rows}</tbody>
+</table>`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1260,6 +1659,7 @@ function generateHTML(data) {
   const bab6 = buildBab6(data) + buildTabelPrioritas(data);
   const bab7 = buildBab7(data);
   const lampiranIndikator = buildLampiranIndikator(data);
+  const lampiran2 = buildLampiran2(data);
 
   // BAB I-III & VIII: gunakan konten dari DB jika sudah diisi, fallback ke template statis
   const bab1Content = babSection(
@@ -1418,7 +1818,8 @@ function generateHTML(data) {
     <li><span>BAB VI &nbsp; RENCANA PROGRAM DAN KEGIATAN</span><span>20</span></li>
     <li><span>BAB VII &nbsp; KINERJA PENYELENGGARAAN BIDANG URUSAN</span><span>25</span></li>
     <li><span>BAB VIII &nbsp; PENUTUP</span><span>28</span></li>
-    <li><span>LAMPIRAN &nbsp; KARTU/LEMBAR INDIKATOR KINERJA</span><span>29</span></li>
+    <li><span>LAMPIRAN I &nbsp; KARTU/LEMBAR INDIKATOR KINERJA</span><span>29</span></li>
+    <li><span>LAMPIRAN II &nbsp; MATRIKS KETERHUBUNGAN CASCADING RENSTRA</span><span>32</span></li>
   </ul>
 </div>
 
@@ -1478,9 +1879,15 @@ ${bab8Content}
 </div>
 </div>
 
-<!-- LAMPIRAN: KARTU/LEMBAR INDIKATOR KINERJA -->
+<!-- LAMPIRAN I: KARTU/LEMBAR INDIKATOR KINERJA -->
 <div class="section pagebreak">
 ${lampiranIndikator}
+</div>
+
+<!-- LAMPIRAN II: MATRIKS CASCADING -->
+<div class="section pagebreak" style="padding:6px 8px">
+${lampiran2}
+</div>
 </div>
 
 </body>
@@ -1505,11 +1912,19 @@ function splitHtmlForPrint(fullHtml) {
   const bodyOpenIdx = fullHtml.indexOf('<body>') + '<body>'.length;
   const headHtml = fullHtml.slice(0, bodyOpenIdx);
 
+  // Lampiran II memakai 17 kolom seperti T-C.27, jadi dicetak landscape terpisah.
+  const markerLamp2 = '<!-- LAMPIRAN II: MATRIKS CASCADING -->';
+  const idxLamp2 = fullHtml.indexOf(markerLamp2);
+
   const part1 = `${headHtml}${fullHtml.slice(bodyOpenIdx, idxVI)}</body></html>`;
   const part2 = `${headHtml}${fullHtml.slice(idxVI, idxVIII)}</body></html>`;
-  const part3 = `${headHtml}${fullHtml.slice(idxVIII)}`;
+  const part3 =
+    idxLamp2 === -1
+      ? `${headHtml}${fullHtml.slice(idxVIII)}`
+      : `${headHtml}${fullHtml.slice(idxVIII, idxLamp2)}</body></html>`;
+  const part4 = idxLamp2 === -1 ? null : `${headHtml}${fullHtml.slice(idxLamp2)}`;
 
-  return { part1, part2, part3 };
+  return { part1, part2, part3, part4 };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1575,7 +1990,7 @@ exports.generatePdf = async (req, res) => {
     const periode = `${s(data.renstra.tahun_mulai)}-${s(data.renstra.tahun_akhir)}`;
     const filename = `Renstra_${namaOpd}_${periode}.pdf`;
 
-    const { part1, part2, part3 } = splitHtmlForPrint(html);
+    const { part1, part2, part3, part4 } = splitHtmlForPrint(html);
 
     browser = await puppeteer.launch({
       headless: 'new',
@@ -1603,14 +2018,15 @@ exports.generatePdf = async (req, res) => {
       pdfBuffer = await renderPart(html, false);
     } else {
       const { PDFDocument } = require('pdf-lib');
-      const [buf1, buf2, buf3] = await Promise.all([
+      const [buf1, buf2, buf3, buf4] = await Promise.all([
         renderPart(part1, false),
         renderPart(part2, true),
         renderPart(part3, false),
+        part4 ? renderPart(part4, true) : Promise.resolve(null),
       ]);
 
       const mergedPdf = await PDFDocument.create();
-      for (const buf of [buf1, buf2, buf3]) {
+      for (const buf of [buf1, buf2, buf3, buf4].filter(Boolean)) {
         const doc = await PDFDocument.load(buf);
         const copiedPages = await mergedPdf.copyPages(doc, doc.getPageIndices());
         copiedPages.forEach((p) => mergedPdf.addPage(p));

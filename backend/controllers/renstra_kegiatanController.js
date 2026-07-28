@@ -13,10 +13,27 @@ const {
  */
 async function ensureRenstraKegiatanRowsForRenstraOpd(renstraOpdId) {
   const programWhere = await programWhereForRenstraOpdQuery(renstraOpdId);
-  const programs = await RenstraProgram.findAll({
+  const semuaProgram = await RenstraProgram.findAll({
     where: programWhere,
-    attributes: ['id', 'renstra_id', 'rpjmd_program_id'],
+    attributes: ['id', 'renstra_id', 'rpjmd_program_id', 'kode_program'],
+    order: [['id', 'ASC']],
   });
+
+  // Satu Program sah menopang lebih dari satu Arah Kebijakan, sehingga tersimpan
+  // sebagai beberapa baris renstra_program dengan kode nomenklatur sama. Kegiatan
+  // melekat pada nomenklatur Program, BUKAN pada tautan Arah Kebijakan — jadi
+  // hanya baris pertama tiap nomenklatur yang dibuatkan barisan Kegiatan.
+  // Tanpa penyaringan ini, setiap penambahan Program ke Arah Kebijakan baru
+  // menyalin ulang seluruh Kegiatan dalam keadaan kosong (tanpa indikator dan
+  // sub kegiatan), sehingga dokumen Renstra memuat kegiatan ganda.
+  const programs = [];
+  const nomenklaturTerpakai = new Set();
+  for (const p of semuaProgram) {
+    const kunci = `${p.renstra_id ?? '-'}::${p.rpjmd_program_id ?? p.kode_program ?? p.id}`;
+    if (nomenklaturTerpakai.has(kunci)) continue;
+    nomenklaturTerpakai.add(kunci);
+    programs.push(p);
+  }
 
   for (const p of programs) {
     if (!p.rpjmd_program_id) continue;
@@ -27,13 +44,18 @@ async function ensureRenstraKegiatanRowsForRenstraOpd(renstraOpdId) {
     });
 
     for (const k of masters) {
+      // Pengecekan dicakup ke seluruh Renstra, bukan hanya baris Program ini.
+      // Kode kegiatan sudah memuat kode program, sehingga unik dalam satu Renstra —
+      // ini menjadi jaring pengaman kedua terhadap duplikasi lintas baris Program.
+      const cakupan = p.renstra_id ? { renstra_id: p.renstra_id } : { program_id: p.id };
+
       const byRpjmd = await RenstraKegiatan.findOne({
-        where: { program_id: p.id, rpjmd_kegiatan_id: k.id },
+        where: { ...cakupan, rpjmd_kegiatan_id: k.id },
       });
       if (byRpjmd) continue;
 
       const byKode = await RenstraKegiatan.findOne({
-        where: { program_id: p.id, kode_kegiatan: k.kode_kegiatan },
+        where: { ...cakupan, kode_kegiatan: k.kode_kegiatan },
       });
       if (byKode) {
         if (byKode.rpjmd_kegiatan_id == null) {
