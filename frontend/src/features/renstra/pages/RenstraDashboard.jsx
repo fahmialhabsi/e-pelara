@@ -210,6 +210,17 @@ const RenstraDashboard = () => {
           )}
 
           {renstraAktif?.id && (
+            <button
+              className="btn btn-outline-success btn-sm"
+              onClick={() => navigate('/sdi/daftar-data')}
+              disabled={loadingStats}
+              title="Susun Daftar Data Daerah (Satu Data Indonesia) dari indikator Renstra"
+            >
+              Daftar Data Daerah
+            </button>
+          )}
+
+          {renstraAktif?.id && (
             <GenerateRenstraButton
               renstraId={renstraAktif.id}
               namaOpd={namaOpd}

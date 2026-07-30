@@ -316,6 +316,8 @@ const renstraStrategiRoutes = require('./routes/renstra_strategiRoutes');
 const renstraKebijakanRoutes = require('./routes/renstra_kebijakanRoutes');
 const renstraProgramRoutes = require('./routes/renstra_programRoutes');
 const renstraReviewKonsistensiRoutes = require('./routes/renstraReviewKonsistensiRoutes');
+// Daftar Data Daerah (Satu Data Indonesia) — Perpres 39/2019 & Pergub Malut 40/2022.
+const sdiDaftarDataRoutes = require('./routes/sdiDaftarDataRoutes');
 const renstraKegiatanRoutes = require('./routes/renstra_kegiatanRoutes');
 const renstraSubkegiatanRoutes = require('./routes/renstra_subkegiatanRoutes');
 const indikatorRenstraRoutes = require('./routes/indikatorRenstraRoutes');
@@ -506,6 +508,9 @@ app.use('/api/renstra-strategi', renstraStrategiRoutes);
 app.use('/api/renstra-kebijakan', renstraKebijakanRoutes);
 app.use('/api/renstra-program', renstraProgramRoutes);
 app.use('/api/renstra-review-konsistensi', renstraReviewKonsistensiRoutes);
+app.use('/api/sdi-daftar-data', sdiDaftarDataRoutes);
+// Baris Daftar Data berstatus draft ikut berubah saat indikator Renstra disunting.
+require('./services/sdiDaftarDataSyncService').pasangHookSinkron();
 app.use('/api/renstra-kegiatan', renstraKegiatanRoutes);
 app.use('/api/renstra-subkegiatan', renstraSubkegiatanRoutes);
 app.use('/api/indikator-renstra', indikatorRenstraRoutes);

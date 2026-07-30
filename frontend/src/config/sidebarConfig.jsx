@@ -13,6 +13,7 @@ import AssignmentTurnedInIcon from "@mui/icons-material/AssignmentTurnedIn";
 import SubdirectoryArrowRightIcon from "@mui/icons-material/SubdirectoryArrowRight";
 import SyncAltIcon from "@mui/icons-material/SyncAlt";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
+import StorageIcon from "@mui/icons-material/Storage";
 
 const sidebarConfig = {
   SUPER_ADMIN: [
@@ -245,6 +246,12 @@ const sidebarConfig = {
           label: "Audit & compliance",
           path: "/audit/planning-compliance",
           icon: <FactCheckIcon />,
+          allowedDokumen: ["rpjmd", "renstra", "rkpd", "renja", "dpa"],
+        },
+        {
+          label: "Daftar Data Daerah (SDI)",
+          path: "/sdi/daftar-data",
+          icon: <StorageIcon />,
           allowedDokumen: ["rpjmd", "renstra", "rkpd", "renja", "dpa"],
         },
       ],

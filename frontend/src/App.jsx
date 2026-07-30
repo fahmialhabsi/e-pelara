@@ -62,6 +62,7 @@ import LakipPkFormPage from './features/lakip/pages/LakipPkFormPage';
 import CloningData from './admin/ClonePeriodePage';
 import ClonedDataTable from './admin/ClonedDataTable';
 import mrRoutes from './routes/mrRoutes';
+import sdiRoutes from './routes/sdiRoutes';
 const TenantManagementPage = React.lazy(() => import('./admin/TenantManagementPage'));
 const SubscriptionAdminPage = React.lazy(() => import('./admin/SubscriptionAdminPage'));
 const PricingPage = React.lazy(() => import('./pages/PricingPage'));
@@ -629,7 +630,7 @@ function InnerApp() {
             />
             <Route path="pricing" element={<PricingPage />} />
             {/* Inject dynamic routes here */}
-            {[...rpjmdRoutes, ...renstraRoutes, ...mrRoutes].map(
+            {[...rpjmdRoutes, ...renstraRoutes, ...mrRoutes, ...sdiRoutes].map(
               ({ path, element, role }, index) => (
                 <Route
                   key={index}
