@@ -37,6 +37,18 @@ const STAGE_CONFIG = {
     tipe: 'Output',
     path: '/renstra/indikator/subkegiatan',
   },
+  iku: {
+    label: 'Indikator Kinerja Utama (IKU)',
+    color: 'gold',
+    tipe: 'Impact',
+    path: '/renstra/indikator/iku',
+  },
+  ikk: {
+    label: 'Indikator Kinerja Kunci (IKK)',
+    color: 'volcano',
+    tipe: 'Outcome',
+    path: '/renstra/indikator/ikk',
+  },
 };
 
 const columns = (navigate, stage) => [
@@ -49,6 +61,7 @@ const columns = (navigate, stage) => [
   { title: 'Th.3', dataIndex: 'target_tahun_3', key: 't3', width: 70 },
   { title: 'Th.4', dataIndex: 'target_tahun_4', key: 't4', width: 70 },
   { title: 'Th.5', dataIndex: 'target_tahun_5', key: 't5', width: 70 },
+  { title: 'Th.6', dataIndex: 'target_tahun_6', key: 't6', width: 70 },
   {
     title: 'Aksi',
     key: 'aksi',

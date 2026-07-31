@@ -47,6 +47,7 @@ const RkpdV2DokumenDetailPage = () => {
   const [err, setErr] = useState('');
   const [officialValidate, setOfficialValidate] = useState(null);
   const [busyValidate, setBusyValidate] = useState(false);
+  const [busyGenBab2, setBusyGenBab2] = useState(false);
 
   const [judul, setJudul] = useState('');
   const [namaOpd, setNamaOpd] = useState('');
@@ -93,6 +94,25 @@ const RkpdV2DokumenDetailPage = () => {
     load();
   }, [load]);
 
+  /**
+   * Refresh daftar item TANPA menyentuh `loading` — `load()` mem-toggle
+   * `loading` true/false, dan render halaman punya `if (loading) return
+   * <Spinner/>` yang melepas SELURUH pohon komponen (termasuk RkpdItemModal)
+   * lalu memasangnya kembali dari nol begitu fetch selesai. Akibatnya modal
+   * "Tambah Item" kehilangan seluruh isinya setelah setiap Simpan, karena ia
+   * benar-benar menjadi instance baru, bukan sekadar re-render. Fungsi ini
+   * dipakai khusus untuk menyegarkan tabel item setelah tambah/ubah/hapus.
+   */
+  const refreshItemsQuietly = useCallback(async () => {
+    try {
+      const d = await fetchRkpdDokumenById(id);
+      setDoc(d);
+      setItems(d?.items || []);
+    } catch (e) {
+      toast.error(e?.response?.data?.message || e.message || 'Gagal memuat ulang item.');
+    }
+  }, [id]);
+
   const loadAudit = useCallback(async () => {
     try {
       const rows = await fetchRkpdDokumenAudit(id);
@@ -106,11 +126,39 @@ const RkpdV2DokumenDetailPage = () => {
     if (id) loadAudit();
   }, [id, loadAudit]);
 
+  // Dokumen dianggap masih "dokumen awal" jika masih versi 1 dan belum pernah
+  // tercatat riwayat perubahan (audit) sama sekali. Begitu sudah ada riwayat
+  // audit atau versi > 1, field alasan perubahan & referensi berkas menjadi wajib.
+  // Baris audit dengan action_type CREATE adalah bagian dari pembuatan dokumen
+  // itu sendiri, bukan "perubahan" — jadi tidak dihitung sebagai riwayat perubahan.
+  const isDokumenAwal =
+    doc?.versi === 1 && auditRows.filter((r) => r.action_type !== 'CREATE').length === 0;
+
+  /**
+   * Auto-fill BAB II — Analisis Kondisi dari capaian & isu strategis Renstra
+   * OPD serta outcome prioritas Tabel C-6 Permendagri 14/2026. Hasil hanya
+   * mengisi textarea — belum tersimpan sampai "Simpan metadata" ditekan.
+   */
+  const generateBab2 = async () => {
+    setBusyGenBab2(true);
+    try {
+      const res = await api.post(`/rkpd/dokumen/${id}/generate-bab2`);
+      const teks = res.data?.data?.text_bab2 || '';
+      if (!teks) throw new Error('Narasi kosong.');
+      setTextBab2(teks);
+      toast.success('Narasi BAB II terisi — periksa lalu klik Simpan metadata.');
+    } catch (e) {
+      toast.error(e?.response?.data?.message || e.message || 'Gagal auto-fill BAB II.');
+    } finally {
+      setBusyGenBab2(false);
+    }
+  };
+
   const saveMeta = async () => {
     if (!can) return;
     const rt = metaReasonText.trim();
     const rf = metaReasonFile.trim();
-    if (!rt && !rf) {
+    if (!isDokumenAwal && !rt && !rf) {
       toast.error('Isi alasan perubahan (teks) atau referensi berkas dasar perubahan.');
       return;
     }
@@ -421,9 +469,21 @@ const RkpdV2DokumenDetailPage = () => {
               />
             </Form.Group>
             <Form.Group className="mb-2">
-              <Form.Label className="small">
-                BAB II — Analisis Kondisi <span className="text-danger">*</span>
-              </Form.Label>
+              <div className="d-flex justify-content-between align-items-center">
+                <Form.Label className="small mb-0">
+                  BAB II — Analisis Kondisi <span className="text-danger">*</span>
+                </Form.Label>
+                {can && (
+                  <Button
+                    size="sm"
+                    variant="outline-info"
+                    disabled={busyGenBab2}
+                    onClick={generateBab2}
+                  >
+                    {busyGenBab2 ? <Spinner size="sm" /> : '🔄 Auto-fill dari Renstra + Tabel C-6'}
+                  </Button>
+                )}
+              </div>
               <Form.Control
                 as="textarea"
                 rows={4}
@@ -431,7 +491,12 @@ const RkpdV2DokumenDetailPage = () => {
                 onChange={(e) => setTextBab2(e.target.value)}
                 disabled={!can}
                 placeholder="Narasi analisis kondisi daerah minimal 20 karakter..."
+                className="mt-1"
               />
+              <Form.Text className="text-muted">
+                Auto-fill menarik capaian & isu strategis Renstra OPD serta outcome prioritas Tabel
+                C-6 Permendagri 14/2026 — hasil bisa disunting sebelum disimpan.
+              </Form.Text>
             </Form.Group>
             <Form.Group className="mb-2">
               <Form.Label className="small">Status</Form.Label>
@@ -445,26 +510,30 @@ const RkpdV2DokumenDetailPage = () => {
                 <option value="final">final</option>
               </Form.Select>
             </Form.Group>
-            <Form.Group className="mb-2">
-              <Form.Label className="small">Alasan perubahan (wajib salah satu)</Form.Label>
-              <Form.Control
-                as="textarea"
-                rows={2}
-                value={metaReasonText}
-                onChange={(e) => setMetaReasonText(e.target.value)}
-                disabled={!can}
-                placeholder="Ringkasan alasan"
-              />
-            </Form.Group>
-            <Form.Group className="mb-2">
-              <Form.Label className="small">Referensi berkas</Form.Label>
-              <Form.Control
-                value={metaReasonFile}
-                onChange={(e) => setMetaReasonFile(e.target.value)}
-                disabled={!can}
-                placeholder="path / URL / nama berkas"
-              />
-            </Form.Group>
+            {!isDokumenAwal && (
+              <>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small">Alasan perubahan (wajib salah satu)</Form.Label>
+                  <Form.Control
+                    as="textarea"
+                    rows={2}
+                    value={metaReasonText}
+                    onChange={(e) => setMetaReasonText(e.target.value)}
+                    disabled={!can}
+                    placeholder="Ringkasan alasan"
+                  />
+                </Form.Group>
+                <Form.Group className="mb-2">
+                  <Form.Label className="small">Referensi berkas</Form.Label>
+                  <Form.Control
+                    value={metaReasonFile}
+                    onChange={(e) => setMetaReasonFile(e.target.value)}
+                    disabled={!can}
+                    placeholder="path / URL / nama berkas"
+                  />
+                </Form.Group>
+              </>
+            )}
             {can && (
               <Button size="sm" onClick={saveMeta} disabled={savingMeta}>
                 {savingMeta ? <Spinner size="sm" /> : 'Simpan metadata'}
@@ -497,6 +566,7 @@ const RkpdV2DokumenDetailPage = () => {
                 <thead>
                   <tr>
                     <th>#</th>
+                    <th>Prioritas</th>
                     <th>Program</th>
                     <th>Kegiatan</th>
                     <th>Sub</th>
@@ -530,6 +600,7 @@ const RkpdV2DokumenDetailPage = () => {
                     return filteredItems.map((row) => (
                       <tr key={row.id}>
                         <td>{row.urutan}</td>
+                        <td>{row.prioritas_daerah || '-'}</td>
                         <td>{row.program}</td>
                         <td>{row.kegiatan}</td>
                         <td>{row.sub_kegiatan}</td>
@@ -608,7 +679,7 @@ const RkpdV2DokumenDetailPage = () => {
         onSaved={async (form, reasonText, reasonFile) => {
           if (editingItem && !reasonText?.trim() && !reasonFile?.trim()) {
             toast.error('Isi alasan perubahan item (teks) atau referensi berkas.');
-            return;
+            return false;
           }
           setSavingItem(true);
           try {
@@ -632,14 +703,20 @@ const RkpdV2DokumenDetailPage = () => {
             if (editingItem) {
               await updateRkpdItemV2(editingItem.id, base);
               toast.success('Item diperbarui.');
+              // Mode edit tetap menutup modal — hanya menyunting satu item.
+              setItemModal(false);
             } else {
               await createRkpdItemV2({ ...base, rkpd_dokumen_id: Number(id) });
-              toast.success('Item ditambahkan.');
+              toast.success('Item ditambahkan — modal tetap terbuka untuk item berikutnya.');
+              // Mode tambah: modal dibiarkan terbuka (lihat RkpdItemModal).
             }
-            setItemModal(false);
-            load();
+            // refreshItemsQuietly (bukan load()) — load() men-toggle `loading`
+            // yang melepas seluruh halaman termasuk modal ini dari DOM.
+            await refreshItemsQuietly();
+            return true;
           } catch (e) {
             toast.error(e?.response?.data?.message || e.message || 'Gagal simpan item.');
+            return false;
           } finally {
             setSavingItem(false);
           }

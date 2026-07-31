@@ -26,6 +26,11 @@ const RenjaBuatDokumenPage = () => {
   const [renstraId, setRenstraId] = useState('');
   const [judul, setJudul] = useState('');
   const [alasan, setAlasan] = useState('');
+  // Permendagri 14/2026 (6 bab) berlaku untuk Renja Tahun 2027 ke atas;
+  // 86/2017 (5 bab) tetap final untuk Tahun 2026 ke bawah — lihat CLAUDE.md
+  // dual-mode Renja. Default mengikuti tahun, tetap bisa diubah manual.
+  const [regulasiAcuan, setRegulasiAcuan] = useState('86_2017');
+  const [regulasiDiubahManual, setRegulasiDiubahManual] = useState(false);
 
   // Load referensi sekali
   useEffect(() => {
@@ -61,6 +66,12 @@ const RenjaBuatDokumenPage = () => {
     if (namaOpd && tahunVal) setJudul(`Renja ${namaOpd} Tahun ${tahunVal}`);
   }, [namaOpd, tahunVal]);
 
+  // Auto-fill regulasi acuan mengikuti tahun, kecuali user sudah mengubahnya manual.
+  useEffect(() => {
+    if (regulasiDiubahManual || !tahunVal) return;
+    setRegulasiAcuan(Number(tahunVal) >= 2027 ? '14_2026' : '86_2017');
+  }, [tahunVal, regulasiDiubahManual]);
+
   const submit = async (e) => {
     e.preventDefault();
     setErr('');
@@ -84,6 +95,7 @@ const RenjaBuatDokumenPage = () => {
         judul: judul.trim(),
         status: 'draft',
         change_reason_text: alasan.trim(),
+        regulasi_acuan: regulasiAcuan,
       };
       const row = await createRenjaDokumenV2(body);
       if (!row?.id) throw new Error('Tidak ada id dokumen.');
@@ -173,6 +185,27 @@ const RenjaBuatDokumenPage = () => {
                 {rkpdId && renstraFiltered.length === 0 && (
                   <Form.Text className="text-danger">Tidak ada Renstra PD untuk OPD ini.</Form.Text>
                 )}
+              </Form.Group>
+
+              {/* Regulasi Acuan */}
+              <Form.Group className="mb-3">
+                <Form.Label className="fw-semibold">
+                  Regulasi Acuan <span className="text-danger">*</span>
+                </Form.Label>
+                <Form.Select
+                  value={regulasiAcuan}
+                  onChange={(e) => {
+                    setRegulasiAcuan(e.target.value);
+                    setRegulasiDiubahManual(true);
+                  }}
+                >
+                  <option value="86_2017">Permendagri 86/2017 (5 bab) — Tahun 2020–2026</option>
+                  <option value="14_2026">Permendagri 14/2026 (6 bab) — Tahun 2027</option>
+                </Form.Select>
+                <Form.Text className="text-muted">
+                  Terisi otomatis mengikuti tahun ({tahunVal || '—'}); dapat diubah manual bila
+                  diperlukan.
+                </Form.Text>
               </Form.Group>
 
               {/* Judul */}

@@ -15,6 +15,7 @@ import {
 } from '../services/lpkDispangApi';
 import LpkDispangForm from './LpkDispangForm';
 import LpkDispangHistoryTree from './LpkDispangHistoryTree';
+import LpkDispangPrintButton from './LpkDispangPrintButton';
 
 const IndikatorCard = ({ title, items, tahun, onSaved }) => {
   // Tidak sinkron dari props lewat effect — parent wajib kasih key unik per node
@@ -88,8 +89,11 @@ const IndikatorCard = ({ title, items, tahun, onSaved }) => {
 const RealisasiKinerjaTerpadu = () => {
   const { tahun } = useDokumen();
   const [renstraId, setRenstraId] = useState(null);
+  const [namaOpd, setNamaOpd] = useState('');
   const [periodeId, setPeriodeId] = useState(null);
   const [tree, setTree] = useState([]);
+  const [ikuList, setIkuList] = useState([]);
+  const [ikkList, setIkkList] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [tujuanId, setTujuanId] = useState('');
@@ -106,8 +110,15 @@ const RealisasiKinerjaTerpadu = () => {
   useEffect(() => {
     api
       .get('/renstra-opd/aktif')
-      .then((res) => setRenstraId(res.data?.data?.id || null))
-      .catch(() => setRenstraId(null));
+      .then((res) => {
+        const data = res.data?.data || res.data;
+        setRenstraId(data?.id || null);
+        setNamaOpd(data?.nama_opd || '');
+      })
+      .catch(() => {
+        setRenstraId(null);
+        setNamaOpd('');
+      });
   }, []);
 
   useEffect(() => {
@@ -127,8 +138,16 @@ const RealisasiKinerjaTerpadu = () => {
   const reloadTree = useCallback(() => {
     if (!renstraId || !tahun) return;
     getHierarchy({ renstra_id: renstraId, tahun })
-      .then(setTree)
-      .catch(() => setTree([]))
+      .then((data) => {
+        setTree(data?.tree || []);
+        setIkuList(data?.iku || []);
+        setIkkList(data?.ikk || []);
+      })
+      .catch(() => {
+        setTree([]);
+        setIkuList([]);
+        setIkkList([]);
+      })
       .finally(() => setLoading(false));
   }, [renstraId, tahun]);
 
@@ -257,10 +276,37 @@ const RealisasiKinerjaTerpadu = () => {
 
   return (
     <div>
-      <p ref={topRef} className="text-muted small mb-3">
-        Pilih Tujuan → Sasaran → Program → Kegiatan → Sub Kegiatan untuk mengisi realisasi capaian
-        per level. Target ditampilkan supaya nilai yang diisi tidak salah.
-      </p>
+      <div ref={topRef} className="d-flex justify-content-between align-items-start mb-3">
+        <p className="text-muted small mb-0 me-3">
+          Pilih Tujuan → Sasaran → Program → Kegiatan → Sub Kegiatan untuk mengisi realisasi
+          capaian per level. Target ditampilkan supaya nilai yang diisi tidak salah.
+        </p>
+        <LpkDispangPrintButton
+          renstraId={renstraId}
+          tahun={tahun}
+          namaOpd={namaOpd}
+          disabled={loading || !renstraId}
+        />
+      </div>
+
+      {ikuList.length > 0 && (
+        <IndikatorCard
+          key={`iku-${tahun}`}
+          title="Indikator Kinerja Utama (IKU)"
+          items={ikuList}
+          tahun={tahun}
+          onSaved={reloadTree}
+        />
+      )}
+      {ikkList.length > 0 && (
+        <IndikatorCard
+          key={`ikk-${tahun}`}
+          title="Indikator Kinerja Kunci (IKK)"
+          items={ikkList}
+          tahun={tahun}
+          onSaved={reloadTree}
+        />
+      )}
 
       <Row className="g-2 mb-3">
         <Col md>

@@ -5,8 +5,8 @@ const { drawPdfGridTable } = require('./RenjaPdfTableHelper');
 const { buildRenjaBab4 } = require('./RenjaBab4StructureHelper');
 const { buildRenjaBab4Table } = require('./RenjaBab4TableHelper');
 
-function renderBab4(pdf, { meta, items }) {
-  const bab4 = buildRenjaBab4(meta, items);
+async function renderBab4(pdf, { meta, items, db }) {
+  const bab4 = await buildRenjaBab4(meta, items, db);
   nextLandscape(pdf);
 
   pdf.fontSize(12).fillColor('#000000').text(bab4.title, { underline: true });
@@ -28,9 +28,9 @@ function renderBab4(pdf, { meta, items }) {
   pdf.moveDown(0.3);
 
   pdf.fontSize(9).text(
-    `${bab4.table.caption}
+    `${bab4.table.note}
 
-${bab4.table.note}`,
+${bab4.table.caption}`,
     {
       align: 'left',
     },

@@ -8,6 +8,8 @@
 
 const HTMLtoDOCX = require('html-to-docx');
 const puppeteer = require('puppeteer');
+const fs = require('fs');
+const path = require('path');
 
 const {
   RenstraOPD,
@@ -35,6 +37,151 @@ const s = (v, fallback = '-') => (v ? String(v).trim() : fallback);
 const n = (v, fallback = '0') => (v !== null && v !== undefined ? String(v) : fallback);
 const fmt = (v) =>
   v !== null && v !== undefined && !isNaN(Number(v)) ? Number(v).toLocaleString('id-ID') : '-';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: cover image sebagai base64 data URI — dipakai langsung di HTML agar
+// tidak bergantung pada path relatif/absolute yang bisa beda saat html-to-docx
+// atau puppeteer merender dokumen di server.
+// ─────────────────────────────────────────────────────────────────────────────
+const COVER_IMAGE_PATH = path.join(__dirname, '../assets/cover_renstra_pangan.png');
+let coverImageDataUri = null;
+try {
+  const imgBuffer = fs.readFileSync(COVER_IMAGE_PATH);
+  coverImageDataUri = `data:image/png;base64,${imgBuffer.toString('base64')}`;
+} catch (e) {
+  console.warn('⚠️  Cover image tidak ditemukan di', COVER_IMAGE_PATH, '- fallback ke logo emoji');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: header/footer band bertema pangan pokok (padi/jagung/beras), dipakai
+// berulang di setiap halaman isi dokumen — baik PDF (Puppeteer, teks ditumpuk
+// presisi di atas gambar) maupun DOCX (html-to-docx, gambar+teks disusun
+// berdampingan dalam tabel karena Word tidak mendukung position:absolute).
+// Halaman cover sengaja tidak memakai band ini (full-bleed, lihat COVER_IMAGE_PATH).
+// ─────────────────────────────────────────────────────────────────────────────
+const BRAND_GREEN = '#2f4a1e';
+const BRAND_GOLD = '#c9a961';
+const BRAND_CREAM = '#f7f3e8';
+
+const HEADER_BAND_IMAGE_PATH = path.join(__dirname, '../assets/branding/pita-header-pangan.png');
+const FOOTER_BAND_IMAGE_PATH = path.join(__dirname, '../assets/branding/pita-footer-pangan.png');
+let headerBandImageDataUri = null;
+let footerBandImageDataUri = null;
+try {
+  headerBandImageDataUri = `data:image/png;base64,${fs.readFileSync(HEADER_BAND_IMAGE_PATH).toString('base64')}`;
+} catch (e) {
+  console.warn(
+    '⚠️  Header band image tidak ditemukan di',
+    HEADER_BAND_IMAGE_PATH,
+    '- fallback ke band warna polos',
+  );
+}
+try {
+  footerBandImageDataUri = `data:image/png;base64,${fs.readFileSync(FOOTER_BAND_IMAGE_PATH).toString('base64')}`;
+} catch (e) {
+  console.warn(
+    '⚠️  Footer band image tidak ditemukan di',
+    FOOTER_BAND_IMAGE_PATH,
+    '- fallback ke band warna polos',
+  );
+}
+
+const escBand = (v) => s(v, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// ── PDF (Puppeteer) — teks ditumpuk presisi di ruang kosong desain gambar ──
+function buildPdfHeaderTemplate(renstra) {
+  const namaOpd = escBand(renstra.nama_opd || 'OPD');
+  const periode = `${escBand(renstra.tahun_mulai)}\u2013${escBand(renstra.tahun_akhir)}`;
+
+  if (headerBandImageDataUri) {
+    return `
+<div style="position:relative;width:100%;height:110px;font-family:Arial,Helvetica,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact">
+  <img src="${headerBandImageDataUri}" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;object-position:top"/>
+  <div style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;padding:0 26px 0 0;box-sizing:border-box">
+    <span style="font-size:9.5px;font-weight:bold;color:${BRAND_GREEN};line-height:1.3">RENCANA STRATEGIS (RENSTRA) &mdash; ${namaOpd}</span>
+    <span style="font-size:8.5px;color:${BRAND_GREEN};margin-top:3px">Periode ${periode}</span>
+  </div>
+</div>`;
+  }
+  return `
+<div style="width:100%;font-size:8px;font-family:Arial,Helvetica,sans-serif;color:#ffffff;background:#123c2e;padding:5px 20px;box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid ${BRAND_GOLD};-webkit-print-color-adjust:exact;print-color-adjust:exact">
+  <span>RENCANA STRATEGIS (RENSTRA) &mdash; ${namaOpd}</span>
+  <span>Periode ${periode}</span>
+</div>`;
+}
+
+function buildPdfFooterTemplate(renstra) {
+  const namaOpd = escBand(renstra.nama_opd || 'OPD');
+
+  if (footerBandImageDataUri) {
+    return `
+<div style="position:relative;width:100%;height:90px;font-family:Arial,Helvetica,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact">
+  <img src="${footerBandImageDataUri}" style="position:absolute;bottom:0;left:0;width:100%;height:100%;object-fit:contain;object-position:bottom"/>
+  <div style="position:absolute;bottom:14px;left:20%;width:55%;height:26px;display:flex;align-items:center">
+    <span style="font-size:9px;font-weight:bold;color:${BRAND_GREEN}">${namaOpd} &middot; Provinsi Maluku Utara</span>
+  </div>
+  <div style="position:absolute;bottom:14px;right:6%;width:26%;height:26px;display:flex;align-items:center;justify-content:center">
+    <span style="font-size:8.5px;color:${BRAND_GREEN}">Halaman <span class="pageNumber"></span> dari <span class="totalPages"></span></span>
+  </div>
+</div>`;
+  }
+  return `
+<div style="width:100%;font-size:8px;font-family:Arial,Helvetica,sans-serif;color:${BRAND_GREEN};background:${BRAND_CREAM};padding:4px 20px;box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;border-top:2px solid ${BRAND_GOLD};-webkit-print-color-adjust:exact;print-color-adjust:exact">
+  <span>${namaOpd} &middot; Provinsi Maluku Utara</span>
+  <span>Halaman <span class="pageNumber"></span> dari <span class="totalPages"></span></span>
+</div>`;
+}
+
+// ── DOCX (html-to-docx) — gambar & teks berdampingan dalam tabel (aman untuk Word) ──
+function buildDocxHeaderHtml(renstra) {
+  const namaOpd = escBand(renstra.nama_opd || 'OPD');
+  const periode = `${escBand(renstra.tahun_mulai)}-${escBand(renstra.tahun_akhir)}`;
+
+  if (headerBandImageDataUri) {
+    return `
+<table width="100%" style="border-collapse:collapse">
+  <tr>
+    <td style="width:35%;padding:2px"><img src="${headerBandImageDataUri}" width="200"/></td>
+    <td style="width:65%;text-align:right;padding:4px 10px;vertical-align:middle">
+      <div style="font-size:9pt;font-weight:bold;color:${BRAND_GREEN};font-family:Arial,Helvetica,sans-serif">RENCANA STRATEGIS (RENSTRA) &mdash; ${namaOpd}</div>
+      <div style="font-size:8pt;color:${BRAND_GREEN};font-family:Arial,Helvetica,sans-serif">Periode ${periode}</div>
+    </td>
+  </tr>
+</table>`;
+  }
+  return `
+<table width="100%" style="border-collapse:collapse;background-color:#123c2e">
+  <tr>
+    <td style="padding:6px 10px;color:#ffffff;font-size:9pt;font-family:Arial,Helvetica,sans-serif">
+      <strong>RENCANA STRATEGIS (RENSTRA) &mdash; ${namaOpd}</strong> &nbsp;|&nbsp; Periode ${periode}
+    </td>
+  </tr>
+</table>`;
+}
+
+function buildDocxFooterHtml(renstra) {
+  const namaOpd = escBand(renstra.nama_opd || 'OPD');
+
+  if (footerBandImageDataUri) {
+    return `
+<table width="100%" style="border-collapse:collapse">
+  <tr>
+    <td style="width:30%;padding:2px"><img src="${footerBandImageDataUri}" width="160"/></td>
+    <td style="width:70%;text-align:left;padding:4px 10px;vertical-align:middle">
+      <span style="font-size:8pt;font-weight:bold;color:${BRAND_GREEN};font-family:Arial,Helvetica,sans-serif">${namaOpd} &middot; Provinsi Maluku Utara</span>
+    </td>
+  </tr>
+</table>`;
+  }
+  return `
+<table width="100%" style="border-collapse:collapse;background-color:${BRAND_CREAM}">
+  <tr>
+    <td style="padding:5px 10px;color:${BRAND_GREEN};font-size:8pt;font-family:Arial,Helvetica,sans-serif">
+      ${namaOpd} &middot; Provinsi Maluku Utara
+    </td>
+  </tr>
+</table>`;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: urutan alami (natural sort) berdasarkan angka di dalam kode/nomor —
@@ -461,6 +608,46 @@ function buildBab4(data) {
   if (!rowsSasaran)
     rowsSasaran = `<tr><td colspan="9" style="text-align:center;color:#888;font-style:italic">Belum ada data Sasaran</td></tr>`;
 
+  // — Tabel IKU (Indikator Kinerja Utama) & IKK (Indikator Kinerja Kunci) —
+  // Keduanya indikator level OPD yang berdiri sendiri (bukan turunan Tujuan/Sasaran),
+  // jadi cukup difilter langsung dari data.indikators berdasarkan stage.
+  const buildIkuIkkRows = (stage) => {
+    const list = indikators.filter((ind) => ind.stage === stage);
+    return list
+      .map(
+        (ind, i) => `<tr>
+        <td>${i + 1}</td>
+        <td>${s(ind.nama_indikator)}</td>
+        <td>${s(ind.satuan)}</td>
+        <td style="text-align:center">${s(ind.baseline)}</td>
+        <td style="text-align:center">${s(ind.target_tahun_1)}</td>
+        <td style="text-align:center">${s(ind.target_tahun_2)}</td>
+        <td style="text-align:center">${s(ind.target_tahun_3)}</td>
+        <td style="text-align:center">${s(ind.target_tahun_4)}</td>
+        <td style="text-align:center">${s(ind.target_tahun_5)}</td>
+        <td style="text-align:center">${s(ind.target_tahun_6)}</td>
+      </tr>`,
+      )
+      .join('');
+  };
+  let rowsIku = buildIkuIkkRows('iku');
+  if (!rowsIku)
+    rowsIku = `<tr><td colspan="10" style="text-align:center;color:#888;font-style:italic">Belum ada data Indikator Kinerja Utama (IKU)</td></tr>`;
+  let rowsIkk = buildIkuIkkRows('ikk');
+  if (!rowsIkk)
+    rowsIkk = `<tr><td colspan="10" style="text-align:center;color:#888;font-style:italic">Belum ada data Indikator Kinerja Kunci (IKK)</td></tr>`;
+  const ikuIkkTheadCols = `
+      <th>No</th>
+      <th>Indikator</th>
+      <th>Satuan</th>
+      <th>Base Line (${yr(0)})</th>
+      <th>${yr(1)}</th>
+      <th>${yr(2)}</th>
+      <th>${yr(3)}</th>
+      <th>${yr(4)}</th>
+      <th>${yr(5)}</th>
+      <th>${yr(6)}</th>`;
+
   return `
 <h2>BAB IV<br/>TUJUAN DAN SASARAN</h2>
 <h3>4.1 Tujuan dan Sasaran Jangka Menengah Perangkat Daerah</h3>
@@ -499,6 +686,22 @@ function buildBab4(data) {
     </tr>
   </thead>
   <tbody>${rowsSasaran}</tbody>
+</table>
+<h3 style="margin-top:16px">C. Indikator Kinerja Utama (IKU)</h3>
+<p><strong>Tabel — Indikator Kinerja Utama (IKU) ${s(data.renstra.nama_opd)}</strong></p>
+<table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:10px">
+  <thead style="background:#1a5276;color:white">
+    <tr>${ikuIkkTheadCols}</tr>
+  </thead>
+  <tbody>${rowsIku}</tbody>
+</table>
+<h3 style="margin-top:16px">D. Indikator Kinerja Kunci (IKK)</h3>
+<p><strong>Tabel — Indikator Kinerja Kunci (IKK) ${s(data.renstra.nama_opd)}</strong></p>
+<table border="1" cellspacing="0" cellpadding="4" style="width:100%;border-collapse:collapse;font-size:10px">
+  <thead style="background:#1a5276;color:white">
+    <tr>${ikuIkkTheadCols}</tr>
+  </thead>
+  <tbody>${rowsIkk}</tbody>
 </table>`;
 }
 
@@ -1761,12 +1964,9 @@ function generateHTML(data) {
 <title>Renstra ${namaOpd} ${periode}</title>
 <style>
   body { font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.6; margin: 0; padding: 0; color: #000; }
-  .cover { text-align: center; padding: 60px 40px; page-break-after: always; }
-  .cover h1 { font-size: 18pt; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px; }
-  .cover h2 { font-size: 15pt; margin-bottom: 4px; }
-  .cover .subtitle { font-size: 13pt; color: #333; margin: 4px 0; }
+  .cover { text-align: center; padding: 0; margin: 0; page-break-after: always; width: 100%; height: 100vh; overflow: hidden; }
+  .cover img { width: 100%; height: 100%; object-fit: cover; display: block; margin: 0; }
   .cover .logo-area { font-size: 60px; margin: 32px 0; }
-  .cover .footer-info { margin-top: 40px; font-size: 12pt; }
   .toc { page-break-after: always; padding: 32px; }
   .toc h2 { text-align: center; text-transform: uppercase; }
   .toc ul { list-style: none; padding: 0; }
@@ -1791,15 +1991,11 @@ function generateHTML(data) {
 
 <!-- COVER PAGE -->
 <div class="cover">
-  <div class="logo-area">🏛️</div>
-  <h1>Rencana Strategis (Renstra)</h1>
-  <h2>${namaOpd}</h2>
-  ${bidang ? `<p class="subtitle">${bidang}${subBidang ? ' / ' + subBidang : ''}</p>` : ''}
-  <p class="subtitle" style="font-size:16pt;font-weight:bold">Periode ${periode}</p>
-  <div class="footer-info">
-    <p>Dokumen ini dibuat sesuai<br/>Peraturan Menteri Dalam Negeri Nomor 86 Tahun 2017</p>
-    <p style="color:#666;font-size:10pt">Digenerate otomatis pada ${tglGen}</p>
-  </div>
+  ${
+    coverImageDataUri
+      ? `<img src="${coverImageDataUri}" alt="Cover ${namaOpd}"/>`
+      : `<div class="logo-area">🏛️</div>`
+  }
 </div>
 
 <!-- DAFTAR ISI -->
@@ -1899,24 +2095,37 @@ ${lampiran2}
 // sudah ada, agar Bab VI-VII bisa dirender landscape terpisah dari sisanya (portrait).
 // ─────────────────────────────────────────────────────────────────────────────
 function splitHtmlForPrint(fullHtml) {
+  const markerCover = '<!-- COVER PAGE -->';
+  const markerTOC = '<!-- DAFTAR ISI -->';
   const markerVI = '<!-- BAB VI: PROGRAM DAN KEGIATAN (AUTO-POPULATED) -->';
   const markerVIII = '<!-- BAB VIII: PENUTUP -->';
 
+  const idxCover = fullHtml.indexOf(markerCover);
+  const idxTOC = fullHtml.indexOf(markerTOC);
   const idxVI = fullHtml.indexOf(markerVI);
   const idxVIII = fullHtml.indexOf(markerVIII);
 
   if (idxVI === -1 || idxVIII === -1) {
-    return { part1: fullHtml, part2: null, part3: null };
+    return { part0: null, part1: fullHtml, part2: null, part3: null, part4: null };
   }
 
   const bodyOpenIdx = fullHtml.indexOf('<body>') + '<body>'.length;
   const headHtml = fullHtml.slice(0, bodyOpenIdx);
 
+  // Halaman cover dipisah render-nya sendiri dengan margin 0 (full-bleed),
+  // karena margin portrait standar (2.5cm/3cm) membuat gambar cover tidak
+  // benar-benar penuh 1 halaman.
+  const part0 =
+    idxCover !== -1 && idxTOC !== -1
+      ? `${headHtml}${fullHtml.slice(idxCover, idxTOC)}</body></html>`
+      : null;
+  const restStartIdx = idxCover !== -1 && idxTOC !== -1 ? idxTOC : bodyOpenIdx;
+
   // Lampiran II memakai 17 kolom seperti T-C.27, jadi dicetak landscape terpisah.
   const markerLamp2 = '<!-- LAMPIRAN II: MATRIKS CASCADING -->';
   const idxLamp2 = fullHtml.indexOf(markerLamp2);
 
-  const part1 = `${headHtml}${fullHtml.slice(bodyOpenIdx, idxVI)}</body></html>`;
+  const part1 = `${headHtml}${fullHtml.slice(restStartIdx, idxVI)}</body></html>`;
   const part2 = `${headHtml}${fullHtml.slice(idxVI, idxVIII)}</body></html>`;
   const part3 =
     idxLamp2 === -1
@@ -1924,7 +2133,7 @@ function splitHtmlForPrint(fullHtml) {
       : `${headHtml}${fullHtml.slice(idxVIII, idxLamp2)}</body></html>`;
   const part4 = idxLamp2 === -1 ? null : `${headHtml}${fullHtml.slice(idxLamp2)}`;
 
-  return { part1, part2, part3, part4 };
+  return { part0, part1, part2, part3, part4 };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1955,11 +2164,23 @@ exports.generateDocx = async (req, res) => {
     const periode = `${s(data.renstra.tahun_mulai)}-${s(data.renstra.tahun_akhir)}`;
     const filename = `Renstra_${namaOpd}_${periode}.docx`;
 
-    const docxBuffer = await HTMLtoDOCX(html, null, {
-      font: 'Times New Roman',
-      fontSize: 24,
-      orientation: 'portrait',
-    });
+    const headerHtmlDocx = buildDocxHeaderHtml(data.renstra);
+    const footerHtmlDocx = buildDocxFooterHtml(data.renstra);
+
+    const docxBuffer = await HTMLtoDOCX(
+      html,
+      headerHtmlDocx,
+      {
+        font: 'Times New Roman',
+        fontSize: 24,
+        orientation: 'portrait',
+        header: true,
+        footer: true,
+        pageNumber: true,
+        skipFirstHeaderFooter: true, // lewati band di halaman cover (full-bleed)
+      },
+      footerHtmlDocx,
+    );
 
     res.setHeader(
       'Content-Type',
@@ -1990,23 +2211,34 @@ exports.generatePdf = async (req, res) => {
     const periode = `${s(data.renstra.tahun_mulai)}-${s(data.renstra.tahun_akhir)}`;
     const filename = `Renstra_${namaOpd}_${periode}.pdf`;
 
-    const { part1, part2, part3, part4 } = splitHtmlForPrint(html);
+    const { part0, part1, part2, part3, part4 } = splitHtmlForPrint(html);
 
     browser = await puppeteer.launch({
       headless: 'new',
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+      protocolTimeout: 180000, // 3 menit — beri ruang lebih untuk render gambar band berukuran besar
     });
 
-    const renderPart = async (htmlContent, landscape) => {
+    const renderPart = async (htmlContent, landscape, marginOverride, headerFooter) => {
       const page = await browser.newPage();
-      await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
+      await page.setContent(htmlContent, { waitUntil: 'domcontentloaded', timeout: 120000 });
+      const defaultMargin = landscape
+        ? { top: '1.2cm', right: '0.6cm', bottom: '1.2cm', left: '0.6cm' }
+        : { top: '2.5cm', right: '2cm', bottom: '2.5cm', left: '3cm' };
+      // Margin sedikit lebih lebar di top/bottom ketika band header/footer aktif,
+      // supaya band tidak bertabrakan dengan konten tabel.
+      const bandMargin = landscape
+        ? { top: '2.4cm', right: '0.6cm', bottom: '2cm', left: '0.6cm' }
+        : { top: '3.8cm', right: '2cm', bottom: '3cm', left: '3cm' };
       const buffer = await page.pdf({
         format: 'A4',
         printBackground: true,
         landscape,
-        margin: landscape
-          ? { top: '1.2cm', right: '0.6cm', bottom: '1.2cm', left: '0.6cm' }
-          : { top: '2.5cm', right: '2cm', bottom: '2.5cm', left: '3cm' },
+        displayHeaderFooter: Boolean(headerFooter),
+        headerTemplate: headerFooter ? headerFooter.headerTemplate : '<span></span>',
+        footerTemplate: headerFooter ? headerFooter.footerTemplate : '<span></span>',
+        margin: marginOverride || (headerFooter ? bandMargin : defaultMargin),
+        timeout: 120000, // 2 menit — sementara, sambil gambar band dikompres
       });
       await page.close();
       return buffer;
@@ -2018,15 +2250,21 @@ exports.generatePdf = async (req, res) => {
       pdfBuffer = await renderPart(html, false);
     } else {
       const { PDFDocument } = require('pdf-lib');
-      const [buf1, buf2, buf3, buf4] = await Promise.all([
-        renderPart(part1, false),
-        renderPart(part2, true),
-        renderPart(part3, false),
-        part4 ? renderPart(part4, true) : Promise.resolve(null),
+      const noMargin = { top: '0cm', right: '0cm', bottom: '0cm', left: '0cm' };
+      const headerFooterBand = {
+        headerTemplate: buildPdfHeaderTemplate(data.renstra),
+        footerTemplate: buildPdfFooterTemplate(data.renstra),
+      };
+      const [buf0, buf1, buf2, buf3, buf4] = await Promise.all([
+        part0 ? renderPart(part0, false, noMargin) : Promise.resolve(null),
+        renderPart(part1, false, null, headerFooterBand),
+        renderPart(part2, true, null, headerFooterBand),
+        renderPart(part3, false, null, headerFooterBand),
+        part4 ? renderPart(part4, true, null, headerFooterBand) : Promise.resolve(null),
       ]);
 
       const mergedPdf = await PDFDocument.create();
-      for (const buf of [buf1, buf2, buf3, buf4].filter(Boolean)) {
+      for (const buf of [buf0, buf1, buf2, buf3, buf4].filter(Boolean)) {
         const doc = await PDFDocument.load(buf);
         const copiedPages = await mergedPdf.copyPages(doc, doc.getPageIndices());
         copiedPages.forEach((p) => mergedPdf.addPage(p));

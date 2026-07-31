@@ -115,12 +115,39 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
 
+      /**
+       * Versi regulasi sistematika dokumen. Menentukan generator dan mesin
+       * render mana yang dipakai:
+       *   '86_2017' -> 5 bab (Renja Tahun 2020-2026)
+       *   '14_2026' -> 6 bab (Renja Tahun 2027)
+       * Kolomnya sudah ada di basis data sejak migrasi 20260728140001, tetapi
+       * belum pernah dideklarasikan di sini — akibatnya dok.regulasi_acuan
+       * bernilai undefined dan seluruh percabangan dual-mode selalu jatuh ke
+       * jalur 86/2017.
+       */
+      regulasi_acuan: {
+        type: DataTypes.ENUM('86_2017', '14_2026'),
+        allowNull: false,
+        defaultValue: '86_2017',
+      },
+
       /** Narasi opsional bab dokumen resmi (override boilerplate generator) */
       text_bab1: { type: DataTypes.TEXT, allowNull: true },
       text_bab2: { type: DataTypes.TEXT, allowNull: true },
       text_bab3: { type: DataTypes.TEXT, allowNull: true },
       text_bab4: { type: DataTypes.TEXT, allowNull: true },
       text_bab5: { type: DataTypes.TEXT, allowNull: true },
+      /** Hanya terisi pada sistematika 14/2026 (BAB VI PENUTUP). */
+      text_bab6: { type: DataTypes.TEXT, allowNull: true },
+
+      /**
+       * Penanda bahwa data hulu (Renstra, RKPD, LK, DPA, Tabel C) berubah
+       * setelah narasi terakhir dibuat, sehingga dokumen perlu di-recall.
+       */
+      needs_recall: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      recall_reason: { type: DataTypes.STRING(255), allowNull: true },
+      last_recall_at: { type: DataTypes.DATE, allowNull: true },
+
       is_test: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
       created_by: { type: DataTypes.INTEGER, allowNull: true },
       updated_by: { type: DataTypes.INTEGER, allowNull: true },

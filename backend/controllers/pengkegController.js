@@ -51,6 +51,11 @@ const includeAssoc = [
 ];
 
 module.exports = {
+  // Diekspor supaya bisa dipakai ulang oleh lpkDispangPrintController.js (cetak
+  // PDF/Word) — satu sumber kebenaran untuk cara realisasi keuangan dihitung.
+  attachRealisasiKeuangan,
+  includeAssoc,
+
   async getAll(req, res) {
     try {
       const where = {};

@@ -41,6 +41,7 @@ import RenjaVersionsPage from './features/renja/pages/RenjaVersionsPage';
 import RenjaComparePage from './features/renja/pages/RenjaComparePage';
 import RenjaValidationPage from './features/renja/pages/RenjaValidationPage';
 import RenjaSinkronisasiPage from './features/renja/pages/RenjaSinkronisasiPage';
+import RenjaKeselarasanPage from './features/renja/pages/RenjaKeselarasanPage';
 import RenjaDataFixDashboardPage from './features/renja/pages/RenjaDataFixDashboardPage';
 import RenjaExportPage from './features/renja/pages/RenjaExportPage';
 import RenjaReadonlyDetailPage from './features/renja/pages/RenjaReadonlyDetailPage';
@@ -63,6 +64,7 @@ import CloningData from './admin/ClonePeriodePage';
 import ClonedDataTable from './admin/ClonedDataTable';
 import mrRoutes from './routes/mrRoutes';
 import sdiRoutes from './routes/sdiRoutes';
+import renjaDataPendukungRoutes from './routes/renjaDataPendukungRoutes';
 const TenantManagementPage = React.lazy(() => import('./admin/TenantManagementPage'));
 const SubscriptionAdminPage = React.lazy(() => import('./admin/SubscriptionAdminPage'));
 const PricingPage = React.lazy(() => import('./pages/PricingPage'));
@@ -390,6 +392,16 @@ function InnerApp() {
               }
             />
             <Route
+              path="dashboard-renja/v2/dokumen/:id/keselarasan"
+              element={
+                <DokumenTahunGuard>
+                  <RequireDokumenType dokType="renja">
+                    <RenjaKeselarasanPage />
+                  </RequireDokumenType>
+                </DokumenTahunGuard>
+              }
+            />
+            <Route
               path="dashboard-renja/v2/dokumen/:id/data-fix"
               element={
                 <DokumenTahunGuard>
@@ -630,7 +642,13 @@ function InnerApp() {
             />
             <Route path="pricing" element={<PricingPage />} />
             {/* Inject dynamic routes here */}
-            {[...rpjmdRoutes, ...renstraRoutes, ...mrRoutes, ...sdiRoutes].map(
+            {[
+              ...rpjmdRoutes,
+              ...renstraRoutes,
+              ...mrRoutes,
+              ...sdiRoutes,
+              ...renjaDataPendukungRoutes,
+            ].map(
               ({ path, element, role }, index) => (
                 <Route
                   key={index}

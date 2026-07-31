@@ -1,0 +1,146 @@
+{
+  "keterangan": "Landasan hukum Bab I.2 Renja. kode_bidang_urusan null = berlaku umum untuk semua perangkat daerah; diisi = khusus bidang urusan tersebut. Entri ber-perlu_verifikasi=true harus dipastikan nomor/tahunnya oleh perangkat daerah sebelum dokumen difinalkan.",
+  "sumber_daftar_umum": "Bab I.2 Draft Renja Dinas Kehutanan Prov. Maluku Utara TA 2027, disaring pada peraturan yang tidak spesifik urusan kehutanan, ditambah Permendagri 14/2026 dan PP 2/2018.",
+  "baris": [
+    { "kode_bidang_urusan": null, "jenis_produk": "uu", "nomor": "17", "tahun": "2003", "judul": "Keuangan Negara", "urutan": 1 },
+    { "kode_bidang_urusan": null, "jenis_produk": "uu", "nomor": "1", "tahun": "2004", "judul": "Perbendaharaan Negara", "urutan": 2 },
+    { "kode_bidang_urusan": null, "jenis_produk": "uu", "nomor": "15", "tahun": "2004", "judul": "Pemeriksaan Pengelolaan dan Tanggung Jawab Keuangan Negara", "urutan": 3 },
+    { "kode_bidang_urusan": null, "jenis_produk": "uu", "nomor": "25", "tahun": "2004", "judul": "Sistem Perencanaan Pembangunan Nasional", "urutan": 4 },
+    { "kode_bidang_urusan": null, "jenis_produk": "uu", "nomor": "23", "tahun": "2014", "judul": "Pemerintahan Daerah", "urutan": 5 },
+    { "kode_bidang_urusan": null, "jenis_produk": "uu", "nomor": "1", "tahun": "2022", "judul": "Hubungan Keuangan antara Pemerintah Pusat dan Pemerintahan Daerah", "urutan": 6 },
+    {
+      "kode_bidang_urusan": null,
+      "jenis_produk": "uu",
+      "nomor": "6",
+      "tahun": "2023",
+      "judul": "Penetapan Peraturan Pemerintah Pengganti Undang-Undang Nomor 2 Tahun 2022 tentang Cipta Kerja Menjadi Undang-Undang",
+      "urutan": 7
+    },
+    { "kode_bidang_urusan": null, "jenis_produk": "pp", "nomor": "39", "tahun": "2006", "judul": "Tata Cara Pengendalian dan Evaluasi Pelaksanaan Rencana Pembangunan", "urutan": 8 },
+    { "kode_bidang_urusan": null, "jenis_produk": "pp", "nomor": "40", "tahun": "2006", "judul": "Tata Cara Penyusunan Rencana Pembangunan Nasional", "urutan": 9 },
+    {
+      "kode_bidang_urusan": null,
+      "jenis_produk": "pp",
+      "nomor": "8",
+      "tahun": "2008",
+      "judul": "Tahapan, Tata Cara Penyusunan, Pengendalian dan Evaluasi Pelaksanaan Rencana Pembangunan Daerah",
+      "urutan": 10
+    },
+    { "kode_bidang_urusan": null, "jenis_produk": "pp", "nomor": "12", "tahun": "2017", "judul": "Pembinaan dan Pengawasan Penyelenggaraan Pemerintahan Daerah", "urutan": 11 },
+    {
+      "kode_bidang_urusan": null,
+      "jenis_produk": "pp",
+      "nomor": "2",
+      "tahun": "2018",
+      "judul": "Standar Pelayanan Minimal",
+      "urutan": 12,
+      "catatan": "Menjadi dasar penilaian apakah suatu bidang urusan wajib menyajikan evaluasi SPM pada Bab II."
+    },
+    { "kode_bidang_urusan": null, "jenis_produk": "pp", "nomor": "12", "tahun": "2019", "judul": "Pengelolaan Keuangan Daerah", "urutan": 13 },
+    {
+      "kode_bidang_urusan": null,
+      "jenis_produk": "permendagri",
+      "nomor": "86",
+      "tahun": "2017",
+      "judul": "Tata Cara Perencanaan, Pengendalian dan Evaluasi Pembangunan Daerah, Tata Cara Evaluasi Rancangan Peraturan Daerah tentang Rencana Pembangunan Jangka Panjang Daerah dan Rencana Pembangunan Jangka Menengah Daerah, serta Tata Cara Perubahan Rencana Pembangunan Jangka Panjang Daerah, Rencana Pembangunan Jangka Menengah Daerah, dan Rencana Kerja Pemerintah Daerah",
+      "urutan": 14
+    },
+    {
+      "kode_bidang_urusan": null,
+      "jenis_produk": "permendagri",
+      "nomor": "90",
+      "tahun": "2019",
+      "judul": "Klasifikasi, Kodefikasi, dan Nomenklatur Perencanaan Pembangunan dan Keuangan Daerah",
+      "urutan": 15
+    },
+    { "kode_bidang_urusan": null, "jenis_produk": "permendagri", "nomor": "77", "tahun": "2020", "judul": "Pedoman Teknis Pengelolaan Keuangan Daerah", "urutan": 16 },
+    {
+      "kode_bidang_urusan": null,
+      "jenis_produk": "kepmendagri",
+      "nomor": "900.1.15.5-3406",
+      "tahun": "2024",
+      "judul": "Hasil Verifikasi, Validasi, dan Inventarisasi Pemutakhiran Klasifikasi, Kodefikasi, dan Nomenklatur Perencanaan Pembangunan dan Keuangan Daerah",
+      "urutan": 17,
+      "perlu_verifikasi": true,
+      "catatan": "Nomor mengikuti berkas Kepmendagri pada dokumenEPelara; judul resmi mohon dipastikan."
+    },
+    {
+      "kode_bidang_urusan": null,
+      "jenis_produk": "permendagri",
+      "nomor": "14",
+      "tahun": "2026",
+      "judul": "Pedoman Penyusunan Rencana Kerja Pemerintah Daerah Tahun 2027",
+      "urutan": 18,
+      "berlaku_dari": "2026",
+      "catatan": "Dasar sistematika 6 bab Renja Tahun 2027."
+    },
+    {
+      "kode_bidang_urusan": null,
+      "jenis_produk": "perda",
+      "nomor": "5",
+      "tahun": "2016",
+      "judul": "Pembentukan dan Susunan Perangkat Daerah Provinsi Maluku Utara",
+      "teks_lengkap": "Peraturan Daerah Provinsi Maluku Utara Nomor 5 Tahun 2016 tentang Pembentukan dan Susunan Perangkat Daerah Provinsi Maluku Utara, sebagaimana telah diubah dengan Peraturan Daerah Provinsi Maluku Utara Nomor 10 Tahun 2020 tentang Perubahan atas Peraturan Daerah Nomor 5 Tahun 2016 tentang Pembentukan dan Susunan Perangkat Daerah Provinsi Maluku Utara",
+      "urutan": 19
+    },
+    {
+      "kode_bidang_urusan": null,
+      "jenis_produk": "perda",
+      "nomor": "5",
+      "tahun": "2024",
+      "judul": "Rencana Pembangunan Jangka Panjang Daerah Provinsi Maluku Utara Tahun 2025-2045",
+      "urutan": 20
+    },
+    {
+      "kode_bidang_urusan": null,
+      "jenis_produk": "perda",
+      "nomor": "6",
+      "tahun": "2025",
+      "judul": "Rencana Pembangunan Jangka Menengah Daerah Provinsi Maluku Utara Tahun 2025-2029",
+      "urutan": 21
+    },
+    {
+      "kode_bidang_urusan": null,
+      "jenis_produk": "pergub",
+      "nomor": null,
+      "tahun": "2026",
+      "judul": "Rencana Kerja Pemerintah Daerah Provinsi Maluku Utara Tahun 2027",
+      "urutan": 22,
+      "perlu_verifikasi": true,
+      "catatan": "Nomor Pergub belum terbit saat data ini disusun. Menurut agenda kerja Lampiran Permendagri 14/2026, Pergub RKPD provinsi ditetapkan paling lambat minggu ke-4 Juni 2026 — isi nomornya setelah terbit."
+    },
+
+    { "kode_bidang_urusan": "2.09", "jenis_produk": "uu", "nomor": "18", "tahun": "2012", "judul": "Pangan", "urutan": 30 },
+    { "kode_bidang_urusan": "2.09", "jenis_produk": "pp", "nomor": "17", "tahun": "2015", "judul": "Ketahanan Pangan dan Gizi", "urutan": 31 },
+    {
+      "kode_bidang_urusan": "2.09",
+      "jenis_produk": "perpres",
+      "nomor": "66",
+      "tahun": "2021",
+      "judul": "Badan Pangan Nasional",
+      "urutan": 32,
+      "perlu_verifikasi": true,
+      "catatan": "Mohon dipastikan masih menjadi rujukan yang berlaku."
+    },
+    {
+      "kode_bidang_urusan": "2.09",
+      "jenis_produk": "pergub",
+      "nomor": "56",
+      "tahun": "2021",
+      "judul": "Kedudukan, Susunan Organisasi, Tugas dan Fungsi serta Tata Kerja Dinas Pangan Provinsi Maluku Utara",
+      "urutan": 33,
+      "perlu_verifikasi": true,
+      "catatan": "Nomor terbawa dari generator lama dan belum diverifikasi terhadap dokumen resmi. Mohon dipastikan sebelum dokumen difinalkan."
+    },
+    {
+      "kode_bidang_urusan": "2.09",
+      "jenis_produk": "pergub",
+      "nomor": "72",
+      "tahun": "2023",
+      "judul": "Perubahan atas Peraturan Gubernur Maluku Utara Nomor 56 Tahun 2021 tentang Kedudukan, Susunan Organisasi, Tugas dan Fungsi serta Tata Kerja Dinas Pangan Provinsi Maluku Utara",
+      "urutan": 34,
+      "perlu_verifikasi": true,
+      "catatan": "Nomor terbawa dari generator lama dan belum diverifikasi terhadap dokumen resmi. Mohon dipastikan sebelum dokumen difinalkan."
+    }
+  ]
+}

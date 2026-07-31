@@ -7,10 +7,10 @@
  * baris Urusan/Bidang Urusan/Program murni struktural (kode + nama), sesuai
  * contoh kosong pada lampiran resmi.
  *
- * Semantik tahun (dikonfirmasi user, BEDA dari "n-1/n-2/n-3" default T-C.29 generik):
- *   n-2 = tahun dokumen Renja itu sendiri (mis. 2025)
- *   n-3 = tahun - 1 (2024)
- *   n-1 = tahun + 1 (2026)
+ * Semantik tahun (disamakan dengan renjaAutoGenerateBabService.js):
+ *   n-3 = tahun - 3 (realisasi 2 tahun sebelum tahun evaluasi, sudah final)
+ *   n-2 = tahun - 2 (tahun Renja yang dievaluasi, sudah final)
+ *   n-1 = tahun - 1 (tahun berjalan saat Renja disusun / "tahunLalu", proyeksi capaian)
  */
 
 function splitKodeNama(text) {
@@ -56,9 +56,9 @@ async function buildTabel21Rows(db, dokumenId) {
   if (!dok) throw new Error('Dokumen Renja tidak ditemukan.');
 
   const tahun = Number(dok.tahun);
-  const tahunN3 = tahun - 1;
-  const tahunN2 = tahun;
-  const tahunN1 = tahun + 1;
+  const tahunN3 = tahun - 3;
+  const tahunN2 = tahun - 2;
+  const tahunN1 = tahun - 1;
   const tahunAwalRenstra = dok.periode?.tahun_awal || tahun;
   const renstraOpdId = dok.renstraPdDokumen?.renstra_opd_id || 0;
 
@@ -157,6 +157,7 @@ async function buildTabel21Rows(db, dokumenId) {
       let targetN2 = kosong;
       let realisasiN2 = kosong;
       let targetN1 = kosong;
+      let realisasiN1Aktual = kosong;
 
       if (RenstraKegiatan && IndikatorRenstra && renstraOpdId) {
         const rk = await RenstraKegiatan.findOne({
@@ -181,8 +182,12 @@ async function buildTabel21Rows(db, dokumenId) {
               const rN2 = await RealisasiIndikatorRenstra.findOne({
                 where: { indikator_renstra_id: ir.id, tahun: String(tahunN2) },
               }).catch(() => null);
+              const rN1 = await RealisasiIndikatorRenstra.findOne({
+                where: { indikator_renstra_id: ir.id, tahun: String(tahunN1) },
+              }).catch(() => null);
               if (rN3) realisasiN3 = Number(rN3.nilai_realisasi);
               if (rN2) realisasiN2 = Number(rN2.nilai_realisasi);
+              if (rN1) realisasiN1Aktual = Number(rN1.nilai_realisasi);
             }
           }
         }
@@ -193,9 +198,17 @@ async function buildTabel21Rows(db, dokumenId) {
         tingkatRealisasi = `${((Number(realisasiN2) / Number(targetN2)) * 100).toFixed(2)}%`;
       }
 
+      // Realisasi Capaian s/d Tahun Berjalan: jumlahkan realisasi yang sudah
+      // ada (N3/N2 dianggap 0 jika belum diinput, bukan menggagalkan seluruh
+      // perhitungan), dan untuk tahun berjalan (N1) pakai realisasi AKTUAL jika
+      // sudah dilaporkan, kalau belum baru pakai target sebagai proyeksi.
       let realisasiCapaianN1 = kosong;
-      if (realisasiN3 !== kosong && realisasiN2 !== kosong && targetN1 !== kosong) {
-        realisasiCapaianN1 = Number(realisasiN3) + Number(realisasiN2) + Number(targetN1);
+      const adaN3 = realisasiN3 !== kosong;
+      const adaN2 = realisasiN2 !== kosong;
+      const adaN1Aktual = realisasiN1Aktual !== kosong;
+      if (adaN3 || adaN2 || adaN1Aktual || targetN1 !== kosong) {
+        const nilaiN1 = adaN1Aktual ? Number(realisasiN1Aktual) : Number(targetN1) || 0;
+        realisasiCapaianN1 = (adaN3 ? Number(realisasiN3) : 0) + (adaN2 ? Number(realisasiN2) : 0) + nilaiN1;
       }
 
       let tingkatCapaianRenstra = kosong;

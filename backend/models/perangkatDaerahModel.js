@@ -1,20 +1,36 @@
-"use strict";
-const { Model } = require("sequelize");
+'use strict';
+const { Model } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
   class PerangkatDaerah extends Model {
     static associate(models) {
       PerangkatDaerah.hasMany(models.RenstraPdDokumen, {
-        foreignKey: "perangkat_daerah_id",
-        as: "renstraPdDokumens",
+        foreignKey: 'perangkat_daerah_id',
+        as: 'renstraPdDokumens',
       });
       PerangkatDaerah.hasMany(models.RkpdItem, {
-        foreignKey: "perangkat_daerah_id",
-        as: "rkpdItems",
+        foreignKey: 'perangkat_daerah_id',
+        as: 'rkpdItems',
       });
       PerangkatDaerah.hasMany(models.RenjaDokumen, {
-        foreignKey: "perangkat_daerah_id",
-        as: "renjaDokumens",
+        foreignKey: 'perangkat_daerah_id',
+        as: 'renjaDokumens',
+      });
+      PerangkatDaerah.hasMany(models.RenjaPokirDprd, {
+        foreignKey: 'perangkat_daerah_id',
+        as: 'pokirDprds',
+      });
+      PerangkatDaerah.hasMany(models.RenjaInovasiBidangUrusan, {
+        foreignKey: 'perangkat_daerah_id',
+        as: 'inovasiBidangUrusans',
+      });
+      PerangkatDaerah.hasMany(models.RenjaDukunganProsnTematik, {
+        foreignKey: 'perangkat_daerah_id',
+        as: 'dukunganProsnTematiks',
+      });
+      PerangkatDaerah.hasMany(models.RenjaOutcomeAstaCita, {
+        foreignKey: 'perangkat_daerah_id',
+        as: 'outcomeAstaCitas',
       });
     }
   }
@@ -30,12 +46,12 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       sequelize,
-      modelName: "PerangkatDaerah",
-      tableName: "perangkat_daerah",
+      modelName: 'PerangkatDaerah',
+      tableName: 'perangkat_daerah',
       underscored: true,
       timestamps: true,
-      createdAt: "created_at",
-      updatedAt: "updated_at",
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
     },
   );
 

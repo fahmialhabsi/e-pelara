@@ -43,7 +43,10 @@ function computePdfRowHeight(
       pdf.heightOfString(String(cell), {
         width: cols[i] - PDF_THEME.CELL_PADDING_X * 2,
       }) +
-      padding * 2;
+      padding * 2 +
+      3; // buffer kecil: heightOfString sedikit meleset dari tinggi render
+    // aktual pada teks multi-baris, buffer ini mencegah baris terakhir
+    // teks menempel/tertimpa garis bawah sel.
 
     if (h > maxH) maxH = h;
   });
@@ -167,16 +170,23 @@ function computeHeaderTextY(pdf, cell, rowHeight, width, fontSize) {
 }
 
 function computeBodyTextY(pdf, text, width, rowHeight, fontSize) {
-  pdf.font(PDF_THEME.BODY_FONT).fontSize(fontSize);
-
-  const h = pdf.heightOfString(String(text), {
-    width,
-  });
-
-  return (rowHeight - h) / 2 + PDF_THEME.CELL_PADDING_Y;
+  // Top-align (bukan center vertikal) — mencegah teks pada baris terpanjang
+  // menempel/kepotong di garis bawah sel, karena rowHeight dihitung persis
+  // pas untuk sel tertinggi (tanpa sisa ruang saat di-center).
+  return PDF_THEME.CELL_PADDING_Y;
 }
 
-function drawTableHeader(pdf, left, y, cols, headers, rowHeight, fontSize) {
+function drawTableHeader(
+  pdf,
+  left,
+  y,
+  cols,
+  headers,
+  rowHeight,
+  fontSize,
+  headerFill = PDF_THEME.HEADER_FILL,
+  headerText = PDF_THEME.HEADER_TEXT,
+) {
   // Header background
   pdf
     .save()
@@ -186,12 +196,12 @@ function drawTableHeader(pdf, left, y, cols, headers, rowHeight, fontSize) {
       cols.reduce((a, b) => a + b, 0),
       rowHeight,
     )
-    .fill(PDF_THEME.HEADER_FILL)
+    .fill(headerFill)
     .restore();
 
   let x = left;
 
-  pdf.font(PDF_THEME.HEADER_FONT).fontSize(fontSize).fillColor(PDF_THEME.HEADER_TEXT);
+  pdf.font(PDF_THEME.HEADER_FONT).fontSize(fontSize).fillColor(headerText);
 
   let colIndex = 0;
 
@@ -336,7 +346,16 @@ function normalizeHeaders(headers) {
 }
 
 function drawPdfGridTable(pdf, opts) {
-  const { left, yStart, cols, headers, rows, fontSize = PDF_THEME.TABLE_FONT_SIZE } = opts;
+  const {
+    left,
+    yStart,
+    cols,
+    headers,
+    rows,
+    fontSize = PDF_THEME.TABLE_FONT_SIZE,
+    headerFill,
+    headerText,
+  } = opts;
 
   const pageBottom = pdf.page.height - pdf.page.margins.bottom;
 
@@ -412,10 +431,24 @@ function drawPdfGridTable(pdf, opts) {
 
   let y = yStart;
 
+  const totalHeaderHeight = headerHeights.reduce((a, b) => a + b, 0);
+
+  // Kalau ruang tersisa di halaman ini tidak cukup untuk header + minimal
+  // satu baris data, pindah ke halaman baru dulu sebelum menggambar header —
+  // mencegah header "terpotong" per sel karena PDFKit auto page-break di
+  // tengah penulisan teks saat ruang tersisa terlalu sempit.
+  const firstRowHeight = rows.length > 0 ? computePdfRowHeight(pdf, rows[0], cols, fontSize) : 0;
+  if (y + totalHeaderHeight + firstRowHeight > pageBottom) {
+    pdf.addPage({
+      layout: pdf.page.layout,
+      size: 'A4',
+      margin: PDF_THEME.PAGE_MARGIN,
+    });
+    y = pdf.page.margins.top;
+  }
+
   pdf.save();
   pdf.lineWidth(PDF_THEME.BORDER_WIDTH).strokeColor(PDF_THEME.BORDER);
-
-  const totalHeaderHeight = headerHeights.reduce((a, b) => a + b, 0);
 
   const drawHeader = (startY = y) => {
     let currentY = startY;
@@ -427,7 +460,7 @@ function drawPdfGridTable(pdf, opts) {
 
       drawHorizontalLines(pdf, left, tableWidth, currentY, [rowHeight], spans);
 
-      drawTableHeader(pdf, left, currentY, cols, headerRow, rowHeight, fontSize);
+      drawTableHeader(pdf, left, currentY, cols, headerRow, rowHeight, fontSize, headerFill, headerText);
 
       currentY += rowHeight;
     });
@@ -492,7 +525,12 @@ function parseMarkdownTablePdf(lines) {
   };
 }
 
-function renderMarkdownToPdf(pdf, text) {
+/** Cocok baris daftar bernomor "1. Teks..." — dipakai hanya kalau
+ * opts.hangingIndentList diaktifkan (opt-in, lihat renderMarkdownToPdf). */
+const BARIS_BERNOMOR_REGEX = /^(\d+\.)\s+(\S.*)$/;
+
+function renderMarkdownToPdf(pdf, text, opts = {}) {
+  const { lineGap, headerFill, headerText, hangingIndentList } = opts;
   const lines = String(text || '').split('\n');
 
   let i = 0;
@@ -525,6 +563,8 @@ function renderMarkdownToPdf(pdf, text) {
           cols: colWidths,
           headers: table.headers,
           rows: table.rows,
+          headerFill,
+          headerText,
         });
 
         moveBelow(pdf, pdf.y + PDF_THEME.TABLE_SPACING);
@@ -543,6 +583,30 @@ function renderMarkdownToPdf(pdf, text) {
     }
 
     // -------------------------
+    // Daftar bernomor "1. Teks..." — baris lanjutan yang membungkus tetap
+    // menjorok sejajar teks (bukan balik ke margin kiri), dengan menggambar
+    // nomor dan isi sebagai dua kotak teks terpisah pada y yang sama.
+    // -------------------------
+    const cocokBernomor = hangingIndentList && line.match(BARIS_BERNOMOR_REGEX);
+    if (cocokBernomor) {
+      const [, nomor, isi] = cocokBernomor;
+      const prefix = `${nomor} `;
+      pdf.font(PDF_THEME.BODY_FONT).fontSize(PDF_THEME.BODY_FONT_SIZE).fillColor(PDF_THEME.BODY_TEXT);
+      const lebarPrefix = pdf.widthOfString(prefix);
+      const x0 = leftMargin(pdf);
+      const y0 = pdf.y;
+      pdf.text(prefix, x0, y0, { lineBreak: false, ...(lineGap != null ? { lineGap } : {}) });
+      pdf.text(isi, x0 + lebarPrefix, y0, {
+        width: usableWidth(pdf) - lebarPrefix,
+        align: 'justify',
+        ...(lineGap != null ? { lineGap } : {}),
+      });
+      pdf.moveDown(0.2);
+      i++;
+      continue;
+    }
+
+    // -------------------------
     // Normal paragraph
     // -------------------------
     pdf
@@ -551,6 +615,7 @@ function renderMarkdownToPdf(pdf, text) {
       .fillColor(PDF_THEME.BODY_TEXT)
       .text(line, {
         align: 'justify',
+        ...(lineGap != null ? { lineGap } : {}),
       });
 
     pdf.moveDown(0.2);

@@ -25,6 +25,12 @@ router.get(
   ctrl.getDokumenChangeLog,
 );
 router.get('/dokumen/:id', verifyToken, allowRoles(READ_ROLES), ctrl.getDokumenById);
+router.post(
+  '/dokumen/:id/generate-bab2',
+  verifyToken,
+  allowRoles(WRITE_ROLES),
+  ctrl.generateBab2AnalisisKondisi,
+);
 router.get(
   '/dokumen/:id/validate-official',
   verifyToken,
@@ -36,7 +42,6 @@ router.post(
   verifyToken,
   allowRoles(WRITE_ROLES),
   schemas.validate(schemas.rkpdDokumenCreate),
-  requireChangeReason,
   ctrl.createDokumen,
 );
 router.put(
@@ -44,7 +49,6 @@ router.put(
   verifyToken,
   allowRoles(WRITE_ROLES),
   schemas.validate(schemas.rkpdDokumenUpdate),
-  requireChangeReason,
   ctrl.updateDokumen,
 );
 

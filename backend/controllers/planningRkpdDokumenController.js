@@ -5,6 +5,9 @@ const { Op } = require('sequelize');
 const db = require('../models');
 const planningDomain = require('../services/planningDomainService');
 const rkpdRenjaCascade = require('../services/rkpdRenjaCascadeService');
+const {
+  generateRkpdBab2AnalisisKondisi,
+} = require('../services/rkpdBab2AnalisisKondisiService');
 const { splitPlanningBody } = require('../helpers/planningDocumentMutation');
 const {
   writePlanningAudit,
@@ -18,8 +21,8 @@ const {
   RkpdItem,
   PeriodeRpjmd,
   PerangkatDaerah,
-  PlanningLineItemChangeLog,
   PlanningAuditEvent,
+  PlanningLineItemChangeLog,
   RPJMD,
   sequelize,
 } = db;
@@ -112,6 +115,14 @@ async function createDokumen(req, res) {
     const { payload, change_reason_text, change_reason_file, rpjmd_id } = splitPlanningBody(
       req.body,
     );
+
+    // Catatan: tidak ada pengecekan "dokumen awal vs revisi" di sini seperti
+    // pada updateDokumen — dokumen yang baru dibuat SELALU merupakan dokumen
+    // awal (belum ada riwayat audit sama sekali), jadi alasan perubahan tidak
+    // pernah wajib pada create. (Blok pengecekan sebelumnya keliru membaca
+    // row.id sebelum baris dokumennya dibuat, sehingga menyebabkan error
+    // ReferenceError pada setiap permintaan create.)
+
     const rpj = await assertRpjmdId(rpjmd_id);
     if (!rpj.ok) {
       await t.rollback();
@@ -331,6 +342,13 @@ async function createItem(req, res) {
       await t.rollback();
       return res.status(400).json({ success: false, message: 'rkpd_dokumen_id tidak valid.' });
     }
+    if (!payload.prioritas_daerah || String(payload.prioritas_daerah).trim() === '') {
+      await t.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Prioritas daerah item RKPD wajib diisi.',
+      });
+    }
     if (!payload.urutan || payload.urutan === 0) {
       const maxUrutan = await RkpdItem.max('urutan', {
         where: { rkpd_dokumen_id: payload.rkpd_dokumen_id },
@@ -470,6 +488,23 @@ async function deleteItem(req, res) {
   }
 }
 
+/**
+ * Auto-fill narasi BAB II — Analisis Kondisi: hasil TIDAK langsung disimpan,
+ * dikembalikan ke layar untuk ditinjau lebih dulu (pola sama seperti
+ * auto-generate-bab Renja) — user tetap yang menekan "Simpan metadata".
+ */
+async function generateBab2AnalisisKondisi(req, res) {
+  try {
+    const dokumenId = Number(req.params.id);
+    if (!dokumenId) return res.status(400).json({ success: false, message: 'ID tidak valid.' });
+    const teks = await generateRkpdBab2AnalisisKondisi(db, dokumenId);
+    return res.json({ success: true, data: { text_bab2: teks } });
+  } catch (e) {
+    console.error('[rkpdBab2AnalisisKondisi]', e);
+    return res.status(500).json({ success: false, message: e.message });
+  }
+}
+
 module.exports = {
   listDokumen,
   getDokumenById,
@@ -481,4 +516,5 @@ module.exports = {
   createItem,
   updateItem,
   deleteItem,
+  generateBab2AnalisisKondisi,
 };

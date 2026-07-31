@@ -71,6 +71,8 @@ module.exports = (sequelize, DataTypes) => {
         'program',
         'kegiatan',
         'sub_kegiatan',
+        'iku',
+        'ikk',
       ),
       kode_indikator: { type: DataTypes.STRING, allowNull: false },
       nama_indikator: { type: DataTypes.TEXT, allowNull: false },

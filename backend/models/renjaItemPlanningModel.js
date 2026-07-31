@@ -42,9 +42,16 @@ module.exports = (sequelize, DataTypes) => {
       target_teks: { type: DataTypes.STRING(255), allowNull: true },
       satuan: { type: DataTypes.STRING(64), allowNull: true },
       lokasi: { type: DataTypes.STRING(255), allowNull: true },
+      // Kolom Tabel 4.1 Renja Permendagri 14/2026. Kolom "Prioritas Nasional"
+      // dan "Prioritas Daerah" sengaja tidak disimpan di sini — keduanya
+      // dihitung saat render dengan menyambung kode_sub_kegiatan ke Tabel C.
+      sumber_dana: { type: DataTypes.STRING(64), allowNull: true },
       kelompok_sasaran: { type: DataTypes.STRING(255), allowNull: true },
       pagu: { type: DataTypes.DECIMAL(20, 2), allowNull: true },
       pagu_indikatif: { type: DataTypes.DECIMAL(20, 2), allowNull: true },
+      target_prakiraan_maju: { type: DataTypes.STRING(128), allowNull: true },
+      pagu_prakiraan_maju: { type: DataTypes.DECIMAL(18, 2), allowNull: true },
+      pd_penanggung_jawab: { type: DataTypes.STRING(255), allowNull: true },
       catatan: { type: DataTypes.TEXT, allowNull: true },
       mismatch_status: { type: DataTypes.STRING(32), allowNull: false, defaultValue: "matched" },
       status_baris: {

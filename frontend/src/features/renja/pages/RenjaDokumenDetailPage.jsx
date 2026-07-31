@@ -23,6 +23,8 @@ import {
   fetchRenjaValidateOfficial,
   deleteRenjaItemV2,
   linkRenjaItemToRkpd,
+  fetchRenjaRecallStatus,
+  runRenjaRecall,
 } from '../services/planningRenjaApi';
 import {
   createRenjaRevision,
@@ -61,6 +63,8 @@ const RenjaDokumenDetailPage = () => {
   const [busyValidate, setBusyValidate] = useState(false);
   const [busyGenBab, setBusyGenBab] = useState(false);
   const [busyEnrich, setBusyEnrich] = useState(false);
+  const [recallStatus, setRecallStatus] = useState(null);
+  const [busyRecall, setBusyRecall] = useState(false);
 
   const [judul, setJudul] = useState('');
   const [status, setStatus] = useState('draft');
@@ -125,6 +129,50 @@ const RenjaDokumenDetailPage = () => {
   useEffect(() => {
     if (id) loadAudit();
   }, [id, loadAudit]);
+
+  const loadRecallStatus = useCallback(async () => {
+    try {
+      const s = await fetchRenjaRecallStatus(id);
+      setRecallStatus(s);
+    } catch {
+      setRecallStatus(null);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (id) loadRecallStatus();
+  }, [id, loadRecallStatus]);
+
+  const doRecall = async (scope = 'all') => {
+    if (!doc?.id) return;
+    if (
+      scope !== 'realisasi' &&
+      scope !== 'prioritas' &&
+      doc.status === 'final' &&
+      !window.confirm(
+        'Dokumen berstatus final — narasi bab akan ditimpa. Lanjutkan?',
+      )
+    ) {
+      return;
+    }
+    setBusyRecall(true);
+    try {
+      const hasil = await runRenjaRecall(doc.id, {
+        scope,
+        alasan: 'Recall manual dari halaman detail',
+        paksa: doc.status === 'final',
+      });
+      toast.success(
+        `Recall selesai — ${hasil?.narasi ? `${hasil.narasi.jumlah_bab} bab diperbarui` : 'data disegarkan'}.`,
+      );
+      await load();
+      await loadRecallStatus();
+    } catch (e) {
+      toast.error(e?.response?.data?.message || e.message || 'Gagal recall.');
+    } finally {
+      setBusyRecall(false);
+    }
+  };
 
   useEffect(() => {
     let ok = true;
@@ -530,6 +578,23 @@ const RenjaDokumenDetailPage = () => {
             Tahun {doc.tahun} · PD {doc.perangkat_daerah_id} · RKPD acuan{' '}
             {doc.rkpd_dokumen_id ? `#${doc.rkpd_dokumen_id}` : '—'}
           </div>
+          <div className="mt-1 d-flex align-items-center gap-2">
+            <Badge bg={doc.regulasi_acuan === '14_2026' ? 'primary' : 'secondary'}>
+              {doc.regulasi_acuan === '14_2026'
+                ? 'Permendagri 14/2026 (6 bab)'
+                : 'Permendagri 86/2017 (5 bab)'}
+            </Badge>
+            {recallStatus?.needs_recall && (
+              <Badge bg="warning" text="dark" title={recallStatus?.recall_reason || ''}>
+                ⚠ Perlu Recall{recallStatus?.recall_reason ? ` — ${recallStatus.recall_reason}` : ''}
+              </Badge>
+            )}
+            {recallStatus?.last_recall_at && !recallStatus?.needs_recall && (
+              <span className="small text-muted">
+                Recall terakhir: {new Date(recallStatus.last_recall_at).toLocaleString('id-ID')}
+              </span>
+            )}
+          </div>
         </div>
         <div className="d-flex flex-column align-items-end gap-2">
           <div className="d-flex flex-wrap gap-2 justify-content-end">
@@ -574,6 +639,17 @@ const RenjaDokumenDetailPage = () => {
             >
               {busyEnrich ? <Spinner size="sm" /> : '✨ Enrich AI + BPS'}
             </Button>
+            {doc.regulasi_acuan === '14_2026' && (
+              <Button
+                variant={recallStatus?.needs_recall ? 'warning' : 'outline-warning'}
+                size="sm"
+                disabled={busyRecall}
+                onClick={() => doRecall('all')}
+                title="Tarik ulang realisasi DPA/LK, nomenklatur, kecocokan Tabel C, dan narasi 6 bab"
+              >
+                {busyRecall ? <Spinner size="sm" /> : '🔄 Recall Data'}
+              </Button>
+            )}
           </div>
           <div className="d-flex flex-wrap gap-2 justify-content-end">
             <span className="small text-muted align-self-center me-1">Dokumen resmi</span>

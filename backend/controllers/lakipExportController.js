@@ -114,15 +114,16 @@ exports.exportPdf = async (req, res) => {
 
 // ── Build clean DOCX-safe HTML ────────────────────────────────────────────────
 function buildDocxHtml(data) {
-  const { meta, visi, misi, sasaran, indikator, lakipEntries, anggaran } = data;
+  const { meta, visi, misi, sasaran, indikator, iku = [], ikk = [], lakipEntries, anggaran } = data;
   const tahun = meta.tahun;
   const opd   = meta.opd;
 
   const escH = (s) => !s ? "" : String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   const fmtRp = (n) => "Rp " + (parseFloat(n)||0).toLocaleString("id-ID");
 
-  const indRows = indikator.length
-    ? indikator.map((ind, i) => `
+  const buildIndRows = (items) =>
+    items.length
+      ? items.map((ind, i) => `
         <tr>
           <td>${i+1}</td>
           <td>${escH(ind.nama_indikator)}</td>
@@ -133,7 +134,18 @@ function buildDocxHtml(data) {
           <td>${ind.status_capaian}</td>
         </tr>
         <tr><td colspan="7"><em>Analisis: ${escH(ind.narasi)}</em></td></tr>`).join("")
-    : `<tr><td colspan="7">Belum ada data indikator untuk tahun ${tahun}</td></tr>`;
+      : `<tr><td colspan="7">Belum ada data indikator untuk tahun ${tahun}</td></tr>`;
+
+  const indRows = buildIndRows(indikator);
+  const ikuRows = buildIndRows(iku);
+  const ikkRows = buildIndRows(ikk);
+  const indikatorTableHead = `
+    <thead>
+      <tr>
+        <th>No</th><th>Indikator</th><th>Satuan</th>
+        <th>Target</th><th>Realisasi</th><th>Capaian</th><th>Status</th>
+      </tr>
+    </thead>`;
 
   const lakipRows = lakipEntries.length
     ? lakipEntries.map((l, i) => `
@@ -182,14 +194,23 @@ function buildDocxHtml(data) {
   <h3>Sasaran Strategis</h3>
   <ul>${sasaranItems || "<li>Belum ada data sasaran</li>"}</ul>
 
+  ${iku.length ? `
+  <h3>Indikator Kinerja Utama (IKU)</h3>
+  <table border="1" cellpadding="4" cellspacing="0" width="100%">
+    ${indikatorTableHead}
+    <tbody>${ikuRows}</tbody>
+  </table>` : ""}
+
+  ${ikk.length ? `
+  <h3>Indikator Kinerja Kunci (IKK)</h3>
+  <table border="1" cellpadding="4" cellspacing="0" width="100%">
+    ${indikatorTableHead}
+    <tbody>${ikkRows}</tbody>
+  </table>` : ""}
+
   <h3>Capaian Indikator Kinerja Tahun ${escH(tahun)}</h3>
   <table border="1" cellpadding="4" cellspacing="0" width="100%">
-    <thead>
-      <tr>
-        <th>No</th><th>Indikator</th><th>Satuan</th>
-        <th>Target</th><th>Realisasi</th><th>Capaian</th><th>Status</th>
-      </tr>
-    </thead>
+    ${indikatorTableHead}
     <tbody>${indRows}</tbody>
   </table>
 

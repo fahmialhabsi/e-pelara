@@ -53,6 +53,9 @@ exports.create = async (req, res) => {
     renstra_kebijakan_id,
     opd_penanggung_jawab,
     bidang_opd_penanggung_jawab,
+    prioritas_nasional_id,
+    prioritas_daerah_id,
+    prioritas_kepala_daerah_id,
   } = req.body;
 
   // ── Koersi tipe data ──────────────────────────────────────────────────────
@@ -124,6 +127,9 @@ exports.create = async (req, res) => {
       kebijakan_id: kebijakanIdNum,
       opd_penanggung_jawab: opd_penanggung_jawab || '',
       bidang_opd_penanggung_jawab: bidang_opd_penanggung_jawab || '',
+      prioritas_nasional_id: normalizePositiveInt(prioritas_nasional_id),
+      prioritas_daerah_id: normalizePositiveInt(prioritas_daerah_id),
+      prioritas_kepala_daerah_id: normalizePositiveInt(prioritas_kepala_daerah_id),
     });
 
     res.status(201).json(data);
@@ -164,6 +170,9 @@ exports.findAll = async (req, res) => {
         'kebijakan_id',
         'opd_penanggung_jawab',
         'bidang_opd_penanggung_jawab',
+        'prioritas_nasional_id',
+        'prioritas_daerah_id',
+        'prioritas_kepala_daerah_id',
       ],
       include: [
         {
@@ -190,6 +199,9 @@ exports.findAll = async (req, res) => {
       renstra_kebijakan_id: item.kebijakan_id,
       opd_penanggung_jawab: item.opd_penanggung_jawab || '',
       bidang_opd_penanggung_jawab: item.bidang_opd_penanggung_jawab || '',
+      prioritas_nasional_id: item.prioritas_nasional_id,
+      prioritas_daerah_id: item.prioritas_daerah_id,
+      prioritas_kepala_daerah_id: item.prioritas_kepala_daerah_id,
       renstra: item.renstra,
     }));
 
@@ -214,6 +226,9 @@ exports.findOne = async (req, res) => {
         'opd_penanggung_jawab',
         'bidang_opd_penanggung_jawab',
         'kebijakan_id',
+        'prioritas_nasional_id',
+        'prioritas_daerah_id',
+        'prioritas_kepala_daerah_id',
       ],
       include: [
         {
@@ -250,6 +265,9 @@ exports.findOne = async (req, res) => {
       // Alias sesuai nama field yang dipakai form frontend (ProgramRenstraForm.jsx).
       renstra_kebijakan_id: data.kebijakan_id,
       rpjmd_arah_id,
+      prioritas_nasional_id: data.prioritas_nasional_id,
+      prioritas_daerah_id: data.prioritas_daerah_id,
+      prioritas_kepala_daerah_id: data.prioritas_kepala_daerah_id,
       renstra: data.renstra,
     };
 
@@ -271,6 +289,9 @@ exports.update = async (req, res) => {
       opd_penanggung_jawab,
       bidang_opd_penanggung_jawab,
       renstra_kebijakan_id,
+      prioritas_nasional_id,
+      prioritas_daerah_id,
+      prioritas_kepala_daerah_id,
     } = req.body;
 
     // ── Koersi tipe data ────────────────────────────────────────────────────
@@ -323,6 +344,12 @@ exports.update = async (req, res) => {
     if (renstraIdNum !== undefined) updatePayload.renstra_id = renstraIdNum;
     if (rpjmd_program_id !== undefined) updatePayload.rpjmd_program_id = rpjmd_program_id.trim();
     if (kebijakanIdNum !== undefined) updatePayload.kebijakan_id = kebijakanIdNum;
+    if (prioritas_nasional_id !== undefined)
+      updatePayload.prioritas_nasional_id = normalizePositiveInt(prioritas_nasional_id);
+    if (prioritas_daerah_id !== undefined)
+      updatePayload.prioritas_daerah_id = normalizePositiveInt(prioritas_daerah_id);
+    if (prioritas_kepala_daerah_id !== undefined)
+      updatePayload.prioritas_kepala_daerah_id = normalizePositiveInt(prioritas_kepala_daerah_id);
 
     // Sequelize/MySQL melaporkan affectedCount=0 kalau nilai baru identik dengan
     // yang lama — itu BUKAN berarti data tidak ada, jadi jangan dipakai untuk cek 404.
@@ -338,6 +365,9 @@ exports.update = async (req, res) => {
         'opd_penanggung_jawab',
         'bidang_opd_penanggung_jawab',
         'kebijakan_id',
+        'prioritas_nasional_id',
+        'prioritas_daerah_id',
+        'prioritas_kepala_daerah_id',
       ],
     });
 

@@ -137,6 +137,34 @@ export async function fetchRenjaDokumenAudit(dokumenId) {
   return unwrap(res) || [];
 }
 
+/**
+ * Status recall — memasok badge peringatan "perlu recall" di halaman detail.
+ * Recall menarik ulang realisasi (DPA/LK), nomenklatur, kecocokan Tabel C
+ * Permendagri 14/2026, dan narasi bab — lihat renjaRecallService.js.
+ */
+export async function fetchRenjaRecallStatus(dokumenId) {
+  const res = await api.get(`/renja-recall/${dokumenId}/status`);
+  return unwrap(res);
+}
+
+/** scope: 'all' | 'realisasi' | 'nomenklatur' | 'prioritas' | 'narasi'. */
+export async function runRenjaRecall(dokumenId, { scope = 'all', alasan, paksa } = {}) {
+  const res = await api.post(`/renja-recall/${dokumenId}`, { scope, alasan, paksa });
+  return unwrap(res);
+}
+
+/**
+ * Keselarasan kode subkegiatan Renja dengan Tabel C-2/C-3/C-6 Permendagri
+ * 14/2026 — setara FORM 4/5 Daftar Isian Fasilitasi (Kesepakatan Rakortekbang
+ * 2026 vs RKPD/Renja Tahun 2027).
+ */
+export async function fetchRenjaKeselarasanTabelC(dokumenId) {
+  const res = await api.get('/permendagri14/tabel-c/keselarasan', {
+    params: { dokumen_id: dokumenId },
+  });
+  return unwrap(res);
+}
+
 export async function fetchRenjaDokumenChangeLog(dokumenId) {
   const res = await api.get(`/renja/dokumen/${dokumenId}/change-log`);
   return unwrap(res) || [];

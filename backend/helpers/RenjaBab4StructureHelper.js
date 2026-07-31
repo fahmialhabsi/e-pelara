@@ -3,7 +3,16 @@
 const { RENJA_BAB4 } = require('./RenjaDocumentThemeHelper');
 const { renjaTableData } = require('./RenjaPdfDataHelper');
 
-function buildRenjaBab4(meta, items) {
+async function buildRenjaBab4(meta, items, db) {
+  const tahunMaju = Number(meta.tahun) + 1;
+
+  const rows = await renjaTableData(items, {
+    db,
+    renstraOpdId: meta.renstraOpdId,
+    tahunAwalRenstra: meta.tahunAwalRenstra,
+    tahunMaju,
+  });
+
   return {
     title: RENJA_BAB4.TITLE,
 
@@ -16,7 +25,7 @@ function buildRenjaBab4(meta, items) {
       heading: RENJA_BAB4.SUBTITLE_TABLE,
       caption: RENJA_BAB4.TABLE_TITLE(meta),
       note: RENJA_BAB4.TABLE_NOTE(meta),
-      rows: renjaTableData(items),
+      rows,
     },
   };
 }

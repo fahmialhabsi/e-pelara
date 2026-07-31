@@ -40,6 +40,8 @@ const inputActions = [
       { label: 'Indikator Program', to: '/renstra/indikator/program' },
       { label: 'Indikator Kegiatan', to: '/renstra/indikator/kegiatan' },
       { label: 'Indikator Sub Kegiatan', to: '/renstra/indikator/subkegiatan' },
+      { label: 'Indikator Kinerja Utama (IKU)', to: '/renstra/indikator/iku' },
+      { label: 'Indikator Kinerja Kunci (IKK)', to: '/renstra/indikator/ikk' },
     ],
   },
 ];

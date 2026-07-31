@@ -20,6 +20,7 @@ const {
   BorderStyle,
   AlignmentType,
   ShadingType,
+  TableLayoutType,
 } = require('docx');
 const {
   addPortrait,
@@ -42,6 +43,15 @@ const { RENJA_BAB4, RENJA_BAB4_TABLE } = require('../helpers/RenjaDocumentThemeH
 const { buildRenjaBab4 } = require('../helpers/RenjaBab4StructureHelper');
 const { buildRenjaBab4Table } = require('../helpers/RenjaBab4TableHelper');
 const { PDF_THEME, RENJA_BAB4_HEADERS } = require('../helpers/RenjaPdfThemeHelper');
+const { recalcDpaRealisasi } = require('./dpaRealisasiRollupService');
+const { recalcLkDispang } = require('./lkDispangRollupService');
+const { generateBab } = require('./renjaAutoGenerateBabService');
+// Sistematika 6 bab Permendagri 14/2026 ditangani mesin terpisah; dipilih
+// berdasarkan kolom renja_dokumen.regulasi_acuan.
+const {
+  buildRenjaPermendagri14Docx,
+  buildRenjaPermendagri14Pdf,
+} = require('./planningOfficialDocumentEnginePermendagri14');
 
 function numId(v) {
   if (v == null || v === '') return '—';
@@ -172,6 +182,8 @@ async function loadRenjaOfficialContext(db, dokumenId) {
       bab5,
       rkpdJudul: dok.rkpdDokumen?.judul || null,
       renstraJudul: renstraPd?.judul || null,
+      renstraOpdId: renstraPd?.renstra_opd_id || null,
+      tahunAwalRenstra: dok.periode?.tahun_awal || dok.tahun,
     },
   };
 }
@@ -237,6 +249,7 @@ function parseMarkdownTable(lines, sizeHalfPt = 20) {
   return new Table({
     width: { size: tableWidth, type: WidthType.DXA },
     columnWidths: colWidths,
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         tableHeader: true,
@@ -359,9 +372,9 @@ function renjaItemTableRows(rows) {
     }),
 
     ...table.rows.map(
-      (row) =>
+      (row, i) =>
         new TableRow({
-          children: row.map((v) => cell(v)),
+          children: row.map((v) => cell(v, !!rows[i]?.isProgramRow)),
         }),
     ),
   ];
@@ -448,8 +461,38 @@ function cell(text, bold) {
 }
 
 async function buildRenjaOpdOfficialDocx(db, dokumenId, options = {}) {
+  const { RenjaDokumen } = db;
+
+  // Dokumen Renja Tahun 2027 memakai sistematika 6 bab Permendagri 14/2026.
+  const dokRegulasi = await RenjaDokumen.findByPk(dokumenId, { attributes: ['regulasi_acuan'] });
+  if (dokRegulasi?.regulasi_acuan === '14_2026') {
+    return buildRenjaPermendagri14Docx(db, dokumenId, options);
+  }
+  // Refresh realisasi data dari PPK (BKU) → DPA → LK Dispang sebelum generate DOCX
+  // agar Tabel 2.3 selalu menampilkan data realisasi terbaru
+  try {
+    const dokForRecalc = await RenjaDokumen.findByPk(dokumenId);
+    if (dokForRecalc) {
+      const tahunLalu = Number(dokForRecalc.tahun) - 1;
+      await recalcDpaRealisasi(db, tahunLalu);
+      await recalcLkDispang(db, tahunLalu);
+    }
+  } catch (recalcErr) {
+    console.warn('[OfficialDOCX] Recalc DPA/LK Dispang gagal:', recalcErr?.message || recalcErr);
+  }
+
+  // Regenerate bab2 dengan data LK Dispang yang sudah di-refresh
+  try {
+    const { bab2 } = await generateBab(db, dokumenId);
+    if (bab2) {
+      await RenjaDokumen.update({ text_bab2: bab2 }, { where: { id: dokumenId } });
+    }
+  } catch (regenErr) {
+    console.warn('[OfficialDOCX] Regenerate bab2 gagal:', regenErr?.message || regenErr);
+  }
+
   const { dok, items, meta } = await loadRenjaOfficialContext(db, dokumenId);
-  const bab4 = buildRenjaBab4(meta, items);
+  const bab4 = await buildRenjaBab4(meta, items, db);
   const docVersion = options.documentVersion != null ? options.documentVersion : dok.versi;
   const itemIds = items.map((i) => i.id);
   const changeLogs =
@@ -507,7 +550,9 @@ async function buildRenjaOpdOfficialDocx(db, dokumenId, options = {}) {
 
     heading2(bab4.table.heading),
 
-    ...richParagraphBlocks(bab4.table.caption + '\n\n' + bab4.table.note),
+    ...richParagraphBlocks(bab4.table.note),
+
+    ...richParagraphBlocks(bab4.table.caption),
 
     new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
@@ -648,7 +693,7 @@ async function buildRkpdOfficialDocx(db, dokumenId, options = {}) {
 }
 
 function pdfBufferFromBuilder(buildFn) {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const chunks = [];
     const doc = new PDFDocument({ margin: 40, size: 'A4' });
     doc.on('data', (c) => chunks.push(c));
@@ -708,13 +753,47 @@ function pdfAppendChangeLog(pdf, changeLogs, entityLabel) {
 }
 
 async function buildRenjaOpdOfficialPdf(db, dokumenId, options = {}) {
+  const { RenjaDokumen } = db;
+
+  // Dokumen Renja Tahun 2027 memakai sistematika 6 bab Permendagri 14/2026.
+  const dokRegulasiPdf = await RenjaDokumen.findByPk(dokumenId, {
+    attributes: ['regulasi_acuan'],
+  });
+  if (dokRegulasiPdf?.regulasi_acuan === '14_2026') {
+    return buildRenjaPermendagri14Pdf(db, dokumenId, options);
+  }
+  // Refresh realisasi data dari PPK (BKU) → DPA → LK Dispang sebelum generate PDF
+  // agar Tabel 2.3 selalu menampilkan data realisasi terbaru
+  try {
+    const dokForRecalc = await RenjaDokumen.findByPk(dokumenId);
+    if (dokForRecalc) {
+      const tahunLalu = Number(dokForRecalc.tahun) - 1;
+      await recalcDpaRealisasi(db, tahunLalu);
+      await recalcLkDispang(db, tahunLalu);
+    }
+  } catch (recalcErr) {
+    console.warn('[OfficialPDF] Recalc DPA/LK Dispang gagal:', recalcErr?.message || recalcErr);
+    // Lanjutkan generate PDF meski recalc gagal (pakai data yang sudah ada)
+  }
+
+  // Regenerate bab2 dengan data LK Dispang yang sudah di-refresh
+  try {
+    const { bab2 } = await generateBab(db, dokumenId);
+    if (bab2) {
+      await RenjaDokumen.update({ text_bab2: bab2 }, { where: { id: dokumenId } });
+    }
+  } catch (regenErr) {
+    console.warn('[OfficialPDF] Regenerate bab2 gagal:', regenErr?.message || regenErr);
+    // Lanjutkan generate PDF dengan bab2 yang sudah ada di DB
+  }
+
   const { dok, items, meta } = await loadRenjaOfficialContext(db, dokumenId);
   const docVersion = options.documentVersion != null ? options.documentVersion : dok.versi;
   const itemIds = items.map((i) => i.id);
   const changeLogs =
     options.includeChangeLog === false ? [] : await loadFieldChangeLogs(db, 'renja_item', itemIds);
 
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const chunks = [];
     const pdf = new PDFDocument({
       margin: 40,
@@ -742,9 +821,10 @@ async function buildRenjaOpdOfficialPdf(db, dokumenId, options = {}) {
         'BAB III — TUJUAN DAN SASARAN PERANGKAT DAERAH',
         meta.bab3 ? meta.bab3 : `${meta.bab3Title}\n\n${meta.bab3Tujuan}`,
       );
-      renderBab4(pdf, {
+      await renderBab4(pdf, {
         meta,
         items,
+        db,
       });
 
       nextPortrait(pdf);

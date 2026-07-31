@@ -1,42 +1,49 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const LkDispangController = require("../controllers/lkDispangController");
-const verifyToken = require("../middlewares/verifyToken");
-const allowRoles = require("../middlewares/allowRoles");
+const LkDispangController = require('../controllers/lkDispangController');
+const verifyToken = require('../middlewares/verifyToken');
+const allowRoles = require('../middlewares/allowRoles');
 
 router.get(
-  "/",
+  '/',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  LkDispangController.getAll
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  LkDispangController.getAll,
 );
 
 router.get(
-  "/:id",
+  '/:id',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"]),
-  LkDispangController.getById
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS', 'PELAKSANA']),
+  LkDispangController.getById,
 );
 
 router.post(
-  "/",
+  '/',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  LkDispangController.create
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
+  LkDispangController.create,
 );
 
 router.put(
-  "/:id",
+  '/:id',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  LkDispangController.update
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
+  LkDispangController.update,
 );
 
 router.delete(
-  "/:id",
+  '/:id',
   verifyToken,
-  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
-  LkDispangController.destroy
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR']),
+  LkDispangController.destroy,
+);
+
+router.post(
+  '/recalc',
+  verifyToken,
+  allowRoles(['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS']),
+  LkDispangController.recalcRollup,
 );
 
 module.exports = router;

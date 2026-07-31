@@ -332,6 +332,25 @@ export default function LakipGeneratorPanel() {
               </div>
             )}
 
+            {/* Indikator Kinerja Utama (IKU) & Indikator Kinerja Kunci (IKK) — indikator
+                level OPD standalone, tidak masuk hierarki Tujuan->Sasaran->Program->Kegiatan */}
+            {previewData.iku?.length > 0 && (
+              <div className="mb-3 pb-2 border-bottom">
+                <div className="fw-bold" style={{ color: '#1e3a8a' }}>
+                  Indikator Kinerja Utama (IKU)
+                </div>
+                {renderIndikatorMiniTable(previewData.iku)}
+              </div>
+            )}
+            {previewData.ikk?.length > 0 && (
+              <div className="mb-3 pb-2 border-bottom">
+                <div className="fw-bold" style={{ color: '#1e3a8a' }}>
+                  Indikator Kinerja Kunci (IKK)
+                </div>
+                {renderIndikatorMiniTable(previewData.ikk)}
+              </div>
+            )}
+
             {/* Hierarki Indikator: Tujuan -> Sasaran -> Program -> Kegiatan */}
             {previewData.indikatorTree?.length > 0 && (
               <div className="mb-2">

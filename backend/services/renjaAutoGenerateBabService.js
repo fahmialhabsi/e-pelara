@@ -8,6 +8,7 @@
 
 const { pilihTargetTahun } = require('./lakipBridgeService');
 const { buildTabel21Rows } = require('./renjaTabel21HierarkiService');
+const { ambilCapaianIkuIkk } = require('./renstraIkuIkkService');
 
 const rupiah = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
 const pct = (n) => `${Number(n || 0).toFixed(2)}%`;
@@ -53,6 +54,8 @@ async function generateBab(db, dokumenId) {
   const namaOpd = dok.perangkatDaerah?.nama || 'Perangkat Daerah';
   const tahun = dok.tahun;
   const tahunLalu = tahun - 1;
+  const tahunN2 = tahun - 2;
+  const tahunN3 = tahun - 3;
   const periode = dok.periode;
   const tahunAwal = periode?.tahun_awal || tahun;
   const tahunAkhir = periode?.tahun_akhir || tahun + 4;
@@ -73,7 +76,7 @@ async function generateBab(db, dokumenId) {
   }
 
   // Data IKU Provinsi (RPJMD) yang relevan dengan urusan pangan — dipakai
-  // sebagai sumber kolom IKK di Tabel 2.2 (T-C.30). SPM tidak berlaku untuk
+  // sebagai sumber kolom IKK di Tabel 2.3 (T-C.30). SPM tidak berlaku untuk
   // urusan pangan (bukan salah satu dari 6 urusan wajib pelayanan dasar
   // per PP 2/2018), sehingga kolom SPM diisi "–" secara permanen.
   let ikuPangan = null;
@@ -105,14 +108,27 @@ async function generateBab(db, dokumenId) {
     limit: 20,
   }).catch(() => []);
 
-  // Load LK Dispang tahun lalu
+  // Load LK Dispang tahun lalu (tanpa limit agar semua program teknis ikut terambil)
   const lkRows = await LkDispang.findAll({
     where: { tahun: tahunLalu },
-    limit: 20,
+    order: [
+      ['program', 'ASC'],
+      ['kegiatan', 'ASC'],
+      ['sub_kegiatan', 'ASC'],
+    ],
   }).catch(() => []);
 
   // Load Renstra sasaran
   const renstraOpdId = dok.renstraPdDokumen?.renstra_opd_id || 0;
+
+  // IKU & IKK Perangkat Daerah (level OPD, dari modul Renstra) — dipakai di
+  // Tabel 2.2 subbab 2.1, sumber sama dengan modul Renja 14/2026 & LAKIP
+  // supaya angkanya konsisten lintas modul.
+  const { iku: capaianIkuLalu, ikk: capaianIkkLalu } = await ambilCapaianIkuIkk(db, renstraOpdId, {
+    tahunEvaluasi: tahunLalu,
+    tahunAwal,
+  });
+
   const sasaranRows = await RenstraSasaran.findAll({
     where: { renstra_id: renstraOpdId },
     limit: 10,
@@ -165,9 +181,9 @@ Rencana Kerja ${namaOpd} Tahun ${tahun} (Renja ${tahun}) merupakan dokumen peren
 
 Penyusunan Renja ini berpedoman pada Peraturan Menteri Dalam Negeri Nomor 86 Tahun 2017 tentang Tata Cara Perencanaan, Pengendalian dan Evaluasi Pembangunan Daerah, Tata Cara Evaluasi Rancangan Peraturan Daerah tentang Rencana Pembangunan Jangka Panjang Daerah dan Rencana Pembangunan Jangka Menengah Daerah, serta Tata Cara Perubahan Rencana Pembangunan Jangka Panjang Daerah, Rencana Pembangunan Jangka Menengah Daerah, dan Rencana Kerja Pemerintah Daerah.
 
-1.2 Landasan Hukum
+1.2 Dasar Hukum
 
-Landasan hukum penyusunan Renja ${namaOpd} Tahun ${tahun} adalah sebagai berikut:
+Dasar hukum penyusunan Renja ${namaOpd} Tahun ${tahun} adalah sebagai berikut:
 1. Undang-Undang Nomor 25 Tahun 2004 tentang Sistem Perencanaan Pembangunan Nasional;
 2. Undang-Undang Nomor 23 Tahun 2014 tentang Pemerintahan Daerah;
 3. Undang-Undang Nomor 18 Tahun 2012 tentang Pangan;
@@ -208,7 +224,7 @@ BAB V    : Penutup`;
   bab2 += `7. Laporan Kinerja Instansi Pemerintah (LKjIP/LAKIP) ${namaOpd} Tahun ${tahunLalu} sebagai dokumen pertanggungjawaban kinerja yang telah disahkan.\n\n`;
   bab2 += `Berdasarkan hasil evaluasi pelaksanaan Renja ${namaOpd} Tahun ${tahunLalu} dengan menggunakan dasar-dasar tersebut di atas, rekapitulasi realisasi program dan kegiatan adalah sebagai berikut:\n\n`;
   bab2 += `Tabel 2.1 Rekapitulasi Evaluasi Hasil Pelaksanaan Renja ${namaOpd} dan Pencapaian Renstra ${namaOpd} s/d Tahun ${tahun}\n\n`;
-  bab2 += `| Kode | Urusan/Bidang Urusan dan Program/Kegiatan | Indikator Kinerja Program/Kegiatan | Target Kinerja Capaian Program (Renstra PD) | Realisasi s/d Tahun (n-3) | Target Renja PD (n-2) | Realisasi Renja PD (n-2) | Tingkat Realisasi (%) | Target Tahun Berjalan (n-1) | Realisasi Capaian s/d Tahun Berjalan (n-1) | Tingkat Capaian Realisasi Target Renstra (%) |\n`;
+  bab2 += `| Kode | Urusan/Bidang Urusan dan Program/Kegiatan | Indikator Kinerja Program/Kegiatan | Target Kinerja Capaian Program (Renstra PD) | Realisasi s/d Tahun ${tahunN3} | Target Renja PD ${tahunN2} | Realisasi Renja PD ${tahunN2} | Tingkat Realisasi (%) | Target Tahun Berjalan ${tahunLalu} | Realisasi Capaian s/d Tahun Berjalan ${tahunLalu} | Tingkat Capaian Realisasi Target Renstra (%) |\n`;
   bab2 += `|---|---|---|---|---|---|---|---|---|---|---|\n`;
   const tabel21 = await buildTabel21Rows(db, dokumenId);
   if (tabel21.rows.length > 0) {
@@ -221,9 +237,31 @@ BAB V    : Penutup`;
   }
   bab2 += `\nCatatan: Baris Urusan/Bidang Urusan/Program bersifat rekapitulasi struktural. Data kinerja (kolom 3–11) hanya diisi pada baris Kegiatan, bersumber dari \`indikator_renstra\` (target) dan \`realisasi_indikator_renstra\` (realisasi Tahun ${tabel21.tahunN3} dan ${tabel21.tahunN2}), dicocokkan via \`renstra_kegiatan.kode_kegiatan\`.\n\n`;
 
+  // --- Tabel 2.2 Capaian IKU/IKK (indikator level OPD, stage='iku'/'ikk') ---
+  // Ditambahkan sebagai bagian dari evaluasi capaian Renstra pada subbab 2.1 —
+  // Permendagri 86/2017 tidak melarang penambahan tabel evaluasi selama tabel
+  // resmi T-C.29/T-C.30 di bawah tetap disajikan utuh (hanya nomornya bergeser).
+  bab2 += `Selain rekapitulasi Program/Kegiatan di atas, evaluasi Tahun ${tahunLalu} juga mencakup capaian Indikator Kinerja Utama (IKU) dan Indikator Kinerja Kunci (IKK) tingkat Perangkat Daerah sebagaimana ditetapkan dalam Renstra ${namaOpd}:\n\n`;
+  bab2 += `Tabel 2.2 Capaian Indikator Kinerja Utama (IKU) dan Indikator Kinerja Kunci (IKK) ${namaOpd} Tahun ${tahunLalu}\n\n`;
+  bab2 += `| No | Kode | Indikator | Satuan | Target | Realisasi | Capaian (%) | Status |\n`;
+  bab2 += `|---|---|---|---|---|---|---|---|\n`;
+  const semuaIkuIkk = [...capaianIkuLalu, ...capaianIkkLalu];
+  if (semuaIkuIkk.length > 0) {
+    semuaIkuIkk.forEach((c, i) => {
+      bab2 += `| ${i + 1} | ${c.kode || '......'} | ${String(c.nama || '......').replace(/\r?\n/g, ' ').replace(/\|/g, '/')} | ${c.satuan || '......'} | ${c.target ?? '......'} | ${c.realisasi ?? '......'} | ${c.pct === null ? '......' : c.pct} | ${c.status || '......'} |\n`;
+    });
+  } else {
+    bab2 += `| 1 | ...... | ...... | ...... | ...... | ...... | ...... | ...... |\n`;
+  }
+  bab2 += `\nSumber: indikator_renstra (stage='iku'/'ikk') dan realisasi_indikator_renstra ${namaOpd} Tahun ${tahunLalu}.\n\n`;
+  if (semuaIkuIkk.length > 0) {
+    bab2 += semuaIkuIkk.map((c) => c.narasi).join('\n\n');
+    bab2 += '\n\n';
+  }
+
   bab2 += `\n2.2 Analisis Kinerja Pelayanan ${namaOpd}\n\n`;
   bab2 += `${namaOpd} menyelenggarakan urusan pemerintahan di bidang pangan meliputi: (1) ketersediaan dan kerawanan pangan; (2) distribusi dan cadangan pangan; (3) konsumsi dan keamanan pangan; serta pengawasan mutu pangan melalui UPTD Balai Pengawasan Mutu dan Keamanan Pangan.\n\n`;
-  bab2 += `Tabel 2.2 Pencapaian Kinerja Pelayanan ${namaOpd}\n\n`;
+  bab2 += `Tabel 2.3 Pencapaian Kinerja Pelayanan ${namaOpd}\n\n`;
   bab2 += `| No | Indikator | SPM/Standar Nasional | IKK | Target Renstra PD (${tahun - 2}) | Target Renstra PD (${tahun - 1}) | Target Renstra PD (${tahun}) | Target Renstra PD (${tahun + 1}) | Realisasi (${tahun - 2}) | Realisasi (${tahun - 1}) | Proyeksi (${tahun}) | Proyeksi (${tahun + 1}) | Catatan Analisis |\n`;
   bab2 += `|---|---|---|---|---|---|---|---|---|---|---|---|---|\n`;
   const defaultSasaranList = [
@@ -283,23 +321,35 @@ BAB V    : Penutup`;
   bab2 += `\nCatatan: Kolom SPM tidak berlaku untuk urusan pangan (bukan bagian dari 6 urusan wajib pelayanan dasar per PP 2/2018), diisi "–". Kolom IKK bersumber dari Indeks Ketahanan Pangan (IKU Provinsi RPJMD) untuk indikator yang relevan. Kolom Target Renstra PD bersumber dari indikator_renstra (per-tahun), Realisasi dari realisasi_indikator_renstra. Kolom Proyeksi akan otomatis terisi begitu data LKjIP/LAKIP ${namaOpd} tahun berjalan diinput ke sistem.\n\n`;
 
   if (lkRows.length > 0) {
-    const totalAnggaran = lkRows.reduce((s, r) => s + (r.anggaran || 0), 0);
-    const totalRealisasi = lkRows.reduce((s, r) => s + (r.realisasi || 0), 0);
+    // Kelompokkan per Program (bukan per baris akun_belanja/jenis_belanja)
+    // agar seluruh program teknis ikut tampil, tidak hanya Program Penunjang.
+    const programMap = new Map();
+    lkRows.forEach((row) => {
+      const key = row.program || '......';
+      const cur = programMap.get(key) || { anggaran: 0, realisasi: 0 };
+      cur.anggaran += Number(row.anggaran) || 0;
+      cur.realisasi += Number(row.realisasi) || 0;
+      programMap.set(key, cur);
+    });
+    const programAgg = Array.from(programMap.entries()).map(([program, v]) => ({
+      program,
+      anggaran: v.anggaran,
+      realisasi: v.realisasi,
+      sisa: v.anggaran - v.realisasi,
+      pct: v.anggaran > 0 ? ((v.realisasi / v.anggaran) * 100).toFixed(2) : '0.00',
+    }));
+    const totalAnggaran = programAgg.reduce((s, r) => s + r.anggaran, 0);
+    const totalRealisasi = programAgg.reduce((s, r) => s + r.realisasi, 0);
     const pctReal = totalAnggaran > 0 ? ((totalRealisasi / totalAnggaran) * 100).toFixed(2) : '0';
-    bab2 += `Tabel 2.3 Realisasi Anggaran ${namaOpd} Tahun ${tahunLalu}\n\n`;
+    bab2 += `Tabel 2.4 Realisasi Anggaran ${namaOpd} Tahun ${tahunLalu}\n\n`;
     bab2 += `| No | Program | Anggaran (Rp) | Realisasi (Rp) | % Realisasi | Sisa (Rp) |\n`;
     bab2 += `|---|---------|---------------|----------------|-------------|----------|\n`;
-    lkRows.forEach((row, i) => {
-      const anggaran = row.anggaran || 0;
-      const realisasi = row.realisasi || 0;
-      const sisa = row.sisa || anggaran - realisasi;
-      const pct =
-        row.persen_realisasi || (anggaran > 0 ? ((realisasi / anggaran) * 100).toFixed(2) : '0');
-      bab2 += `| ${i + 1} | ${row.program || '......'} | ${rupiah(anggaran)} | ${rupiah(realisasi)} | ${pct}% | ${rupiah(sisa)} |\n`;
+    programAgg.forEach((row, i) => {
+      bab2 += `| ${i + 1} | ${row.program} | ${rupiah(row.anggaran)} | ${rupiah(row.realisasi)} | ${row.pct}% | ${rupiah(row.sisa)} |\n`;
     });
     bab2 += `| | Total | ${rupiah(totalAnggaran)} | ${rupiah(totalRealisasi)} | ${pctReal}% | ${rupiah(totalAnggaran - totalRealisasi)} |\n\n`;
   } else {
-    bab2 += `Tabel 2.3 Realisasi Anggaran ${namaOpd} Tahun ${tahunLalu}\n\n`;
+    bab2 += `Tabel 2.4 Realisasi Anggaran ${namaOpd} Tahun ${tahunLalu}\n\n`;
     bab2 += `| No | Program | Anggaran (Rp) | Realisasi (Rp) | % Realisasi | Sisa (Rp) |\n`;
     bab2 += `|---|---------|---------------|----------------|-------------|----------|\n`;
     for (let i = 1; i <= 3; i++) bab2 += `| ${i} | ...... | ...... | ...... | ...... | ...... |\n`;
@@ -318,13 +368,21 @@ BAB V    : Penutup`;
 
   bab2 += `\n2.4 Review terhadap Rancangan Awal RKPD\n\n`;
   bab2 += `Review terhadap rancangan awal RKPD Provinsi Maluku Utara Tahun ${tahun} dilakukan untuk menyelaraskan program dan kegiatan ${namaOpd} dengan prioritas pembangunan daerah. Hasil review adalah sebagai berikut:\n\n`;
-  bab2 += `Tabel 2.4 Review Rancangan Awal RKPD terhadap Renja ${namaOpd} Tahun ${tahun}\n\n`;
+  bab2 += `Tabel 2.5 Review Rancangan Awal RKPD terhadap Renja ${namaOpd} Tahun ${tahun}\n\n`;
   bab2 += `| No | Program/Kegiatan (RKPD) | Lokasi | Indikator Kinerja | Target Capaian | Pagu Indikatif (Rp) | Program/Kegiatan (Hasil Analisis) | Lokasi | Indikator Kinerja | Target Capaian | Kebutuhan Dana (Rp) |\n`;
   bab2 += `|---|---|---|---|---|---|---|---|---|---|---|\n`;
   const clean2_4 = (v) =>
     String(v ?? '')
       .replace(/\r?\n/g, ' ')
       .trim() || '......';
+  // Format angka target: buang trailing zero desimal (5.0000 -> 5, 5.5000 -> 5.5),
+  // tapi biarkan apa adanya kalau memang bukan angka (misal placeholder '......').
+  const fmtTarget = (v) => {
+    if (v == null || v === '') return '......';
+    const n = Number(v);
+    if (Number.isNaN(n)) return String(v);
+    return String(parseFloat(n.toFixed(4)));
+  };
   if (renjaItems.length > 0) {
     renjaItems.forEach((item, i) => {
       const rkpd = rkpdItemsMap[item.source_rkpd_item_id] || {};
@@ -333,12 +391,13 @@ BAB V    : Penutup`;
         rkpd.sub_kegiatan || rkpd.program || item.sub_kegiatan || item.program,
       );
       const indikatorRkpd = clean2_4(rkpd.indikator || item.indikator);
-      const targetRkpd =
-        rkpd.target != null ? rkpd.target : (item.target_numerik ?? item.target ?? '......');
+      const targetRkpd = fmtTarget(
+        rkpd.target != null ? rkpd.target : (item.target_numerik ?? item.target),
+      );
       const paguRkpd = Number(rkpd.pagu || item.pagu || 0);
       const namaRenja = clean2_4(item.sub_kegiatan || item.program);
       const indikatorRenja = clean2_4(item.indikator);
-      const targetRenja = item.target_numerik ?? item.target ?? '......';
+      const targetRenja = fmtTarget(item.target_numerik ?? item.target);
       const kebutuhanDana = Number(item.pagu_indikatif || item.pagu) || 0;
       bab2 += `| ${i + 1} | ${namaRkpd} | ${lokasi} | ${indikatorRkpd} | ${targetRkpd} | ${rupiah(paguRkpd)} | ${namaRenja} | ${lokasi} | ${indikatorRenja} | ${targetRenja} | ${rupiah(kebutuhanDana)} |\n`;
     });
@@ -352,7 +411,7 @@ BAB V    : Penutup`;
   // Subbab 2.5 — T-C.32 Usulan Program & Kegiatan Pemangku Kepentingan
   bab2 += `\n2.5 Penelaahan Usulan Program dan Kegiatan Masyarakat\n\n`;
   bab2 += `Dalam proses penyusunan Renja ${namaOpd} Tahun ${tahun}, telah dilakukan penelaahan terhadap usulan program dan kegiatan yang disampaikan oleh para pemangku kepentingan melalui forum Musrenbang dan mekanisme aspirasi masyarakat.\n\n`;
-  bab2 += `Tabel 2.5 Usulan Program dan Kegiatan dari Para Pemangku Kepentingan ${namaOpd} Tahun ${tahun}\n\n`;
+  bab2 += `Tabel 2.6 Usulan Program dan Kegiatan dari Para Pemangku Kepentingan ${namaOpd} Tahun ${tahun}\n\n`;
   bab2 += `| No | Program/Kegiatan | Lokasi | Indikator Kinerja | Besaran/Volume | Catatan |\n`;
   bab2 += `|---|-----------------|--------|-------------------|----------------|--------|\n`;
   renjaItems.forEach((item, i) => {
@@ -361,7 +420,7 @@ BAB V    : Penutup`;
         .split(' - ')
         .slice(1)
         .join(' - ') || '......';
-    bab2 += `| ${i + 1} | ${namaSubKeg.slice(0, 80)} | ${item.lokasi || 'Provinsi Maluku Utara'} | ${(item.indikator || '......').slice(0, 60)} | ${Number(item.target || 0)} ${item.satuan || ''} | Sesuai RKPD ${tahun} |\n`;
+    bab2 += `| ${i + 1} | ${namaSubKeg} | ${item.lokasi || 'Provinsi Maluku Utara'} | ${item.indikator || '......'} | ${Number(item.target || 0)} ${item.satuan || ''} | Sesuai RKPD ${tahun} |\n`;
   });
   bab2 += `\nCatatan: Usulan di atas telah diverifikasi dan diselaraskan dengan prioritas pembangunan daerah Tahun ${tahun}.\n`;
 
@@ -450,7 +509,11 @@ BAB V    : Penutup`;
     prioritas.forEach((item, i) => {
       const nama = sanitizeCell(item.sub_kegiatan || item.program);
       const indikator = sanitizeCell(item.indikator);
-      const target = item.target_numerik ?? item.target ?? '......';
+      const targetRaw = item.target_numerik ?? item.target;
+      const target =
+        targetRaw == null || targetRaw === '' || Number.isNaN(Number(targetRaw))
+          ? '......'
+          : Number(targetRaw).toFixed(2);
       const pagu = Number(item.pagu_indikatif || item.pagu) || 0;
       bab3 += `| ${i + 1} | ${nama} | ${indikator} | ${target} | ${rupiah(pagu)} |\n`;
     });

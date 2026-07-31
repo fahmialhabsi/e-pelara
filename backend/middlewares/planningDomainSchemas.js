@@ -104,6 +104,12 @@ exports.renjaDokumenCreate = Joi.object({
   renstra_pd_dokumen_id: Joi.number().integer().positive().required(),
   rkpd_dokumen_id: Joi.number().integer().positive().allow(null).optional(),
   judul: Joi.string().max(512).required(),
+  // Dual-mode Renja: '86_2017' (5 bab, final Tahun 2020-2026) vs '14_2026'
+  // (6 bab, Tahun 2027). Tanpa dideklarasikan di sini, stripUnknown pada
+  // validate() di bawah membuang field ini diam-diam sebelum sampai ke
+  // controller, sehingga selalu jatuh ke default '86_2017' walau frontend
+  // mengirim '14_2026' dengan benar.
+  regulasi_acuan: Joi.string().valid('86_2017', '14_2026').optional(),
   versi: Joi.number().integer().min(1).optional(),
   status: statusDokumen.optional(),
   workflow_status: workflowStatus.optional(),
@@ -130,6 +136,7 @@ exports.renjaDokumenUpdate = Joi.object({
   renstra_pd_dokumen_id: Joi.number().integer().positive().optional(),
   rkpd_dokumen_id: Joi.number().integer().positive().allow(null).optional(),
   judul: Joi.string().max(512).optional(),
+  regulasi_acuan: Joi.string().valid('86_2017', '14_2026').optional(),
   versi: Joi.number().integer().min(1).optional(),
   status: statusDokumen.optional(),
   workflow_status: workflowStatus.optional(),

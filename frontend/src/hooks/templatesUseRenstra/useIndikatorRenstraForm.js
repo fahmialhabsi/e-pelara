@@ -17,6 +17,8 @@ const getSchema = () =>
         "program",
         "kegiatan",
         "sub_kegiatan",
+        "iku",
+        "ikk",
       ])
       .required("Stage wajib dipilih"),
     kode_indikator: Yup.string().required("Kode indikator wajib diisi"),

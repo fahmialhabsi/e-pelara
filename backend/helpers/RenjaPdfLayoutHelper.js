@@ -34,11 +34,18 @@ function pageInfo(pdf) {
   };
 }
 
-function addPortrait(pdf) {
+/**
+ * @param {object} pdf
+ * @param {object} [marginsOverride] - {top,bottom,left,right} opsional, dipakai
+ * modul 14/2026 untuk menyisakan ruang pita header/footer bergambar. Kalau
+ * tidak dikirim, perilakunya identik seperti sebelumnya (margin 40 semua sisi),
+ * jadi modul 86/2017 yang memanggil tanpa argumen kedua tidak terpengaruh.
+ */
+function addPortrait(pdf, marginsOverride) {
   pdf.addPage({
     size: 'A4',
     layout: 'portrait',
-    margin: 40,
+    margins: marginsOverride || { top: 40, bottom: 40, left: 40, right: 40 },
   });
 
   return pageInfo(pdf);
@@ -82,8 +89,8 @@ function nextLandscape(pdf) {
   return pdf.page.margins.top;
 }
 
-function nextPortrait(pdf) {
-  addPortrait(pdf);
+function nextPortrait(pdf, marginsOverride) {
+  addPortrait(pdf, marginsOverride);
   pdf.y = pdf.page.margins.top;
   return pdf.page.margins.top;
 }

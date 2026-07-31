@@ -27,6 +27,10 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
         .positive('Renstra ID harus lebih dari 0'),
       opd_penanggung_jawab: Yup.string().required('OPD Penanggung Jawab wajib'),
       bidang_opd_penanggung_jawab: Yup.string().required('Bidang OPD wajib'),
+      // Opsional — tidak semua Program menopang prioritas berjenjang.
+      prioritas_nasional_id: Yup.string().nullable(),
+      prioritas_daerah_id: Yup.string().nullable(),
+      prioritas_kepala_daerah_id: Yup.string().nullable(),
     });
 
   const defaultValues = {
@@ -44,6 +48,15 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
     renstra_id: typeof renstraAktif?.id === 'number' ? renstraAktif.id : undefined,
     opd_penanggung_jawab: initialData?.opd_penanggung_jawab || '',
     bidang_opd_penanggung_jawab: initialData?.bidang_opd_penanggung_jawab || '',
+    prioritas_nasional_id: initialData?.prioritas_nasional_id
+      ? String(initialData.prioritas_nasional_id)
+      : '',
+    prioritas_daerah_id: initialData?.prioritas_daerah_id
+      ? String(initialData.prioritas_daerah_id)
+      : '',
+    prioritas_kepala_daerah_id: initialData?.prioritas_kepala_daerah_id
+      ? String(initialData.prioritas_kepala_daerah_id)
+      : '',
   };
 
   const generatePayload = (data) => ({
@@ -55,6 +68,9 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
     renstra_id: data.renstra_id,
     opd_penanggung_jawab: data.opd_penanggung_jawab,
     bidang_opd_penanggung_jawab: data.bidang_opd_penanggung_jawab,
+    prioritas_nasional_id: data.prioritas_nasional_id || null,
+    prioritas_daerah_id: data.prioritas_daerah_id || null,
+    prioritas_kepala_daerah_id: data.prioritas_kepala_daerah_id || null,
   });
 
   const { form, onSubmit, isSubmitting } = useRenstraFormTemplate({
@@ -140,6 +156,49 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
   const { data: opdOptions = [] } = useQuery({
     queryKey: ['opd-penanggung-jawab'],
     queryFn: async () => normalizeListItems((await api.get('/opd-penanggung-jawab')).data),
+  });
+
+  // Program Prioritas Nasional/Daerah/Gubernur — opsional, dipakai Renja Bab V
+  // (Permendagri 14/2026) untuk menyajikan Program mana yang menopang prioritas
+  // berjenjang mana. Sumbernya master RPJMD yang sama dengan yang dipakai form
+  // item RKPD (jenis_dokumen='rpjmd'), supaya daftarnya konsisten lintas modul.
+  const { data: prioritasNasionalOptions = [], isLoading: isLoadingPrioNas } = useQuery({
+    queryKey: ['prioritas-nasional', renstraAktif?.tahun_mulai],
+    queryFn: async () =>
+      normalizeListItems(
+        (
+          await api.get('/prioritas-nasional', {
+            params: { jenis_dokumen: 'rpjmd', tahun: renstraAktif?.tahun_mulai, limit: 1000 },
+          })
+        ).data,
+      ),
+    enabled: !!renstraAktif?.tahun_mulai,
+  });
+
+  const { data: prioritasDaerahOptions = [], isLoading: isLoadingPrioDaerah } = useQuery({
+    queryKey: ['prioritas-daerah-program', renstraAktif?.tahun_mulai],
+    queryFn: async () =>
+      normalizeListItems(
+        (
+          await api.get('/prioritas-daerah', {
+            params: { jenis_dokumen: 'rpjmd', tahun: renstraAktif?.tahun_mulai, limit: 1000 },
+          })
+        ).data,
+      ),
+    enabled: !!renstraAktif?.tahun_mulai,
+  });
+
+  const { data: prioritasGubernurOptions = [], isLoading: isLoadingPrioGub } = useQuery({
+    queryKey: ['prioritas-gubernur-program', renstraAktif?.tahun_mulai],
+    queryFn: async () =>
+      normalizeListItems(
+        (
+          await api.get('/prioritas-gubernur', {
+            params: { jenis_dokumen: 'rpjmd', tahun: renstraAktif?.tahun_mulai, limit: 1000 },
+          })
+        ).data,
+      ),
+    enabled: !!renstraAktif?.tahun_mulai,
   });
 
   // Program yang sudah terdaftar di Renstra ini — dipakai untuk memeriksa
@@ -376,6 +435,45 @@ const ProgramRenstraForm = ({ initialData = null, renstraAktif }) => {
           errors={errors}
           required
           options={bidangOptions}
+        />
+
+        <SelectWithLabelValue
+          name="prioritas_nasional_id"
+          label="Program Prioritas Nasional"
+          control={control}
+          errors={errors}
+          loading={isLoadingPrioNas}
+          placeholder="(Opsional) Pilih Prioritas Nasional yang ditopang"
+          options={prioritasNasionalOptions.map((item) => ({
+            label: `${item.kode_prionas} - ${item.uraian_prionas}`,
+            value: String(item.id),
+          }))}
+        />
+
+        <SelectWithLabelValue
+          name="prioritas_daerah_id"
+          label="Program Prioritas Daerah"
+          control={control}
+          errors={errors}
+          loading={isLoadingPrioDaerah}
+          placeholder="(Opsional) Pilih Prioritas Daerah yang ditopang"
+          options={prioritasDaerahOptions.map((item) => ({
+            label: `${item.kode_prioda} - ${item.uraian_prioda}`,
+            value: String(item.id),
+          }))}
+        />
+
+        <SelectWithLabelValue
+          name="prioritas_kepala_daerah_id"
+          label="Program Prioritas Gubernur"
+          control={control}
+          errors={errors}
+          loading={isLoadingPrioGub}
+          placeholder="(Opsional) Pilih Prioritas Gubernur yang ditopang"
+          options={prioritasGubernurOptions.map((item) => ({
+            label: `${item.kode_priogub} - ${item.uraian_priogub}`,
+            value: String(item.id),
+          }))}
         />
 
         <div style={{ marginTop: 24 }}>

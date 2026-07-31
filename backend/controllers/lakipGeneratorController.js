@@ -140,8 +140,24 @@ async function collectLakipData(tahun, periode_id) {
       )
     : [[]];
 
+  // 6b. IKU & IKK — indikator level OPD yang berdiri sendiri (ref_id = renstra_id),
+  // tidak masuk hierarki Tujuan->Sasaran->Program->Kegiatan di atas, ditampilkan
+  // sebagai section terpisah (lihat indikatorIkuHtml/indikatorIkkHtml di buildHtml).
+  const [indikatorIkuIkkList] = renstraAktif
+    ? await sequelize.query(
+        `SELECT id, ref_id, stage, nama_indikator, satuan, jenis_indikator, kode_indikator,
+                penanggung_jawab,
+                target_tahun_1, target_tahun_2, target_tahun_3,
+                target_tahun_4, target_tahun_5, target_tahun_6
+         FROM indikator_renstra
+         WHERE stage IN ('iku','ikk') AND renstra_id = :renstraId
+         ORDER BY id ASC`,
+        { replacements: { renstraId: renstraAktif.id } },
+      )
+    : [[]];
+
   // 7. Realisasi tahun berjalan per indikator (dari Renstra OPD aktif)
-  const indikatorIds = indikatorList.map((i) => i.id);
+  const indikatorIds = [...indikatorList, ...indikatorIkuIkkList].map((i) => i.id);
   let realisasiMap = {};
   if (indikatorIds.length > 0 && tahun) {
     const [realisasiRows] = await sequelize.query(
@@ -206,7 +222,7 @@ async function collectLakipData(tahun, periode_id) {
 
   // 10. Flatten indikator + resolusi ancestry, lalu susun jadi nested tree
   // Tujuan -> Sasaran -> Program -> Kegiatan supaya jelas indikator itu milik siapa.
-  const indikatorFlat = indikatorList.map((ind) => {
+  const buildIndikatorRow = (ind, ancestry = {}) => {
     const offset =
       renstraAktif && tahun
         ? Math.min(Math.max(Number(tahun) - Number(renstraAktif.tahun_mulai) + 1, 1), 6)
@@ -217,7 +233,6 @@ async function collectLakipData(tahun, periode_id) {
     const pct = target > 0 ? Math.round((realisasi / target) * 100) : 0;
     const statusCapaian =
       pct >= 100 ? 'Tercapai' : pct >= 75 ? 'Hampir Tercapai' : 'Belum Tercapai';
-    const ancestry = resolveAncestry(ind.stage, ind.ref_id);
     return {
       id: ind.id,
       stage: ind.stage,
@@ -232,7 +247,16 @@ async function collectLakipData(tahun, periode_id) {
       narasi: generateNarasi(ind.nama_indikator, target, realisasi, pct, ind.satuan),
       ...ancestry,
     };
-  });
+  };
+
+  const indikatorFlat = indikatorList.map((ind) =>
+    buildIndikatorRow(ind, resolveAncestry(ind.stage, ind.ref_id)),
+  );
+
+  // IKU & IKK: indikator level OPD standalone, tidak punya ancestry hierarki.
+  const ikuIkkFlat = indikatorIkuIkkList.map((ind) => buildIndikatorRow(ind));
+  const iku = ikuIkkFlat.filter((i) => i.stage === 'iku');
+  const ikk = ikuIkkFlat.filter((i) => i.stage === 'ikk');
 
   const placedIndikatorIds = new Set();
   const indikatorTree = tujuanList.map((t) => {
@@ -302,6 +326,8 @@ async function collectLakipData(tahun, periode_id) {
     indikator: indikatorFlat,
     indikatorTree,
     indikatorOrphan,
+    iku,
+    ikk,
     lakipEntries,
     gambaranUmumItem,
     isuStrategisItem,
@@ -349,6 +375,8 @@ function buildHtml(data) {
     indikator,
     indikatorTree,
     indikatorOrphan,
+    iku,
+    ikk,
     lakipEntries,
     gambaranUmumItem,
     isuStrategisItem,
@@ -466,6 +494,22 @@ function buildHtml(data) {
       ? `<div class="orphan-block">
          <h4 class="hierarchy-title">Indikator Belum Terhubung ke Hierarki Renstra</h4>
          ${indikatorTableHtml(indikatorOrphan)}
+       </div>`
+      : '';
+
+  // IKU & IKK: indikator level OPD standalone (bukan bagian hierarki Tujuan..Kegiatan).
+  const indikatorIkuHtml =
+    iku && iku.length
+      ? `<div class="tujuan-block">
+         <h4 class="hierarchy-title tujuan-title">Indikator Kinerja Utama (IKU)</h4>
+         ${indikatorTableHtml(iku)}
+       </div>`
+      : '';
+  const indikatorIkkHtml =
+    ikk && ikk.length
+      ? `<div class="tujuan-block">
+         <h4 class="hierarchy-title tujuan-title">Indikator Kinerja Kunci (IKK)</h4>
+         ${indikatorTableHtml(ikk)}
        </div>`
       : '';
 
@@ -952,6 +996,8 @@ function buildHtml(data) {
       ${sasaranHtml}
 
       <h3 class="sub-title">Capaian Indikator Kinerja Tahun ${escH(tahun)}</h3>
+      ${indikatorIkuHtml}
+      ${indikatorIkkHtml}
       <p class="text-muted small">
         Indikator dikelompokkan mengikuti hierarki Renstra OPD aktif: Tujuan → Sasaran → Program → Kegiatan.
       </p>

@@ -1,11 +1,17 @@
 'use strict';
 
 /**
- * Render khusus BAB II — Tabel 2.1 & 2.2 perlu landscape (kolom banyak) dan
- * Tabel 2.2 perlu header 2-baris sesuai format resmi T-C.30 (grup "Target
- * Renstra Perangkat Daerah" x4 tahun, "Realisasi Capaian" x2 tahun, "Proyeksi"
- * x2 tahun) — tidak bisa dihasilkan dari markdown pipe-table datar biasa.
- * Narasi & tabel lain (2.3, 2.4, dst.) tetap portrait via renderMarkdownToPdf biasa.
+ * Render khusus BAB II — Tabel 2.1 (T-C.29) & Tabel 2.3 (T-C.30) perlu
+ * landscape (kolom banyak); Tabel 2.3 juga perlu header 2-baris sesuai format
+ * resmi T-C.30 (grup "Target Renstra Perangkat Daerah" x4 tahun, "Realisasi
+ * Capaian" x2 tahun, "Proyeksi" x2 tahun) — tidak bisa dihasilkan dari
+ * markdown pipe-table datar biasa.
+ *
+ * Nomor tabel di sini SENGAJA hardcode mengikuti urutan tetap di
+ * renjaAutoGenerateBabService.js (2.1=T-C.29, 2.2=Capaian IKU/IKK, 2.3=T-C.30).
+ * Kalau urutan/nomor tabel Bab II berubah lagi di sana, regex `/^Tabel 2\.\d\b/`
+ * DI BAWAH INI WAJIB disesuaikan ulang — tabel lain (2.2, 2.4, dst.) tetap
+ * portrait via renderMarkdownToPdf biasa.
  */
 
 const { ensureLandscape, ensurePortrait, usableWidth, leftMargin, moveBelow, computeProportionalColWidths } = require('./RenjaPdfLayoutHelper');
@@ -113,7 +119,7 @@ function renderBab2Section(pdf, bab2Text, tahun) {
       continue;
     }
 
-    if (/^Tabel 2\.2\b/.test(trimmed)) {
+    if (/^Tabel 2\.3\b/.test(trimmed)) {
       flushNarrative();
       const block = extractTableBlock(lines, i);
       renderTableInLandscape(

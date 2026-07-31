@@ -32,6 +32,24 @@ module.exports = (sequelize, DataTypes) => {
         foreignKey: 'program_id',
         as: 'tabelPrograms',
       });
+
+      RenstraProgram.belongsTo(models.PrioritasNasional, {
+        foreignKey: 'prioritas_nasional_id',
+        targetKey: 'id',
+        as: 'prioritasNasional',
+      });
+
+      RenstraProgram.belongsTo(models.PrioritasDaerah, {
+        foreignKey: 'prioritas_daerah_id',
+        targetKey: 'id',
+        as: 'prioritasDaerah',
+      });
+
+      RenstraProgram.belongsTo(models.PrioritasGubernur, {
+        foreignKey: 'prioritas_kepala_daerah_id',
+        targetKey: 'id',
+        as: 'prioritasGubernur',
+      });
     }
   }
 
@@ -63,6 +81,22 @@ module.exports = (sequelize, DataTypes) => {
       },
       rpjmd_program_id: {
         type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+      // Penanda dukungan Program terhadap prioritas berjenjang (opsional) —
+      // ditambahkan supaya Renja Bab V (Permendagri 14/2026) bisa menyajikan
+      // Program Prioritas Nasional/Daerah/Gubernur konsisten lintas tahun,
+      // bukan ditandai ulang tiap tahun di level item RKPD seperti sebelumnya.
+      prioritas_nasional_id: {
+        type: DataTypes.BIGINT.UNSIGNED,
+        allowNull: true,
+      },
+      prioritas_daerah_id: {
+        type: DataTypes.BIGINT.UNSIGNED,
+        allowNull: true,
+      },
+      prioritas_kepala_daerah_id: {
+        type: DataTypes.BIGINT.UNSIGNED,
         allowNull: true,
       },
     },

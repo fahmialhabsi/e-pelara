@@ -21,6 +21,9 @@ import ProgramPrioritasList from '../shared/components/ProgramPrioritasList';
 import KegiatanForm from '../shared/components/KegiatanForm';
 import SubkegiatanRenstraListPage from '@/features/renstra/subkegiatan/pages/subkegiatanRenstraListPage';
 import IndikatorRenstraListPage from '@/features/renstra/indikator/pages/indikatorRenstraListPage';
+import IndikatorIkuIkkListPage from '@/features/renstra/indikator/ikuIkk/pages/IndikatorIkuIkkListPage';
+import IndikatorIkuIkkAddPage from '@/features/renstra/indikator/ikuIkk/pages/IndikatorIkuIkkAddPage';
+import IndikatorIkuIkkEditPage from '@/features/renstra/indikator/ikuIkk/pages/IndikatorIkuIkkEditPage';
 import IndikatorTujuanRenstraListPage from '@/features/renstra/indikator/tujuan/pages/IndikatorTujuanRenstraListPage';
 import IndikatorTujuanRenstraAddPage from '@/features/renstra/indikator/tujuan/pages/indikatorTujuanRenstraAddPage';
 import IndikatorTujuanRenstraEditPage from '@/features/renstra/indikator/tujuan/pages/indikatorTujuanRenstraEditPage';
@@ -578,6 +581,38 @@ const routes = [
   {
     path: '/renstra/indikator/subkegiatan/edit/:id',
     element: <IndikatorSubKegiatanRenstraEditPage />,
+    role: ['SUPER_ADMIN', 'ADMINISTRATOR'],
+  },
+  // 📊 Indikator Renstra - IKU (Indikator Kinerja Utama)
+  {
+    path: '/renstra/indikator/iku',
+    element: <IndikatorIkuIkkListPage stage="iku" />,
+    role: ['SUPER_ADMIN', 'ADMINISTRATOR'],
+  },
+  {
+    path: '/renstra/indikator/iku/add',
+    element: <IndikatorIkuIkkAddPage stage="iku" />,
+    role: ['SUPER_ADMIN', 'ADMINISTRATOR'],
+  },
+  {
+    path: '/renstra/indikator/iku/edit/:id',
+    element: <IndikatorIkuIkkEditPage stage="iku" />,
+    role: ['SUPER_ADMIN', 'ADMINISTRATOR'],
+  },
+  // 📊 Indikator Renstra - IKK (Indikator Kinerja Kunci)
+  {
+    path: '/renstra/indikator/ikk',
+    element: <IndikatorIkuIkkListPage stage="ikk" />,
+    role: ['SUPER_ADMIN', 'ADMINISTRATOR'],
+  },
+  {
+    path: '/renstra/indikator/ikk/add',
+    element: <IndikatorIkuIkkAddPage stage="ikk" />,
+    role: ['SUPER_ADMIN', 'ADMINISTRATOR'],
+  },
+  {
+    path: '/renstra/indikator/ikk/edit/:id',
+    element: <IndikatorIkuIkkEditPage stage="ikk" />,
     role: ['SUPER_ADMIN', 'ADMINISTRATOR'],
   },
   // 🗂 Renstra Sub Kegiatan

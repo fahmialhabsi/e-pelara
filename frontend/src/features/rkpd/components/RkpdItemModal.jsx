@@ -1,5 +1,5 @@
 // File: frontend/src/features/rkpd/components/RkpdItemModal.jsx
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal, Button, Form, Spinner, Row, Col } from 'react-bootstrap';
 import api from '../../../services/api';
 import { extractListResponse } from '../../../utils/apiResponse';
@@ -52,16 +52,25 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
 
   // Loading states
   const [loadingProgram, setLoadingProgram] = useState(false);
-  const [loadingKegiatan, setLoadingKegiatan] = useState(false);
-  const [loadingSub, setLoadingSub] = useState(false);
   const [prioritasDaerahList, setPrioritasDaerahList] = useState([]);
+  const [errors, setErrors] = useState({});
 
   // Resolve tahun dari periode
   const resolvedTahun = doc?.periode?.tahun_awal
     ? String(doc.periode.tahun_awal)
     : String(doc?.tahun || '');
 
-  // Load program saat modal dibuka
+  // Load program saat modal dibuka.
+  //
+  // Sengaja TIDAK mengunci dependency pada objek `doc` — parent membuat objek
+  // `doc` baru setiap kali dokumen di-load ulang (termasuk setelah setiap
+  // simpan item, lewat load() di parent), sehingga mengunci pada `doc` bikin
+  // efek ini refetch prioritasDaerahList/programList berulang kali padahal
+  // isinya sama. Efek sampingnya: saat fetch berjalan, <select> sempat tidak
+  // punya opsi yang cocok dengan value yang tersimpan sehingga TERLIHAT
+  // kosong di layar walau state form-nya sendiri masih utuh — persis keluhan
+  // "Prioritas Daerah/Program ikut kosong" setelah tombol Simpan mode tambah.
+  // `resolvedTahun` sudah cukup mewakili kapan data ini perlu dimuat ulang.
   useEffect(() => {
     if (!show || !doc) return;
 
@@ -87,7 +96,8 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
       setProgramList(data);
       setLoadingProgram(false);
     });
-  }, [show, doc, resolvedTahun]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show, resolvedTahun]);
 
   // Reset form saat modal dibuka/tutup
   useEffect(() => {
@@ -104,6 +114,7 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
         satuan: editingItem.satuan || '',
         target: editingItem.target || '',
         pagu: editingItem.pagu || '',
+        prioritas_daerah: editingItem.prioritas_daerah || '',
         urutan: editingItem.urutan || 1,
       });
     } else {
@@ -111,6 +122,7 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
       setReasonText('');
       setReasonFile('');
     }
+    setErrors({});
     setKegiatanList([]);
     setSubKegiatanList([]);
     setIndikatorList([]);
@@ -122,14 +134,12 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
       setKegiatanList([]);
       return;
     }
-    setLoadingKegiatan(true);
     fetchList('/kegiatan', {
       jenis_dokumen: 'rkpd',
       tahun: resolvedTahun,
       program_id: form.program_id,
     }).then((data) => {
       setKegiatanList(data);
-      setLoadingKegiatan(false);
     });
   }, [form.program_id, resolvedTahun]);
 
@@ -139,7 +149,6 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
       setSubKegiatanList([]);
       return;
     }
-    setLoadingSub(true);
     // Cari renstra_kegiatan berdasarkan kode_kegiatan
     const kegiatanSelected = kegiatanList.find((k) => String(k.id) === String(form.kegiatan_id));
     const kodeKegiatan = kegiatanSelected?.kode_kegiatan || '';
@@ -154,9 +163,8 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
       .then((res) => {
         const subs = Array.isArray(res.data?.subs) ? res.data.subs : [];
         setSubKegiatanList(subs);
-        setLoadingSub(false);
       })
-      .catch(() => setLoadingSub(false));
+      .catch(() => {});
   }, [form.kegiatan_id]);
 
   // Load indikator saat sub kegiatan dipilih
@@ -269,8 +277,45 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
     }
   };
 
-  const handleSubmit = () => {
-    onSaved(form, reasonText, reasonFile);
+  const handleSubmit = async () => {
+    const nextErrors = {};
+    if (!form.prioritas_daerah || String(form.prioritas_daerah).trim() === '') {
+      nextErrors.prioritas_daerah = 'Prioritas daerah wajib dipilih.';
+    }
+    if (!form.program_id && !form.program) {
+      nextErrors.program = 'Program wajib diisi.';
+    }
+
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    const berhasil = await onSaved(form, reasonText, reasonFile);
+
+    // Mode tambah baru: modal tetap terbuka untuk item berikutnya. Prioritas
+    // Daerah, Program, dan Kegiatan DIPERTAHANKAN (biasanya sama untuk
+    // beberapa baris berturut-turut) — hanya Sub Kegiatan beserta detail yang
+    // mengikutinya (indikator/satuan/target/pagu) yang dikosongkan. Kalau
+    // user memang mau ganti Kegiatan, tinggal pilih ulang dari dropdown yang
+    // masih terisi (kegiatanList/subKegiatanList sengaja tidak direset).
+    // Ditutup langsung hanya saat mode edit satu item.
+    if (berhasil && !editingItem) {
+      setForm((prev) => ({
+        ...prev,
+        sub_kegiatan_id: '',
+        sub_kegiatan: '',
+        indikator: '',
+        satuan: '',
+        target: '',
+        pagu: '',
+        urutan: (Number(prev.urutan) || 0) + 1,
+      }));
+      setReasonText('');
+      setReasonFile('');
+      setErrors({});
+      setIndikatorList([]);
+    }
   };
 
   return (
@@ -291,7 +336,13 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
               <Form.Select
                 size="sm"
                 value={form.prioritas_daerah}
-                onChange={(e) => setForm({ ...form, prioritas_daerah: e.target.value })}
+                isInvalid={!!errors.prioritas_daerah}
+                onChange={(e) => {
+                  setForm({ ...form, prioritas_daerah: e.target.value });
+                  if (errors.prioritas_daerah) {
+                    setErrors((prev) => ({ ...prev, prioritas_daerah: undefined }));
+                  }
+                }}
               >
                 <option value="">-- Pilih Prioritas Daerah --</option>
                 {prioritasDaerahList.map((p) => (
@@ -300,6 +351,9 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
                   </option>
                 ))}
               </Form.Select>
+              <Form.Control.Feedback type="invalid">
+                {errors.prioritas_daerah}
+              </Form.Control.Feedback>
             </Form.Group>
           </Col>
           {/* Program */}
@@ -308,23 +362,45 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
               <Form.Label className="small fw-semibold">
                 Program <span className="text-danger">*</span>
               </Form.Label>
-              {editingItem ? (
-                <Form.Control
-                  size="sm"
-                  value={form.program}
-                  onChange={(e) => setForm({ ...form, program: e.target.value })}
-                />
-              ) : loadingProgram ? (
-                <Spinner size="sm" />
-              ) : (
-                <Form.Select size="sm" value={form.program_id} onChange={handleProgramChange}>
-                  <option value="">-- Pilih Program --</option>
-                  {programList.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.kode_program} - {p.nama_program || p.nama}
-                    </option>
-                  ))}
-                </Form.Select>
+              {editingItem && (
+                <>
+                  <Form.Control
+                    size="sm"
+                    value={form.program}
+                    isInvalid={!!errors.program}
+                    onChange={(e) => {
+                      setForm({ ...form, program: e.target.value });
+                      if (errors.program) {
+                        setErrors((prev) => ({ ...prev, program: undefined }));
+                      }
+                    }}
+                  />
+                  <Form.Control.Feedback type="invalid">{errors.program}</Form.Control.Feedback>
+                </>
+              )}
+              {!editingItem && loadingProgram && <Spinner size="sm" />}
+              {!editingItem && !loadingProgram && (
+                <>
+                  <Form.Select
+                    size="sm"
+                    value={form.program_id}
+                    isInvalid={!!errors.program}
+                    onChange={(e) => {
+                      handleProgramChange(e);
+                      if (errors.program) {
+                        setErrors((prev) => ({ ...prev, program: undefined }));
+                      }
+                    }}
+                  >
+                    <option value="">-- Pilih Program --</option>
+                    {programList.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.kode_program} - {p.nama_program || p.nama}
+                      </option>
+                    ))}
+                  </Form.Select>
+                  <Form.Control.Feedback type="invalid">{errors.program}</Form.Control.Feedback>
+                </>
               )}
             </Form.Group>
           </Col>
@@ -489,7 +565,7 @@ export default function RkpdItemModal({ show, onHide, doc, editingItem, onSaved,
           variant="primary"
           size="sm"
           onClick={handleSubmit}
-          disabled={saving || (!form.program_id && !form.program)}
+          disabled={saving || (!form.program_id && !form.program) || !form.prioritas_daerah}
         >
           {saving ? <Spinner size="sm" /> : 'Simpan'}
         </Button>

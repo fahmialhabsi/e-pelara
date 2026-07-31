@@ -148,16 +148,16 @@ const RENJA_BAB4_COLUMNS = [
 const RENJA_BAB4_COL_WIDTHS = [24, 145, 145, 170, 170, 40, 50, 90];
 
 const RENJA_BAB4_TABLE = [
-  { header: 'Kode', field: 'kode', width: 35 },
-  { header: 'Program', field: 'urusanProgram', width: 145 },
-  { header: 'Indikator', field: 'indikator', width: 135 },
-  { header: 'Lokasi', field: 'lokasi', width: 70 },
-  { header: 'Target', field: 'target', width: 45, align: 'center' },
-  { header: 'Pagu', field: 'pagu', width: 80, align: 'right' },
-  { header: 'Sumber Dana', field: 'sumberDana', width: 65 },
-  { header: 'Catatan', field: 'catatan', width: 80 },
-  { header: 'Target Maju', field: 'targetMaju', width: 45, align: 'center' },
-  { header: 'Pagu Maju', field: 'paguMaju', width: 60, align: 'right' },
+  { header: 'Kode', field: 'kode', width: 90 },
+  { header: 'Program', field: 'urusanProgram', width: 150 },
+  { header: 'Indikator', field: 'indikator', width: 190 },
+  { header: 'Lokasi', field: 'lokasi', width: 65 },
+  { header: 'Target', field: 'target', width: 35, align: 'center' },
+  { header: 'Pagu', field: 'pagu', width: 65, align: 'right' },
+  { header: 'Sumber Dana', field: 'sumberDana', width: 35 },
+  { header: 'Catatan', field: 'catatan', width: 45 },
+  { header: 'Target Maju', field: 'targetMaju', width: 35, align: 'center' },
+  { header: 'Pagu Maju', field: 'paguMaju', width: 50, align: 'right' },
 ];
 
 // ======================================================
@@ -172,9 +172,7 @@ const RENJA_BAB4 = {
   SUBTITLE_TABLE: '4.2 Rencana Program, Kegiatan, Indikator, Target, dan Pagu Indikatif',
 
   TABLE_TITLE(meta) {
-    return `Tabel 4.2 Rencana Program, Kegiatan, Indikator, Target, dan Pagu Indikatif ${
-      meta.pdNama || ''
-    } Tahun ${meta.tahun || ''}`;
+    return `Tabel 4.2 Rencana kerja dan pendanaan ${meta.pdNama || ''} Tahun ${meta.tahun || ''}`;
   },
 
   TABLE_NOTE(meta) {

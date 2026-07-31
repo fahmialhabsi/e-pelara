@@ -14,6 +14,28 @@ import SubdirectoryArrowRightIcon from "@mui/icons-material/SubdirectoryArrowRig
 import SyncAltIcon from "@mui/icons-material/SyncAlt";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
 import StorageIcon from "@mui/icons-material/Storage";
+import RecordVoiceOverIcon from "@mui/icons-material/RecordVoiceOver";
+import LightbulbIcon from "@mui/icons-material/Lightbulb";
+
+// Data pendukung Bab II Renja Permendagri 14/2026 — dikelola di modul RKPD
+// karena bersifat tahunan per perangkat daerah, bukan per dokumen Renja.
+const dataPendukungRenja = {
+  group: "📗 Data Pendukung Renja",
+  items: [
+    {
+      label: "Pokok-Pokok Pikiran DPRD",
+      path: "/rkpd/pokir-dprd",
+      icon: <RecordVoiceOverIcon />,
+      allowedDokumen: ["rkpd", "renja"],
+    },
+    {
+      label: "Inovasi Bidang Urusan",
+      path: "/rkpd/inovasi-bidang-urusan",
+      icon: <LightbulbIcon />,
+      allowedDokumen: ["rkpd", "renja"],
+    },
+  ],
+};
 
 const sidebarConfig = {
   SUPER_ADMIN: [
@@ -154,6 +176,7 @@ const sidebarConfig = {
         },
       ],
     },
+    dataPendukungRenja,
     {
       group: "👥 Admin",
       items: [
@@ -233,6 +256,7 @@ const sidebarConfig = {
         },
       ],
     },
+    dataPendukungRenja,
     {
       group: "🔁 Integrasi",
       items: [

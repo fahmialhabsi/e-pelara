@@ -293,6 +293,9 @@ async function createDokumen(req, res) {
         status: payload.status || 'draft',
         tanggal_pengesahan: payload.tanggal_pengesahan || null,
         is_test: payload.is_test === true,
+        regulasi_acuan: ['86_2017', '14_2026'].includes(payload.regulasi_acuan)
+          ? payload.regulasi_acuan
+          : '86_2017',
       },
       { transaction: t },
     );
@@ -352,6 +355,21 @@ async function updateDokumen(req, res) {
       : null;
 
     const newStatus = payload.status !== undefined ? payload.status : row.status;
+
+    // regulasi_acuan menentukan sistematika (5 vs 6 bab) dan generator narasi
+    // yang dipakai — mengubahnya pada dokumen final akan membuat isi dokumen
+    // tidak konsisten dengan struktur bab yang sudah disahkan.
+    if (
+      payload.regulasi_acuan !== undefined &&
+      payload.regulasi_acuan !== row.regulasi_acuan &&
+      row.status === 'final'
+    ) {
+      await t.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Regulasi acuan tidak dapat diubah pada dokumen berstatus final.',
+      });
+    }
 
     const consErr = await planningDomain.assertRenjaDokumenConsistency(db, merged, {
       rkpdDokumen,

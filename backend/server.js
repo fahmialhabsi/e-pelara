@@ -362,6 +362,11 @@ const planningRkpdDokumenRoutes = require('./routes/planningRkpdDokumenRoutes');
 
 // USE RENJA
 const renjaRoutes = require('./routes/renjaRoutes');
+// Data pendukung Renja Permendagri 14/2026 — tahunan per OPD, dikelola di modul RKPD
+const renjaPokirDprdRoutes = require('./routes/renjaPokirDprdRoutes');
+const renjaInovasiBidangUrusanRoutes = require('./routes/renjaInovasiBidangUrusanRoutes');
+const renjaRecallRoutes = require('./routes/renjaRecallRoutes');
+const renjaTabelCRoutes = require('./routes/renjaTabelCRoutes');
 
 // USE RKA
 const rkaRoutes = require('./routes/rkaRoutes');
@@ -388,6 +393,7 @@ const monevRoutes = require('./routes/monevRoutes');
 
 // USE LPK-DISPANG
 const lpkDispangRoutes = require('./routes/lpkDispangRoutes');
+const lpkDispangPrintRoutes = require('./routes/lpkDispangPrintRoutes');
 
 // USE LK-DISPANG
 const lkDispangRoutes = require('./routes/lkDispangRoutes');
@@ -559,6 +565,10 @@ app.use('/api/rkpd-dokumen', planningRkpdDokumenRoutes);
 
 // USE RENJA
 app.use('/api/renja', renjaRoutes);
+app.use('/api/renja-pokir-dprd', renjaPokirDprdRoutes);
+app.use('/api/renja-inovasi-bidang-urusan', renjaInovasiBidangUrusanRoutes);
+app.use('/api/renja-recall', renjaRecallRoutes);
+app.use('/api/permendagri14/tabel-c', renjaTabelCRoutes);
 
 // Audit konsistensi perencanaan (domain v2)
 app.use('/api/audit', auditPlanningRoutes);
@@ -590,6 +600,7 @@ app.use('/api/monev', monevRoutes);
 
 // USE LPK-DISPANG
 app.use('/api/lpk-dispang', lpkDispangRoutes);
+app.use('/api/lpk-dispang-print', lpkDispangPrintRoutes);
 
 // USE LK-DISPANG
 app.use('/api/lk-dispang', lkDispangRoutes);
