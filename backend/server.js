@@ -367,6 +367,7 @@ const renjaPokirDprdRoutes = require('./routes/renjaPokirDprdRoutes');
 const renjaInovasiBidangUrusanRoutes = require('./routes/renjaInovasiBidangUrusanRoutes');
 const renjaRecallRoutes = require('./routes/renjaRecallRoutes');
 const renjaTabelCRoutes = require('./routes/renjaTabelCRoutes');
+const prosnpRoutes = require('./routes/prosnpRoutes');
 
 // USE RKA
 const rkaRoutes = require('./routes/rkaRoutes');
@@ -569,6 +570,7 @@ app.use('/api/renja-pokir-dprd', renjaPokirDprdRoutes);
 app.use('/api/renja-inovasi-bidang-urusan', renjaInovasiBidangUrusanRoutes);
 app.use('/api/renja-recall', renjaRecallRoutes);
 app.use('/api/permendagri14/tabel-c', renjaTabelCRoutes);
+app.use('/api/prosnp', prosnpRoutes);
 
 // Audit konsistensi perencanaan (domain v2)
 app.use('/api/audit', auditPlanningRoutes);

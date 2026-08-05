@@ -65,6 +65,7 @@ import ClonedDataTable from './admin/ClonedDataTable';
 import mrRoutes from './routes/mrRoutes';
 import sdiRoutes from './routes/sdiRoutes';
 import renjaDataPendukungRoutes from './routes/renjaDataPendukungRoutes';
+import prosnpRoutes from './routes/prosnpRoutes';
 const TenantManagementPage = React.lazy(() => import('./admin/TenantManagementPage'));
 const SubscriptionAdminPage = React.lazy(() => import('./admin/SubscriptionAdminPage'));
 const PricingPage = React.lazy(() => import('./pages/PricingPage'));
@@ -648,6 +649,7 @@ function InnerApp() {
               ...mrRoutes,
               ...sdiRoutes,
               ...renjaDataPendukungRoutes,
+              ...prosnpRoutes,
             ].map(
               ({ path, element, role }, index) => (
                 <Route

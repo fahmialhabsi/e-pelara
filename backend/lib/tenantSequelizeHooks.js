@@ -19,6 +19,14 @@ const TENANTED_MODEL_NAMES = [
   "Sasaran",
   "ImportLog",
   "OpdPenanggungJawab",
+  "ProsnPeriode",
+  "ProsnIndikator",
+  "ProsnPengisian",
+  "ProsnBuktiDukung",
+  "ProsnBuktiIndikator",
+  "ProsnPemeriksaan",
+  "ProsnRiwayatStatus",
+  "ProsnArsip",
 ];
 
 function mergeTenantWhere(where, tenantId) {
