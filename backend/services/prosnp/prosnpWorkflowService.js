@@ -56,14 +56,18 @@ function validateForm(indikator, dataForm) {
 
 async function getPengisianScoped(id, tenantId, transaction) {
   const row = await db.ProsnPengisian.findByPk(id, {
-    include: [{
-      model: db.ProsnIndikator,
-      as: 'indikator',
-      include: [
-        { model: db.ProsnPeriode, as: 'periode' },
-        { model: db.ProsnBuktiDukung, as: 'buktiDukung', through: { attributes: ['id', 'checklist_status', 'catatan_kekurangan', 'relevansi', 'lock_version'] } },
-      ],
-    }],
+    include: [
+      { model: db.ProsnKategoriReferensi, as: 'hambatanKategori' },
+      { model: db.ProsnKategoriReferensi, as: 'tindakLanjutKategori' },
+      {
+        model: db.ProsnIndikator,
+        as: 'indikator',
+        include: [
+          { model: db.ProsnPeriode, as: 'periode' },
+          { model: db.ProsnBuktiDukung, as: 'buktiDukung', through: { attributes: ['id', 'checklist_status', 'catatan_kekurangan', 'relevansi', 'lock_version'] } },
+        ],
+      },
+    ],
     transaction,
   });
   assertSameTenant(row, tenantId);
@@ -143,7 +147,7 @@ async function updatePengisian(id, payload, actor, tenantId) {
     if (row.indikator.periode.status !== 'aktif') throw new ProsnError('Periode tidak aktif.', 409, 'PROSNP_PERIOD_LOCKED');
     if (row.lock_version !== expectedVersion) throw new ProsnError('Data telah diubah pengguna lain. Muat ulang data terlebih dahulu.', 409, 'PROSNP_VERSION_CONFLICT');
     if (!isAdmin(actor) && row.diisi_oleh && Number(row.diisi_oleh) !== Number(actor.id)) throw new ProsnError('Operator hanya dapat mengubah pengisian miliknya.', 403, 'PROSNP_NOT_OWNER');
-    const editable = ['data_form', 'target_nilai', 'realisasi_nilai', 'rasio_nilai', 'satuan', 'sumber_data', 'periode_data', 'hambatan', 'tindak_lanjut'];
+    const editable = ['data_form', 'target_nilai', 'realisasi_nilai', 'rasio_nilai', 'satuan', 'sumber_data', 'periode_data', 'hambatan', 'hambatan_kategori_id', 'tindak_lanjut', 'tindak_lanjut_kategori_id'];
     const values = Object.fromEntries(editable.filter((key) => Object.prototype.hasOwnProperty.call(payload, key)).map((key) => [key, payload[key]]));
     if (Object.prototype.hasOwnProperty.call(values, 'data_form')) validateForm(row.indikator, values.data_form);
     const [count] = await db.ProsnPengisian.update({ ...values, status: row.status === 'belum_diisi' ? 'dalam_pengisian' : row.status, diisi_oleh: row.diisi_oleh || actor.id, diisi_at: new Date(), updated_by: actor.id, lock_version: expectedVersion + 1 }, { where: { id: row.id, tenant_id: tenantId, lock_version: expectedVersion }, transaction });
@@ -186,6 +190,12 @@ async function transitionPengisian(id, target, payload, actor, tenantId) {
     await db.ProsnRiwayatStatus.create({ tenant_id: tenantId, pengisian_id: row.id, status_sebelum: row.status, status_sesudah: target, alasan: payload.alasan || null, metadata: { phase: 1, lock_version: expectedVersion + 1 }, diubah_oleh: actor.id, diubah_at: new Date() }, { transaction });
     return getPengisianScoped(id, tenantId, transaction);
   });
+}
+
+async function listKategoriReferensi(kelompok) {
+  const where = { aktif: true };
+  if (kelompok) where.kelompok = kelompok;
+  return db.ProsnKategoriReferensi.findAll({ where, order: [['kelompok', 'ASC'], ['urutan', 'ASC']] });
 }
 
 async function listAntrianPemeriksaan(tenantId) {
@@ -315,4 +325,4 @@ async function reopenPeriod(id, payload, actor, tenantId) {
   });
 }
 
-module.exports = { ProsnError, createPeriod, createIndikator, initializePeriodIndicators, activatePeriod, updatePengisian, transitionPengisian, listPeriods, listAntrianPemeriksaan, getPengisianScoped, createBukti, reviseBukti, checklistBukti, periksaPengisian, archivePeriod, reopenPeriod, isAdmin };
+module.exports = { ProsnError, createPeriod, createIndikator, initializePeriodIndicators, activatePeriod, updatePengisian, transitionPengisian, listPeriods, listAntrianPemeriksaan, listKategoriReferensi, getPengisianScoped, createBukti, reviseBukti, checklistBukti, periksaPengisian, archivePeriod, reopenPeriod, isAdmin };

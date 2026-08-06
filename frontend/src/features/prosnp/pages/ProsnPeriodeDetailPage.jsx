@@ -8,6 +8,8 @@ import {
   createProsnBukti,
   downloadProsnBukti,
   getProsnDukunganSistem,
+  getProsnKategoriReferensi,
+  getProsnPengisian,
   getProsnPeriodeDetail,
   reviseProsnBukti,
   transitionProsnPengisian,
@@ -61,6 +63,8 @@ function buildFormState(indikator) {
     tindak_lanjut: pengisian.tindak_lanjut || '',
     target_nilai: pengisian.target_nilai ?? '',
     realisasi_nilai: pengisian.realisasi_nilai ?? '',
+    hambatan_kategori_id: pengisian.hambatan_kategori_id ?? '',
+    tindak_lanjut_kategori_id: pengisian.tindak_lanjut_kategori_id ?? '',
     data_form: {
       program: dataForm.program || '',
       kegiatan: dataForm.kegiatan || '',
@@ -336,6 +340,13 @@ export default function ProsnPeriodeDetailPage() {
   const [pickerRows, setPickerRows] = useState(null);
   const [pickerLoading, setPickerLoading] = useState(false);
   const [pickerSearch, setPickerSearch] = useState('');
+  const [kategoriHambatan, setKategoriHambatan] = useState([]);
+  const [kategoriTindakLanjut, setKategoriTindakLanjut] = useState([]);
+
+  useEffect(() => {
+    getProsnKategoriReferensi('hambatan').then(setKategoriHambatan).catch(() => setKategoriHambatan([]));
+    getProsnKategoriReferensi('tindak_lanjut').then(setKategoriTindakLanjut).catch(() => setKategoriTindakLanjut([]));
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -422,7 +433,9 @@ export default function ProsnPeriodeDetailPage() {
       sumber_data: form.sumber_data || null,
       periode_data: form.periode_data || null,
       hambatan: form.hambatan || null,
+      hambatan_kategori_id: toNumberOrNull(form.hambatan_kategori_id),
       tindak_lanjut: form.tindak_lanjut || null,
+      tindak_lanjut_kategori_id: toNumberOrNull(form.tindak_lanjut_kategori_id),
     };
     if (indikator.tipe_form === 'dukungan_program') {
       base.data_form = {
@@ -478,6 +491,18 @@ export default function ProsnPeriodeDetailPage() {
     } finally {
       setSavingId(null);
     }
+  };
+
+  const refreshBukti = async (indikatorId, pengisianId) => {
+    const result = await getProsnPengisian(pengisianId);
+    const buktiDukung = result?.indikator?.buktiDukung || [];
+    setPeriode((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        indikators: prev.indikators.map((ind) => (ind.id === indikatorId ? { ...ind, buktiDukung } : ind)),
+      };
+    });
   };
 
   const openPicker = async (indikatorId) => {
@@ -804,6 +829,21 @@ export default function ProsnPeriodeDetailPage() {
                   </Form.Group>
                 </Col>
                 <Col md={6}>
+                  <Form.Group className="mb-2">
+                    <Form.Label>Kategori Hambatan</Form.Label>
+                    <Form.Select
+                      disabled={!editable}
+                      value={form.hambatan_kategori_id}
+                      onChange={(e) => setField(indikator.id, 'hambatan_kategori_id', e.target.value)}
+                    >
+                      <option value="">— Pilih kategori (opsional) —</option>
+                      {kategoriHambatan.map((k) => (
+                        <option key={k.id} value={k.id}>
+                          {k.label}
+                        </option>
+                      ))}
+                    </Form.Select>
+                  </Form.Group>
                   <Form.Group className="mb-3">
                     <Form.Label>Hambatan</Form.Label>
                     <Form.Control
@@ -816,6 +856,21 @@ export default function ProsnPeriodeDetailPage() {
                   </Form.Group>
                 </Col>
                 <Col md={6}>
+                  <Form.Group className="mb-2">
+                    <Form.Label>Kategori Tindak Lanjut</Form.Label>
+                    <Form.Select
+                      disabled={!editable}
+                      value={form.tindak_lanjut_kategori_id}
+                      onChange={(e) => setField(indikator.id, 'tindak_lanjut_kategori_id', e.target.value)}
+                    >
+                      <option value="">— Pilih kategori (opsional) —</option>
+                      {kategoriTindakLanjut.map((k) => (
+                        <option key={k.id} value={k.id}>
+                          {k.label}
+                        </option>
+                      ))}
+                    </Form.Select>
+                  </Form.Group>
                   <Form.Group className="mb-3">
                     <Form.Label>Tindak Lanjut</Form.Label>
                     <Form.Control
@@ -834,7 +889,7 @@ export default function ProsnPeriodeDetailPage() {
                 pengisianId={form.pengisianId}
                 canUpload={editable}
                 canReview={isReviewer(user?.role)}
-                onChanged={load}
+                onChanged={() => refreshBukti(indikator.id, form.pengisianId)}
               />
 
               {editable && (

@@ -9,6 +9,8 @@ module.exports = (sequelize, DataTypes) => {
       ProsnPengisian.belongsTo(models.User, { foreignKey: 'diisi_oleh', as: 'pengisi' });
       ProsnPengisian.hasMany(models.ProsnPemeriksaan, { foreignKey: 'pengisian_id', as: 'pemeriksaans' });
       ProsnPengisian.hasMany(models.ProsnRiwayatStatus, { foreignKey: 'pengisian_id', as: 'riwayatStatus' });
+      ProsnPengisian.belongsTo(models.ProsnKategoriReferensi, { foreignKey: 'hambatan_kategori_id', as: 'hambatanKategori' });
+      ProsnPengisian.belongsTo(models.ProsnKategoriReferensi, { foreignKey: 'tindak_lanjut_kategori_id', as: 'tindakLanjutKategori' });
     }
   }
 
@@ -26,7 +28,9 @@ module.exports = (sequelize, DataTypes) => {
     sumber_data: { type: DataTypes.TEXT, allowNull: true },
     periode_data: { type: DataTypes.STRING(100), allowNull: true },
     hambatan: { type: DataTypes.TEXT, allowNull: true },
+    hambatan_kategori_id: { type: DataTypes.INTEGER, allowNull: true },
     tindak_lanjut: { type: DataTypes.TEXT, allowNull: true },
+    tindak_lanjut_kategori_id: { type: DataTypes.INTEGER, allowNull: true },
     diisi_oleh: { type: DataTypes.INTEGER, allowNull: true }, diisi_at: { type: DataTypes.DATE, allowNull: true },
     siap_input_oleh: { type: DataTypes.INTEGER, allowNull: true }, siap_input_at: { type: DataTypes.DATE, allowNull: true },
     input_manual_oleh: { type: DataTypes.INTEGER, allowNull: true }, input_manual_at: { type: DataTypes.DATE, allowNull: true },

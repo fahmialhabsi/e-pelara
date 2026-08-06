@@ -126,13 +126,21 @@ function checkCriteria1to4(moduleName, source, exceptions) {
 
   // Kriteria 1: harus ada minimal satu kolom status
   if (statusCols.length === 0) {
-    findings.push({
-      module: moduleName,
-      criterion: 1,
-      severity: "BLOCKING",
-      message: "Tidak ditemukan kolom status resmi (pola *status / approval_status).",
-      location: `models/${moduleName}`,
-    });
+    if (whitelist && whitelist.criterion1) {
+      // Documented exception: model ini memang bukan entitas workflow
+      // (mis. arsip/snapshot hasil akhir, master data konfigurasi, atau
+      // audit log yang mencatat transisi lewat status_sebelum/status_sesudah
+      // alih-alih satu kolom status tunggal). Lihat field "reason" di
+      // workflowComplianceExceptions.json untuk justifikasi per modul.
+    } else {
+      findings.push({
+        module: moduleName,
+        criterion: 1,
+        severity: "BLOCKING",
+        message: "Tidak ditemukan kolom status resmi (pola *status / approval_status).",
+        location: `models/${moduleName}`,
+      });
+    }
     // Tidak lanjut ke kriteria 2 karena tidak ada kolom untuk diperiksa.
   } else {
     // Kriteria 2: domain nilai harus generik 4-state

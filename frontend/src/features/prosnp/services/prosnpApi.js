@@ -86,3 +86,8 @@ export async function getProsnAntrianPemeriksaan() {
   const response = await api.get('/prosnp/pemeriksaan/antrian');
   return response.data?.data || [];
 }
+
+export async function getProsnKategoriReferensi(kelompok) {
+  const response = await api.get('/prosnp/kategori-referensi', { params: kelompok ? { kelompok } : {} });
+  return response.data?.data || [];
+}

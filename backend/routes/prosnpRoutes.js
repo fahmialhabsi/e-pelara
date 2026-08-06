@@ -25,6 +25,7 @@ router.post('/periode/:id/buka-kembali', verifyToken, allowRoles(ADMIN), control
 router.get('/periode/:id/ekspor/excel', verifyToken, allowRoles(READ), controller.exportExcel);
 router.get('/periode/:id/dukungan-sistem', verifyToken, allowRoles(READ), controller.getDukunganSistem);
 router.get('/pemeriksaan/antrian', verifyToken, allowRoles(REVIEW), controller.listAntrianPemeriksaan);
+router.get('/kategori-referensi', verifyToken, allowRoles(READ), controller.listKategoriReferensi);
 router.get('/pengisian/:id', verifyToken, allowRoles(READ), controller.getPengisian);
 router.put('/pengisian/:id', verifyToken, allowRoles(WRITE), controller.updatePengisian);
 router.post('/pengisian/:id/transisi', verifyToken, allowRoles(READ), controller.transitionPengisian);

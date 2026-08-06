@@ -24,6 +24,58 @@
       "table": "prosnp_bukti_dukung",
       "statusColumn": "status",
       "actualValues": ["aktif", "perlu_perbaikan", "digantikan", "dibatalkan"]
+    },
+    "prosnpArsipModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN-P (prosnp_arsip, migration 20260805100000-create-prosnp-foundation.js). Model ini adalah snapshot arsip periode ProSN-P yang sudah selesai — menyimpan snapshot_data (JSON beku) dan checksum_snapshot (integritas), bukan entitas yang berpindah status. Kolom diarsipkan_oleh/diarsipkan_at mencatat siapa & kapan tindakan pengarsipan terjadi (audit satu-arah), bukan status lifecycle multi-tahap. Arsip adalah record hasil-akhir immutable, setara secara arsitektural dengan snapshot model existing lain di repo (lakSnapshotModel, neracaSnapshotModel, dll.) yang juga tidak berstatus DRAFT/SUBMITTED/APPROVED/REJECTED. Dikonfirmasi sebagai documented exception oleh Project Owner setelah review analisis per-model (2026-08-06), selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), sesi coding 2026-08-06 (review lanjutan ProSN-P)",
+      "table": "prosnp_arsip",
+      "statusColumn": null,
+      "note": "Tidak ada kolom status sama sekali — dikecualikan dari kriteria 1, bukan kriteria 2."
+    },
+    "prosnpIndikatorModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN-P (prosnp_indikator, migration 20260805100000-create-prosnp-foundation.js). Model ini adalah master data konfigurasi indikator ProSN-P (kode, nama, formula, tipe_form) per periode — bukan entitas transaksional yang disetujui via workflow. Kolom 'aktif' adalah boolean on/off administratif, bukan status lifecycle. Setara secara arsitektural dengan model master data lain di repo (mis. MasterKodeRekeningBelanja) yang juga tidak berstatus DRAFT/SUBMITTED/APPROVED/REJECTED karena dikonfigurasi admin, bukan disetujui via approval flow. Dikonfirmasi sebagai documented exception oleh Project Owner setelah review analisis per-model (2026-08-06), selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), sesi coding 2026-08-06 (review lanjutan ProSN-P)",
+      "table": "prosnp_indikator",
+      "statusColumn": null,
+      "note": "Tidak ada kolom status sama sekali — dikecualikan dari kriteria 1, bukan kriteria 2."
+    },
+    "prosnpPemeriksaanModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN-P (prosnp_pemeriksaan, migration 20260805100000-create-prosnp-foundation.js). Model ini adalah catatan hasil pemeriksaan/review per putaran (kolom 'putaran', unik per pengisian) terhadap satu ProsnPengisian (anak langsung lewat relasi hasMany di prosnpPengisianModel.js) — bukan status dokumen linear. Tiga kolom ENUM (hasil: lengkap/perlu_perbaikan; status_data & status_bukti: lengkap/tidak_lengkap/tidak_valid) adalah penilaian hasil pemeriksaan per putaran, immutable, secara struktural setara dengan ApprovalLog (log hasil tindakan) meski tidak disebut 'log' secara eksplisit di nama tabel. Catatan teknis: kolom status_data/status_bukti tidak terdeteksi oleh regex kolom-status script (pola /(^|_)status$/i mensyaratkan akhiran '_status', sedangkan kolom ini diawali 'status_') sehingga jatuh ke kriteria 1 (tidak ada kolom status terdeteksi), bukan kriteria 2 (ENUM tidak cocok) seperti awalnya diasumsikan — dikoreksi setelah verifikasi nyata menunjukkan whitelist criterion2 tidak menghilangkan BLOCKING. Dikonfirmasi sebagai documented exception oleh Project Owner setelah review analisis per-model (2026-08-06), selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), sesi coding 2026-08-06 (review lanjutan ProSN-P)",
+      "table": "prosnp_pemeriksaan",
+      "statusColumn": "hasil, status_data, status_bukti",
+      "actualValues": {
+        "hasil": ["lengkap", "perlu_perbaikan"],
+        "status_data": ["lengkap", "tidak_lengkap", "tidak_valid"],
+        "status_bukti": ["lengkap", "tidak_lengkap", "tidak_valid"]
+      }
+    },
+    "prosnpRiwayatStatusModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN-P (prosnp_riwayat_status, migration 20260805100000-create-prosnp-foundation.js). Model ini justru adalah audit-trail/log — nama tabel prosnp_riwayat_status, kolom status_sebelum/status_sesudah/alasan/diubah_oleh/diubah_at persis pola yang sama dengan ApprovalLog (from_status/to_status), hanya beda nama kolom. Tidak ada kolom 'status' tunggal karena memang mencatat TRANSISI (before/after), bukan status saat ini — timestamps:false mengonfirmasi ini log append-only, bukan entitas biasa. Terhubung lewat relasi hasMany dari prosnpPengisianModel.js (as: 'riwayatStatus'), berfungsi sebagai audit trail untuk ProsnPengisian yang sudah di-whitelist. Dikonfirmasi sebagai documented exception oleh Project Owner setelah review analisis per-model (2026-08-06), selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), sesi coding 2026-08-06 (review lanjutan ProSN-P)",
+      "table": "prosnp_riwayat_status",
+      "statusColumn": null,
+      "note": "Tidak ada kolom status tunggal — polanya status_sebelum/status_sesudah (audit log transisi), setara ApprovalLog.from_status/to_status. Dikecualikan dari kriteria 1."
+    },
+    "prosnpBuktiIndikatorModel.js": {
+      "criterion2": true,
+      "reason": "Modul ProSN-P (prosnp_bukti_indikator, migration 20260805100000-create-prosnp-foundation.js). Model ini adalah tabel pivot/link many-to-many antara ProsnBuktiDukung dan ProsnIndikator, mencatat bukti dokumen mana relevan untuk indikator mana. Kolom checklist_status (ENUM belum_dicek/sesuai/tidak_sesuai) adalah status verifikasi kecocokan per pasangan bukti-indikator, bukan status dokumen linear approval — modelnya sendiri junction table, bukan dokumen utuh. Sama alasannya dengan 3 model ProSN-P yang sudah disetujui sebelumnya (prosnpPeriodeModel.js dkk): lifecycle verifikasi/pengisian, bukan approval linear dokumen. Dikonfirmasi sebagai documented exception oleh Project Owner setelah review analisis per-model (2026-08-06), selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), sesi coding 2026-08-06 (review lanjutan ProSN-P)",
+      "table": "prosnp_bukti_indikator",
+      "statusColumn": "checklist_status",
+      "actualValues": ["belum_dicek", "sesuai", "tidak_sesuai"]
+    },
+    "prosnpKategoriReferensiModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN-P (prosnp_kategori_referensi, migration terkait modul ProSN-P). Model ini adalah tabel referensi/lookup untuk kategori hambatan dan tindak lanjut — dipakai sebagai daftar pilihan tetap oleh ProsnPengisian.hambatan_kategori_id dan tindak_lanjut_kategori_id (relasi hasMany dua arah, terkonfirmasi di associate()). Kolom 'kelompok' adalah ENUM tipe kategori (hambatan/tindak_lanjut), bukan status lifecycle. Kolom 'aktif' adalah boolean on/off administratif, pola yang sama dengan prosnpIndikatorModel.js yang sudah di-whitelist. Master data referensi dikonfigurasi admin (seeder/CRUD sederhana), bukan dokumen yang di-submit/approve/reject — tidak ada pihak yang 'menyetujui' sebuah kategori hambatan. Terdeteksi otomatis oleh pre-commit hook husky saat Project Owner mencoba commit model baru ini, dikonfirmasi sebagai documented exception oleh Project Owner setelah review analisis (2026-08-06), selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), sesi coding 2026-08-06 (terdeteksi via husky pre-commit)",
+      "table": "prosnp_kategori_referensi",
+      "statusColumn": null,
+      "note": "Tidak ada kolom status sama sekali — tabel referensi/lookup dua-kolom (kelompok + aktif), dikecualikan dari kriteria 1."
     }
   }
 }

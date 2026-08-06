@@ -50,7 +50,10 @@ async function createIndikator(req, res) { try { return ok(res, await workflow.c
 async function getPeriode(req, res) {
   try {
     const row = await db.ProsnPeriode.findOne({ where: { id: Number(req.params.id), tenant_id: req.tenantId }, include: [{ model: db.ProsnIndikator, as: 'indikators', include: [
-      { model: db.ProsnPengisian, as: 'pengisian' },
+      { model: db.ProsnPengisian, as: 'pengisian', include: [
+        { model: db.ProsnKategoriReferensi, as: 'hambatanKategori' },
+        { model: db.ProsnKategoriReferensi, as: 'tindakLanjutKategori' },
+      ] },
       { model: db.ProsnBuktiDukung, as: 'buktiDukung', through: { attributes: ['id', 'checklist_status', 'catatan_kekurangan', 'relevansi', 'lock_version'] } },
     ] }] });
     if (!row) return res.status(404).json({ success: false, message: 'Periode ProSN tidak ditemukan.', code: 'PROSNP_NOT_FOUND' });
@@ -73,6 +76,7 @@ async function downloadBukti(req, res) {
 }
 async function periksaPengisian(req, res) { try { return ok(res, await workflow.periksaPengisian(Number(req.params.id), req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
 async function listAntrianPemeriksaan(req, res) { try { return ok(res, await workflow.listAntrianPemeriksaan(req.tenantId)); } catch (e) { return fail(res, e); } }
+async function listKategoriReferensi(req, res) { try { return ok(res, await workflow.listKategoriReferensi(req.query.kelompok)); } catch (e) { return fail(res, e); } }
 async function archivePeriode(req, res) { try { return ok(res, await workflow.archivePeriod(Number(req.params.id), req.body, req.user, req.tenantId), 201); } catch (e) { return fail(res, e); } }
 async function reopenPeriode(req, res) { try { return ok(res, await workflow.reopenPeriod(Number(req.params.id), req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
 async function getDukunganSistem(req, res) {
@@ -92,4 +96,4 @@ async function exportExcel(req, res) {
   } catch (e) { return fail(res, e); }
 }
 
-module.exports = { getKonteks, listPeriode, createPeriode, createIndikator, initializeIndikator, activatePeriode, getPeriode, getPengisian, updatePengisian, transitionPengisian, createBukti, reviseBukti, checklistBukti, downloadBukti, periksaPengisian, listAntrianPemeriksaan, archivePeriode, reopenPeriode, exportExcel, getDukunganSistem };
+module.exports = { getKonteks, listPeriode, createPeriode, createIndikator, initializeIndikator, activatePeriode, getPeriode, getPengisian, updatePengisian, transitionPengisian, createBukti, reviseBukti, checklistBukti, downloadBukti, periksaPengisian, listAntrianPemeriksaan, listKategoriReferensi, archivePeriode, reopenPeriode, exportExcel, getDukunganSistem };
