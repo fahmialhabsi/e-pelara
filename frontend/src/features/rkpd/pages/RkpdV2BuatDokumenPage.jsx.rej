@@ -1,0 +1,22 @@
+diff a/frontend/src/features/rkpd/pages/RkpdV2BuatDokumenPage.jsx b/frontend/src/features/rkpd/pages/RkpdV2BuatDokumenPage.jsx	(rejected hunks)
+@@ -831,12 +831,20 @@ const RkpdV2BuatDokumenPage = () => {
+ 
+       // Simpan program/kegiatan/sub kegiatan sebagai rkpd_item
+       let urutan = 1;
++      const selectedPrioritasDaerah = prioritasDaerahList.find(
++        (item) => String(item.id) === String(prioritasDaerahId),
++      );
++      const prioritasDaerahLabel = selectedPrioritasDaerah
++        ? `${selectedPrioritasDaerah.kode_prioda} - ${selectedPrioritasDaerah.nama_prioda}`
++        : null;
++
+       for (const program of programs) {
+         for (const kegiatan of program.kegiatan || []) {
+           for (const sub of kegiatan.sub_kegiatan || []) {
+             await createRkpdItemV2({
+               rkpd_dokumen_id: id,
+               urutan: urutan++,
++              prioritas_daerah: prioritasDaerahLabel,
+               program: program.nama || '',
+               kegiatan: kegiatan.nama || '',
+               sub_kegiatan: sub.nama || '',

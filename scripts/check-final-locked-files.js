@@ -103,6 +103,76 @@ const changedLockedFiles = changedFiles
   .map((filePath) => ({ filePath, lockReason: getLockReason(filePath, manifest) }))
   .filter((item) => item.lockReason);
 
+// --- Tahap 3 wiring: workflow compliance static check (Opsi A, spec 32a §6.2) ---
+// Menjalankan Tahap 1 (backend/scripts/workflowComplianceValidationSelfTest.js)
+// terhadap file model backend/models/*.js yang berubah, sebagai pemeriksaan
+// TAMBAHAN dan INFORMATIF sebelum guard mengizinkan/memblokir perubahan.
+//
+// Sengaja --report-only (bukan --enforce): kriteria §4.2 belum divalidasi
+// terhadap ~94 model existing yang punya kolom ENUM (lihat Tahap 2 — mayoritas
+// belum diinventarisasi ke workflowComplianceExceptions.json). Mengaktifkan
+// --enforce di sini akan memblokir commit ke model lama yang sah, bukan hanya
+// modul baru yang melanggar pola — false-positive yang diperingatkan spec §4.5.
+// Naikkan ke --enforce setelah whitelist §4.4 lebih lengkap dan tim sudah
+// mereview daftar temuan report-only ini beberapa kali tanpa keberatan.
+//
+// Guard final-lock TIDAK menjadi gagal (exit 1) hanya karena ada temuan di
+// sini — status lock file/root existing tetap satu-satunya alasan blocking.
+// Bagian ini murni menambahkan visibilitas, sesuai batas Opsi A di §6.2:
+// "Guard tetap manual (tidak otomatis blocking) kecuali diwire lebih lanjut ke CI."
+// Cek apakah file ADA di HEAD (sudah pernah di-commit sebelumnya). Jika ya,
+// file ini adalah model EXISTING yang sekadar termodifikasi/untracked karena
+// sebab lain (mis. line-ending, whitespace, perubahan tak terkait status) —
+// BUKAN modul baru. Tahap 1 secara desain hanya untuk modul baru (spec 32a
+// §4.3), sehingga model existing tidak boleh ikut diperiksa lewat wiring
+// otomatis ini walau kebetulan tercatat "changed" oleh git diff.
+const existsInHead = (filePath) => {
+  try {
+    execFileSync("git", ["cat-file", "-e", `HEAD:${filePath}`], {
+      cwd: ROOT,
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const runWorkflowComplianceCheck = () => {
+  const changedModelFiles = changedFiles.filter(
+    (f) => f.startsWith("backend/models/") && f.endsWith(".js"),
+  );
+  // Persempit ke file yang BELUM ada di HEAD, yaitu model benar-benar baru
+  // (file baru yang belum pernah di-commit). Model existing yang sekadar
+  // termodifikasi TIDAK masuk sini — itu di luar cakupan Tahap 1.
+  const newModelFiles = changedModelFiles.filter((f) => !existsInHead(f));
+  if (newModelFiles.length === 0) return;
+
+  const scriptPath = path.join(ROOT, "backend", "scripts", "workflowComplianceValidationSelfTest.js");
+  if (!fs.existsSync(scriptPath)) return;
+
+  const modelBasenames = newModelFiles.map((f) => path.basename(f));
+
+  console.log("");
+  console.log("--- Workflow Compliance Check (Tahap 1, mode --report-only) ---");
+  try {
+    execFileSync(
+      "node",
+      [scriptPath, ...modelBasenames, "--report-only"],
+      { cwd: path.join(ROOT, "backend"), stdio: "inherit" },
+    );
+  } catch (error) {
+    // --report-only selalu exit 0 kecuali error argumen/file (exit 2).
+    // Tangkap agar guard tidak ikut gagal akibat error di pemeriksaan
+    // informatif ini; cukup beri tahu bahwa pemeriksaan tidak jalan sempurna.
+    console.error(`(workflow compliance check tidak selesai bersih: ${error.message})`);
+  }
+  console.log("--- Selesai Workflow Compliance Check ---");
+  console.log("");
+};
+
+runWorkflowComplianceCheck();
+
 if (changedLockedFiles.length === 0) {
   console.log("EPELARA FINAL CODE LOCK: OK");
   console.log("Tidak ada file frontend/backend/dokumen locked yang berubah.");

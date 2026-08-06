@@ -52,6 +52,10 @@ module.exports = (sequelize, DataTypes) => {
       tahun_akhir: DataTypes.INTEGER,
       keterangan: DataTypes.TEXT,
       is_aktif: DataTypes.BOOLEAN,
+      /** Penanda bahwa data RPJMD (Kegiatan/SubKegiatan) sumbernya berubah setelah di-clone ke Renstra ini. */
+      needs_recall: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      recall_reason: { type: DataTypes.STRING(255), allowNull: true },
+      last_recall_at: { type: DataTypes.DATE, allowNull: true },
     },
     {
       sequelize,

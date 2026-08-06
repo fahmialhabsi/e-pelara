@@ -10,11 +10,11 @@ import {
 } from "../utils/programDisplayLabel.js";
 
 /** Default dataset untuk GET /api/master-program (sinkron backend masterReferensiController). */
-export const MASTER_REFERENSI_DATASET_DEFAULT = "kepmendagri_provinsi_900_2024";
+export const MASTER_REFERENSI_DATASET_DEFAULT = "kepmendagri_provinsi_900_2026";
 
 /** Label badge UI untuk mode input dari referensi Kepmendagri. */
 export const MASTER_REFERENSI_BADGE_LABEL =
-  "MASTER · Kepmendagri 900/2024";
+  "MASTER · Kepmendagri 900.1-861/2026";
 
 export const MANUAL_INPUT_BADGE_LABEL = "MANUAL";
 

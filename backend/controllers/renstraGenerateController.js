@@ -6,7 +6,7 @@
 
 'use strict';
 
-const HTMLtoDOCX = require('html-to-docx');
+const HTMLtoDOCX = require('@turbodocx/html-to-docx');
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
@@ -63,8 +63,8 @@ const BRAND_GREEN = '#2f4a1e';
 const BRAND_GOLD = '#c9a961';
 const BRAND_CREAM = '#f7f3e8';
 
-const HEADER_BAND_IMAGE_PATH = path.join(__dirname, '../assets/branding/pita-header-pangan.png');
-const FOOTER_BAND_IMAGE_PATH = path.join(__dirname, '../assets/branding/pita-footer-pangan.png');
+const HEADER_BAND_IMAGE_PATH = path.join(__dirname, '../assets/banner_header.png');
+const FOOTER_BAND_IMAGE_PATH = path.join(__dirname, '../assets/banner_footer.png');
 let headerBandImageDataUri = null;
 let footerBandImageDataUri = null;
 try {
@@ -95,11 +95,11 @@ function buildPdfHeaderTemplate(renstra) {
 
   if (headerBandImageDataUri) {
     return `
-<div style="position:relative;width:100%;height:110px;font-family:Arial,Helvetica,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact">
-  <img src="${headerBandImageDataUri}" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;object-position:top"/>
-  <div style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;padding:0 26px 0 0;box-sizing:border-box">
-    <span style="font-size:9.5px;font-weight:bold;color:${BRAND_GREEN};line-height:1.3">RENCANA STRATEGIS (RENSTRA) &mdash; ${namaOpd}</span>
-    <span style="font-size:8.5px;color:${BRAND_GREEN};margin-top:3px">Periode ${periode}</span>
+<div style="width:100%;height:104px;margin:0;background:${BRAND_GREEN};border-bottom:2px solid ${BRAND_GOLD};display:flex;align-items:center;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact">
+  <img src="${headerBandImageDataUri}" style="height:100%;width:auto;object-fit:contain;flex-shrink:0"/>
+  <div style="flex:1;display:flex;flex-direction:column;align-items:flex-end;padding:0 22px 0 10px">
+    <span style="font-size:9px;font-weight:bold;color:#ffffff;line-height:1.3">RENCANA STRATEGIS (RENSTRA) &mdash; ${namaOpd}</span>
+    <span style="font-size:8px;color:${BRAND_GOLD};margin-top:2px">Periode ${periode}</span>
   </div>
 </div>`;
   }
@@ -115,13 +115,11 @@ function buildPdfFooterTemplate(renstra) {
 
   if (footerBandImageDataUri) {
     return `
-<div style="position:relative;width:100%;height:90px;font-family:Arial,Helvetica,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact">
-  <img src="${footerBandImageDataUri}" style="position:absolute;bottom:0;left:0;width:100%;height:100%;object-fit:contain;object-position:bottom"/>
-  <div style="position:absolute;bottom:14px;left:20%;width:55%;height:26px;display:flex;align-items:center">
+<div style="width:100%;height:96px;margin:0;background:${BRAND_CREAM};border-top:2px solid ${BRAND_GOLD};display:flex;align-items:center;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact">
+  <img src="${footerBandImageDataUri}" style="height:100%;width:auto;object-fit:contain;flex-shrink:0"/>
+  <div style="flex:1;display:flex;align-items:center;justify-content:space-between;padding:0 22px 0 10px">
     <span style="font-size:9px;font-weight:bold;color:${BRAND_GREEN}">${namaOpd} &middot; Provinsi Maluku Utara</span>
-  </div>
-  <div style="position:absolute;bottom:14px;right:6%;width:26%;height:26px;display:flex;align-items:center;justify-content:center">
-    <span style="font-size:8.5px;color:${BRAND_GREEN}">Halaman <span class="pageNumber"></span> dari <span class="totalPages"></span></span>
+    <span style="font-size:8px;color:${BRAND_GREEN}">Halaman <span class="pageNumber"></span> dari <span class="totalPages"></span></span>
   </div>
 </div>`;
   }
@@ -137,22 +135,29 @@ function buildDocxHeaderHtml(renstra) {
   const namaOpd = escBand(renstra.nama_opd || 'OPD');
   const periode = `${escBand(renstra.tahun_mulai)}-${escBand(renstra.tahun_akhir)}`;
 
+  // Menggunakan @turbodocx/html-to-docx (bukan html-to-docx lama) — fork ini
+  // memperbaiki dua bug yang sebelumnya bikin gagal: (1) <img> di header/footer
+  // tidak lagi memicu "Invalid XML name", (2) background-color pada <td> ikut
+  // diterapkan. Lebar <td> sengaja pakai px tetap, bukan %, sesuai temuan.
   if (headerBandImageDataUri) {
     return `
-<table width="100%" style="border-collapse:collapse">
+<table width="100%" style="table-layout:fixed;border-collapse:collapse">
+  <colgroup><col style="width:18%"><col style="width:82%"></colgroup>
   <tr>
-    <td style="width:35%;padding:2px"><img src="${headerBandImageDataUri}" width="200"/></td>
-    <td style="width:65%;text-align:right;padding:4px 10px;vertical-align:middle">
-      <div style="font-size:9pt;font-weight:bold;color:${BRAND_GREEN};font-family:Arial,Helvetica,sans-serif">RENCANA STRATEGIS (RENSTRA) &mdash; ${namaOpd}</div>
-      <div style="font-size:8pt;color:${BRAND_GREEN};font-family:Arial,Helvetica,sans-serif">Periode ${periode}</div>
+    <td style="background-color:${BRAND_GREEN};padding:6px">
+      <img src="${headerBandImageDataUri}" width="100" height="30"/>
+    </td>
+    <td style="background-color:${BRAND_GREEN};text-align:right;color:#ffffff;padding:6px 14px;font-family:Arial,Helvetica,sans-serif">
+      <div style="font-weight:bold;font-size:9pt">RENCANA STRATEGIS (RENSTRA) &mdash; ${namaOpd}</div>
+      <div style="color:${BRAND_GOLD};font-size:8pt">Periode ${periode}</div>
     </td>
   </tr>
 </table>`;
   }
   return `
-<table width="100%" style="border-collapse:collapse;background-color:#123c2e">
+<table width="100%" style="border-collapse:collapse">
   <tr>
-    <td style="padding:6px 10px;color:#ffffff;font-size:9pt;font-family:Arial,Helvetica,sans-serif">
+    <td style="padding:6px 10px;border-bottom:2px solid ${BRAND_GOLD};color:${BRAND_GREEN};font-size:9pt;font-family:Arial,Helvetica,sans-serif">
       <strong>RENCANA STRATEGIS (RENSTRA) &mdash; ${namaOpd}</strong> &nbsp;|&nbsp; Periode ${periode}
     </td>
   </tr>
@@ -164,19 +169,22 @@ function buildDocxFooterHtml(renstra) {
 
   if (footerBandImageDataUri) {
     return `
-<table width="100%" style="border-collapse:collapse">
+<table width="100%" style="table-layout:fixed;border-collapse:collapse">
+  <colgroup><col style="width:14%"><col style="width:86%"></colgroup>
   <tr>
-    <td style="width:30%;padding:2px"><img src="${footerBandImageDataUri}" width="160"/></td>
-    <td style="width:70%;text-align:left;padding:4px 10px;vertical-align:middle">
-      <span style="font-size:8pt;font-weight:bold;color:${BRAND_GREEN};font-family:Arial,Helvetica,sans-serif">${namaOpd} &middot; Provinsi Maluku Utara</span>
+    <td style="background-color:${BRAND_CREAM};padding:4px">
+      <img src="${footerBandImageDataUri}" width="60" height="20"/>
+    </td>
+    <td style="background-color:${BRAND_CREAM};text-align:left;color:${BRAND_GREEN};padding:4px 14px;font-family:Arial,Helvetica,sans-serif;font-size:8pt">
+      ${namaOpd} &middot; Provinsi Maluku Utara
     </td>
   </tr>
 </table>`;
   }
   return `
-<table width="100%" style="border-collapse:collapse;background-color:${BRAND_CREAM}">
+<table width="100%" style="border-collapse:collapse">
   <tr>
-    <td style="padding:5px 10px;color:${BRAND_GREEN};font-size:8pt;font-family:Arial,Helvetica,sans-serif">
+    <td style="padding:5px 10px;border-top:2px solid ${BRAND_GOLD};color:${BRAND_GREEN};font-size:8pt;font-family:Arial,Helvetica,sans-serif">
       ${namaOpd} &middot; Provinsi Maluku Utara
     </td>
   </tr>
@@ -2228,8 +2236,8 @@ exports.generatePdf = async (req, res) => {
       // Margin sedikit lebih lebar di top/bottom ketika band header/footer aktif,
       // supaya band tidak bertabrakan dengan konten tabel.
       const bandMargin = landscape
-        ? { top: '2.4cm', right: '0.6cm', bottom: '2cm', left: '0.6cm' }
-        : { top: '3.8cm', right: '2cm', bottom: '3cm', left: '3cm' };
+        ? { top: '2.2cm', right: '0.6cm', bottom: '2cm', left: '0.6cm' }
+        : { top: '2.9cm', right: '2cm', bottom: '2.7cm', left: '3cm' };
       const buffer = await page.pdf({
         format: 'A4',
         printBackground: true,

@@ -56,6 +56,14 @@ router.put(
   renstraOpdController.setAktif
 );
 
+// Recall — sinkronkan ulang kode/nama Kegiatan/Sub Kegiatan Renstra dari RPJMD
+router.post(
+  "/:id/recall",
+  verifyToken,
+  allowRoles(["SUPER_ADMIN", "ADMINISTRATOR"]),
+  renstraOpdController.recall
+);
+
 // Hapus data
 router.delete(
   "/:id",

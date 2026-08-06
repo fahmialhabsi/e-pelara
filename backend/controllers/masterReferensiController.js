@@ -4,7 +4,7 @@
 const { MasterProgram, MasterKegiatan, MasterSubKegiatan } = require('../models');
 
 // ✅ DEFAULT DATASET (KUNCI UTAMA)
-const DEFAULT_DATASET_KEY = 'kepmendagri_provinsi_900_2024';
+const DEFAULT_DATASET_KEY = 'kepmendagri_provinsi_900_2026';
 
 /**
  * Helper ambil dataset_key dari query

@@ -90,6 +90,7 @@ const menuItems = [
     path: '/dashboard-lk-dispang',
   },
   { label: 'LAKIP', icon: <DashboardIcon />, path: '/dashboard-lakip' },
+  { label: 'ProSN', icon: <FactCheckIcon />, path: '/prosnp/periode' },
   { label: 'LK — Dashboard', icon: <DashboardIcon />, path: '/lk/dashboard' },
   { label: 'LK — LAK', icon: <DashboardIcon />, path: '/lk/lak' },
   { label: 'LK — CALK', icon: <DashboardIcon />, path: '/lk/calk' },

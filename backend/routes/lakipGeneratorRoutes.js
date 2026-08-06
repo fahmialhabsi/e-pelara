@@ -17,8 +17,11 @@ router.get("/data",    verifyToken, allowRoles(ALL_ROLES), ctrl.getData);
 // HTML preview — buka di tab baru
 router.get("/preview", verifyToken, allowRoles(ALL_ROLES), ctrl.preview);
 
-// Export PDF — server-side via puppeteer
+// Export PDF — server-side via puppeteer (cepat, tanpa nomor halaman Daftar Isi — dipakai sehari-hari)
 router.get("/export/pdf",  verifyToken, allowRoles(ALL_ROLES), exportCtrl.exportPdf);
+
+// Export PDF FINAL — dengan nomor halaman Daftar Isi (Fase 19, lebih lambat — dipakai saat dokumen mau diterbitkan resmi)
+router.get("/export/pdf-final", verifyToken, allowRoles(ALL_ROLES), exportCtrl.exportPdfFinal);
 
 // Export DOCX — server-side via html-to-docx
 router.get("/export/docx", verifyToken, allowRoles(ALL_ROLES), exportCtrl.exportDocx);

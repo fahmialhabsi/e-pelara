@@ -3,7 +3,8 @@
  * RKA → RPJMD → PREVIEW GUARANTEED (NO EMPTY UI)
  */
 
-const { Dpa, PeriodeRpjmd, PlanningAuditEvent } = require('../models');
+const { Dpa, PeriodeRpjmd, PlanningAuditEvent, LkDispang } = require('../models');
+const { flagNeedsRecallAman, flagLkSnapshotsPerluRecall } = require('../services/recallDataService');
 const Joi = require('joi');
 const { splitPlanningBody } = require('../helpers/planningDocumentMutation');
 
@@ -618,25 +619,86 @@ module.exports = {
     }
   },
 
+  /**
+   * Generate DPA baru dari RKA. Bila DPA-nya sudah ada dan `recall=true`
+   * dikirim, alih-alih menolak, baris DPA yang sudah ada disegarkan ulang
+   * dari RKA (recall) — ditolak bila `approval_status=APPROVED` kecuali
+   * `paksa=true` (pola sama seperti renjaRecallService.recallRenja).
+   */
   async generateFromRka(req, res) {
     try {
       const { rka_id } = req.params;
+      const recall = req.query?.recall === 'true' || req.body?.recall === true;
+      const paksa = req.query?.paksa === 'true' || req.body?.paksa === true;
+      const uid = req.user?.id ?? req.user?.userId ?? null;
       const { Rka, RkaRincianBelanja, Dpa } = require('../models');
       const rka = await Rka.findByPk(rka_id);
       if (!rka) return res.status(404).json({ success: false, message: 'RKA tidak ditemukan' });
       const existing = await Dpa.findOne({
         where: { rka_id: Number(rka_id), is_active_version: true },
       });
-      if (existing)
-        return res.status(409).json({
-          success: false,
-          message: `DPA dari RKA #${rka_id} sudah ada (DPA #${existing.id}).`,
-        });
+
       const rincian = await RkaRincianBelanja.findAll({
         where: { rka_id: Number(rka_id) },
         order: [['urutan', 'ASC']],
       });
       const totalAnggaran = rincian.reduce((s, r) => s + Number(r.jumlah || 0), 0);
+
+      if (existing && !recall) {
+        return res.status(409).json({
+          success: false,
+          message: `DPA dari RKA #${rka_id} sudah ada (DPA #${existing.id}). Kirim recall=true untuk menyegarkan ulang.`,
+        });
+      }
+
+      if (existing && recall) {
+        if (existing.approval_status === 'APPROVED' && !paksa) {
+          return res.status(409).json({
+            success: false,
+            message: `DPA #${existing.id} sudah APPROVED. Kirim paksa=true bila memang hendak menimpanya.`,
+          });
+        }
+
+        await existing.update({
+          program: rka.program,
+          kegiatan: rka.kegiatan,
+          sub_kegiatan: rka.sub_kegiatan,
+          kode_program: rka.kode_program,
+          kode_kegiatan: rka.kode_kegiatan,
+          kode_sub_kegiatan: rka.kode_sub_kegiatan,
+          indikator: rka.indikator,
+          target: rka.target,
+          anggaran: totalAnggaran,
+          pagu_total: totalAnggaran,
+          needs_recall: false,
+          recall_reason: null,
+          last_recall_at: new Date(),
+        });
+
+        const { ActivityLog } = require('../models');
+        if (ActivityLog) {
+          await ActivityLog.create({
+            user_id: uid,
+            action: 'dpa_recall',
+            entity_type: 'dpa',
+            entity_id: existing.id,
+            new_data: JSON.stringify({ rka_id: Number(rka_id), anggaran: totalAnggaran }),
+          }).catch(() => null);
+        }
+
+        return res.json({
+          success: true,
+          message: `DPA #${existing.id} berhasil disegarkan ulang dari RKA #${rka_id}`,
+          data: {
+            dpa_id: existing.id,
+            rka_id: Number(rka_id),
+            program: existing.program,
+            anggaran: totalAnggaran,
+            jumlah_rincian: rincian.length,
+          },
+        });
+      }
+
       const dpa = await Dpa.create({
         tahun: String(rka.tahun),
         periode_id: rka.periode_id,
@@ -873,6 +935,11 @@ module.exports = {
       };
 
       await Dpa.update(patch, { where: { id } });
+
+      // Tandai LK Dispang turunan (kalau sudah pernah di-rollup dari DPA ini) perlu di-recall.
+      flagNeedsRecallAman(LkDispang, { dpa_id: id }, { reason: 'DPA sumber diperbarui' });
+      // Tandai LRA/LAK/LO/LPE/Neraca tahun ini juga sumbernya dari DPA (+ BKU).
+      flagLkSnapshotsPerluRecall(require('../models'), mergedPayload.tahun, 'DPA sumber diperbarui');
 
       const result = await Dpa.findByPk(id);
       const { old_value, new_value } = auditValuesFromRows(oldRow, result);

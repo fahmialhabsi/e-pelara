@@ -1,10 +1,11 @@
 'use strict';
 
-const { IndikatorRenstra, RealisasiIndikatorRenstra } = require('../models');
+const { IndikatorRenstra, RealisasiIndikatorRenstra, Lakip } = require('../models');
 const { Op } = require('sequelize');
 const {
   buildRealisasiIndikatorHierarchy,
 } = require('../services/realisasiIndikatorRenstraHierarchyService');
+const { flagNeedsRecallAman } = require('../services/recallDataService');
 
 // CRUD manual untuk realisasi capaian indikator Renstra stage sasaran/program/kegiatan.
 // Beda dari pengkegRealisasiSyncService.js yang otomatis dari Pengkeg (stage sub_kegiatan);
@@ -85,6 +86,12 @@ module.exports = {
         defaults: { nilai_realisasi, keterangan },
       });
       await row.update({ nilai_realisasi, keterangan });
+
+      // Tandai LAKIP tahun ini perlu di-recall (coarse per-tahun, sama seperti
+      // granularitas tandaiPerluRecall Renja — belum ada FK bersih indikator->LAKIP).
+      flagNeedsRecallAman(Lakip, { tahun: String(tahun) }, {
+        reason: 'Realisasi indikator Renstra diperbarui',
+      });
 
       res.json(row);
     } catch (error) {

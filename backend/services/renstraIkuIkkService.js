@@ -56,6 +56,82 @@ function narasiCapaian(nama, target, realisasi, pctBulat, satuan, status) {
 }
 
 /**
+ * Narasi terstruktur "Faktor Pendukung dan Faktor Penghambat" atas gabungan
+ * capaian IKU+IKK — permintaan Bappeda (2026-08-01), format mengikuti contoh
+ * dokumen Renja Badan Pendapatan Daerah (label "Faktor Pendukung", daftar
+ * bernomor per faktor) yang dijadikan acuan gaya oleh Bappeda. Sama seperti
+ * narasiCapaian, faktor ditulis sebagai POLA UMUM (dihedge "umumnya"/"antara
+ * lain") karena sistem tidak menyimpan data kualitatif alasan lapangan —
+ * bukan klaim penyebab pasti per indikator. Daftar bernomor "1. ..." dipakai
+ * (bukan bullet "•") karena itu satu-satunya format daftar yang sudah didukung
+ * renderer PDF/DOCX bersama (hanging indent otomatis) — bullet belum ada.
+ */
+function narasiFaktorPendorongPenghambat(semuaCapaian) {
+  const adaData = semuaCapaian.filter((c) => c.pct !== null && c.pct !== undefined);
+  if (adaData.length === 0) return '';
+
+  const pendorong = adaData.filter((c) => c.status === 'Tercapai');
+  const penghambat = adaData.filter(
+    (c) => c.status === 'Hampir Tercapai' || c.status === 'Belum Tercapai',
+  );
+  if (pendorong.length === 0 && penghambat.length === 0) return '';
+
+  const sebutIndikator = (list) => list.map((c) => `"${c.nama}"`).join(', ');
+
+  let teks = '';
+
+  if (pendorong.length > 0) {
+    teks += `Faktor Pendukung\n\n`;
+    teks += `Faktor-faktor yang mendukung tercapainya ${pendorong.length} indikator (${sebutIndikator(pendorong)}) antara lain:\n`;
+    teks += `1. Pelaksanaan program dan kegiatan pendukung yang berjalan sesuai jadwal dan rencana penarikan anggaran;\n`;
+    teks += `2. Koordinasi lintas bidang serta dengan pemangku kepentingan terkait (kabupaten/kota, instansi vertikal, dan mitra kerja) yang berjalan efektif;\n`;
+    teks += `3. Ketersediaan pendanaan operasional yang mencukupi pada tahun berjalan.\n\n`;
+  }
+
+  if (penghambat.length > 0) {
+    teks += `Faktor Penghambat\n\n`;
+    teks += `Beberapa faktor yang masih menjadi kendala pada ${penghambat.length} indikator (${sebutIndikator(penghambat)}) antara lain:\n`;
+    teks += `1. Keterbatasan alokasi anggaran pendukung pelaksanaan kegiatan;\n`;
+    teks += `2. Kendala distribusi, logistik, dan rentang kendali pembinaan akibat kondisi geografis kepulauan Provinsi Maluku Utara;\n`;
+    teks += `3. Faktor eksternal seperti fluktuasi harga pasar, kondisi cuaca/iklim, dan ketergantungan pasokan pangan antarpulau;\n`;
+    teks += `4. Keterlambatan pemutakhiran data realisasi dari unit/kabupaten-kota pelaksana.\n\n`;
+    teks += `Faktor-faktor tersebut menjadi dasar penajaman strategi pelaksanaan program dan kegiatan pada tahun berikutnya.\n\n`;
+  }
+
+  return teks;
+}
+
+/**
+ * Format angka baseline/target/realisasi untuk TAMPILAN dokumen resmi, sesuai
+ * jumlah desimal indikator ybs (kolom `jumlah_desimal_tampilan`, NULL berarti
+ * 2 desimal). Nilai numeriknya identik (1,89 = 1,890) — ini murni soal berapa
+ * digit dibelakang koma yang lazim dipakai untuk indikator tsb (mis. "Konsumsi
+ * Energi per Kapita" konvensinya 3 desimal, "Konsumsi Protein per Kapita" 1
+ * desimal), BUKAN presisi datanya. Selalu pakai koma sebagai pemisah desimal.
+ */
+function formatAngkaIndikator(nilai, ir) {
+  if (nilai === null || nilai === undefined || nilai === '') return null;
+  const n = Number(nilai);
+  if (!Number.isFinite(n)) return String(nilai).replace('.', ',');
+  const desimal = ir?.jumlah_desimal_tampilan;
+  const d = Number.isInteger(desimal) && desimal >= 0 ? desimal : 2;
+  return n.toFixed(d).replace('.', ',');
+}
+
+/** Sama seperti formatAngkaIndikator, tapi TANPA ganti titik->koma — dipakai
+ * di narasiCapaian yang gaya penulisannya sudah pakai titik desimal
+ * (mis. "0.06 Kkal/Kap/Hari" untuk selisih), supaya target/realisasi di
+ * kalimat yang sama konsisten pakai titik juga, bukan tercampur koma/titik. */
+function formatAngkaEn(nilai, ir) {
+  if (nilai === null || nilai === undefined || nilai === '') return null;
+  const n = Number(nilai);
+  if (!Number.isFinite(n)) return String(nilai);
+  const desimal = ir?.jumlah_desimal_tampilan;
+  const d = Number.isInteger(desimal) && desimal >= 0 ? desimal : 2;
+  return n.toFixed(d);
+}
+
+/**
  * Ambil capaian IKU & IKK Perangkat Daerah untuk satu tahun evaluasi.
  * @param {object} db
  * @param {number} renstraOpdId
@@ -99,9 +175,18 @@ async function ambilCapaianIkuIkk(db, renstraOpdId, { tahunEvaluasi, tahunAwal }
       satuan: ir.satuan,
       target,
       realisasi,
+      targetFmt: formatAngkaIndikator(target, ir),
+      realisasiFmt: formatAngkaIndikator(realisasi, ir),
       pct: pctBulat,
       status,
-      narasi: narasiCapaian(ir.nama_indikator, target, realisasi, pctBulat, ir.satuan, status),
+      narasi: narasiCapaian(
+        ir.nama_indikator,
+        formatAngkaEn(target, ir),
+        formatAngkaEn(realisasi, ir),
+        pctBulat,
+        ir.satuan,
+        status,
+      ),
       definisiOperasional: ir.definisi_operasional,
       metodePenghitungan: ir.metode_penghitungan,
       penanggungJawab: ir.penanggung_jawab,
@@ -115,4 +200,11 @@ async function ambilCapaianIkuIkk(db, renstraOpdId, { tahunEvaluasi, tahunAwal }
   };
 }
 
-module.exports = { ambilCapaianIkuIkk, statusCapaian, narasiCapaian };
+module.exports = {
+  ambilCapaianIkuIkk,
+  statusCapaian,
+  narasiCapaian,
+  narasiFaktorPendorongPenghambat,
+  formatAngkaIndikator,
+  formatAngkaEn,
+};

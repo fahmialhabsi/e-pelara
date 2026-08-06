@@ -82,7 +82,7 @@ const mappingRules = [
 
 async function run() {
   try {
-    const dataset_key = "kepmendagri_provinsi_900_2024";
+    const dataset_key = "kepmendagri_provinsi_900_2026";
 
     const arahList = await ArahKebijakan.findAll();
     const programList = await MasterProgram.findAll({

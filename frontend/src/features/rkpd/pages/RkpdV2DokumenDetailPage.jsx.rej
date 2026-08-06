@@ -1,0 +1,89 @@
+diff a/frontend/src/features/rkpd/pages/RkpdV2DokumenDetailPage.jsx b/frontend/src/features/rkpd/pages/RkpdV2DokumenDetailPage.jsx	(rejected hunks)
+@@ -106,11 +106,19 @@ const RkpdV2DokumenDetailPage = () => {
+     if (id) loadAudit();
+   }, [id, loadAudit]);
+ 
++  // Dokumen dianggap masih "dokumen awal" jika masih versi 1 dan belum pernah
++  // tercatat riwayat perubahan (audit) sama sekali. Begitu sudah ada riwayat
++  // audit atau versi > 1, field alasan perubahan & referensi berkas menjadi wajib.
++  // Baris audit dengan action_type CREATE adalah bagian dari pembuatan dokumen
++  // itu sendiri, bukan "perubahan" — jadi tidak dihitung sebagai riwayat perubahan.
++  const isDokumenAwal =
++    doc?.versi === 1 && auditRows.filter((r) => r.action_type !== 'CREATE').length === 0;
++
+   const saveMeta = async () => {
+     if (!can) return;
+     const rt = metaReasonText.trim();
+     const rf = metaReasonFile.trim();
+-    if (!rt && !rf) {
++    if (!isDokumenAwal && !rt && !rf) {
+       toast.error('Isi alasan perubahan (teks) atau referensi berkas dasar perubahan.');
+       return;
+     }
+@@ -445,26 +453,30 @@ const RkpdV2DokumenDetailPage = () => {
+                 <option value="final">final</option>
+               </Form.Select>
+             </Form.Group>
+-            <Form.Group className="mb-2">
+-              <Form.Label className="small">Alasan perubahan (wajib salah satu)</Form.Label>
+-              <Form.Control
+-                as="textarea"
+-                rows={2}
+-                value={metaReasonText}
+-                onChange={(e) => setMetaReasonText(e.target.value)}
+-                disabled={!can}
+-                placeholder="Ringkasan alasan"
+-              />
+-            </Form.Group>
+-            <Form.Group className="mb-2">
+-              <Form.Label className="small">Referensi berkas</Form.Label>
+-              <Form.Control
+-                value={metaReasonFile}
+-                onChange={(e) => setMetaReasonFile(e.target.value)}
+-                disabled={!can}
+-                placeholder="path / URL / nama berkas"
+-              />
+-            </Form.Group>
++            {!isDokumenAwal && (
++              <>
++                <Form.Group className="mb-2">
++                  <Form.Label className="small">Alasan perubahan (wajib salah satu)</Form.Label>
++                  <Form.Control
++                    as="textarea"
++                    rows={2}
++                    value={metaReasonText}
++                    onChange={(e) => setMetaReasonText(e.target.value)}
++                    disabled={!can}
++                    placeholder="Ringkasan alasan"
++                  />
++                </Form.Group>
++                <Form.Group className="mb-2">
++                  <Form.Label className="small">Referensi berkas</Form.Label>
++                  <Form.Control
++                    value={metaReasonFile}
++                    onChange={(e) => setMetaReasonFile(e.target.value)}
++                    disabled={!can}
++                    placeholder="path / URL / nama berkas"
++                  />
++                </Form.Group>
++              </>
++            )}
+             {can && (
+               <Button size="sm" onClick={saveMeta} disabled={savingMeta}>
+                 {savingMeta ? <Spinner size="sm" /> : 'Simpan metadata'}
+@@ -497,6 +509,7 @@ const RkpdV2DokumenDetailPage = () => {
+                 <thead>
+                   <tr>
+                     <th>#</th>
++                    <th>Prioritas</th>
+                     <th>Program</th>
+                     <th>Kegiatan</th>
+                     <th>Sub</th>
+@@ -530,6 +543,7 @@ const RkpdV2DokumenDetailPage = () => {
+                     return filteredItems.map((row) => (
+                       <tr key={row.id}>
+                         <td>{row.urutan}</td>
++                        <td>{row.prioritas_daerah || '-'}</td>
+                         <td>{row.program}</td>
+                         <td>{row.kegiatan}</td>
+                         <td>{row.sub_kegiatan}</td>

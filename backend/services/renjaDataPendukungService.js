@@ -360,9 +360,10 @@ async function terapkanRecallInovasi(db, { tahun, perangkat_daerah_id, kandidat 
   const pdId = toInt(perangkat_daerah_id);
   if (!tahun || !pdId) throw new Error('tahun dan perangkat_daerah_id wajib diisi.');
 
-  const daftar = Array.isArray(kandidat) && kandidat.length
-    ? kandidat
-    : (await previewRecallInovasi(db, { tahun, perangkat_daerah_id: pdId })).kandidat;
+  const daftar =
+    Array.isArray(kandidat) && kandidat.length
+      ? kandidat
+      : (await previewRecallInovasi(db, { tahun, perangkat_daerah_id: pdId })).kandidat;
 
   if (daftar.length === 0) return { disimpan: 0 };
 
@@ -415,9 +416,8 @@ async function rekapInovasi(db, { tahun, perangkat_daerah_id }) {
     jumlah_inovasi: rows.length,
     per_bentuk: perBentuk,
     inovasi_baru: rows.filter((r) => String(r.tahun_mulai || '') === String(tahun)).length,
-    inovasi_berlanjut: rows.filter(
-      (r) => r.tahun_mulai && String(r.tahun_mulai) !== String(tahun),
-    ).length,
+    inovasi_berlanjut: rows.filter((r) => r.tahun_mulai && String(r.tahun_mulai) !== String(tahun))
+      .length,
   };
 }
 

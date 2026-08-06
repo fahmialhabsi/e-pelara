@@ -19,7 +19,7 @@ async function autoCloneProgramByArahKebijakan({
   rpjmdId = null,
   tahun = null,
   jenisDokumen = null,
-  datasetKey = "kepmendagri_provinsi_900_2024",
+  datasetKey = "kepmendagri_provinsi_900_2026",
 }) {
   return await sequelize.transaction(async (t) => {
     const mappings = await ArahKebijakanProgramMapping.findAll({

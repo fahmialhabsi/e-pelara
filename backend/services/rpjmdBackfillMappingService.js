@@ -17,7 +17,7 @@ const {
   normNama,
 } = require("./rpjmdLegacyBackfillHintService");
 
-const DEFAULT_DATASET_KEY = "kepmendagri_provinsi_900_2024";
+const DEFAULT_DATASET_KEY = "kepmendagri_provinsi_900_2026";
 
 const ENTITY = {
   SUB_KEGIATAN: "SUB_KEGIATAN",

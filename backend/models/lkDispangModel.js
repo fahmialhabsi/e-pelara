@@ -49,6 +49,10 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: true,
       },
+      /** Penanda bahwa DPA sumbernya berubah setelah baris ini di-rollup. */
+      needs_recall: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      recall_reason: { type: DataTypes.STRING(255), allowNull: true },
+      last_recall_at: { type: DataTypes.DATE, allowNull: true },
     },
     {
       sequelize,

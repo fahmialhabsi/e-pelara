@@ -13,7 +13,7 @@ async function run() {
         periodeId: 2,
         tahun: 2025,
         jenisDokumen: "rpjmd",
-        datasetKey: "kepmendagri_provinsi_900_2024",
+        datasetKey: "kepmendagri_provinsi_900_2026",
         });
 
     console.log("DONE:", {

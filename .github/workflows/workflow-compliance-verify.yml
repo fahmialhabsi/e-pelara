@@ -1,0 +1,83 @@
+# Enforcement Tahap 3, Opsi B (spec 32a §6.2/§6.3, ADR-0005 §3 butir 4):
+# Menjalankan Tahap 1 (workflowComplianceValidationSelfTest.js) sebagai required
+# check di CI untuk setiap model backend/models/*.js yang BENAR-BENAR BARU
+# (ditambahkan, bukan sekadar dimodifikasi) pada push/PR yang menyentuh
+# backend/models/**. Konsisten dengan batas non-retroaktif ADR-0005 §3.6 dan
+# filter yang sama dipakai di scripts/check-final-locked-files.js (Opsi A) dan
+# scripts/checkWorkflowComplianceStaged.js (Opsi C, pre-commit husky).
+#
+# Mode --enforce: job GAGAL (exit 1) bila ada BLOCKING finding pada model baru,
+# menjadikan check ini required gate sebelum merge (jika branch protection
+# mewajibkan status check ini — dikonfigurasi terpisah di GitHub repo settings,
+# di luar cakupan file workflow ini).
+name: workflow-compliance-check
+
+on:
+  push:
+    paths:
+      - "backend/models/**"
+      - "backend/scripts/workflowComplianceValidationSelfTest.js"
+      - "backend/scripts/workflowComplianceExceptions.json"
+      - ".github/workflows/workflow-compliance-verify.yml"
+  pull_request:
+    paths:
+      - "backend/models/**"
+      - "backend/scripts/workflowComplianceValidationSelfTest.js"
+      - "backend/scripts/workflowComplianceExceptions.json"
+      - ".github/workflows/workflow-compliance-verify.yml"
+
+jobs:
+  verify-workflow-compliance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # fetch-depth 0 diperlukan agar git diff terhadap base ref (PR) atau
+          # commit sebelumnya (push) bisa menentukan file yang BENAR-BENAR BARU,
+          # bukan sekadar dimodifikasi — sesuai batas non-retroaktif ADR-0005.
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Tentukan model baru (added, bukan modified) di antara backend/models/*.js
+        id: detect-new-models
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE_SHA="${{ github.event.before }}"
+            HEAD_SHA="${{ github.sha }}"
+          fi
+
+          # Pada push pertama ke branch baru, github.event.before bisa berupa
+          # all-zero SHA (tidak ada commit sebelumnya) — fallback ke diff kosong
+          # (anggap semua file di commit ini "baru") daripada gagal.
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            NEW_MODELS=$(git diff --name-only --diff-filter=A -- backend/models/*.js | tr '\n' ' ')
+          else
+            NEW_MODELS=$(git diff --name-only --diff-filter=A "$BASE_SHA" "$HEAD_SHA" -- backend/models/*.js | tr '\n' ' ')
+          fi
+
+          echo "new_models=$NEW_MODELS" >> "$GITHUB_OUTPUT"
+          if [ -z "$NEW_MODELS" ]; then
+            echo "Tidak ada model baru (added) di antara file yang berubah — tidak ada model existing yang dimodifikasi yang perlu diperiksa Tahap 1 (non-retroaktif ADR-0005)."
+          else
+            echo "Model baru terdeteksi: $NEW_MODELS"
+          fi
+
+      - name: Jalankan Workflow Compliance Check (Tahap 1, mode --enforce)
+        if: steps.detect-new-models.outputs.new_models != ''
+        working-directory: backend
+        run: |
+          BASENAMES=""
+          for f in ${{ steps.detect-new-models.outputs.new_models }}; do
+            BASENAMES="$BASENAMES $(basename "$f")"
+          done
+          node scripts/workflowComplianceValidationSelfTest.js $BASENAMES --enforce

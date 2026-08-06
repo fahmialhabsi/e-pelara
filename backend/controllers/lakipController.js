@@ -6,6 +6,7 @@ const {
   Rkpd,
   Renja,
   LkDispang,
+  ActivityLog,
 } = require('../models');
 const Joi = require('joi');
 const { generateLakipDariRenstraTahun } = require('../services/lakipAutoGenerateService');
@@ -150,11 +151,48 @@ module.exports = {
   },
 
   // SYNC dari Renstra — auto-generate baris Program/Kegiatan/Indikator BAB II
+  /**
+   * Recall LAKIP tahun ini dari Renstra (indikator+realisasi) — pola sama
+   * seperti renjaRecallService.recallRenja: tolak menimpa baris yang sudah
+   * APPROVED kecuali paksa=true.
+   */
   async syncFromRenstra(req, res) {
     try {
       const { tahun } = req.params;
+      const paksa = req.query?.paksa === 'true' || req.body?.paksa === true;
+      const uid = req.user?.id ?? req.user?.userId ?? null;
+
+      if (!paksa) {
+        const approved = await Lakip.count({
+          where: { tahun: String(tahun), approval_status: 'APPROVED' },
+        });
+        if (approved > 0) {
+          return res.status(409).json({
+            error:
+              `${approved} baris LAKIP tahun ${tahun} berstatus APPROVED. ` +
+              'Kirim paksa=true bila memang hendak menimpanya.',
+          });
+        }
+      }
+
       const generate = await generateLakipDariRenstraTahun(tahun);
       const anggaran = await syncRealisasiAnggaranLakipTahun(tahun);
+
+      await Lakip.update(
+        { needs_recall: false, recall_reason: null, last_recall_at: new Date() },
+        { where: { tahun: String(tahun) } },
+      );
+
+      if (ActivityLog) {
+        await ActivityLog.create({
+          user_id: uid,
+          action: 'lakip_recall',
+          entity_type: 'lakip',
+          entity_id: null,
+          new_data: JSON.stringify({ tahun, generate, anggaran }),
+        }).catch(() => null);
+      }
+
       res.json({ generate, anggaran });
     } catch (error) {
       res.status(500).json({ error: error.message });

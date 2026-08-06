@@ -6,9 +6,34 @@ const {
   MasterSubKegiatan,
   MasterIndikator,
   Kegiatan,
+  RenjaItem,
+  RenjaDokumen,
 } = require('../models');
 const { Op } = require('sequelize');
 const { programWhereForRenstraOpdQuery } = require('../helpers/renstraOpdProgramFilter');
+const { sortByKodeNatural } = require('../utils/kodeNaturalSort');
+const { flagNeedsRecallAman } = require('../services/recallDataService');
+
+/**
+ * Tandai dokumen Renja yang menyalin data dari Sub Kegiatan Renstra ini
+ * (`renja_item.source_renstra_subkegiatan_id`) sebagai perlu di-recall.
+ * Fire-and-forget — kegagalan tidak boleh menggagalkan update/delete Renstra.
+ */
+async function tandaiRenjaPerluRecallDariRenstraSub(renstraSubkegiatanId, alasan) {
+  if (!RenjaItem || !RenjaDokumen) return;
+  try {
+    const rows = await RenjaItem.findAll({
+      where: { source_renstra_subkegiatan_id: renstraSubkegiatanId },
+      attributes: ['renja_dokumen_id'],
+      group: ['renja_dokumen_id'],
+    });
+    const dokumenIds = rows.map((r) => r.renja_dokumen_id).filter(Boolean);
+    if (!dokumenIds.length) return;
+    await flagNeedsRecallAman(RenjaDokumen, { id: { [Op.in]: dokumenIds } }, { reason: alasan });
+  } catch (err) {
+    console.error('[recall] gagal menandai Renja dari Renstra SubKegiatan:', err.message);
+  }
+}
 
 const toInt = (v) => {
   const n = parseInt(v, 10);
@@ -54,7 +79,7 @@ const subIncludeAttrs = [
 
 async function findSubKegiatanRowsForKegiatanIds(kegiatanIds) {
   if (!kegiatanIds?.length) return [];
-  return SubKegiatan.findAll({
+  const rows = await SubKegiatan.findAll({
     where: { kegiatan_id: { [Op.in]: kegiatanIds } },
     include: [
       {
@@ -64,15 +89,15 @@ async function findSubKegiatanRowsForKegiatanIds(kegiatanIds) {
         required: true,
       },
     ],
-    order: [['id', 'ASC']],
     attributes: subIncludeAttrs,
   });
+  return sortByKodeNatural(rows, (r) => r.kode_sub_kegiatan);
 }
 
 async function findSubKegiatanRowsForKodeVariants(kode) {
   const vars = variantsKodeKegiatan(kode);
   if (!vars.length) return [];
-  return SubKegiatan.findAll({
+  const rows = await SubKegiatan.findAll({
     include: [
       {
         model: Kegiatan,
@@ -82,9 +107,9 @@ async function findSubKegiatanRowsForKodeVariants(kode) {
         required: true,
       },
     ],
-    order: [['id', 'ASC']],
     attributes: subIncludeAttrs,
   });
+  return sortByKodeNatural(rows, (r) => r.kode_sub_kegiatan);
 }
 
 async function validateSubkegiatanChain({ renstra_program_id, kegiatan_id, sub_kegiatan_id }) {
@@ -235,7 +260,6 @@ exports.findAll = async (req, res) => {
 
     let rows = await RenstraSubkegiatan.findAll({
       where: whereClause,
-      order: [['kode_sub_kegiatan', 'ASC']],
       attributes: [
         'id',
         'renstra_program_id',
@@ -287,6 +311,8 @@ exports.findAll = async (req, res) => {
         },
       ],
     });
+
+    rows = sortByKodeNatural(rows, (r) => r.kode_sub_kegiatan);
 
     if (unique === 'true') {
       rows = rows.filter(
@@ -450,6 +476,8 @@ exports.update = async (req, res) => {
 
     await existing.update(data);
 
+    tandaiRenjaPerluRecallDariRenstraSub(id, 'Sub Kegiatan Renstra diperbarui');
+
     return res.json({
       message: 'Subkegiatan berhasil diperbarui',
       data: existing,
@@ -469,6 +497,9 @@ exports.delete = async (req, res) => {
     const id = req.params.id;
     const deleted = await RenstraSubkegiatan.destroy({ where: { id } });
     if (!deleted) return res.status(404).json({ message: 'Data tidak ditemukan' });
+
+    tandaiRenjaPerluRecallDariRenstraSub(id, 'Sub Kegiatan Renstra dihapus');
+
     return res.json({ message: 'Subkegiatan berhasil dihapus' });
   } catch (err) {
     console.error('DELETE ERROR:', err);

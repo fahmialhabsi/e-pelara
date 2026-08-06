@@ -20,6 +20,9 @@ module.exports = (sequelize, DataTypes) => {
       nilai_tahun_lalu: { type: DataTypes.DECIMAL(18, 2), defaultValue: 0 },
       urutan: { type: DataTypes.INTEGER, allowNull: true },
       dikunci: { type: DataTypes.BOOLEAN, defaultValue: false },
+      needs_recall: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      recall_reason: { type: DataTypes.STRING(255), allowNull: true },
+      last_recall_at: { type: DataTypes.DATE, allowNull: true },
     },
     {
       sequelize,

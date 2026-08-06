@@ -32,6 +32,10 @@ exports.generate = async (req, res) => {
   try {
     const tahun = Number(req.params.tahun);
     const out = await generateNeraca(sequelize, db, tahun);
+    await NeracaSnapshot.update(
+      { needs_recall: false, recall_reason: null, last_recall_at: new Date() },
+      { where: { tahun_anggaran: tahun } },
+    );
     res.json({ ok: true, ...out });
   } catch (e) {
     const code = e.statusCode || 500;

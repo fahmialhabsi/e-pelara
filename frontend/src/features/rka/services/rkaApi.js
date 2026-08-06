@@ -110,6 +110,18 @@ export const savePejabatPenandatanganBulk = async (tahun, items) => {
   return res.data;
 };
 
+// Unggah 1 gambar (tanda tangan atau cap dinas), kembalikan URL relatif untuk
+// disimpan lewat savePejabatPenandatanganBulk. File belum tertaut ke baris
+// pejabat mana pun sampai Simpan ditekan.
+export const uploadGambarPejabat = async (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await api.post('/pejabat-penandatangan/upload-gambar', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return res.data?.url;
+};
+
 export const getRenjaByOpd = async (opdId) => {
   const res = await api.get('/renja', {
     params: {

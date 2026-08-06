@@ -32,6 +32,10 @@ exports.generate = async (req, res) => {
     const tahun = Number(req.params.tahun);
     const koreksi = req.body || {};
     const out = await generateLpe(sequelize, db, tahun, koreksi);
+    await LpeSnapshot.update(
+      { needs_recall: false, recall_reason: null, last_recall_at: new Date() },
+      { where: { tahun_anggaran: tahun } },
+    );
     res.json({ ok: true, ...out });
   } catch (e) {
     const code = e.statusCode || 500;

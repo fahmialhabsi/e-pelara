@@ -383,7 +383,7 @@ exports.findAll = async (req, res) => {
         attributes: { exclude: ["createdAt", "updatedAt"] },
         limit,
         offset,
-        order: [["id", "ASC"]],
+        order: [["kode_indikator", "ASC"]],
         distinct: true,
       });
 
@@ -521,7 +521,7 @@ exports.findBySubKegiatan = async (req, res) => {
       where,
       attributes: { exclude: ["createdAt", "updatedAt"] },
       limit, offset,
-      order: [["id", "ASC"]],
+      order: [["kode_indikator", "ASC"]],
       distinct: true,
     });
 

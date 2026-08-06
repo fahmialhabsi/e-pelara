@@ -8,6 +8,8 @@ const {
   Tujuan,
   Misi,
   OpdPenanggungJawab,
+  RenstraKegiatan,
+  RenstraOPD,
 } = require('../models');
 const { validationResult } = require('express-validator');
 const { Op } = require('sequelize');
@@ -16,8 +18,29 @@ const { successResponse, errorResponse, listResponse } = require('../utils/respo
 const { recalcKegiatanTotal, recalcProgramTotal } = require('../utils/paguHelper');
 const { ensureClonedOnce } = require('../utils/autoCloneHelper');
 const { logActivity } = require('../services/auditService');
+const { flagNeedsRecallAman } = require('../services/recallDataService');
 
 const MAX_PAGE_LIMIT = 100;
+
+/**
+ * Tandai RenstraOPD yang meng-clone Kegiatan RPJMD ini perlu di-recall.
+ * Rantai: Kegiatan -> RenstraKegiatan.rpjmd_kegiatan_id -> RenstraKegiatan.renstra_id (=RenstraOPD.id).
+ */
+async function tandaiRenstraPerluRecallDariKegiatan(kegiatanId, alasan) {
+  if (!RenstraKegiatan || !RenstraOPD) return;
+  try {
+    const rows = await RenstraKegiatan.findAll({
+      where: { rpjmd_kegiatan_id: kegiatanId },
+      attributes: ['renstra_id'],
+      group: ['renstra_id'],
+    });
+    const renstraOpdIds = rows.map((r) => r.renstra_id).filter(Boolean);
+    if (!renstraOpdIds.length) return;
+    await flagNeedsRecallAman(RenstraOPD, { id: { [Op.in]: renstraOpdIds } }, { reason: alasan });
+  } catch (err) {
+    console.error('[recall] gagal menandai RenstraOPD dari Kegiatan RPJMD:', err.message);
+  }
+}
 
 const kegiatanController = {
   async create(req, res) {
@@ -405,6 +428,7 @@ const kegiatanController = {
       await recalcProgramTotal(program.id);
 
       logActivity(req, 'UPDATE', 'Kegiatan', kegiatan.id, null, kegiatan.toJSON());
+      tandaiRenstraPerluRecallDariKegiatan(kegiatan.id, 'Kegiatan RPJMD diperbarui');
       return successResponse(res, 200, 'Kegiatan berhasil diperbarui', kegiatan);
     } catch (err) {
       console.error('Error updateKegiatan:', err);
@@ -432,6 +456,7 @@ const kegiatanController = {
       const kodeProgram = kodeKegiatan?.split('.').slice(0, 3).join('.');
 
       const oldData = kegiatan.toJSON();
+      const kegiatanId = kegiatan.id;
       await kegiatan.destroy();
 
       if (kodeKegiatan) {
@@ -442,6 +467,7 @@ const kegiatanController = {
       }
 
       logActivity(req, 'DELETE', 'Kegiatan', parseInt(req.params.id), oldData, null);
+      tandaiRenstraPerluRecallDariKegiatan(kegiatanId, 'Kegiatan RPJMD dihapus');
       return successResponse(res, 200, 'Kegiatan berhasil dihapus');
     } catch (err) {
       console.error('Error deleteKegiatan:', err);

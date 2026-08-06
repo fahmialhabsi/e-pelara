@@ -83,27 +83,40 @@ export default function LakipGeneratorPanel() {
     window.open(previewUrl, '_blank', 'noopener');
   };
 
-  const [downloading, setDownloading] = useState({ pdf: false, docx: false });
+  const [downloading, setDownloading] = useState({ pdf: false, docx: false, 'pdf-final': false });
+
+  // Fase 19: 'pdf-final' = pipeline nomor halaman Daftar Isi (jauh lebih
+  // lambat, ~12 render Puppeteer vs 2 — timeout dilonggarkan khusus utk ini).
+  const EXPORT_ENDPOINT = { pdf: 'pdf', docx: 'docx', 'pdf-final': 'pdf-final' };
+  const EXPORT_TIMEOUT_MS = { pdf: 60000, docx: 60000, 'pdf-final': 180000 };
 
   const downloadFile = async (type) => {
     setDownloading((d) => ({ ...d, [type]: true }));
     try {
-      const endpoint = `/lakip-generator/export/${type}`;
+      const endpoint = `/lakip-generator/export/${EXPORT_ENDPOINT[type]}`;
       const res = await api.get(endpoint, {
         params: { tahun, periode_id: periodeId },
         responseType: 'blob',
-        timeout: 60000,
+        timeout: EXPORT_TIMEOUT_MS[type] || 60000,
       });
-      const ext = type === 'pdf' ? 'pdf' : 'docx';
+      const ext = type === 'docx' ? 'docx' : 'pdf';
       const mime =
-        type === 'pdf'
+        ext === 'pdf'
           ? 'application/pdf'
           : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      // Fase 19: ambil nama file ASLI dari Content-Disposition backend (yang
+      // sudah dinamis mengikuti nama OPD sejak Fase 17), bukan hardcode nama
+      // OPD di sini lagi — hardcode client-side sebelumnya diam-diam
+      // MENIMPA fix backend Fase 17 karena `a.download` selalu menang atas
+      // header server saat file diunduh lewat blob URL.
+      const disposition = res.headers?.['content-disposition'] || '';
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      const filename = match ? match[1] : `LAKIP_${tahun}.${ext}`;
       const blob = new Blob([res.data], { type: mime });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `LAKIP_${tahun}_DinasKetahananPangan.${ext}`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -115,8 +128,22 @@ export default function LakipGeneratorPanel() {
     }
   };
 
-  // Status capaian color
+  // Status capaian color (progress bar tetap 3 warna bawaan Bootstrap, cukup
+  // utk indikasi cepat; badge Status pakai 5 warna kustom di bawah karena
+  // Bootstrap cuma py 2 varian "buruk" — warning & danger — sedangkan status
+  // 5 tingkat butuh 3 gradasi di sisi bawah (Sedang/Kurang/Tidak Tercapai).
   const pctVariant = (pct) => (pct >= 100 ? 'success' : pct >= 75 ? 'warning' : 'danger');
+
+  // Warna badge 5 tingkat status LAKIP — teks putih, jadi latar dipakai versi
+  // solid/lebih pekat (bukan pastel) supaya kontras tetap terbaca.
+  const STATUS5_COLOR = {
+    'Tercapai': { background: '#16a34a', color: '#ffffff' },
+    'Hampir Tercapai': { background: '#2563eb', color: '#ffffff' },
+    'Sedang Tercapai': { background: '#ca8a04', color: '#ffffff' },
+    'Kurang Tercapai': { background: '#ea580c', color: '#ffffff' },
+    'Tidak Tercapai': { background: '#dc2626', color: '#ffffff' },
+  };
+  const status5Style = (status) => STATUS5_COLOR[status] || { background: '#6b7280', color: '#ffffff' };
 
   // Tabel mini indikator — dipakai berulang di tiap level (Sasaran/Program/Kegiatan)
   const renderIndikatorMiniTable = (items) => (
@@ -134,9 +161,10 @@ export default function LakipGeneratorPanel() {
             <th className="text-center" style={{ width: 110 }}>
               Capaian
             </th>
-            <th className="text-center" style={{ width: 110 }}>
+            <th className="text-center" style={{ width: 120 }}>
               Status
             </th>
+            <th style={{ minWidth: 260 }}>Analisa</th>
           </tr>
         </thead>
         <tbody>
@@ -158,9 +186,12 @@ export default function LakipGeneratorPanel() {
                 />
               </td>
               <td className="text-center">
-                <Badge bg={pctVariant(ind.pct_capaian)} className="small">
-                  {ind.status_capaian}
+                <Badge as="span" style={status5Style(ind.status_capaian_5)} className="small">
+                  {ind.status_capaian_5 || ind.status_capaian}
                 </Badge>
+              </td>
+              <td className="text-muted" style={{ fontSize: '0.8rem', lineHeight: 1.35 }}>
+                {ind.analisa || '—'}
               </td>
             </tr>
           ))}
@@ -446,6 +477,25 @@ export default function LakipGeneratorPanel() {
                   </>
                 )}
               </Button>
+              <Button
+                variant="outline-danger"
+                size="sm"
+                onClick={() => downloadFile('pdf-final')}
+                disabled={downloading['pdf-final']}
+                title="Nomor halaman Daftar Isi terisi otomatis — lebih lambat, pakai saat dokumen mau diterbitkan resmi"
+              >
+                {downloading['pdf-final'] ? (
+                  <>
+                    <Spinner size="sm" animation="border" className="me-1" />
+                    Generating (~1-2 menit)...
+                  </>
+                ) : (
+                  <>
+                    <FileEarmarkPdf size={14} className="me-1" />
+                    Export Final (dengan Nomor Halaman)
+                  </>
+                )}
+              </Button>
             </div>
           </div>
         )}
@@ -494,6 +544,25 @@ export default function LakipGeneratorPanel() {
                   <>
                     <FileEarmarkWord size={14} className="me-1" />
                     Download Word (.docx)
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline-danger"
+                size="sm"
+                onClick={() => downloadFile('pdf-final')}
+                disabled={downloading['pdf-final']}
+                title="Nomor halaman Daftar Isi terisi otomatis — lebih lambat, pakai saat dokumen mau diterbitkan resmi"
+              >
+                {downloading['pdf-final'] ? (
+                  <>
+                    <Spinner size="sm" animation="border" className="me-1" />
+                    Generating (~1-2 menit)...
+                  </>
+                ) : (
+                  <>
+                    <FileEarmarkPdf size={14} className="me-1" />
+                    Export Final (dengan Nomor Halaman)
                   </>
                 )}
               </Button>

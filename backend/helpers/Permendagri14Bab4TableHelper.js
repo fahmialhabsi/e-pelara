@@ -1,7 +1,10 @@
 'use strict';
 
 /**
- * Tabel 4.1 Renja Permendagri 14/2026 — 17 kolom, kepala tabel 3 tingkat.
+ * Tabel 4.1 Renja Permendagri 14/2026 — 18 kolom, kepala tabel 3 tingkat.
+ * (Kolom ke-14 "Prioritas Gubernur" digabung ke sini dari bekas Tabel 5.3
+ * Bab V atas catatan evaluasi Bappeda — lihat muatPrioritasGubernurProgram
+ * di renjaTabel41Service.js untuk sumber datanya.)
  *
  * Berkas ini hanya mengubah keluaran `renjaTabel41Service.buildTabel41()`
  * menjadi bentuk yang siap digambar, sehingga aturan isinya tetap satu tempat
@@ -45,10 +48,11 @@ const BOBOT_KOLOM = [
   38, // 11 SUMBER DANA — "SUMBER" 26,0pt
   43, // 12 PRIORITAS NASIONAL — "NASIONAL" 31,3pt
   37, // 13 PRIORITAS DAERAH — "DAERAH" 25,4pt
-  46, // 14 KELOMPOK SASARAN — "KELOMPOK" 34,7pt
-  36, // 15 PRAKIRAAN MAJU - TARGET — "TARGET" 24,1pt
-  41, // 16 PRAKIRAAN MAJU - PAGU INDIKATIF — "INDIKATIF" 29,1pt
-  56, // 17 PERANGKAT DAERAH PENANGGUNG JAWAB — "PENANGGUNG" 43,7pt
+  48, // 14 PRIORITAS GUBERNUR — "GUBERNUR" 34,7pt (huruf lebih lebar dari NASIONAL walau sama 8 huruf)
+  46, // 15 KELOMPOK SASARAN — "KELOMPOK" 34,7pt
+  36, // 16 PRAKIRAAN MAJU - TARGET — "TARGET" 24,1pt
+  41, // 17 PRAKIRAAN MAJU - PAGU INDIKATIF — "INDIKATIF" 29,1pt
+  56, // 18 PERANGKAT DAERAH PENANGGUNG JAWAB — "PENANGGUNG" 43,7pt
 ];
 
 const TOTAL_BOBOT = BOBOT_KOLOM.reduce((a, b) => a + b, 0);
@@ -86,7 +90,7 @@ function kepalaTabel(meta) {
       tengah('TARGET\nAKHIR\nRENSTRA', { rowSpan: 3 }),
       tengah(`REALISASI\n${thnRealisasi}`, { rowSpan: 3 }),
       tengah(`PRAKIRAAN\n${thnBerjalan}`, { rowSpan: 3 }),
-      tengah('CAPAIAN KINERJA DAN KERANGKA PENDANAAN', { colSpan: 6 }),
+      tengah('CAPAIAN KINERJA DAN KERANGKA PENDANAAN', { colSpan: 7 }),
       tengah('KELOMPOK\nSASARAN', { rowSpan: 3 }),
       tengah(`PRAKIRAAN MAJU ${thnMaju}`, { colSpan: 2 }),
       tengah('PERANGKAT\nDAERAH\nPENANGGUNG\nJAWAB', { rowSpan: 3 }),
@@ -103,7 +107,7 @@ function kepalaTabel(meta) {
       tengah('PAGU\nINDIKATIF', { rowSpan: 2 }),
       tengah('LOKASI', { rowSpan: 2 }),
       tengah('SUMBER\nDANA', { rowSpan: 2 }),
-      tengah('PRIORITAS', { colSpan: 2 }),
+      tengah('PRIORITAS', { colSpan: 3 }),
       null,
       tengah('TARGET', { rowSpan: 2 }),
       tengah('PAGU\nINDIKATIF', { rowSpan: 2 }),
@@ -123,6 +127,7 @@ function kepalaTabel(meta) {
       null,
       tengah('NASIONAL'),
       tengah('DAERAH'),
+      tengah('GUBERNUR'),
       null,
       null,
       null,
@@ -172,7 +177,7 @@ const BARIS_TEBAL = new Set([
   'subkegiatan',
 ]);
 
-/** Ubah satu baris hasil buildTabel41 menjadi larik 17 sel siap cetak. */
+/** Ubah satu baris hasil buildTabel41 menjadi larik 18 sel siap cetak. */
 function selBaris(b) {
   return [
     teks(b.no),
@@ -188,6 +193,7 @@ function selBaris(b) {
     teks(b.sumber_dana),
     teks(b.prioritas_nasional),
     teks(b.prioritas_daerah),
+    teks(b.prioritas_gubernur),
     teks(b.kelompok_sasaran),
     teks(b.target_maju),
     rupiah(b.pagu_maju),

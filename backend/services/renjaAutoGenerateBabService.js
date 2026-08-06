@@ -8,7 +8,7 @@
 
 const { pilihTargetTahun } = require('./lakipBridgeService');
 const { buildTabel21Rows } = require('./renjaTabel21HierarkiService');
-const { ambilCapaianIkuIkk } = require('./renstraIkuIkkService');
+const { ambilCapaianIkuIkk, narasiFaktorPendorongPenghambat } = require('./renstraIkuIkkService');
 
 const rupiah = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
 const pct = (n) => `${Number(n || 0).toFixed(2)}%`;
@@ -248,7 +248,7 @@ BAB V    : Penutup`;
   const semuaIkuIkk = [...capaianIkuLalu, ...capaianIkkLalu];
   if (semuaIkuIkk.length > 0) {
     semuaIkuIkk.forEach((c, i) => {
-      bab2 += `| ${i + 1} | ${c.kode || '......'} | ${String(c.nama || '......').replace(/\r?\n/g, ' ').replace(/\|/g, '/')} | ${c.satuan || '......'} | ${c.target ?? '......'} | ${c.realisasi ?? '......'} | ${c.pct === null ? '......' : c.pct} | ${c.status || '......'} |\n`;
+      bab2 += `| ${i + 1} | ${c.kode || '......'} | ${String(c.nama || '......').replace(/\r?\n/g, ' ').replace(/\|/g, '/')} | ${c.satuan || '......'} | ${c.targetFmt ?? '......'} | ${c.realisasiFmt ?? '......'} | ${c.pct === null ? '......' : c.pct} | ${c.status || '......'} |\n`;
     });
   } else {
     bab2 += `| 1 | ...... | ...... | ...... | ...... | ...... | ...... | ...... |\n`;
@@ -257,6 +257,7 @@ BAB V    : Penutup`;
   if (semuaIkuIkk.length > 0) {
     bab2 += semuaIkuIkk.map((c) => c.narasi).join('\n\n');
     bab2 += '\n\n';
+    bab2 += narasiFaktorPendorongPenghambat(semuaIkuIkk);
   }
 
   bab2 += `\n2.2 Analisis Kinerja Pelayanan ${namaOpd}\n\n`;

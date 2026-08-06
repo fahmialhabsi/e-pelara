@@ -3,7 +3,7 @@
 const { Op } = require("sequelize");
 const { sequelize, Kegiatan, SubKegiatan, MasterSubKegiatan } = require("../models");
 
-const DEFAULT_DATASET_KEY = "kepmendagri_provinsi_900_2024";
+const DEFAULT_DATASET_KEY = "kepmendagri_provinsi_900_2026";
 const MAX_SCAN_DEFAULT = 4000;
 
 function parsePositiveInt(v) {

@@ -1,0 +1,29 @@
+{
+  "_comment": "Whitelist pengecualian untuk workflowComplianceValidationSelfTest.js, sesuai spec 32a §4.4. Setiap entri harus merujuk ADR/blueprint yang mengesahkan pengecualian tersebut.",
+  "modules": {
+    "prosnpPeriodeModel.js": {
+      "criterion2": true,
+      "reason": "Modul ProSN-P (prosnp_periode, migration 20260805100000-create-prosnp-foundation.js) memiliki kebutuhan arsitektur berbeda dari approval linear generik: status domainnya adalah lifecycle periode pengisian (draft/aktif/terkunci/diarsipkan), bukan status persetujuan dokumen (DRAFT/SUBMITTED/APPROVED/REJECTED). Dikonfirmasi sebagai documented exception oleh Project Owner pada sesi Tahap 2 (2026-08-06), selaras semangat pengecualian ADR-0005 §3 butir 6 (kebutuhan arsitektur nyata berbeda, bukan penghindaran pola tanpa alasan).",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), sesi coding 2026-08-06",
+      "table": "prosnp_periode",
+      "statusColumn": "status",
+      "actualValues": ["draft", "aktif", "terkunci", "diarsipkan"]
+    },
+    "prosnpPengisianModel.js": {
+      "criterion2": true,
+      "reason": "Modul ProSN-P (prosnp_pengisian, migration 20260805100000-create-prosnp-foundation.js). Status domainnya adalah lifecycle pengisian data/bukti per indikator (belum_diisi/dalam_pengisian/lengkap/perlu_perbaikan/siap_diinput_prosn/diinput_manual/diarsipkan) — workflow pengisian multi-tahap dengan tahap pemeriksaan berulang (lihat tabel prosnp_pemeriksaan, kolom 'putaran'), bukan status persetujuan dokumen linear. Dikonfirmasi sebagai documented exception oleh Project Owner pada sesi Tahap 2 (2026-08-06), selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), sesi coding 2026-08-06",
+      "table": "prosnp_pengisian",
+      "statusColumn": "status",
+      "actualValues": ["belum_diisi", "dalam_pengisian", "lengkap", "perlu_perbaikan", "siap_diinput_prosn", "diinput_manual", "diarsipkan"]
+    },
+    "prosnpBuktiDukungModel.js": {
+      "criterion2": true,
+      "reason": "Modul ProSN-P (prosnp_bukti_dukung, migration 20260805100000-create-prosnp-foundation.js). Status domainnya adalah lifecycle bukti dukung (aktif/perlu_perbaikan/digantikan/dibatalkan) dengan versioning (kolom 'versi', 'menggantikan_bukti_id'), bukan status persetujuan dokumen. Dikonfirmasi sebagai documented exception oleh Project Owner pada sesi Tahap 2 (2026-08-06), selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), sesi coding 2026-08-06",
+      "table": "prosnp_bukti_dukung",
+      "statusColumn": "status",
+      "actualValues": ["aktif", "perlu_perbaikan", "digantikan", "dibatalkan"]
+    }
+  }
+}

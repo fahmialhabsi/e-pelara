@@ -100,6 +100,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: 'DRAFT',
       },
+      /** Penanda bahwa data hulu (Renstra/RKPD/Renja) berubah setelah RKA ini dibuat. */
+      needs_recall: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      recall_reason: { type: DataTypes.STRING(255), allowNull: true },
+      last_recall_at: { type: DataTypes.DATE, allowNull: true },
       pagu_year_1: { type: DataTypes.DECIMAL(20, 2), allowNull: true },
       pagu_year_2: { type: DataTypes.DECIMAL(20, 2), allowNull: true },
       pagu_year_3: { type: DataTypes.DECIMAL(20, 2), allowNull: true },

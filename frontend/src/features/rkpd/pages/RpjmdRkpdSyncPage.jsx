@@ -126,7 +126,7 @@ function labelTruncate(s, n = 72) {
   return `${t.slice(0, n)}...`;
 }
 
-const AUTO_MAP_DATASET_KEY = 'kepmendagri_provinsi_900_2024';
+const AUTO_MAP_DATASET_KEY = 'kepmendagri_provinsi_900_2026';
 
 const AUTO_MAP_LEVEL_CONFIG = Object.freeze({
   program: {

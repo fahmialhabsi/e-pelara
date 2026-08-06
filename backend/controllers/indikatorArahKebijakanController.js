@@ -225,7 +225,7 @@ exports.create = async (req, res) => {
         periodeId: first.periode_id,
         tahun: first.tahun,
         jenisDokumen: first.jenis_dokumen,
-        datasetKey: "kepmendagri_provinsi_900_2024",
+        datasetKey: "kepmendagri_provinsi_900_2026",
       });
 
       return res.status(201).json({

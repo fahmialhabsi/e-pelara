@@ -179,6 +179,10 @@ router.put('/:id', verifyToken, allowRoles(WRITE), controller.update);
 
 router.post('/:id/submit', verifyToken, allowRoles(WRITE), controller.submitRiskForVerification);
 
+// Recall — segarkan ulang nama_risiko/uraian_risiko/penyebab_risiko/dampak_risiko
+// dari Temuan TLHP sumbernya (kalau Temuan direvisi setelah eskalasi).
+router.post('/:id/recall', verifyToken, allowRoles(WRITE), controller.recallFromTemuan);
+
 router.post('/:id/verify', verifyToken, allowRoles(WRITE), controller.verifyRiskFromContextService);
 
 router.post(

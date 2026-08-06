@@ -28,6 +28,9 @@ module.exports = (sequelize, DataTypes) => {
       urutan: { type: DataTypes.INTEGER, allowNull: true },
       keterangan: { type: DataTypes.TEXT, allowNull: true },
       dikunci: { type: DataTypes.BOOLEAN, defaultValue: false },
+      needs_recall: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      recall_reason: { type: DataTypes.STRING(255), allowNull: true },
+      last_recall_at: { type: DataTypes.DATE, allowNull: true },
     },
     {
       sequelize,

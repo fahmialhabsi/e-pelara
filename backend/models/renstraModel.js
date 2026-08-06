@@ -57,6 +57,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: "belum_sinkron",
       },
+      /** Penanda bahwa data hulu (RPJMD/master nomenklatur) berubah setelah Renstra ini dibuat. */
+      needs_recall: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      recall_reason: { type: DataTypes.STRING(255), allowNull: true },
+      last_recall_at: { type: DataTypes.DATE, allowNull: true },
       dokumen_url: {
         type: DataTypes.STRING(500),
         allowNull: true,

@@ -61,7 +61,7 @@ async function getPengisianScoped(id, tenantId, transaction) {
       as: 'indikator',
       include: [
         { model: db.ProsnPeriode, as: 'periode' },
-        { model: db.ProsnBuktiDukung, as: 'buktiDukung', through: { attributes: ['id', 'checklist_status', 'catatan_kekurangan', 'relevansi'] } },
+        { model: db.ProsnBuktiDukung, as: 'buktiDukung', through: { attributes: ['id', 'checklist_status', 'catatan_kekurangan', 'relevansi', 'lock_version'] } },
       ],
     }],
     transaction,
@@ -188,6 +188,18 @@ async function transitionPengisian(id, target, payload, actor, tenantId) {
   });
 }
 
+async function listAntrianPemeriksaan(tenantId) {
+  return db.ProsnPengisian.findAll({
+    where: { tenant_id: tenantId, status: 'lengkap' },
+    include: [{
+      model: db.ProsnIndikator,
+      as: 'indikator',
+      include: [{ model: db.ProsnPeriode, as: 'periode', include: [{ model: db.PerangkatDaerah, as: 'perangkatDaerah', attributes: ['id', 'nama'] }] }],
+    }],
+    order: [['diisi_at', 'ASC']],
+  });
+}
+
 async function listPeriods(tenantId, filters = {}) {
   const where = { tenant_id: tenantId };
   if (filters.tahun) where.tahun = String(filters.tahun);
@@ -203,7 +215,7 @@ async function createBukti(pengisianId, payload, file, actor, tenantId) {
     if (!['belum_diisi', 'dalam_pengisian'].includes(pengisian.status)) throw new ProsnError('Bukti hanya dapat diubah saat pengisian terbuka.', 409, 'PROSNP_EDIT_LOCKED');
     if (!isAdmin(actor) && pengisian.diisi_oleh && Number(pengisian.diisi_oleh) !== Number(actor.id)) throw new ProsnError('Operator hanya dapat mengunggah bukti untuk pengisiannya.', 403, 'PROSNP_NOT_OWNER');
     const checksum = crypto.createHash('sha256').update(require('fs').readFileSync(file.path)).digest('hex');
-    const bukti = await db.ProsnBuktiDukung.create({ tenant_id: tenantId, periode_id: pengisian.indikator.periode_id, kelompok_uuid: crypto.randomUUID(), versi: 1, judul: payload.judul || file.originalname, jenis_bukti: payload.jenis_bukti || null, nama_asli: file.originalname, nama_tersimpan: file.filename, file_path: file.path, mime_type: file.mimetype, ukuran_byte: file.size, checksum_sha256: checksum, diunggah_oleh: actor.id }, { transaction });
+    const bukti = await db.ProsnBuktiDukung.create({ tenant_id: tenantId, periode_id: pengisian.indikator.periode_id, kelompok_uuid: crypto.randomUUID(), versi: 1, judul: payload.judul || file.originalname, jenis_bukti: payload.jenis_bukti || null, nama_asli: file.originalname, nama_tersimpan: file.filename, file_path: file.path, mime_type: file.mimetype, ukuran_byte: file.size, checksum_sha256: checksum, diunggah_oleh: actor.id, diunggah_at: new Date() }, { transaction });
     let indikatorIds = payload.indikator_ids;
     if (typeof indikatorIds === 'string') { try { indikatorIds = JSON.parse(indikatorIds); } catch (_) { indikatorIds = indikatorIds.split(','); } }
     if (!Array.isArray(indikatorIds) || indikatorIds.length === 0) indikatorIds = [pengisian.indikator_id];
@@ -225,7 +237,7 @@ async function reviseBukti(buktiId, payload, file, actor, tenantId) {
     if (lama.lock_version !== expectedVersion) throw new ProsnError('Bukti telah diubah pengguna lain. Muat ulang data terlebih dahulu.', 409, 'PROSNP_VERSION_CONFLICT');
     const links = await db.ProsnBuktiIndikator.findAll({ where: { tenant_id: tenantId, bukti_dukung_id: lama.id }, transaction });
     const checksum = crypto.createHash('sha256').update(require('fs').readFileSync(file.path)).digest('hex');
-    const baru = await db.ProsnBuktiDukung.create({ tenant_id: tenantId, periode_id: lama.periode_id, kelompok_uuid: lama.kelompok_uuid, versi: lama.versi + 1, judul: payload.judul || lama.judul, jenis_bukti: payload.jenis_bukti || lama.jenis_bukti, nama_asli: file.originalname, nama_tersimpan: file.filename, file_path: file.path, mime_type: file.mimetype, ukuran_byte: file.size, checksum_sha256: checksum, menggantikan_bukti_id: lama.id, diunggah_oleh: actor.id, catatan: payload.catatan || null }, { transaction });
+    const baru = await db.ProsnBuktiDukung.create({ tenant_id: tenantId, periode_id: lama.periode_id, kelompok_uuid: lama.kelompok_uuid, versi: lama.versi + 1, judul: payload.judul || lama.judul, jenis_bukti: payload.jenis_bukti || lama.jenis_bukti, nama_asli: file.originalname, nama_tersimpan: file.filename, file_path: file.path, mime_type: file.mimetype, ukuran_byte: file.size, checksum_sha256: checksum, menggantikan_bukti_id: lama.id, diunggah_oleh: actor.id, diunggah_at: new Date(), catatan: payload.catatan || null }, { transaction });
     await db.ProsnBuktiIndikator.bulkCreate(links.map((link) => ({ tenant_id: tenantId, bukti_dukung_id: baru.id, indikator_id: link.indikator_id, relevansi: link.relevansi, ditautkan_oleh: actor.id })), { transaction });
     const [count] = await db.ProsnBuktiDukung.update({ status: 'digantikan', lock_version: expectedVersion + 1 }, { where: { id: lama.id, tenant_id: tenantId, lock_version: expectedVersion }, transaction });
     if (count !== 1) throw new ProsnError('Bukti telah diubah pengguna lain. Muat ulang data terlebih dahulu.', 409, 'PROSNP_VERSION_CONFLICT');
@@ -303,4 +315,4 @@ async function reopenPeriod(id, payload, actor, tenantId) {
   });
 }
 
-module.exports = { ProsnError, createPeriod, createIndikator, initializePeriodIndicators, activatePeriod, updatePengisian, transitionPengisian, listPeriods, getPengisianScoped, createBukti, reviseBukti, checklistBukti, periksaPengisian, archivePeriod, reopenPeriod, isAdmin };
+module.exports = { ProsnError, createPeriod, createIndikator, initializePeriodIndicators, activatePeriod, updatePengisian, transitionPengisian, listPeriods, listAntrianPemeriksaan, getPengisianScoped, createBukti, reviseBukti, checklistBukti, periksaPengisian, archivePeriod, reopenPeriod, isAdmin };

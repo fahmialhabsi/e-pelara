@@ -2,7 +2,7 @@
 
 /**
  * Mesin dokumen resmi Renja Perangkat Daerah — sistematika Permendagri 14/2026
- * (6 bab + Tabel 4.1 landscape 17 kolom).
+ * (6 bab + Tabel 4.1 landscape 18 kolom).
  *
  * Terpisah dari planningOfficialDocumentEngine.js yang melayani Permendagri
  * 86/2017 dan RKPD. Pemilihannya dilakukan di berkas tersebut berdasarkan
@@ -15,6 +15,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const sharp = require('sharp');
 const PDFDocument = require('pdfkit');
 const {
   Document,
@@ -81,12 +82,17 @@ const NAMA_BULAN = [
 ];
 
 /** Palet warna cover — hijau tema Ketahanan Pangan + aksen emas instansional. */
+/** Palet "Government Editorial" — navy institusional + emerald (tema
+ * ketahanan pangan) + gold sebagai aksen tipis, menggantikan palet hijau
+ * tunggal lama. Diterapkan 2026-08-02 atas persetujuan user terhadap mockup
+ * arah desain (lihat percakapan) — dipakai konsisten untuk sampul, judul
+ * Bab, subbab, dan header tabel di seluruh dokumen. */
 const WARNA_COVER = {
-  HIJAU_TUA: '#14532D',
-  HIJAU_SEDANG: '#1B7A3E',
-  HIJAU_MUDA: '#4CA658',
-  EMAS: '#E8C170',
-  PUTIH: '#FFFFFF',
+  NAVY: '#10293D',
+  NAVY_SOFT: '#1B3A52',
+  EMERALD: '#0C6B4F',
+  EMAS: '#B8922F',
+  PUTIH: '#F4F1E8',
 };
 
 const LOGO_PATH = path.join(__dirname, '..', 'assets', 'branding', 'logo-maluku-utara.jpeg');
@@ -138,10 +144,10 @@ function nextPortraitBerpita(pdf) {
 const PDF_LINE_GAP = 3.5;
 const DOCX_LINE_SPACING = 360; // 1,5x (satuan 240/baris)
 
-/** Header tabel modul ini pakai hijau tema pangan (bukan biru pucat bawaan
- * PDF_THEME, yang tetap dipertahankan apa adanya untuk modul 86/2017). */
-const HEADER_TABEL_PDF = { headerFill: WARNA_COVER.HIJAU_SEDANG, headerText: '#FFFFFF' };
-const HEADER_TABEL_DOCX = '1B7A3E';
+/** Header tabel modul ini pakai navy tema institusional (bukan biru pucat
+ * bawaan PDF_THEME, yang tetap dipertahankan apa adanya untuk modul 86/2017). */
+const HEADER_TABEL_PDF = { headerFill: WARNA_COVER.NAVY, headerText: '#FFFFFF' };
+const HEADER_TABEL_DOCX = '10293D';
 
 /** Pola baris judul subbab ("2.1 ...") dan judul tabel ("Tabel 2.1 ..."), dipakai
  * bersama oleh pelacak halaman PDF (Daftar Isi/Daftar Tabel) dan render DOCX
@@ -178,6 +184,175 @@ async function ambilPejabatKepalaDinas(db, tahun) {
   return null;
 }
 
+/** Baca gambar tanda tangan/cap elektronik milik pejabat sendiri dari folder
+ * uploads (URL disimpan via menu Setting Pejabat Penandatangan, dengan
+ * gerbang persetujuan_pemilik di controller). Mengembalikan null kalau
+ * kolomnya kosong atau berkasnya sudah tidak ada — dokumen tetap jatuh balik
+ * ke placeholder nama/NIP seperti sebelumnya, tidak pernah gagal generate
+ * hanya karena gambar tidak ditemukan. */
+function muatGambarPejabat(url) {
+  if (!url) return null;
+  try {
+    const namaBerkas = String(url).replace(/^\/?uploads\//, '');
+    return fs.readFileSync(path.join(__dirname, '..', 'uploads', namaBerkas));
+  } catch {
+    return null;
+  }
+}
+
+/** BUG KRITIS (ditemukan 2026-08-01 dari analisis file .docx hasil generate
+ * nyata): paket docx v9.6.1 memakai `options.type` LANGSUNG sebagai
+ * ekstensi file media (`${hash}.${options.type}`) — TIDAK auto-deteksi dari
+ * isi buffer seperti PDFKit. Setiap `new ImageRun(...)` di file ini WAJIB
+ * menyertakan `type: "png"/"jpg"/"gif"/"bmp"` eksplisit sesuai format
+ * berkasnya — kalau tidak, media tersimpan dengan ekstensi "*.undefined"
+ * TANPA entri di [Content_Types].xml, membuat Word menganggap paketnya
+ * rusak (dialog "konten tidak dapat dibaca") dan gambar hilang. Gambar
+ * TTD/cap selalu dinormalisasi ke PNG oleh `sharp` sebelum sampai ke
+ * ImageRun (lihat siapkanGambarTandaTanganDocx), jadi type-nya selalu
+ * "png" — tidak perlu deteksi dari nama berkas asli lagi. Cover & Logo pakai
+ * type hardcode sesuai berkas asetnya masing-masing (lihat pemanggilannya). */
+
+/** Ukuran & posisi tumpang tindih cap+TTD — SAMA PERSIS dengan versi PDF
+ * (lihat renderTandaTanganPdf) supaya kedua format konsisten. Diperbesar &
+ * ditumpangkan lebih dalam (rasioTumpang naik dari 0.55 -> 0.78) atas
+ * permintaan user (2026-08-02, contoh dokumen fisik asli): sebelumnya cap
+ * & TTD cuma bersinggungan tipis di ujung, sekarang coretan tanda tangan
+ * benar-benar melintasi badan cap, meniru dokumen fisik yang ditandatangani
+ * langsung di atas stempel. */
+const TTD_LAYOUT = { tinggiPt: 70, lebarTtdPt: 105, lebarCapPt: 90, rasioTumpang: 0.78 };
+
+/** BUG (ditemukan 2026-08-02 dari analisis file .docx nyata): `ImageRun`
+ * docx.js mengalikan `transformation.width`/`height` dengan 9525 EMU —
+ * yaitu EMU-per-PIKSEL (96 DPI), BUKAN EMU-per-POIN. Nilai TTD_LAYOUT di
+ * atas dalam satuan poin (dipakai apa adanya oleh PDFKit yang memang
+ * berbasis poin), jadi kalau dioper langsung ke ImageRun tanpa dikonversi,
+ * gambar tercetak 75% (72/96) dari ukuran seharusnya — bukan gambar hilang,
+ * tapi lebih kecil dari yang dimaksud. 96/72 di sini mengonversi poin -> piksel. */
+const PT_KE_PX_DOCX = 96 / 72;
+
+/** BUG (dilaporkan user 2026-08-02, terlihat dari 2 berkas asli yang
+ * diunggah): tanda tangan & cap yang diunggah pengguna TERNYATA berlatar
+ * PUTIH POLOS (bukan PNG transparan seperti asumsi awal). Kalau langsung
+ * ditumpuk, latar putih cap yang OPAQUE menutupi total bagian tanda tangan
+ * di zona tumpang tindih — bukannya menyatu, malah saling menimpa/memutus
+ * garis TTD. Fungsi ini "menghapus" latar putih dengan mengunci piksel yang
+ * mendekati putih murni jadi transparan (alpha=0), sehingga hanya guratan
+ * tinta (biru/hitam) yang tersisa opaque — cocok untuk tanda tangan/cap
+ * hasil pindai/tulis-digital yang khas berupa garis warna gelap di atas
+ * kertas/kanvas putih. */
+async function hapusLatarPutih(buffer) {
+  const gambar = sharp(buffer).ensureAlpha();
+  const { data, info } = await gambar.raw().toBuffer({ resolveWithObject: true });
+  const AMBANG_PUTIH = 235; // R,G,B semuanya di atas ini dianggap "latar", bukan tinta
+  for (let i = 0; i < data.length; i += info.channels) {
+    if (data[i] >= AMBANG_PUTIH && data[i + 1] >= AMBANG_PUTIH && data[i + 2] >= AMBANG_PUTIH) {
+      data[i + 3] = 0;
+    }
+  }
+  return sharp(data, { raw: { width: info.width, height: info.height, channels: info.channels } })
+    .png()
+    .toBuffer();
+}
+
+/** Muat & bersihkan (hapus latar putih) gambar TTD/cap pejabat — DIPAKAI
+ * BERSAMA oleh PDF (renderTandaTanganPdf) dan DOCX (siapkanGambarTandaTanganDocx)
+ * supaya keduanya konsisten. Sebelumnya hanya jalur DOCX yang dibersihkan
+ * latar putihnya; PDF masih pakai buffer mentah — aman selama tumpang
+ * tindihnya tipis, tapi begitu rasioTumpang diperbesar (2026-08-02, permintaan
+ * user meniru dokumen fisik), latar putih TTD yang OPAQUE akan menutupi cap
+ * di PDF juga kalau tidak dibersihkan sama seperti DOCX. */
+async function siapkanGambarBersihTtdCap(pejabat) {
+  const tandaTanganBufferAsli = muatGambarPejabat(pejabat?.tanda_tangan_url);
+  const capBufferAsli = muatGambarPejabat(pejabat?.cap_dinas_url);
+  const [tandaTanganBuffer, capBuffer] = await Promise.all([
+    tandaTanganBufferAsli ? hapusLatarPutih(tandaTanganBufferAsli) : null,
+    capBufferAsli ? hapusLatarPutih(capBufferAsli) : null,
+  ]);
+  return { tandaTanganBuffer, capBuffer };
+}
+
+/** Gabungkan cap + tanda tangan jadi SATU gambar PNG (cap menumpuk sebagian
+ * TTD, meniru dokumen fisik) sebelum disisipkan ke Word — permintaan user
+ * (2026-08-01): di Word, cap & TTD tampil terpisah berdampingan, padahal
+ * seharusnya tumpang tindih seperti di PDF. Penyebabnya: docx.js menaruh
+ * gambar inline berurutan (tidak bisa diberi koordinat bebas seperti
+ * pdf.image()), jadi dua ImageRun terpisah TIDAK BISA saling menumpuk di
+ * Word tanpa positioning "floating" yang rumit dan tidak selalu konsisten
+ * antar-versi Word. Solusinya: gabungkan dulu jadi satu gambar via `sharp`
+ * (composite di server), baru disisipkan sebagai SATU ImageRun — hasilnya
+ * identik dengan versi PDF, dan jauh lebih andal daripada floating image.
+ *
+ * Dipanggil SEKALI di awal buildRenjaPermendagri14Docx (bukan di dalam
+ * tandaTanganParagraphsDocx yang dipanggil 2x/dipanggil dalam forEach yang
+ * tidak mendukung await) — hasilnya dioper sebagai parameter.
+ */
+async function siapkanGambarTandaTanganDocx(pejabat) {
+  const { tandaTanganBuffer, capBuffer } = await siapkanGambarBersihTtdCap(pejabat);
+  if (!tandaTanganBuffer && !capBuffer) return null;
+
+  const SKALA = 4; // pt -> px, cukup tajam untuk cetak
+  const { tinggiPt, lebarTtdPt, lebarCapPt, rasioTumpang } = TTD_LAYOUT;
+  const tinggiPx = tinggiPt * SKALA;
+  const transparan = { r: 0, g: 0, b: 0, alpha: 0 };
+
+  try {
+    if (tandaTanganBuffer && capBuffer) {
+      const lebarCapPx = lebarCapPt * SKALA;
+      const lebarTtdPx = lebarTtdPt * SKALA;
+      const tumpangPx = Math.round(lebarCapPt * rasioTumpang * SKALA);
+      const totalLebarPx = lebarCapPx + lebarTtdPx - tumpangPx;
+
+      const [capResize, ttdResize] = await Promise.all([
+        sharp(capBuffer)
+          .resize(lebarCapPx, tinggiPx, { fit: 'contain', background: transparan })
+          .png()
+          .toBuffer(),
+        sharp(tandaTanganBuffer)
+          .resize(lebarTtdPx, tinggiPx, { fit: 'contain', background: transparan })
+          .png()
+          .toBuffer(),
+      ]);
+
+      // Cap digambar LEBIH DULU (lapisan bawah), tanda tangan SESUDAHNYA
+      // (lapisan atas) — meniru dokumen fisik yang ditandatangani basah DI
+      // ATAS stempel, sehingga coretan pena terlihat melintasi cap, bukan
+      // tersembunyi di baliknya (dibalik dari urutan semula).
+      const gabungan = await sharp({
+        create: { width: totalLebarPx, height: tinggiPx, channels: 4, background: transparan },
+      })
+        .composite([
+          { input: capResize, left: 0, top: 0 },
+          { input: ttdResize, left: lebarCapPx - tumpangPx, top: 0 },
+        ])
+        .png()
+        .toBuffer();
+
+      return {
+        buffer: gabungan,
+        width: (totalLebarPx / SKALA) * PT_KE_PX_DOCX,
+        height: tinggiPt * PT_KE_PX_DOCX,
+        type: 'png',
+      };
+    }
+
+    // Cuma salah satu (cap ATAU TTD) — tetap dilewatkan lewat sharp supaya
+    // hasilnya konsisten PNG (aman dari bug tipeGambarDocx kalau berkas
+    // asli ternyata bukan format yang dikenali).
+    const tunggal = tandaTanganBuffer || capBuffer;
+    const lebarPt = tandaTanganBuffer ? lebarTtdPt : lebarCapPt;
+    const hasil = await sharp(tunggal)
+      .resize(Math.round(lebarPt * SKALA), tinggiPx, { fit: 'contain', background: transparan })
+      .png()
+      .toBuffer();
+    return { buffer: hasil, width: lebarPt * PT_KE_PX_DOCX, height: tinggiPt * PT_KE_PX_DOCX, type: 'png' };
+  } catch {
+    // Berkas TTD/cap rusak/tidak terbaca sharp — jatuh balik ke placeholder
+    // nama/NIP seperti biasa, jangan sampai gagal generate seluruh dokumen.
+    return null;
+  }
+}
+
 /** Data blok tanda tangan (Kata Pengantar & Bab VI Penutup) — satu sumber
  * dipakai bersama supaya formatnya identik di kedua tempat dan kedua format. */
 function dataTandaTangan(pejabat, meta, dok) {
@@ -194,37 +369,127 @@ function dataTandaTangan(pejabat, meta, dok) {
   return { namaPejabat, nipPejabat, jabatanSingkat, bulanTahun };
 }
 
-/** Blok tanda tangan versi PDF — dipanggil di Kata Pengantar dan Bab VI Penutup. */
-function renderTandaTanganPdf(pdf, pejabat, meta, dok) {
+/** Blok tanda tangan versi PDF — dipanggil di Kata Pengantar dan Bab VI Penutup.
+ * Kalau pejabat sudah mengunggah gambar TTD/cap sendiri, keduanya digambar
+ * berdampingan (cap di kiri, TTD di kanan, cap sedikit tumpang tindih di
+ * bawah TTD meniru tata letak dokumen fisik) di atas nama tercetak; kalau
+ * tidak ada, jatuh balik ke spasi kosong seperti sebelumnya (placeholder
+ * untuk tanda tangan basah manual). */
+function renderTandaTanganPdf(pdf, pejabat, meta, dok, gambarBersih) {
   const { namaPejabat, nipPejabat, jabatanSingkat, bulanTahun } = dataTandaTangan(pejabat, meta, dok);
+  const { tandaTanganBuffer, capBuffer } = gambarBersih || {};
+
+  // BUG (dilaporkan user 2026-08-01): gambar TTD/cap kadang hilang persis di
+  // pergantian halaman — pdf.image() TIDAK auto-pindah halaman seperti
+  // pdf.text(), jadi kalau pdf.y sudah dekat batas bawah saat blok ini mulai
+  // digambar, gambarnya tergambar di luar/tepat di tepi halaman (tak
+  // terlihat), sementara nama/NIP di bawahnya (pakai pdf.text(), yang
+  // auto-paginate) malah pindah ke halaman berikutnya sendirian tanpa
+  // gambar. Estimasi 140pt = 2 baris label + gambar 65pt + jarak + 2 baris
+  // nama/NIP, dilebihkan sedikit — kalau tidak cukup, pindah halaman dulu
+  // supaya seluruh blok (label+gambar+nama+NIP) tetap utuh 1 halaman.
+  const tinggiBlokDiperlukan = 140;
+  const batasBawah = pdf.page.height - pdf.page.margins.bottom;
+  if (pdf.y + tinggiBlokDiperlukan > batasBawah) {
+    nextPortraitBerpita(pdf);
+  }
+
   pdf.font('Helvetica').fontSize(10).fillColor('#000000');
   pdf.text(`Sofifi, ${bulanTahun}`, { align: 'right' });
   pdf.text(`${jabatanSingkat},`, { align: 'right' });
-  pdf.moveDown(3);
+
+  if (tandaTanganBuffer || capBuffer) {
+    const { tinggiPt: tinggiGambar, lebarTtdPt: lebarTtd, lebarCapPt: lebarCap, rasioTumpang } = TTD_LAYOUT;
+    const y0 = pdf.y + 4;
+    const kananX = leftMargin(pdf) + usableWidth(pdf);
+    if (capBuffer) {
+      try {
+        pdf.image(capBuffer, kananX - lebarTtd - lebarCap * rasioTumpang, y0, {
+          width: lebarCap,
+          height: tinggiGambar,
+        });
+      } catch {
+        /* berkas cap rusak/tidak terbaca — abaikan, TTD & nama tetap tampil */
+      }
+    }
+    if (tandaTanganBuffer) {
+      try {
+        pdf.image(tandaTanganBuffer, kananX - lebarTtd, y0, { width: lebarTtd, height: tinggiGambar });
+      } catch {
+        /* berkas TTD rusak/tidak terbaca — abaikan, nama tetap tampil */
+      }
+    }
+    pdf.y = y0 + tinggiGambar + 4;
+  } else {
+    pdf.moveDown(3);
+  }
+
   pdf.font('Helvetica-Bold').text(namaPejabat, { align: 'right' });
   pdf.font('Helvetica').text(`NIP. ${nipPejabat}`, { align: 'right' });
 }
 
-/** Blok tanda tangan versi DOCX — dipanggil di Kata Pengantar dan Bab VI Penutup. */
-function tandaTanganParagraphsDocx(pejabat, meta, dok) {
+/** Blok tanda tangan versi DOCX — dipanggil di Kata Pengantar dan Bab VI
+ * Penutup. `gambarTtdCap` adalah hasil siapkanGambarTandaTanganDocx() yang
+ * SUDAH digabung jadi satu gambar (cap menumpuk TTD) — dihitung sekali di
+ * awal buildRenjaPermendagri14Docx dan dioper ke sini, bukan dihitung ulang
+ * di setiap pemanggilan (fungsi ini dipanggil 2x, dan salah satunya di
+ * dalam forEach yang tidak mendukung await untuk proses sharp async). */
+function tandaTanganParagraphsDocx(pejabat, meta, dok, gambarTtdCap) {
   const { namaPejabat, nipPejabat, jabatanSingkat, bulanTahun } = dataTandaTangan(pejabat, meta, dok);
+
+  // keepNext+keepLines di SETIAP paragraf blok ini (kecuali paragraf
+  // terakhir, yang cukup keepLines) — permintaan/laporan user (2026-08-02):
+  // blok tanda tangan (label+gambar+nama+NIP) kadang terpotong Word di
+  // pergantian halaman, salah satu bagian jadi seperti "hilang" padahal
+  // datanya ada. keepNext memberi tahu Word "jangan pisahkan paragraf ini
+  // dari paragraf SESUDAHNYA lewat pergantian halaman" — dirantai di semua
+  // paragraf blok supaya Word memperlakukan seluruhnya sebagai satu
+  // kesatuan yang tidak boleh terpecah, mendorong seluruh blok pindah
+  // bersama ke halaman baru kalau tidak muat, bukan terpotong di tengah.
+  const paragrafGambar = [];
+  if (gambarTtdCap) {
+    paragrafGambar.push(
+      new Paragraph({
+        alignment: AlignmentType.RIGHT,
+        spacing: { before: 100 },
+        keepNext: true,
+        keepLines: true,
+        children: [
+          new ImageRun({
+            data: gambarTtdCap.buffer,
+            type: gambarTtdCap.type,
+            transformation: { width: gambarTtdCap.width, height: gambarTtdCap.height },
+          }),
+        ],
+      }),
+    );
+  }
+
   return [
     new Paragraph({
       alignment: AlignmentType.RIGHT,
       spacing: { before: 400 },
+      keepNext: true,
+      keepLines: true,
       children: [new TextRun({ text: `Sofifi, ${bulanTahun}`, size: 20, font: 'Arial' })],
     }),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { after: 1200 },
+      spacing: { after: paragrafGambar.length ? 100 : 1200 },
+      keepNext: true,
+      keepLines: true,
       children: [new TextRun({ text: `${jabatanSingkat},`, size: 20, font: 'Arial' })],
     }),
+    ...paragrafGambar,
     new Paragraph({
       alignment: AlignmentType.RIGHT,
+      keepNext: true,
+      keepLines: true,
       children: [new TextRun({ text: namaPejabat, bold: true, size: 20, font: 'Arial' })],
     }),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
+      keepLines: true,
       children: [new TextRun({ text: `NIP. ${nipPejabat}`, size: 20, font: 'Arial' })],
     }),
   ];
@@ -365,14 +630,47 @@ function tabel41Docx(tabel41) {
   });
 }
 
+/** Pisah "BAB I — PENDAHULUAN" jadi ["BAB I", "PENDAHULUAN"] — permintaan
+ * user (2026-08-01) berdasarkan contoh dokumen Renja OPD lain: nomor bab dan
+ * nama bab dicetak 2 baris terpisah (gaya "Title" dokumen resmi), bukan 1
+ * baris dengan tanda pisah. String utuh (dengan " — ") tetap dipakai apa
+ * adanya untuk entri Daftar Isi PDF, karena satu baris memang lazim di
+ * daftar isi/daftar tabel. */
+function pisahJudulBab(teksJudul) {
+  const idx = teksJudul.indexOf(' — ');
+  if (idx === -1) return [teksJudul, ''];
+  return [teksJudul.slice(0, idx), teksJudul.slice(idx + 3)];
+}
+
+/** Judul Bab DOCX — dicetak 2 paragraf terpisah (nomor bab, lalu nama bab)
+ * meniru gaya "Title" dokumen Renja resmi, dengan jarak lega setelahnya
+ * sebelum subbab/isi pertama supaya tidak terasa mepet. Mengembalikan array
+ * (bukan 1 Paragraph) — pemanggilnya WAJIB di-spread (...judul(...)). */
 function judul(teks, ukuran = 24, opsi = {}) {
-  return new Paragraph({
-    heading: HeadingLevel.HEADING_1,
-    pageBreakBefore: !!opsi.halamanBaru,
-    alignment: AlignmentType.CENTER,
-    spacing: { before: 240, after: 120 },
-    children: [new TextRun({ text: teks, bold: true, size: ukuran, font: 'Arial' })],
-  });
+  const [roman, namaBab] = pisahJudulBab(teks);
+  const hasil = [
+    new Paragraph({
+      heading: HeadingLevel.HEADING_1,
+      pageBreakBefore: !!opsi.halamanBaru,
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 240, after: namaBab ? 20 : 400 },
+      children: [
+        new TextRun({ text: roman, bold: true, size: ukuran, font: 'Georgia', color: WARNA_COVER.NAVY.replace('#', '') }),
+      ],
+    }),
+  ];
+  if (namaBab) {
+    hasil.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 400 },
+        children: [
+          new TextRun({ text: namaBab, bold: true, size: ukuran, font: 'Georgia', color: WARNA_COVER.NAVY.replace('#', '') }),
+        ],
+      }),
+    );
+  }
+  return hasil;
 }
 
 /** Ubah teks bab (markdown sederhana) menjadi paragraf & tabel DOCX. */
@@ -462,12 +760,24 @@ function isiBabDocx(teksBab) {
       );
       continue;
     }
+    // Subbab (Heading 2) dibedakan dari body text lewat warna emerald tema +
+    // font serif (identitas "buku", konsisten dengan judul Bab) + ukuran
+    // sedikit lebih besar — nomor dan judul subbab SATU TextRun bersama
+    // (sengaja sama besar, bukan nomor kecil terpisah dari judul besar).
     anak.push(
       new Paragraph({
         heading: subbab ? HeadingLevel.HEADING_2 : undefined,
-        spacing: subbab ? { before: 200, after: 100 } : { line: DOCX_LINE_SPACING },
+        spacing: subbab ? { before: 280, after: 120 } : { line: DOCX_LINE_SPACING },
         alignment: subbab ? AlignmentType.LEFT : AlignmentType.JUSTIFIED,
-        children: [new TextRun({ text: l, bold: subbab, size: 20, font: 'Arial' })],
+        children: [
+          new TextRun({
+            text: l,
+            bold: subbab,
+            size: subbab ? 24 : 20,
+            font: subbab ? 'Georgia' : 'Arial',
+            color: subbab ? WARNA_COVER.EMERALD.replace('#', '') : undefined,
+          }),
+        ],
       }),
     );
   }
@@ -477,13 +787,11 @@ function isiBabDocx(teksBab) {
 
 /** Paragraf rata tengah putih di atas latar hijau — dipakai berulang pada cover DOCX. */
 function baris(teks, opsi = {}) {
-  const { tebal = false, ukuran = 24, warna = 'FFFFFF', italic = false, spasi = {} } = opsi;
+  const { tebal = false, ukuran = 24, warna = WARNA_COVER.PUTIH.replace('#', ''), italic = false, spasi = {}, font = 'Arial' } = opsi;
   return new Paragraph({
     alignment: AlignmentType.CENTER,
     spacing: spasi,
-    children: [
-      new TextRun({ text: teks, bold: tebal, italics: italic, size: ukuran, color: warna, font: 'Arial' }),
-    ],
+    children: [new TextRun({ text: teks, bold: tebal, italics: italic, size: ukuran, color: warna, font })],
   });
 }
 
@@ -507,7 +815,9 @@ function halamanCoverGambarDocx() {
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { before: 0, after: 0 },
-      children: [new ImageRun({ data: COVER_IMAGE_BUFFER, transformation: { width: w, height: h } })],
+      children: [
+        new ImageRun({ data: COVER_IMAGE_BUFFER, type: 'png', transformation: { width: w, height: h } }),
+      ],
     }),
   ];
 }
@@ -524,25 +834,31 @@ function halamanCoverVektorDocx(meta, dok) {
       ? [
           new Paragraph({
             alignment: AlignmentType.CENTER,
-            children: [new ImageRun({ data: LOGO_BUFFER, transformation: { width: 80, height: 80 } })],
+            children: [
+              new ImageRun({ data: LOGO_BUFFER, type: 'jpg', transformation: { width: 80, height: 80 } }),
+            ],
           }),
         ]
       : []),
-    baris('PEMERINTAH PROVINSI MALUKU UTARA', { tebal: true, ukuran: 26, spasi: { before: 300, after: 500 } }),
-    baris('RENCANA KERJA (RENJA)', { tebal: true, ukuran: 40, spasi: { before: 400 } }),
-    baris(pd, { tebal: true, ukuran: 30, warna: 'E8C170' }),
-    baris(`TAHUN ${dok.tahun}`, { tebal: true, ukuran: 28, spasi: { after: 500 } }),
+    baris('P E M E R I N T A H   P R O V I N S I   M A L U K U   U T A R A', {
+      tebal: true,
+      ukuran: 20,
+      spasi: { before: 300, after: 600 },
+    }),
+    baris('Rencana Kerja (Renja)', { tebal: true, ukuran: 52, font: 'Georgia', spasi: { after: 120 } }),
+    baris(pd, { tebal: true, ukuran: 34, font: 'Georgia', warna: WARNA_COVER.EMAS.replace('#', ''), spasi: { after: 500 } }),
+    baris(`TAHUN ${dok.tahun}`, { tebal: true, ukuran: 26, spasi: { after: 500 } }),
     baris('Mewujudkan Ketahanan Pangan Maluku Utara yang Mandiri dan Berkelanjutan', {
       italic: true,
       ukuran: 20,
-      warna: 'E8C170',
+      warna: WARNA_COVER.EMAS.replace('#', ''),
     }),
   ];
 
   const selCover = new TableCell({
     width: { size: 100, type: WidthType.PERCENTAGE },
     verticalAlign: VerticalAlign.CENTER,
-    shading: { type: ShadingType.CLEAR, color: 'auto', fill: '14532D' },
+    shading: { type: ShadingType.CLEAR, color: 'auto', fill: WARNA_COVER.NAVY.replace('#', '') },
     borders: {
       top: { style: BorderStyle.NONE, size: 0, color: 'auto' },
       bottom: { style: BorderStyle.NONE, size: 0, color: 'auto' },
@@ -567,18 +883,21 @@ function halamanCoverVektorDocx(meta, dok) {
 }
 
 /** Dipakai gambar jadi kalau tersedia; kalau tidak, jatuh balik ke sampul vektor. */
+/** Sampul vektor navy/emerald/gold dipakai LANGSUNG (2026-08-02, sama
+ * seperti versi PDF — lihat komentar renderCoverPdf) — menggantikan
+ * preferensi ke halamanCoverGambarDocx (berkas gambar lama dari tim). */
 function halamanCoverDocx(meta, dok) {
-  return COVER_IMAGE_BUFFER ? halamanCoverGambarDocx() : halamanCoverVektorDocx(meta, dok);
+  return halamanCoverVektorDocx(meta, dok);
 }
 
 /** Halaman Kata Pengantar, memuat blok tanda tangan Kepala Dinas. */
-async function halamanKataPengantarDocx(db, meta, dok, pejabat) {
+async function halamanKataPengantarDocx(db, meta, dok, pejabat, gambarTtdCap) {
   return [
     new Paragraph({
       heading: HeadingLevel.HEADING_1,
       alignment: AlignmentType.CENTER,
       spacing: { after: 300 },
-      children: [new TextRun({ text: 'KATA PENGANTAR', bold: true, size: 28, font: 'Arial' })],
+      children: [new TextRun({ text: 'Kata Pengantar', bold: true, size: 28, font: 'Georgia', color: WARNA_COVER.NAVY.replace('#', '') })],
     }),
     ...paragrafKataPengantar(meta, dok).map(
       (p) =>
@@ -588,7 +907,7 @@ async function halamanKataPengantarDocx(db, meta, dok, pejabat) {
           children: [new TextRun({ text: p, size: 20, font: 'Arial' })],
         }),
     ),
-    ...tandaTanganParagraphsDocx(pejabat, meta, dok),
+    ...tandaTanganParagraphsDocx(pejabat, meta, dok, gambarTtdCap),
     new Paragraph({ children: [new PageBreak()] }),
   ];
 }
@@ -600,7 +919,7 @@ function halamanDaftarIsiDocx() {
       heading: HeadingLevel.HEADING_1,
       alignment: AlignmentType.CENTER,
       spacing: { after: 300 },
-      children: [new TextRun({ text: 'DAFTAR ISI', bold: true, size: 28, font: 'Arial' })],
+      children: [new TextRun({ text: 'Daftar Isi', bold: true, size: 28, font: 'Georgia', color: WARNA_COVER.NAVY.replace('#', '') })],
     }),
     new TableOfContents('Daftar Isi', { hyperlink: true, headingStyleRange: '1-2' }),
     new Paragraph({ children: [new PageBreak()] }),
@@ -608,9 +927,16 @@ function halamanDaftarIsiDocx() {
       heading: HeadingLevel.HEADING_1,
       alignment: AlignmentType.CENTER,
       spacing: { after: 300 },
-      children: [new TextRun({ text: 'DAFTAR TABEL', bold: true, size: 28, font: 'Arial' })],
+      children: [new TextRun({ text: 'Daftar Tabel', bold: true, size: 28, font: 'Georgia', color: WARNA_COVER.NAVY.replace('#', '') })],
     }),
-    new TableOfContents('Daftar Tabel', { hyperlink: true, captionLabel: 'Tabel' }),
+    // captionLabelIncludingNumbers (bukan captionLabel) — permintaan user
+    // (2026-08-02): captionLabel menghasilkan field Word "TOC \a" yang
+    // SENGAJA HANYA menampilkan teks caption tanpa label+nomor ("Capaian
+    // Indikator..." saja). captionLabelIncludingNumbers menghasilkan
+    // "TOC \c" yang menyertakan label+nomor ("Tabel 2.1 Capaian
+    // Indikator...") sesuai format yang diminta, sama seperti Daftar Tabel
+    // versi PDF yang sudah benar dari awal.
+    new TableOfContents('Daftar Tabel', { hyperlink: true, captionLabelIncludingNumbers: 'Tabel' }),
     new Paragraph({ children: [new PageBreak()] }),
   ];
 }
@@ -619,9 +945,10 @@ async function buildRenjaPermendagri14Docx(db, dokumenId, options = {}) {
   const { dok, bab, tabel41, meta } = await muatKonteks(db, dokumenId);
   const versi = options.documentVersion != null ? options.documentVersion : dok.versi;
   const pejabat = await ambilPejabatKepalaDinas(db, dok.tahun);
+  const gambarTtdCap = await siapkanGambarTandaTanganDocx(pejabat);
 
   const halamanCover = halamanCoverDocx(meta, dok, versi);
-  const halamanKataPengantar = await halamanKataPengantarDocx(db, meta, dok, pejabat);
+  const halamanKataPengantar = await halamanKataPengantarDocx(db, meta, dok, pejabat, gambarTtdCap);
   const halamanDaftarIsi = halamanDaftarIsiDocx();
 
   // Bab I-III dan V-VI potret; Bab IV dipecah agar tabelnya masuk bagian landscape.
@@ -630,25 +957,29 @@ async function buildRenjaPermendagri14Docx(db, dokumenId, options = {}) {
   // sebelumnya di halaman yang sama kalau isi Bab sebelumnya pas-pasan.
   const bagianPotretAwal = [];
   JUDUL_BAB.slice(0, 3).forEach(([kunci, teksJudul], idx) => {
-    bagianPotretAwal.push(judul(teksJudul, 24, { halamanBaru: idx > 0 }), ...isiBabDocx(bab[kunci]));
+    bagianPotretAwal.push(...judul(teksJudul, 24, { halamanBaru: idx > 0 }), ...isiBabDocx(bab[kunci]));
   });
 
+  // sesudahTabel (narasi + Tabel 4.2, tabel ringkas 6 kolom) sengaja DIPISAH
+  // ke section potret tersendiri, bukan ikut landscape bareng Tabel 4.1 (17/18
+  // kolom) — supaya konsisten dengan versi PDF yang sudah balik ke potret
+  // lewat nextPortraitBerpita() sebelum merender sesudahTabel.
   const [sebelumTabel, sesudahTabel] = String(bab.bab4 || '').split(PENANDA_TABEL);
   const bagianLandscape = [
-    judul('BAB IV — RENCANA KERJA DAN PENDANAAN PERANGKAT DAERAH'),
+    ...judul('BAB IV — RENCANA KERJA DAN PENDANAAN PERANGKAT DAERAH'),
     ...isiBabDocx(sebelumTabel),
     tabel41Docx(tabel41),
     new Paragraph({ text: '' }),
-    ...isiBabDocx(sesudahTabel || ''),
   ];
+  const bagianPotretSesudahTabel = isiBabDocx(sesudahTabel || '');
 
   // Bab V tidak perlu page-break sendiri (section landscape->potret sebelumnya
   // sudah otomatis pindah halaman), tapi Bab VI WAJIB.
   const bagianPotretAkhir = [];
   JUDUL_BAB.slice(4).forEach(([kunci, teksJudul], idx) => {
-    bagianPotretAkhir.push(judul(teksJudul, 24, { halamanBaru: idx > 0 }), ...isiBabDocx(bab[kunci]));
+    bagianPotretAkhir.push(...judul(teksJudul, 24, { halamanBaru: idx > 0 }), ...isiBabDocx(bab[kunci]));
     if (kunci === 'bab6') {
-      bagianPotretAkhir.push(...tandaTanganParagraphsDocx(pejabat, meta, dok));
+      bagianPotretAkhir.push(...tandaTanganParagraphsDocx(pejabat, meta, dok, gambarTtdCap));
     }
   });
 
@@ -683,6 +1014,7 @@ async function buildRenjaPermendagri14Docx(db, dokumenId, options = {}) {
         footers: { default: footerNomor },
         children: bagianLandscape,
       },
+      { properties: {}, footers: { default: footerNomor }, children: bagianPotretSesudahTabel },
       { properties: {}, footers: { default: footerNomor }, children: bagianPotretAkhir },
     ],
   });
@@ -723,13 +1055,13 @@ function renderCoverGambarPdf(pdf) {
   });
 }
 
-/** Halaman sampul (Cover), pakai berkas gambar jadi kalau tersedia; kalau tidak,
- * jatuh balik ke sampul vektor hijau tema Ketahanan Pangan. Tidak diberi nomor halaman. */
+/** Halaman sampul (Cover) — sampul vektor navy/emerald/gold "Government
+ * Editorial" dipakai LANGSUNG (2026-08-02, atas persetujuan user terhadap
+ * mockup arah desain), menggantikan preferensi ke berkas gambar sampul lama
+ * dari tim ("cover-renja-dinas-pangan-2027.png"). Berkas lama TIDAK dihapus
+ * (masih ada di assets/branding/), jadi bisa dikembalikan kalau perlu —
+ * cukup balik urutan pemanggilan di bawah. */
 function renderCoverPdf(pdf, meta, dok) {
-  if (COVER_IMAGE_BUFFER) {
-    renderCoverGambarPdf(pdf);
-    return;
-  }
   renderCoverVektorPdf(pdf, meta, dok);
 }
 
@@ -740,21 +1072,22 @@ function renderCoverVektorPdf(pdf, meta, dok) {
   const lebar = pdf.page.width;
   const tinggi = pdf.page.height;
 
-  // --- Latar gradien hijau, dari tua (atas) ke sedang (bawah) ---
+  // --- Latar gradien navy, dari tua (atas) ke sedikit lebih terang (bawah) ---
   const gradien = pdf.linearGradient(0, 0, 0, tinggi);
-  gradien.stop(0, WARNA_COVER.HIJAU_TUA).stop(1, WARNA_COVER.HIJAU_SEDANG);
+  gradien.stop(0, WARNA_COVER.NAVY).stop(1, WARNA_COVER.NAVY_SOFT);
   pdf.rect(0, 0, lebar, tinggi).fill(gradien);
 
-  // --- Pita aksen emas atas & bawah ---
-  pdf.rect(0, 0, lebar, 8).fill(WARNA_COVER.EMAS);
-  pdf.rect(0, tinggi - 8, lebar, 8).fill(WARNA_COVER.EMAS);
+  // --- Garis aksen emas tipis atas & bawah (dulu pita tebal 8pt, sekarang
+  // hairline 2pt — gaya editorial lebih restrained, bukan pita mencolok) ---
+  pdf.rect(0, 0, lebar, 2).fill(WARNA_COVER.EMAS);
+  pdf.rect(0, tinggi - 2, lebar, 2).fill(WARNA_COVER.EMAS);
 
-  // --- Gelombang dekoratif hijau muda di sepertiga bawah ---
+  // --- Gelombang dekoratif emerald tipis di sepertiga bawah ---
   pdf.save();
-  pdf.fillColor(WARNA_COVER.HIJAU_MUDA).opacity(0.55);
+  pdf.fillColor(WARNA_COVER.EMERALD).opacity(0.4);
   pdf
-    .moveTo(0, tinggi * 0.62)
-    .bezierCurveTo(lebar * 0.28, tinggi * 0.56, lebar * 0.68, tinggi * 0.7, lebar, tinggi * 0.6)
+    .moveTo(0, tinggi * 0.66)
+    .bezierCurveTo(lebar * 0.28, tinggi * 0.6, lebar * 0.68, tinggi * 0.74, lebar, tinggi * 0.64)
     .lineTo(lebar, tinggi)
     .lineTo(0, tinggi)
     .closePath()
@@ -762,7 +1095,7 @@ function renderCoverVektorPdf(pdf, meta, dok) {
   pdf.restore();
   pdf.opacity(1);
 
-  // --- Lencana putih berisi lambang Provinsi Maluku Utara ---
+  // --- Lencana krem berisi lambang Provinsi Maluku Utara ---
   const pusatX = lebar / 2;
   const pusatYLogo = 118;
   const radius = 46;
@@ -783,24 +1116,32 @@ function renderCoverVektorPdf(pdf, meta, dok) {
   gambarBulirPadi(pdf, 70, tinggi - 50, 90, WARNA_COVER.EMAS, false);
   gambarBulirPadi(pdf, lebar - 70, tinggi - 50, 90, WARNA_COVER.EMAS, true);
 
-  // --- Teks kop instansi ---
-  let y = pusatYLogo + radius + 22;
-  pdf.fillColor(WARNA_COVER.PUTIH).font('Helvetica-Bold').fontSize(14);
-  pdf.text('PEMERINTAH PROVINSI MALUKU UTARA', 0, y, { align: 'center', width: lebar });
+  // --- Kop instansi (eyebrow kecil, huruf besar berjarak) ---
+  let y = pusatYLogo + radius + 26;
+  pdf.fillColor(WARNA_COVER.PUTIH).font('Helvetica-Bold').fontSize(10.5);
+  pdf.text('P E M E R I N T A H   P R O V I N S I   M A L U K U   U T A R A', 0, y, {
+    align: 'center',
+    width: lebar,
+  });
 
-  // --- Blok judul utama ---
-  y += 70;
-  pdf.fillColor(WARNA_COVER.PUTIH).font('Helvetica-Bold').fontSize(26);
-  pdf.text('RENCANA KERJA (RENJA)', 0, y, { align: 'center', width: lebar });
-  y += 38;
-  pdf.fillColor(WARNA_COVER.EMAS).font('Helvetica-Bold').fontSize(20);
+  // --- Blok judul utama, serif untuk kesan "buku" ---
+  y += 56;
+  pdf.fillColor(WARNA_COVER.PUTIH).font('Times-Bold').fontSize(28);
+  pdf.text('Rencana Kerja (Renja)', 0, y, { align: 'center', width: lebar });
+  y += 40;
+  pdf.fillColor(WARNA_COVER.EMAS).font('Times-Bold').fontSize(19);
   pdf.text(pd, 0, y, { align: 'center', width: lebar });
-  y += 32;
-  pdf.fillColor(WARNA_COVER.PUTIH).font('Helvetica-Bold').fontSize(18);
+
+  // --- Garis pemisah tipis ---
+  y += 34;
+  pdf.rect(lebar / 2 - 22, y, 44, 1.4).fill(WARNA_COVER.EMAS);
+
+  y += 20;
+  pdf.fillColor(WARNA_COVER.PUTIH).font('Helvetica-Bold').fontSize(15);
   pdf.text(`TAHUN ${dok.tahun}`, 0, y, { align: 'center', width: lebar });
 
   // --- Frasa tematik pangan ---
-  y += 46;
+  y += 42;
   pdf.fillColor(WARNA_COVER.EMAS).font('Helvetica-Oblique').fontSize(11);
   pdf.text('Mewujudkan Ketahanan Pangan Maluku Utara yang Mandiri dan Berkelanjutan', 40, y, {
     align: 'center',
@@ -811,9 +1152,10 @@ function renderCoverVektorPdf(pdf, meta, dok) {
 }
 
 /** Halaman Kata Pengantar, memuat blok tanda tangan Kepala Dinas. */
-function renderKataPengantarPdf(pdf, pejabat, meta, dok) {
-  pdf.font('Helvetica-Bold').fontSize(14).fillColor('#000000');
-  pdf.text('KATA PENGANTAR', { align: 'center' });
+function renderKataPengantarPdf(pdf, pejabat, meta, dok, gambarBersih) {
+  pdf.font('Times-Bold').fontSize(16).fillColor(WARNA_COVER.NAVY);
+  pdf.text('Kata Pengantar', { align: 'center' });
+  pdf.fillColor('#000000');
   pdf.moveDown(0.8);
 
   pdf.font('Helvetica').fontSize(10);
@@ -823,7 +1165,7 @@ function renderKataPengantarPdf(pdf, pejabat, meta, dok) {
   }
 
   pdf.moveDown(0.6);
-  renderTandaTanganPdf(pdf, pejabat, meta, dok);
+  renderTandaTanganPdf(pdf, pejabat, meta, dok, gambarBersih);
 }
 
 /** Nomor halaman cetak: sampul (indeks 0) tidak dihitung sama sekali — Kata
@@ -845,7 +1187,7 @@ function stempelNomorHalaman(pdf) {
     pdf
       .font('Helvetica-Bold')
       .fontSize(8)
-      .fillColor(WARNA_COVER.HIJAU_TUA)
+      .fillColor(WARNA_COVER.NAVY)
       .text(String(i), 0, y, {
         align: 'center',
         width: pdf.page.width,
@@ -853,6 +1195,19 @@ function stempelNomorHalaman(pdf) {
         lineBreak: false,
       });
   }
+}
+
+/** Cetak judul Bab PDF 2 baris (nomor bab, lalu nama bab) — konsisten dengan
+ * versi DOCX (lihat fungsi judul()), permintaan user (2026-08-01) meniru
+ * gaya dokumen Renja resmi. */
+function cetakJudulBabPdf(pdf, teksJudul) {
+  const [roman, namaBab] = pisahJudulBab(teksJudul);
+  pdf.fontSize(13).fillColor(WARNA_COVER.NAVY).font('Times-Bold').text(roman, { align: 'center' });
+  if (namaBab) {
+    pdf.text(namaBab, { align: 'center' });
+  }
+  pdf.fillColor('#000000');
+  pdf.moveDown(0.6);
 }
 
 /**
@@ -887,8 +1242,14 @@ function renderBabTerlacak(pdf, teksBab, { onSubbab, onTabel, landscapeUntukTabe
         modeLandscape = true;
       }
       const halaman = labelHalaman(pdf);
+      // BUG (ditemukan 2026-08-01): sebelumnya "else if (onSubbab)" tanpa
+      // syarat cocokSubbab — kalau caller cuma kasih onSubbab TANPA onTabel
+      // (baru terjadi pertama kali di jalur Bab IV, lihat sebelumTabel di
+      // atas), baris "Tabel X.Y ..." salah kaprah ikut tercatat sebagai
+      // subbab ke Daftar Isi. Sekarang eksplisit cek cocokSubbab supaya
+      // baris tabel tanpa handler onTabel diam saja, tidak nyasar ke onSubbab.
       if (cocokTabel && onTabel) onTabel(t, halaman);
-      else if (onSubbab) onSubbab(t, halaman);
+      else if (cocokSubbab && onSubbab) onSubbab(t, halaman);
     }
     segmen.push(l);
   }
@@ -924,8 +1285,9 @@ function isiDaftarIsiPdf(pdf, halamanDaftarIsi, entri) {
   pdf.x = leftMargin(pdf);
   pdf.y = topMargin(pdf);
 
-  pdf.font('Helvetica-Bold').fontSize(14).fillColor('#000000');
-  pdf.text('DAFTAR ISI', { align: 'center' });
+  pdf.font('Times-Bold').fontSize(16).fillColor(WARNA_COVER.NAVY);
+  pdf.text('Daftar Isi', { align: 'center' });
+  pdf.fillColor('#000000');
   pdf.moveDown(1.5);
 
   tulisDaftarDuaKolom(pdf, entri);
@@ -937,8 +1299,9 @@ function isiDaftarTabelPdf(pdf, halamanDaftarTabel, entri) {
   pdf.x = leftMargin(pdf);
   pdf.y = topMargin(pdf);
 
-  pdf.font('Helvetica-Bold').fontSize(14).fillColor('#000000');
-  pdf.text('DAFTAR TABEL', { align: 'center' });
+  pdf.font('Times-Bold').fontSize(16).fillColor(WARNA_COVER.NAVY);
+  pdf.text('Daftar Tabel', { align: 'center' });
+  pdf.fillColor('#000000');
   pdf.moveDown(1.5);
 
   if (!entri.length) {
@@ -951,6 +1314,7 @@ function isiDaftarTabelPdf(pdf, halamanDaftarTabel, entri) {
 async function buildRenjaPermendagri14Pdf(db, dokumenId) {
   const { dok, bab, tabel41, meta } = await muatKonteks(db, dokumenId);
   const pejabat = await ambilPejabatKepalaDinas(db, dok.tahun);
+  const gambarBersih = await siapkanGambarBersihTtdCap(pejabat);
 
   return new Promise((resolve, reject) => {
     const potongan = [];
@@ -976,7 +1340,7 @@ async function buildRenjaPermendagri14Pdf(db, dokumenId) {
       // --- Kata Pengantar: halaman 1 ---
       nextPortraitBerpita(pdf);
       daftarIsiEntri.push({ judul: 'KATA PENGANTAR', halaman: labelHalaman(pdf), tebal: true });
-      renderKataPengantarPdf(pdf, pejabat, meta, dok);
+      renderKataPengantarPdf(pdf, pejabat, meta, dok, gambarBersih);
 
       // --- Daftar Isi (dicadangkan): halaman 2 ---
       nextPortraitBerpita(pdf);
@@ -996,8 +1360,7 @@ async function buildRenjaPermendagri14Pdf(db, dokumenId) {
       for (const [kunci, teksJudul] of JUDUL_BAB.slice(0, 3)) {
         nextPortraitBerpita(pdf);
         daftarIsiEntri.push({ judul: teksJudul, halaman: labelHalaman(pdf), tebal: true });
-        pdf.fontSize(12).fillColor('#000000').text(teksJudul, { align: 'center' });
-        pdf.moveDown(0.4);
+        cetakJudulBabPdf(pdf, teksJudul);
         renderBabTerlacak(pdf, bab[kunci], {
           onSubbab: (judul, halaman) => daftarIsiEntri.push({ judul, halaman, level: 1 }),
           onTabel: (judul, halaman) => daftarTabelEntri.push({ judul, halaman }),
@@ -1009,12 +1372,17 @@ async function buildRenjaPermendagri14Pdf(db, dokumenId) {
       const [sebelumTabel, sesudahTabel] = String(bab.bab4 || '').split(PENANDA_TABEL);
       nextPortraitBerpita(pdf);
       daftarIsiEntri.push({ judul: JUDUL_BAB[3][1], halaman: labelHalaman(pdf), tebal: true });
-      pdf
-        .fontSize(12)
-        .fillColor('#000000')
-        .text('BAB IV — RENCANA KERJA DAN PENDANAAN PERANGKAT DAERAH', { align: 'center' });
-      pdf.moveDown(0.4);
-      renderMarkdownToPdf(pdf, sebelumTabel, { lineGap: PDF_LINE_GAP, hangingIndentList: true, ...HEADER_TABEL_PDF });
+      cetakJudulBabPdf(pdf, 'BAB IV — RENCANA KERJA DAN PENDANAAN PERANGKAT DAERAH');
+      // sebelumTabel cuma narasi (Tabel 4.1 yang sesungguhnya disisipkan
+      // terpisah lewat drawPdfGridTable di bawah, bukan sebagai tabel
+      // markdown di dalam teks ini) — dipakai renderBabTerlacak (bukan
+      // renderMarkdownToPdf langsung) supaya subbab 4.1 ikut tercatat ke
+      // Daftar Isi lewat callback onSubbab, presisi per baris seperti Bab
+      // lain, bukan asumsi "baris pertama" yang ternyata tidak berlaku
+      // untuk sesudahTabel (subbab 4.2 di tengah teks, bukan baris pertama).
+      renderBabTerlacak(pdf, sebelumTabel, {
+        onSubbab: (judul, halaman) => daftarIsiEntri.push({ judul, halaman, level: 1 }),
+      });
 
       addLandscape(pdf);
       daftarTabelEntri.push({
@@ -1033,20 +1401,31 @@ async function buildRenjaPermendagri14Pdf(db, dokumenId) {
       });
 
       nextPortraitBerpita(pdf);
-      if (sesudahTabel) renderMarkdownToPdf(pdf, sesudahTabel, { lineGap: PDF_LINE_GAP, hangingIndentList: true, ...HEADER_TABEL_PDF });
+      if (sesudahTabel) {
+        // sesudahTabel memuat subbab 4.2 (di tengah teks, BUKAN baris
+        // pertama — beda dari sebelumTabel) diikuti narasi lalu Tabel 4.2
+        // sebagai tabel markdown biasa (bukan drawPdfGridTable custom
+        // seperti Tabel 4.1) — renderBabTerlacak menangani parsing tabel
+        // markdown itu sendiri via renderMarkdownToPdf internal, sekaligus
+        // mencatat subbab & tabel ke Daftar Isi/Daftar Tabel dengan halaman
+        // yang presisi per baris.
+        renderBabTerlacak(pdf, sesudahTabel, {
+          onSubbab: (judul, halaman) => daftarIsiEntri.push({ judul, halaman, level: 1 }),
+          onTabel: (judul, halaman) => daftarTabelEntri.push({ judul, halaman }),
+        });
+      }
 
       for (const [kunci, teksJudul] of JUDUL_BAB.slice(4)) {
         nextPortraitBerpita(pdf);
         daftarIsiEntri.push({ judul: teksJudul, halaman: labelHalaman(pdf), tebal: true });
-        pdf.fontSize(12).fillColor('#000000').text(teksJudul, { align: 'center' });
-        pdf.moveDown(0.4);
+        cetakJudulBabPdf(pdf, teksJudul);
         renderBabTerlacak(pdf, bab[kunci], {
           onSubbab: (judul, halaman) => daftarIsiEntri.push({ judul, halaman, level: 1 }),
           onTabel: (judul, halaman) => daftarTabelEntri.push({ judul, halaman }),
         });
         if (kunci === 'bab6') {
           pdf.moveDown(1.2);
-          renderTandaTanganPdf(pdf, pejabat, meta, dok);
+          renderTandaTanganPdf(pdf, pejabat, meta, dok, gambarBersih);
         }
       }
 

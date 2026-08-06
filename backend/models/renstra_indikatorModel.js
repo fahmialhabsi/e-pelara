@@ -111,6 +111,12 @@ module.exports = (sequelize, DataTypes) => {
       jenis_dokumen: DataTypes.STRING,
       renstra_id: DataTypes.INTEGER,
       is_iku_pk: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      // Jumlah desimal saat baseline/target/realisasi indikator ini DITAMPILKAN
+      // di dokumen resmi (Renja Tabel 2.1/2.2/5.1/5.2) — NULL berarti pakai
+      // default 2 desimal. Kolom DECIMAL(15,2) di atas tetap seragam untuk
+      // semua baris; ini murni penanda format tampil per indikator, bukan
+      // presisi penyimpanan (lihat catatan di migrasinya).
+      jumlah_desimal_tampilan: DataTypes.INTEGER,
     },
     {
       sequelize,

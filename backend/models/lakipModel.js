@@ -67,6 +67,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: "DRAFT",
       },
+      /** Penanda bahwa Renstra/RKPD/Renja/LK Dispang sumbernya berubah setelah LAKIP ini digenerate. */
+      needs_recall: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      recall_reason: { type: DataTypes.STRING(255), allowNull: true },
+      last_recall_at: { type: DataTypes.DATE, allowNull: true },
     },
     {
       sequelize,

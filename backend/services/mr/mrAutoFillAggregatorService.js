@@ -251,6 +251,11 @@ const getLakipSuggestion = async (context) => {
       indikator_kinerja: row.indikator_kinerja,
       target: row.target,
       realisasi: row.realisasi,
+      // KNOWN ISSUE (Fase 4, Agustus 2026): pagu_anggaran/realisasi_anggaran di sini
+      // BEDA SUMBER dari dokumen LAKIP resmi (buildHtml() pakai agregat dpa+penatausahaan
+      // langsung, bukan kolom ini) dan saat ini selalu Rp 0 — kalau nanti nilai dropdown
+      // "Pilih Data LAKIP" ini benar-benar disambungkan ke tampilan di StepContext.jsx,
+      // ganti ke sumber yang sama dengan buildHtml() dulu, jangan pakai apa adanya.
       pagu_anggaran: row.pagu_anggaran,
       realisasi_anggaran: row.realisasi_anggaran,
       evaluasi: row.evaluasi,

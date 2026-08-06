@@ -1,4 +1,4 @@
-const { LkDispang, PeriodeRpjmd } = require('../models');
+const { LkDispang, PeriodeRpjmd, Dpa, ActivityLog } = require('../models');
 const Joi = require('joi');
 const { recalcDpaRealisasi } = require('../services/dpaRealisasiRollupService');
 const { recalcLkDispang } = require('../services/lkDispangRollupService');
@@ -94,12 +94,42 @@ module.exports = {
     }
   },
 
+  /**
+   * Recall DPA + LK Dispang: hitung ulang realisasi dari ledger (BKU/Penatausahaan)
+   * lalu lepas penanda needs_recall pada baris yang sudah disegarkan. Selalu aman
+   * dijalankan tanpa gating approval_status — ini menyegarkan hasil hitung dari
+   * ledger, bukan menimpa keputusan anggaran (sama seperti scope 'realisasi' di
+   * renjaRecallService.js yang selalu diizinkan meski dokumen sudah final).
+   */
   async recalcRollup(req, res) {
     try {
       const tahun = Number(req.body?.tahun || req.query?.tahun);
       if (!tahun) return res.status(400).json({ error: 'tahun wajib diisi' });
+      const uid = req.user?.id ?? req.user?.userId ?? null;
+
       const rollupDpa = await recalcDpaRealisasi(require('../models'), tahun);
       const rollupLkDispang = await recalcLkDispang(require('../models'), tahun);
+
+      const tahunStr = String(tahun);
+      await Dpa.update(
+        { needs_recall: false, recall_reason: null, last_recall_at: new Date() },
+        { where: { tahun: tahunStr } },
+      );
+      await LkDispang.update(
+        { needs_recall: false, recall_reason: null, last_recall_at: new Date() },
+        { where: { tahun: tahunStr } },
+      );
+
+      if (ActivityLog) {
+        await ActivityLog.create({
+          user_id: uid,
+          action: 'lk_dispang_recall',
+          entity_type: 'lk_dispang',
+          entity_id: null,
+          new_data: JSON.stringify({ tahun, rollupDpa, rollupLkDispang }),
+        }).catch(() => null);
+      }
+
       res.json({
         success: true,
         message: `Recalc LK Dispang tahun ${tahun} berhasil`,

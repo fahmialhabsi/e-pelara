@@ -38,6 +38,10 @@ exports.generate = async (req, res) => {
   try {
     const tahun = Number(req.params.tahun);
     const out = await generateLak(db.sequelize, db, tahun);
+    await LakSnapshot.update(
+      { needs_recall: false, recall_reason: null, last_recall_at: new Date() },
+      { where: { tahun_anggaran: tahun } },
+    );
     res.json({ ok: true, ...out });
   } catch (e) {
     const code = e.statusCode || 500;

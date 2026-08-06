@@ -24,12 +24,14 @@ const {
   MrReferenceItem,
   MrReferenceGroup,
   MrCrossSystemLink,
+  MrPlanningRisk,
 } = require("../../models");
 
 const mrApprovalService = require("./mrApprovalService");
 const mrHistoryService = require("./mrHistoryService");
 const { buildHistoryPayload, createHistory, getPlainJson } = require("../../helpers/mr/mrHistoryHelper");
 const mrPlanningRiskService = require("./mrPlanningRiskService");
+const { flagNeedsRecallAman } = require("../recallDataService");
 
 const ALLOWED_CREATE_UPDATE_FIELDS = new Set([
   "nomor_temuan",
@@ -438,7 +440,7 @@ const createRevisionFromApprovedTemuan = async ({ temuanId, body = {}, user } = 
   const allowedPayload = pickAllowedFields(body);
   validateSubFields(allowedPayload);
 
-  return sequelize.transaction(async (transaction) => {
+  const temuan = await sequelize.transaction(async (transaction) => {
     const temuan = await findTemuanOrFail(temuanId, { transaction });
 
     if (temuan.status_revisi !== "approved") {
@@ -485,6 +487,18 @@ const createRevisionFromApprovedTemuan = async ({ temuanId, body = {}, user } = 
 
     return temuan;
   });
+
+  // Temuan yang sudah dieskalasi ke Risk sebelumnya kini direvisi lagi — tandai
+  // Risk hasil eskalasi supaya tidak diam-diam menyimpang dari Temuan terbaru.
+  if (temuan.risk_escalation_status === "risk_created" && temuan.mr_planning_risk_id) {
+    flagNeedsRecallAman(
+      MrPlanningRisk,
+      { id: temuan.mr_planning_risk_id },
+      { reason: `Temuan ${temuan.kode_temuan || temuan.id} sumber direvisi` },
+    );
+  }
+
+  return temuan;
 };
 
 const verifikasiHistory = ({ historyId, userId, note, request }) =>

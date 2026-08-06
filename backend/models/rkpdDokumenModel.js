@@ -42,6 +42,10 @@ module.exports = (sequelize, DataTypes) => {
       },
       tanggal_pengesahan: { type: DataTypes.DATEONLY, allowNull: true },
       derivation_key: { type: DataTypes.STRING(128), allowNull: true },
+      /** Penanda bahwa data hulu (RPJMD/master nomenklatur) berubah setelah dokumen ini dibuat. */
+      needs_recall: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      recall_reason: { type: DataTypes.STRING(255), allowNull: true },
+      last_recall_at: { type: DataTypes.DATE, allowNull: true },
       is_test: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
       /** Narasi BAB II (analisis) untuk dokumen resmi — wajib diisi sebelum ekspor */
       text_bab2: { type: DataTypes.TEXT, allowNull: true },

@@ -270,6 +270,21 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
       },
 
+      /** Penanda bahwa Temuan sumber eskalasi (TLHP) direvisi setelah Risk ini dibuat. */
+      needs_recall: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      recall_reason: {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+      },
+      last_recall_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+
       dibuat_oleh: {
         type: DataTypes.INTEGER,
         allowNull: true,

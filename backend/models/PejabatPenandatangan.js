@@ -19,6 +19,9 @@ module.exports = (sequelize, DataTypes) => {
       nama: { type: DataTypes.STRING(255), allowNull: true },
       nip: { type: DataTypes.STRING(50), allowNull: true },
       jabatan: { type: DataTypes.STRING(255), allowNull: true },
+      tanda_tangan_url: { type: DataTypes.STRING(500), allowNull: true },
+      cap_dinas_url: { type: DataTypes.STRING(500), allowNull: true },
+      persetujuan_pemilik: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     },
     {
       sequelize,

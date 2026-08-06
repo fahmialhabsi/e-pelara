@@ -1,5 +1,6 @@
 // File: controllers/rkaController.js
-const { Rka, RkaRincianBelanja, PeriodeRpjmd, RPJMD } = require('../models');
+const { Rka, RkaRincianBelanja, PeriodeRpjmd, RPJMD, Dpa } = require('../models');
+const { flagNeedsRecallAman } = require('../services/recallDataService');
 const { splitPlanningBody } = require('../helpers/planningDocumentMutation');
 const {
   writePlanningAudit,
@@ -194,6 +195,10 @@ module.exports = {
         change_reason_file: change_reason_file || null,
       };
       await Rka.update(patch, { where: { id } });
+
+      // Tandai DPA turunan (kalau sudah pernah digenerate dari RKA ini) perlu di-recall.
+      // Fire-and-forget: kegagalan menandai tidak boleh menggagalkan update RKA itu sendiri.
+      flagNeedsRecallAman(Dpa, { rka_id: id }, { reason: 'RKA sumber diperbarui' });
 
       // Sinkronisasi Data Rincian Anak jika dikirim
       if (hasRincianBelanja) {

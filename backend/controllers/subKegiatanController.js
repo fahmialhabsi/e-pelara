@@ -10,6 +10,9 @@ const {
   MasterSubKegiatan,
   MasterKegiatan,
   IndikatorSubKegiatan,
+  RenstraSubkegiatan,
+  RenstraProgram,
+  RenstraOPD,
 } = require('../models');
 
 const { Op } = require('sequelize');
@@ -28,6 +31,37 @@ const {
   isMasterPayload,
 } = require('../helpers/subKegiatanMasterWrite');
 const { recalcKegiatanTotal, recalcProgramTotal } = require('../utils/paguHelper');
+const { flagNeedsRecallAman } = require('../services/recallDataService');
+
+/**
+ * Tandai RenstraOPD yang meng-clone Sub Kegiatan RPJMD ini perlu di-recall.
+ * Rantai: SubKegiatan -> RenstraSubkegiatan.sub_kegiatan_id -> renstra_program_id
+ * -> RenstraProgram.renstra_id -> RenstraOPD.id. Fire-and-forget.
+ */
+async function tandaiRenstraPerluRecallDariSubKegiatan(subKegiatanId, alasan) {
+  if (!RenstraSubkegiatan || !RenstraProgram || !RenstraOPD) return;
+  try {
+    const rows = await RenstraSubkegiatan.findAll({
+      where: { sub_kegiatan_id: subKegiatanId },
+      attributes: ['renstra_program_id'],
+      group: ['renstra_program_id'],
+    });
+    const programIds = rows.map((r) => r.renstra_program_id).filter(Boolean);
+    if (!programIds.length) return;
+
+    const programs = await RenstraProgram.findAll({
+      where: { id: { [Op.in]: programIds } },
+      attributes: ['renstra_id'],
+      group: ['renstra_id'],
+    });
+    const renstraOpdIds = programs.map((p) => p.renstra_id).filter(Boolean);
+    if (!renstraOpdIds.length) return;
+
+    await flagNeedsRecallAman(RenstraOPD, { id: { [Op.in]: renstraOpdIds } }, { reason: alasan });
+  } catch (err) {
+    console.error('[recall] gagal menandai RenstraOPD dari SubKegiatan RPJMD:', err.message);
+  }
+}
 const {
   queuePaguSubKegiatanId,
   queuePaguPrefixes,
@@ -621,6 +655,8 @@ const subKegiatanController = {
         queuePaguSubKegiatanId(sub.id);
       }
 
+      tandaiRenstraPerluRecallDariSubKegiatan(sub.id, 'Sub Kegiatan RPJMD diperbarui');
+
       const fresh = await SubKegiatan.findByPk(sub.id);
       const meta =
         prep.transitionWarning != null ? { enforcementWarning: prep.transitionWarning } : undefined;
@@ -647,6 +683,7 @@ const subKegiatanController = {
       });
 
       const prefixes = [...new Set(indikatorRows.map((r) => r.kode_indikator).filter(Boolean))];
+      const subId = sub.id;
 
       await sub.destroy();
 
@@ -654,6 +691,7 @@ const subKegiatanController = {
       await recalcProgramTotal(sub.kegiatan.program.id);
 
       queuePaguPrefixes(prefixes);
+      tandaiRenstraPerluRecallDariSubKegiatan(subId, 'Sub Kegiatan RPJMD dihapus');
 
       return successResponse(res, 200, 'Sub-kegiatan berhasil dihapus');
     } catch (err) {

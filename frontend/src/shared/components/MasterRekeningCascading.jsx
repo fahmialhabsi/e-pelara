@@ -81,7 +81,7 @@ export default function MasterRekeningCascading({
   onChange,
   disabled = false,
   required = false,
-  datasetKey = 'kepmendagri_provinsi_900_2024',
+  datasetKey = 'kepmendagri_provinsi_900_2026',
   allowedKodeProgram = [],
 }) {
   const [state, dispatch] = useReducer(reducer, initialState);

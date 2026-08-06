@@ -2,6 +2,7 @@ const { Op } = require('sequelize');
 
 const { RenstraProgram, RenstraOPD, ProgramArahKebijakan } = require('../models');
 const { programWhereForRenstraOpdQuery } = require('../helpers/renstraOpdProgramFilter');
+const { sortByKodeNatural } = require('../utils/kodeNaturalSort');
 
 const normalizePositiveInt = (value) => {
   if (value === undefined || value === null || value === '') {
@@ -205,7 +206,7 @@ exports.findAll = async (req, res) => {
       renstra: item.renstra,
     }));
 
-    res.json(formattedData);
+    res.json(sortByKodeNatural(formattedData, 'kode_program'));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

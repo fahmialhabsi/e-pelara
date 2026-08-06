@@ -73,6 +73,7 @@ const IndikatorIkuIkkForm = ({ stage, initialData = null, renstraAktif }) => {
       target_tahun_4: '',
       target_tahun_5: '',
       target_tahun_6: '',
+      jumlah_desimal_tampilan: '',
       definisi_operasional: '',
       metode_penghitungan: '',
       sumber_data: '',
@@ -99,6 +100,10 @@ const IndikatorIkuIkkForm = ({ stage, initialData = null, renstraAktif }) => {
       target_tahun_4: formData.target_tahun_4,
       target_tahun_5: formData.target_tahun_5,
       target_tahun_6: formData.target_tahun_6,
+      jumlah_desimal_tampilan:
+        formData.jumlah_desimal_tampilan === '' || formData.jumlah_desimal_tampilan === null
+          ? null
+          : Number(formData.jumlah_desimal_tampilan),
       stage: meta.stage,
       jenis_indikator: 'Kuantitatif',
       renstra_id: formData.renstra_id,
@@ -187,6 +192,19 @@ const IndikatorIkuIkkForm = ({ stage, initialData = null, renstraAktif }) => {
             ))}
           </div>
         </div>
+
+        <InputField
+          name="jumlah_desimal_tampilan"
+          label="Jumlah Desimal Tampilan (opsional)"
+          control={control}
+          errors={errors}
+          placeholder="Kosongkan untuk default 2 desimal"
+        />
+        <Text type="secondary" style={{ display: 'block', marginTop: -12, marginBottom: 16 }}>
+          Mengatur berapa digit di belakang koma saat baseline/target/realisasi indikator ini
+          ditampilkan di dokumen Renja (Tabel 2.1/2.2/5.1/5.2) — mis. isi 3 untuk "1,890" atau 1
+          untuk "52,5". Tidak mengubah nilai/presisi data, hanya cara tampilnya.
+        </Text>
 
         <TextAreaField
           name="definisi_operasional"

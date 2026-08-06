@@ -4,6 +4,7 @@ const {
   programWhereForRenstraOpdQuery,
   renstraOpdSiblingIds,
 } = require('../helpers/renstraOpdProgramFilter');
+const { sortByKodeNatural } = require('../utils/kodeNaturalSort');
 
 /**
  * Pastikan setiap kegiatan RPJMD (tabel `kegiatan`) yang program_id-nya sama dengan
@@ -349,7 +350,6 @@ exports.findAll = async (req, res) => {
           attributes: ['id', 'kode_program', 'nama_program'],
         },
       ],
-      order: [['kode_kegiatan', 'ASC']],
     });
 
     const result = data.map((item) => ({
@@ -362,7 +362,7 @@ exports.findAll = async (req, res) => {
       },
     }));
 
-    res.json(result);
+    res.json(sortByKodeNatural(result, 'kode_kegiatan'));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -436,7 +436,7 @@ exports.findByProgramKode = async (req, res) => {
       bidang_opd: k.bidang_opd_penanggung_jawab ?? '',
     }));
 
-    res.json(result);
+    res.json(sortByKodeNatural(result, 'kode_kegiatan'));
   } catch (err) {
     console.error('🔥 Error findByProgramKode:', err);
     res.status(500).json({ error: err.message });
@@ -466,7 +466,7 @@ exports.getKodeNamaKegiatan = async (req, res) => {
       rpjmd_id: item.kegiatan_rpjmd.rpjmd_id ?? null,
     }));
 
-    res.json(result);
+    res.json(sortByKodeNatural(result, 'kode_kegiatan'));
   } catch (err) {
     console.error('🔥 Error getKodeNamaKegiatan:', err);
     res.status(500).json({ message: 'Gagal mengambil kegiatan', error: err.message });

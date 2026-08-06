@@ -61,6 +61,10 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: 'DRAFT',
       },
+      /** Penanda bahwa RKA sumbernya berubah setelah DPA ini digenerate. */
+      needs_recall: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+      recall_reason: { type: DataTypes.STRING(255), allowNull: true },
+      last_recall_at: { type: DataTypes.DATE, allowNull: true },
       opd_id: { type: DataTypes.INTEGER, allowNull: true },
       opd_penanggung_jawab: { type: DataTypes.STRING(255), allowNull: true },
       kode_program: { type: DataTypes.STRING(50), allowNull: true },

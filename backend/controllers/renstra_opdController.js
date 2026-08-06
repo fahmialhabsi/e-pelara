@@ -1,6 +1,8 @@
 // controllers/renstra_opdController.js
-const { RenstraOPD, OpdPenanggungJawab, RPJMD } = require('../models');
+const db = require('../models');
+const { RenstraOPD, OpdPenanggungJawab, RPJMD, ActivityLog } = db;
 const { Op } = require('sequelize');
+const { recallRenstraOpd } = require('../services/renstraOpdRecallService');
 
 // Role yang boleh melihat data semua OPD (tidak dibatasi per-OPD)
 const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMINISTRATOR'];
@@ -209,6 +211,30 @@ exports.getAktif = async (req, res) => {
     res.json({ message: 'success', data });
   } catch (err) {
     res.status(500).json({ message: 'Gagal mengambil data aktif', error: err.message });
+  }
+};
+
+// ✅ RECALL — sinkronkan ulang kode/nama RenstraKegiatan/RenstraSubkegiatan
+// dari SubKegiatan/Kegiatan RPJMD sumbernya, lalu lepas penanda needs_recall.
+exports.recall = async (req, res) => {
+  try {
+    const uid = req.user?.id ?? req.user?.userId ?? null;
+    const laporan = await recallRenstraOpd(db, req.params.id);
+
+    if (ActivityLog) {
+      await ActivityLog.create({
+        user_id: uid,
+        action: 'renstra_opd_recall',
+        entity_type: 'renstra_opd',
+        entity_id: Number(req.params.id),
+        new_data: JSON.stringify(laporan),
+      }).catch(() => null);
+    }
+
+    res.json({ message: 'success', data: laporan });
+  } catch (err) {
+    const status = /tidak ditemukan/i.test(err.message) ? 404 : 500;
+    res.status(status).json({ message: 'Gagal recall RenstraOPD', error: err.message });
   }
 };
 

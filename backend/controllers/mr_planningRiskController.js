@@ -38,6 +38,7 @@ const mrApprovalService = require("../services/mr/mrApprovalService");
 const mrHistoryService = require("../services/mr/mrHistoryService");
 const mrRebuildService = require("../services/mr/mrRebuildService");
 const mrPlanningRiskContextService = require("../services/mr/mrPlanningRiskService");
+const { recallRiskDariTemuan } = require("../services/mr/mrPlanningRiskRecallService");
 
 const {
   successResponse,
@@ -706,6 +707,22 @@ const submitRiskForVerification = async (req, res) => {
   }
 };
 
+const recallFromTemuan = async (req, res) => {
+  try {
+    const laporan = await recallRiskDariTemuan(req.params.id, {
+      user: getUserForContextService(req),
+    });
+
+    return successResponse({
+      res,
+      message: laporan.pesan || "Recall Risk dari Temuan selesai diproses.",
+      data: laporan,
+    });
+  } catch (error) {
+    return errorResponse({ res, error });
+  }
+};
+
 const verifyRiskFromContextService = async (req, res) => {
   try {
     const result = await mrPlanningRiskContextService.verifyRisk({
@@ -826,6 +843,7 @@ module.exports = {
   
   updateDraftRiskFromContextService,
   submitRiskForVerification,
+  recallFromTemuan,
   verifyRiskFromContextService,
   approveRiskFromContextService,
   rejectRiskFromContextService,

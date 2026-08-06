@@ -3,6 +3,7 @@
 const db = require('../models');
 const workflow = require('../services/prosnp/prosnpWorkflowService');
 const { buildExcel } = require('../services/prosnp/prosnpExcelExportService');
+const { listDukunganProgramDariSistem } = require('../services/prosnp/prosnpDukunganSistemService');
 const fs = require('fs');
 
 const normalizeOpdName = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -48,7 +49,10 @@ async function initializeIndikator(req, res) { try { return ok(res, await workfl
 async function createIndikator(req, res) { try { return ok(res, await workflow.createIndikator(Number(req.params.id), req.body, req.user, req.tenantId), 201); } catch (e) { return fail(res, e); } }
 async function getPeriode(req, res) {
   try {
-    const row = await db.ProsnPeriode.findOne({ where: { id: Number(req.params.id), tenant_id: req.tenantId }, include: [{ model: db.ProsnIndikator, as: 'indikators', include: [{ model: db.ProsnPengisian, as: 'pengisian' }] }] });
+    const row = await db.ProsnPeriode.findOne({ where: { id: Number(req.params.id), tenant_id: req.tenantId }, include: [{ model: db.ProsnIndikator, as: 'indikators', include: [
+      { model: db.ProsnPengisian, as: 'pengisian' },
+      { model: db.ProsnBuktiDukung, as: 'buktiDukung', through: { attributes: ['id', 'checklist_status', 'catatan_kekurangan', 'relevansi', 'lock_version'] } },
+    ] }] });
     if (!row) return res.status(404).json({ success: false, message: 'Periode ProSN tidak ditemukan.', code: 'PROSNP_NOT_FOUND' });
     return ok(res, row);
   } catch (e) { return fail(res, e); }
@@ -68,8 +72,17 @@ async function downloadBukti(req, res) {
   } catch (e) { return fail(res, e); }
 }
 async function periksaPengisian(req, res) { try { return ok(res, await workflow.periksaPengisian(Number(req.params.id), req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
+async function listAntrianPemeriksaan(req, res) { try { return ok(res, await workflow.listAntrianPemeriksaan(req.tenantId)); } catch (e) { return fail(res, e); } }
 async function archivePeriode(req, res) { try { return ok(res, await workflow.archivePeriod(Number(req.params.id), req.body, req.user, req.tenantId), 201); } catch (e) { return fail(res, e); } }
 async function reopenPeriode(req, res) { try { return ok(res, await workflow.reopenPeriod(Number(req.params.id), req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
+async function getDukunganSistem(req, res) {
+  try {
+    const periode = await db.ProsnPeriode.findOne({ where: { id: Number(req.params.id), tenant_id: req.tenantId } });
+    if (!periode) return res.status(404).json({ success: false, message: 'Periode ProSN tidak ditemukan.', code: 'PROSNP_NOT_FOUND' });
+    const kodeSubKegiatan = req.query.kode_sub_kegiatan || null;
+    return ok(res, await listDukunganProgramDariSistem(periode.tahun, kodeSubKegiatan));
+  } catch (e) { return fail(res, e); }
+}
 async function exportExcel(req, res) {
   try {
     const output = await buildExcel(Number(req.params.id), req.tenantId);
@@ -79,4 +92,4 @@ async function exportExcel(req, res) {
   } catch (e) { return fail(res, e); }
 }
 
-module.exports = { getKonteks, listPeriode, createPeriode, createIndikator, initializeIndikator, activatePeriode, getPeriode, getPengisian, updatePengisian, transitionPengisian, createBukti, reviseBukti, checklistBukti, downloadBukti, periksaPengisian, archivePeriode, reopenPeriode, exportExcel };
+module.exports = { getKonteks, listPeriode, createPeriode, createIndikator, initializeIndikator, activatePeriode, getPeriode, getPengisian, updatePengisian, transitionPengisian, createBukti, reviseBukti, checklistBukti, downloadBukti, periksaPengisian, listAntrianPemeriksaan, archivePeriode, reopenPeriode, exportExcel, getDukunganSistem };

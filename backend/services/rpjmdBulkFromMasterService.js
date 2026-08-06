@@ -37,7 +37,7 @@ const {
 } = require("./rpjmdBulkFromMasterClassification");
 const { evaluateSubBackfillCandidate } = require("./rpjmdLegacyBackfillHintService");
 
-const DEFAULT_DATASET = "kepmendagri_provinsi_900_2024";
+const DEFAULT_DATASET = "kepmendagri_provinsi_900_2026";
 
 const CLASSIFICATION_COUNT_KEYS = [
   CATEGORY.DUPLICATE_MAPPED,

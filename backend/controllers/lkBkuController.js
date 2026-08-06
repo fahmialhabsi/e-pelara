@@ -19,6 +19,7 @@ const { applyJournalPostingWithTransaction } = require("../services/lkSaldoServi
 const { syncSpjDariSigap } = require("../services/sigapSpjSyncService");
 const { recalcDpaRealisasi } = require("../services/dpaRealisasiRollupService");
 const { recalcLkDispang } = require("../services/lkDispangRollupService");
+const { flagLkSnapshotsPerluRecall } = require("../services/recallDataService");
 const {
   assertBulanTerbuka,
   getStatusBulan,
@@ -233,6 +234,8 @@ exports.create = async (req, res) => {
     await hitungUlangSaldoBkuDari(db, row.tahun_anggaran, bulan, t);
     await t.commit();
 
+    flagLkSnapshotsPerluRecall(db, row.tahun_anggaran, "BKU baru dicatat");
+
     const out = await Bku.findByPk(row.id, {
       include: [{ model: BkuObjek, as: "objek_rows" }],
     });
@@ -281,6 +284,9 @@ exports.update = async (req, res) => {
     await row.reload({ transaction: t });
     await hitungUlangSaldoBkuDari(db, row.tahun_anggaran, 1, t);
     await t.commit();
+
+    flagLkSnapshotsPerluRecall(db, row.tahun_anggaran, "BKU diperbarui");
+
     const out = await Bku.findByPk(row.id, {
       include: [{ model: BkuObjek, as: "objek_rows" }],
     });
@@ -324,6 +330,9 @@ exports.destroy = async (req, res) => {
     await hitungUlangSaldoBkuDari(db, tahun_anggaran, bulan, t);
 
     await t.commit();
+
+    flagLkSnapshotsPerluRecall(db, tahun_anggaran, "BKU dihapus");
+
     res.json({ message: "BKU dihapus, jurnal terkait di-void, saldo direkalkulasi" });
   } catch (e) {
     await t.rollback();

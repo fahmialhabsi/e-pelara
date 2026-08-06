@@ -4,7 +4,7 @@
  * Tabel 4.1 Renja — "Rencana Program dan Kegiatan Prioritas Daerah"
  * (Bab IV, sistematika Permendagri 14/2026).
  *
- * Tabel ini berorientasi landscape dengan 17 kolom dan kepala tabel 3 tingkat,
+ * Tabel ini berorientasi landscape dengan 18 kolom dan kepala tabel 3 tingkat,
  * serta baris berjenjang 5 tingkat:
  *
  *   Perangkat Daerah                              (total)
@@ -21,9 +21,12 @@
  *  - Nomor urut kolom 1 DIHITUNG SAAT RENDER, tidak pernah disimpan. Lampiran
  *    sumber diketahui memiliki penomoran yang meloncat, dan tabel ini berubah
  *    setiap kali baris ditambah/dihapus.
- *  - Kolom "Prioritas Nasional"/"Prioritas Daerah" dihitung dari sambungan
- *    `kode_sub_kegiatan` ke Tabel C-2/C-3/C-6, bukan disimpan sebagai kolom,
- *    supaya tidak basi ketika lampiran Rakortekbang diperbarui.
+ *  - Kolom "Prioritas Nasional"/"Prioritas Daerah" DIHITUNG dari sambungan
+ *    `kode_sub_kegiatan` ke Tabel C-2/C-3/C-6 (per subkegiatan, bukan
+ *    disimpan sebagai kolom, supaya tidak basi ketika lampiran Rakortekbang
+ *    diperbarui), tapi DITAMPILKAN digabung di baris Program (lihat
+ *    agregasiPrioritasProgram) — konsisten satu baris dengan "Prioritas
+ *    Gubernur" yang memang ditandai di level Program (Renstra).
  *  - Pagu tingkat atas adalah penjumlahan dari bawah, bukan angka yang diketik.
  */
 
@@ -85,6 +88,13 @@ const KOLOM = [
   {
     key: 'prioritas_daerah',
     label: 'DAERAH',
+    lebar: 5,
+    grup: 'CAPAIAN KINERJA DAN KERANGKA PENDANAAN',
+    subgrup: 'PRIORITAS',
+  },
+  {
+    key: 'prioritas_gubernur',
+    label: 'GUBERNUR',
     lebar: 5,
     grup: 'CAPAIAN KINERJA DAN KERANGKA PENDANAAN',
     subgrup: 'PRIORITAS',
@@ -226,6 +236,52 @@ async function muatPrioritas(db, kodeSubList) {
     peta[r.kode] = { ...(peta[r.kode] || { pro_sn: null, tematik: null }), asta_cita: r.asta_cita || null };
   }
   return peta;
+}
+
+/**
+ * Penandaan Prioritas Gubernur per Program, ditetapkan sekali di level Renstra
+ * (menu Program Renstra) — BEDA sumber dari Prioritas Nasional/Daerah di atas
+ * (yang dihitung dari Tabel C per subkegiatan). Sebelumnya disajikan sendiri
+ * sebagai Tabel 5.3 di Bab V; atas catatan evaluasi Bappeda, digabung ke sini
+ * sebagai kolom tambahan Tabel 4.1, ditampilkan pada baris tingkat Program.
+ */
+async function muatPrioritasGubernurProgram(db, renstraId) {
+  if (!renstraId || !db.RenstraProgram) return {};
+  const rows = await db.RenstraProgram.findAll({
+    where: { renstra_id: renstraId },
+    include: [{ model: db.PrioritasGubernur, as: 'prioritasGubernur', required: false }],
+  }).catch(() => []);
+  const peta = {};
+  for (const p of rows) {
+    if (p.prioritasGubernur) {
+      peta[p.kode_program] = `${p.prioritasGubernur.kode_priogub} - ${p.prioritasGubernur.uraian_priogub}`;
+    }
+  }
+  return peta;
+}
+
+/**
+ * Gabungkan tanda Prioritas Nasional/Daerah (Tabel C, per subkegiatan) dari
+ * SELURUH subkegiatan di bawah satu Program, jadi satu nilai per Program —
+ * dipakai supaya tampilannya konsisten satu baris dengan Prioritas Gubernur,
+ * bukan tersebar di baris Kegiatan/Subkegiatan seperti sebelumnya.
+ */
+function agregasiPrioritasProgram(prog, prioritas) {
+  const nasionalSet = new Set();
+  const daerahSet = new Set();
+  for (const keg of prog.kegiatan.values()) {
+    for (const sub of keg.subkegiatan) {
+      const pri = prioritas[sub.kode_sub_kegiatan];
+      if (!pri) continue;
+      const nas = pri.pro_sn || pri.asta_cita;
+      if (nas) nasionalSet.add(nas);
+      if (pri.tematik) daerahSet.add(pri.tematik);
+    }
+  }
+  return {
+    nasional: nasionalSet.size ? [...nasionalSet].join('; ') : null,
+    daerah: daerahSet.size ? [...daerahSet].join('; ') : null,
+  };
 }
 
 /** Target & pagu dokumen Renja tahun sebelumnya — kolom "Prakiraan". */
@@ -388,6 +444,7 @@ async function buildTabel41(db, dokumenId) {
     realisasiLalu,
     indikatorPerItem,
     masterSub,
+    prioritasGubernurProgram,
   ] = await Promise.all([
     muatNamaBidangUrusan(db, kodeBidangList),
     muatIndikatorRenstra(db, renstraId),
@@ -396,6 +453,7 @@ async function buildTabel41(db, dokumenId) {
     muatRealisasiTahunLalu(db, tahunRealisasi),
     muatIndikatorItem(db, items),
     muatMasterSubKegiatan(db, kodeSubList),
+    muatPrioritasGubernurProgram(db, renstraId),
   ]);
 
   const pohon = susunPohon(items);
@@ -448,12 +506,21 @@ async function buildTabel41(db, dokumenId) {
 
       for (const prog of programMilikBidang) {
         nomorProgram += 1;
+        // Prioritas Nasional/Daerah dihitung per subkegiatan (Tabel C), tapi
+        // DITAMPILKAN digabung di level Program — supaya konsisten satu baris
+        // dengan Prioritas Gubernur (yang memang ditandai di level Program),
+        // bukan tersebar di baris Kegiatan/Subkegiatan seperti sebelumnya.
+        const { nasional: prioritasNasionalProgram, daerah: prioritasDaerahProgram } =
+          agregasiPrioritasProgram(prog, prioritas);
         baris.push(
           barisKosong({
             no: `${nomorProgram}.`,
             kode: prog.kode,
             uraian: prog.nama,
             pagu: prog.pagu,
+            prioritas_nasional: prioritasNasionalProgram,
+            prioritas_daerah: prioritasDaerahProgram,
+            prioritas_gubernur: prioritasGubernurProgram[prog.kode] || null,
             level: 3,
             jenis: 'program',
           }),
@@ -536,7 +603,6 @@ async function buildTabel41(db, dokumenId) {
 
           for (const sub of keg.subkegiatan) {
             const kodeSub = sub.kode_sub_kegiatan;
-            const pri = prioritas[kodeSub] || {};
             const ind = indikatorPerItem[sub.id] || {};
             const ms = masterSub[kodeSub] || {};
             const paguSub = angka(sub.pagu_indikatif ?? sub.pagu);
@@ -565,9 +631,10 @@ async function buildTabel41(db, dokumenId) {
                 pagu: paguSub,
                 lokasi: sub.lokasi || null,
                 sumber_dana: sub.sumber_dana || null,
-                // Dihitung dari Tabel C, bukan dibaca dari kolom tersimpan.
-                prioritas_nasional: pri.pro_sn || pri.asta_cita || null,
-                prioritas_daerah: pri.tematik || null,
+                // Prioritas Nasional/Daerah TIDAK ditampilkan di sini — sudah
+                // digabung & ditampilkan sekali di baris Program (lihat
+                // agregasiPrioritasProgram), supaya tidak tersebar per
+                // subkegiatan dan konsisten satu baris dgn Prioritas Gubernur.
                 kelompok_sasaran: sub.kelompok_sasaran || null,
                 target_maju: sub.target_prakiraan_maju || null,
                 pagu_maju: sub.pagu_prakiraan_maju ? angka(sub.pagu_prakiraan_maju) : null,

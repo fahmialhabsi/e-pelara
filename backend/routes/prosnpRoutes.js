@@ -23,6 +23,8 @@ router.post('/periode/:id/aktifkan', verifyToken, allowRoles(ADMIN), controller.
 router.post('/periode/:id/arsipkan', verifyToken, allowRoles(INPUT), controller.archivePeriode);
 router.post('/periode/:id/buka-kembali', verifyToken, allowRoles(ADMIN), controller.reopenPeriode);
 router.get('/periode/:id/ekspor/excel', verifyToken, allowRoles(READ), controller.exportExcel);
+router.get('/periode/:id/dukungan-sistem', verifyToken, allowRoles(READ), controller.getDukunganSistem);
+router.get('/pemeriksaan/antrian', verifyToken, allowRoles(REVIEW), controller.listAntrianPemeriksaan);
 router.get('/pengisian/:id', verifyToken, allowRoles(READ), controller.getPengisian);
 router.put('/pengisian/:id', verifyToken, allowRoles(WRITE), controller.updatePengisian);
 router.post('/pengisian/:id/transisi', verifyToken, allowRoles(READ), controller.transitionPengisian);
