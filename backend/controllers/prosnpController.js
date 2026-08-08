@@ -3,6 +3,7 @@
 const db = require('../models');
 const workflow = require('../services/prosnp/prosnpWorkflowService');
 const { buildExcel } = require('../services/prosnp/prosnpExcelExportService');
+const { exportB13Template } = require('../services/prosnp/prosnpExcelTemplateExportService');
 const { listDukunganProgramDariSistem } = require('../services/prosnp/prosnpDukunganSistemService');
 const fs = require('fs');
 
@@ -55,6 +56,9 @@ async function getPeriode(req, res) {
         { model: db.ProsnKategoriReferensi, as: 'tindakLanjutKategori' },
       ] },
       { model: db.ProsnBuktiDukung, as: 'buktiDukung', through: { attributes: ['id', 'checklist_status', 'catatan_kekurangan', 'relevansi', 'lock_version'] } },
+      { model: db.ProsnMasterIndikator, as: 'masterIndikator', attributes: ['id', 'kelompok_tematik', 'evidence_requirement_provenance', 'kriteria_skor', 'objek_kertas_kerja'] },
+      { model: db.PerangkatDaerah, as: 'responsibleOpd', attributes: ['id', 'nama'] },
+      { model: db.PerangkatDaerah, as: 'dataOwnerOpd', attributes: ['id', 'nama'] },
     ] }] });
     if (!row) return res.status(404).json({ success: false, message: 'Periode ProSN tidak ditemukan.', code: 'PROSNP_NOT_FOUND' });
     return ok(res, row);
@@ -67,6 +71,8 @@ function removeFailedUpload(file) { if (file?.path) fs.unlink(file.path, () => {
 async function createBukti(req, res) { try { return ok(res, await workflow.createBukti(Number(req.params.id), req.body, req.file, req.user, req.tenantId), 201); } catch (e) { removeFailedUpload(req.file); return fail(res, e); } }
 async function reviseBukti(req, res) { try { return ok(res, await workflow.reviseBukti(Number(req.params.id), req.body, req.file, req.user, req.tenantId), 201); } catch (e) { removeFailedUpload(req.file); return fail(res, e); } }
 async function checklistBukti(req, res) { try { return ok(res, await workflow.checklistBukti(Number(req.params.id), req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
+async function listBuktiEntity(req, res) { try { return ok(res, await workflow.listBuktiUntukEntity(Number(req.params.id), req.query.entity_type, req.query.entity_id, req.tenantId)); } catch (e) { return fail(res, e); } }
+async function setStatusVerifikasiBukti(req, res) { try { return ok(res, await workflow.setStatusVerifikasiBukti(Number(req.params.id), req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
 async function downloadBukti(req, res) {
   try {
     const bukti = await db.ProsnBuktiDukung.findOne({ where: { id: Number(req.params.id), tenant_id: req.tenantId } });
@@ -79,6 +85,7 @@ async function listAntrianPemeriksaan(req, res) { try { return ok(res, await wor
 async function listKategoriReferensi(req, res) { try { return ok(res, await workflow.listKategoriReferensi(req.query.kelompok)); } catch (e) { return fail(res, e); } }
 async function archivePeriode(req, res) { try { return ok(res, await workflow.archivePeriod(Number(req.params.id), req.body, req.user, req.tenantId), 201); } catch (e) { return fail(res, e); } }
 async function reopenPeriode(req, res) { try { return ok(res, await workflow.reopenPeriod(Number(req.params.id), req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
+async function siapkanEksporPeriode(req, res) { try { return ok(res, await workflow.siapkanEksporPeriode(Number(req.params.id), req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
 async function getDukunganSistem(req, res) {
   try {
     const periode = await db.ProsnPeriode.findOne({ where: { id: Number(req.params.id), tenant_id: req.tenantId } });
@@ -95,5 +102,13 @@ async function exportExcel(req, res) {
     return res.send(Buffer.from(output.buffer));
   } catch (e) { return fail(res, e); }
 }
+async function exportB13TemplateNasional(req, res) {
+  try {
+    const output = await exportB13Template(Number(req.params.id), req.tenantId);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${output.filename}"`);
+    return res.send(Buffer.from(output.buffer));
+  } catch (e) { return fail(res, e); }
+}
 
-module.exports = { getKonteks, listPeriode, createPeriode, createIndikator, initializeIndikator, activatePeriode, getPeriode, getPengisian, updatePengisian, transitionPengisian, createBukti, reviseBukti, checklistBukti, downloadBukti, periksaPengisian, listAntrianPemeriksaan, listKategoriReferensi, archivePeriode, reopenPeriode, exportExcel, getDukunganSistem };
+module.exports = { getKonteks, listPeriode, createPeriode, createIndikator, initializeIndikator, activatePeriode, getPeriode, getPengisian, updatePengisian, transitionPengisian, createBukti, reviseBukti, checklistBukti, listBuktiEntity, setStatusVerifikasiBukti, downloadBukti, periksaPengisian, listAntrianPemeriksaan, listKategoriReferensi, archivePeriode, reopenPeriode, siapkanEksporPeriode, exportExcel, exportB13TemplateNasional, getDukunganSistem };

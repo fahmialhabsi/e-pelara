@@ -15,6 +15,25 @@ import {
   transitionProsnPengisian,
   updateProsnPengisian,
 } from '../services/prosnpApi';
+import PenugasanKdhSection from '../components/PenugasanKdhSection';
+import KoordinasiForkopimdaSection from '../components/KoordinasiForkopimdaSection';
+import CadanganPanganBerasSection from '../components/CadanganPanganBerasSection';
+import InovasiPerkadaSection from '../components/InovasiPerkadaSection';
+import SatgasMbgSection from '../components/SatgasMbgSection';
+import SarprasKomponenMbgSection from '../components/SarprasKomponenMbgSection';
+import LaporanSatgasMbgSection from '../components/LaporanSatgasMbgSection';
+import CapaianPersentaseMbgSection from '../components/CapaianPersentaseMbgSection';
+
+const TIPE_FORM_BARU = [
+  'penugasan_kdh', 'koordinasi_forkopimda', 'cadangan_pangan_beras', 'inovasi_dan_perkada',
+  'status_bertingkat_evidence', 'checklist_proporsional_evidence', 'pelaporan_berkala_evidence', 'capaian_persentase_bertingkat',
+];
+// 4 tipe_form Ketahanan Pangan (B.1.1-B.1.4) hasil redesain Fase B — dipakai
+// utk menyembunyikan Satuan/Bukti Dukung generik (mandat corrective 2026-08-08
+// §5.2/§5.3). SENGAJA tidak memakai TIPE_FORM_BARU (yang juga memuat 4 tipe
+// MBG) karena mandat eksplisit membatasi scope ke Ketahanan Pangan saja.
+const KETAHANAN_PANGAN_TIPE_FORM_BARU = ['penugasan_kdh', 'koordinasi_forkopimda', 'cadangan_pangan_beras', 'inovasi_dan_perkada'];
+const TEMATIK_LABEL = { ketahanan_pangan: 'Ketahanan Pangan', mbg: 'Makan Bergizi Gratis (MBG)' };
 
 const formatRupiah = (value) => `Rp ${Math.round(Number(value) || 0).toLocaleString('id-ID')}`;
 const REVIEW_ROLES = ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS'];
@@ -26,17 +45,21 @@ const STATUS_BADGE = {
   dalam_pengisian: 'info',
   lengkap: 'success',
   perlu_perbaikan: 'danger',
+  diperiksa: 'primary',
   siap_diinput_prosn: 'primary',
   diinput_manual: 'dark',
+  siap_diekspor: 'success',
   diarsipkan: 'secondary',
 };
 const STATUS_LABEL = {
   belum_diisi: 'Belum Diisi',
   dalam_pengisian: 'Dalam Pengisian',
+  diperiksa: 'Diperiksa',
   lengkap: 'Lengkap',
   perlu_perbaikan: 'Perlu Perbaikan',
   siap_diinput_prosn: 'Siap Diinput ProSN',
   diinput_manual: 'Diinput Manual',
+  siap_diekspor: 'Siap Diekspor',
   diarsipkan: 'Diarsipkan',
 };
 const WRITE_ROLES = ['SUPER_ADMIN', 'ADMINISTRATOR', 'PELAKSANA'];
@@ -52,12 +75,19 @@ function buildFormState(indikator) {
   const pengisian = indikator.pengisian || {};
   const dataForm = pengisian.data_form || {};
   return {
+    id: pengisian.id,
     pengisianId: pengisian.id,
     status: pengisian.status || 'belum_diisi',
     lock_version: pengisian.lock_version ?? 0,
     diisi_oleh: pengisian.diisi_oleh || null,
+    skor_indikatif_internal: pengisian.skor_indikatif_internal ?? null,
+    skor_alasan: pengisian.skor_alasan || null,
+    skor_detail: pengisian.skor_detail || null,
+    skor_dihitung_at: pengisian.skor_dihitung_at || null,
     satuan: pengisian.satuan ?? indikator.satuan_default ?? '',
     sumber_data: pengisian.sumber_data || '',
+    sumber_data_tanggal_posisi: pengisian.sumber_data_tanggal_posisi || '',
+    sumber_data_referensi_dokumen: pengisian.sumber_data_referensi_dokumen || '',
     periode_data: pengisian.periode_data || '',
     hambatan: pengisian.hambatan || '',
     tindak_lanjut: pengisian.tindak_lanjut || '',
@@ -369,6 +399,15 @@ export default function ProsnPeriodeDetailPage() {
     () => [...(periode?.indikators || [])].sort((a, b) => (a.urutan || 0) - (b.urutan || 0)),
     [periode],
   );
+  const indikatorsByTematik = useMemo(() => {
+    const groups = {};
+    for (const ind of indikators) {
+      const tematik = ind.masterIndikator?.kelompok_tematik || 'ketahanan_pangan';
+      if (!groups[tematik]) groups[tematik] = [];
+      groups[tematik].push(ind);
+    }
+    return groups;
+  }, [indikators]);
 
   const setField = (indikatorId, key, value) => {
     setForms((prev) => ({ ...prev, [indikatorId]: { ...prev[indikatorId], [key]: value } }));
@@ -579,21 +618,32 @@ export default function ProsnPeriodeDetailPage() {
         </div>
       </div>
 
-      {indikators.map((indikator) => {
-        const form = forms[indikator.id];
-        if (!form) return null;
-        const editable = canEdit(form);
-        const saving = savingId === indikator.id;
-        return (
-          <Card className="shadow-sm border-0 mb-3" key={indikator.id}>
-            <Card.Header className="d-flex flex-wrap justify-content-between align-items-center bg-white">
-              <div>
-                <strong>{indikator.kode}</strong> &mdash; {indikator.nama}
-              </div>
-              <Badge bg={STATUS_BADGE[form.status] || 'secondary'}>
-                {STATUS_LABEL[form.status] || form.status}
-              </Badge>
-            </Card.Header>
+      {Object.entries(indikatorsByTematik).map(([tematik, indikatorsTematik]) => (
+        <div key={tematik} className="mb-2">
+          {Object.keys(indikatorsByTematik).length > 1 && (
+            <h5 className="text-muted border-bottom pb-2 mb-3">{TEMATIK_LABEL[tematik] || tematik}</h5>
+          )}
+          {indikatorsTematik.map((indikator) => {
+            const form = forms[indikator.id];
+            if (!form) return null;
+            const editable = canEdit(form);
+            const saving = savingId === indikator.id;
+            return (
+              <Card className="shadow-sm border-0 mb-3" key={indikator.id}>
+                <Card.Header className="d-flex flex-wrap justify-content-between align-items-center bg-white">
+                  <div>
+                    <strong>{indikator.kode}</strong> &mdash; {indikator.masterIndikator?.objek_kertas_kerja || indikator.nama}
+                    <div className="small text-muted">
+                      OPD Penanggung Jawab: {indikator.responsibleOpd?.nama || 'Belum ditetapkan'}
+                      {indikator.masterIndikator?.evidence_requirement_provenance === 'internal_control' && (
+                        <Badge bg="light" text="dark" className="ms-2 border">Kategori bukti: kontrol internal, bukan kutipan literal Kepmendagri</Badge>
+                      )}
+                    </div>
+                  </div>
+                  <Badge bg={STATUS_BADGE[form.status] || 'secondary'}>
+                    {STATUS_LABEL[form.status] || form.status}
+                  </Badge>
+                </Card.Header>
             <Card.Body>
               {canReopen(form) && (
                 <div className="alert alert-warning py-2 px-3 d-flex justify-content-between align-items-center">
@@ -602,6 +652,31 @@ export default function ProsnPeriodeDetailPage() {
                     Buka untuk Perbaikan
                   </Button>
                 </div>
+              )}
+
+              {indikator.tipe_form === 'penugasan_kdh' && (
+                <PenugasanKdhSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
+              )}
+              {indikator.tipe_form === 'koordinasi_forkopimda' && (
+                <KoordinasiForkopimdaSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
+              )}
+              {indikator.tipe_form === 'cadangan_pangan_beras' && (
+                <CadanganPanganBerasSection indikator={indikator} pengisian={form} periode={periode} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
+              )}
+              {indikator.tipe_form === 'inovasi_dan_perkada' && (
+                <InovasiPerkadaSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
+              )}
+              {indikator.tipe_form === 'status_bertingkat_evidence' && (
+                <SatgasMbgSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
+              )}
+              {indikator.tipe_form === 'checklist_proporsional_evidence' && (
+                <SarprasKomponenMbgSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
+              )}
+              {indikator.tipe_form === 'pelaporan_berkala_evidence' && (
+                <LaporanSatgasMbgSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
+              )}
+              {indikator.tipe_form === 'capaian_persentase_bertingkat' && (
+                <CapaianPersentaseMbgSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
               )}
 
               {indikator.tipe_form === 'dukungan_program' && (
@@ -807,18 +882,23 @@ export default function ProsnPeriodeDetailPage() {
                 </>
               )}
 
+              <div className="small text-uppercase text-muted mb-2">
+                Catatan Internal (bukan fakta utama indikator)
+              </div>
               <Row>
-                <Col md={4}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Satuan</Form.Label>
-                    <Form.Control
-                      disabled={!editable}
-                      value={form.satuan}
-                      onChange={(e) => setField(indikator.id, 'satuan', e.target.value)}
-                    />
-                  </Form.Group>
-                </Col>
-                <Col md={8}>
+                {!KETAHANAN_PANGAN_TIPE_FORM_BARU.includes(indikator.tipe_form) && (
+                  <Col md={4}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Satuan</Form.Label>
+                      <Form.Control
+                        disabled={!editable}
+                        value={form.satuan}
+                        onChange={(e) => setField(indikator.id, 'satuan', e.target.value)}
+                      />
+                    </Form.Group>
+                  </Col>
+                )}
+                <Col md={KETAHANAN_PANGAN_TIPE_FORM_BARU.includes(indikator.tipe_form) ? 12 : 8}>
                   <Form.Group className="mb-3">
                     <Form.Label>Sumber Data</Form.Label>
                     <Form.Control
@@ -884,13 +964,20 @@ export default function ProsnPeriodeDetailPage() {
                 </Col>
               </Row>
 
-              <BuktiDukungSection
-                indikator={indikator}
-                pengisianId={form.pengisianId}
-                canUpload={editable}
-                canReview={isReviewer(user?.role)}
-                onChanged={() => refreshBukti(indikator.id, form.pengisianId)}
-              />
+              {KETAHANAN_PANGAN_TIPE_FORM_BARU.includes(indikator.tipe_form) ? (
+                <div className="text-muted small mb-3 fst-italic">
+                  Bukti untuk indikator ini diunggah langsung pada setiap baris register di atas (tombol &ldquo;Bukti&rdquo;) —
+                  bukan di sini. Unggahan tanpa keterikatan ke record register tidak diperiksa mesin skor.
+                </div>
+              ) : (
+                <BuktiDukungSection
+                  indikator={indikator}
+                  pengisianId={form.pengisianId}
+                  canUpload={editable}
+                  canReview={isReviewer(user?.role)}
+                  onChanged={() => refreshBukti(indikator.id, form.pengisianId)}
+                />
+              )}
 
               {editable && (
                 <div className="d-flex gap-2">
@@ -915,8 +1002,10 @@ export default function ProsnPeriodeDetailPage() {
               )}
             </Card.Body>
           </Card>
-        );
-      })}
+            );
+          })}
+        </div>
+      ))}
 
       <Modal show={pickerFor !== null} onHide={() => setPickerFor(null)} size="lg" scrollable>
         <Modal.Header closeButton>
