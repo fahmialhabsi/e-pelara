@@ -19,6 +19,7 @@ import {
 } from '../services/prosnpApi';
 import ProsnSkorIndikatifCard from './ProsnSkorIndikatifCard';
 import EntityBuktiManager from './EntityBuktiManager';
+import ProsnAutofillModal from './ProsnAutofillModal';
 
 const JENIS_LABEL = {
   saldo_awal: 'Saldo Awal', pengadaan: 'Pengadaan', penerimaan_lain_sah: 'Penerimaan Lain Sah',
@@ -172,11 +173,16 @@ export default function CadanganPanganBerasSection({ indikator, pengisian, perio
 
       <div className="d-flex justify-content-between align-items-center mb-2">
         <strong>Target Cadangan Pangan Beras (Keputusan Kepala Daerah, Tahun {periode.tahun})</strong>
-        {(editable || canReview) && (
-          <Button size="sm" variant="outline-primary" onClick={openTargetModal}>
-            {targetAktif ? 'Ubah Target' : '+ Isi Target'}
-          </Button>
-        )}
+        <div className="d-flex gap-2">
+          {editable && (
+            <ProsnAutofillModal pengisianId={pengisian.id} entityType="CADANGAN_TARGET" onApplied={async () => { await load(); await onChanged(); }} label="+ Unggah & Analisis Keputusan KDH" />
+          )}
+          {(editable || canReview) && (
+            <Button size="sm" variant="outline-primary" onClick={openTargetModal}>
+              {targetAktif ? 'Ubah Target' : '+ Isi Target'}
+            </Button>
+          )}
+        </div>
       </div>
       {targetAktif ? (
         <div className="small mb-3">
