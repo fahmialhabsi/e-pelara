@@ -22,14 +22,34 @@ async function assertPengisianEditable(pengisianId, tenantId, transaction) {
   return pengisian;
 }
 
+/**
+ * Corrective Pass "B.1.1 Required ringkasan_isi + Validation-Aware Autofill"
+ * — daftar field wajib dijadikan DEKLARATIF & DIEKSPOR (`getRequiredFieldsMeta`)
+ * sbg SATU sumber kebenaran, dipakai baik oleh `validatePayload` (di sini,
+ * PERILAKU/PESAN TIDAK BERUBAH) maupun oleh lapisan autofill (preview
+ * analisis) supaya UI tahu field mana yang wajib SEBELUM mengirim apply —
+ * menghindari duplikasi aturan independen di banyak tempat (mandat §5).
+ */
+const REQUIRED_FIELDS = [
+  { key: 'nomor_surat', message: 'Nomor surat wajib diisi.' },
+  { key: 'tanggal_surat', message: 'Tanggal surat wajib diisi.' },
+  { key: 'pejabat_penandatangan', message: 'Pejabat penandatangan wajib diisi.' },
+  { key: 'ringkasan_isi', message: 'Ringkasan isi penugasan wajib diisi.' },
+];
+const CAKUPAN_ANY_OF = ['cakupan_pengadaan', 'cakupan_pengelolaan', 'cakupan_penyaluran'];
+const CAKUPAN_GROUP_MESSAGE = 'Minimal satu cakupan tugas (pengadaan/pengelolaan/penyaluran) harus dipilih.';
+
 function validatePayload(payload) {
-  if (!payload.nomor_surat) throw new ProsnError('Nomor surat wajib diisi.');
-  if (!payload.tanggal_surat) throw new ProsnError('Tanggal surat wajib diisi.');
-  if (!payload.pejabat_penandatangan) throw new ProsnError('Pejabat penandatangan wajib diisi.');
-  if (!payload.ringkasan_isi) throw new ProsnError('Ringkasan isi penugasan wajib diisi.');
-  if (!(payload.cakupan_pengadaan || payload.cakupan_pengelolaan || payload.cakupan_penyaluran)) {
-    throw new ProsnError('Minimal satu cakupan tugas (pengadaan/pengelolaan/penyaluran) harus dipilih.');
-  }
+  REQUIRED_FIELDS.forEach(({ key, message }) => { if (!payload[key]) throw new ProsnError(message); });
+  if (!CAKUPAN_ANY_OF.some((key) => payload[key])) throw new ProsnError(CAKUPAN_GROUP_MESSAGE);
+}
+
+/** Metadata deklaratif required-fields B.1.1 — dikonsumsi lapisan autofill (read-only, TIDAK mengubah semantik validasi di atas). */
+function getRequiredFieldsMeta() {
+  return {
+    requiredFields: REQUIRED_FIELDS.map((f) => f.key),
+    cakupanGroup: { anyOf: [...CAKUPAN_ANY_OF], message: CAKUPAN_GROUP_MESSAGE },
+  };
 }
 
 async function listByPengisian(pengisianId, tenantId) {
@@ -153,4 +173,4 @@ async function remove(id, tenantId) {
   });
 }
 
-module.exports = { listByPengisian, create, update, remove };
+module.exports = { listByPengisian, create, update, remove, getRequiredFieldsMeta };

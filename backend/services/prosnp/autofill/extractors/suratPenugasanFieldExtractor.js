@@ -213,37 +213,86 @@ function extractCakupan(text) {
 }
 
 /**
- * §21 "Ringkasan Isi Penugasan" — RULE_DERIVED (ringkas otomatis dari teks),
- * SELALU requires_review=true. Field ini wajib diisi (NOT NULL) pada entity
- * `ProsnSuratPenugasan`, jadi selalu diberi nilai (bukan NOT_FOUND) agar
- * autofill dapat menyelesaikan pembuatan entity — pengguna WAJIB meninjau
- * sebelum submit (§16 catatan otomatis, prioritas RULE_ENHANCED tanpa AI).
+ * Corrective Pass "B.1.1 Required ringkasan_isi" — mandat CEA temuan UI nyata
+ * (POST /autofill-apply ditolak backend PROSNP_VALIDATION_ERROR krn versi
+ * lama `extractRingkasanIsi` mengembalikan potongan OCR mentah LOW-confidence
+ * yg wajar ditinggalkan user, padahal `prosnpSuratPenugasanService.validatePayload`
+ * mewajibkan `ringkasan_isi` truthy tanpa fallback). Ringkasan sekarang
+ * disusun DETERMINISTIK dari fakta yang SUDAH grounded (cakupan tugas +
+ * rujukan CPPD/CBP eksplisit pada teks) — BUKAN substring OCR bebas, TANPA
+ * AI/Ollama. Nama OPD penerima HANYA disertakan bila lolos pemeriksaan
+ * generik (diawali kata institusi resmi spt "Dinas"/"Badan"/dst) — noise OCR
+ * spt "Hg Kepala..." TIDAK PERNAH ikut disuntikkan ke ringkasan.
  */
-function extractRingkasanIsi(text) {
-  const menimbang = text.match(/Menimbang\s*:?\s*([^\n]{10,300})/i);
-  const ringkas = (menimbang ? menimbang[1] : text.replace(/\s+/g, ' ')).trim().slice(0, 300);
+const OPD_INSTITUTIONAL_PREFIX = /^(Dinas|Badan|Kantor|Sekretariat|Biro|Kementerian|Satuan|Bagian|Perangkat\s+Daerah)\b/i;
+
+function joinIndonesian(items) {
+  if (items.length <= 1) return items.join('');
+  if (items.length === 2) return items.join(' dan ');
+  return `${items.slice(0, -1).join(', ')}, dan ${items[items.length - 1]}`;
+}
+
+function extractRingkasanIsi(text, opdPenerimaNama) {
+  const cakupanItems = [];
+  if (/pengadaan|penyediaan/i.test(text)) cakupanItems.push('pengadaan/penyediaan');
+  if (/pengelolaan/i.test(text)) cakupanItems.push('pengelolaan');
+  if (/penyaluran/i.test(text)) cakupanItems.push('penyaluran');
+
+  const adaCPPD = /Cadangan\s+Pangan\s+Pemerintah\s+Daerah|\bCPPD\b/i.test(text);
+  const adaCBP = /Cadangan\s+Beras\s+Pemerintah|\bCBP\b/i.test(text);
+
+  if (!cakupanItems.length && !adaCPPD && !adaCBP) {
+    // Tidak ada satu pun fakta grounded utk disusun jadi ringkasan — JANGAN
+    // mengarang (§9 mandat). UI wajib memblokir Apply & menampilkan pesan
+    // bahwa ringkasan belum dapat dibentuk dari dokumen.
+    return {
+      field_key: 'ringkasan_isi',
+      value: null,
+      source_type: 'NOT_FOUND',
+      source_reference: {},
+      confidence: 'NONE',
+      reason: 'Tidak ditemukan cakupan tugas (pengadaan/pengelolaan/penyaluran) maupun rujukan CPPD/CBP yang grounded pada dokumen — ringkasan otomatis tidak dapat dibentuk dgn aman.',
+      extraction_method: null,
+      requires_review: true,
+    };
+  }
+
+  const objekParts = [];
+  if (adaCPPD) objekParts.push('Cadangan Pangan Pemerintah Daerah (CPPD)');
+  if (adaCBP) objekParts.push('Cadangan Beras Pemerintah (CBP)');
+  const objekPhrase = objekParts.length ? objekParts.join(' dan/atau ') : 'Cadangan Pangan Pemerintah Daerah';
+  const cakupanPhrase = cakupanItems.length ? joinIndonesian(cakupanItems) : 'pelaksanaan tugas';
+
+  const recipientSafe = !!(opdPenerimaNama && OPD_INSTITUTIONAL_PREFIX.test(opdPenerimaNama.trim()));
+  const kalimat = recipientSafe
+    ? `Penugasan kepada ${opdPenerimaNama.trim()} untuk melaksanakan ${cakupanPhrase} terkait ${objekPhrase}.`
+    : `Penugasan untuk melaksanakan ${cakupanPhrase} terkait ${objekPhrase}.`;
+
   return {
     field_key: 'ringkasan_isi',
-    value: ringkas || 'Ringkasan otomatis tidak dapat dibentuk — isi manual.',
+    value: kalimat,
     source_type: 'RULE_DERIVED',
     source_reference: {},
-    confidence: 'LOW',
-    reason: 'Ringkasan otomatis dari teks dokumen — WAJIB ditinjau sebelum digunakan.',
-    extraction_method: 'ringkas_menimbang_v1',
-    requires_review: true,
+    confidence: recipientSafe ? 'MEDIUM' : 'HIGH',
+    reason: recipientSafe
+      ? 'Ringkasan disusun deterministik dari cakupan tugas + objek CPPD/CBP + penerima tugas yang grounded — tinjau kembali nama OPD penerima (hasil regex, bukan pencocokan master OPD).'
+      : 'Ringkasan disusun deterministik dari cakupan tugas + objek CPPD/CBP yang grounded pada dokumen (penerima tugas tidak disertakan krn belum cukup pasti/berpotensi noise OCR).',
+    extraction_method: 'rule_derived_summary_v1',
+    requires_review: recipientSafe,
   };
 }
 
 function extractSuratPenugasanFields(text) {
+  const opdField = extractOpdPenerimaNama(text);
   return [
     extractNomorSurat(text),
     extractTanggalSurat(text),
     extractPejabatPenandatangan(text),
     extractJabatanPenandatangan(text),
-    extractOpdPenerimaNama(text),
+    opdField,
     extractTanggalMulaiBerlaku(text),
     ...extractCakupan(text),
-    extractRingkasanIsi(text),
+    extractRingkasanIsi(text, opdField.value),
   ];
 }
 

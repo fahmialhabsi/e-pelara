@@ -21,6 +21,40 @@ const SOURCE_LABEL = {
   DOCUMENT_EXTRACTED: 'Dokumen', RULE_DERIVED: 'Aturan', DPA_RECALL: 'DPA', PENATAUSAHAAN_RECALL: 'Penatausahaan',
   RENSTRA_RECALL: 'Renstra', INDIKATOR_RENSTRA_RECALL: 'Renstra', AI_SUGGESTED: 'AI', USER_CONFIRMED: 'Manual', NOT_FOUND: 'Tidak ditemukan',
 };
+const FIELD_LABEL = {
+  nomor_surat: 'Nomor surat', tanggal_surat: 'Tanggal surat', pejabat_penandatangan: 'Pejabat penandatangan',
+  ringkasan_isi: 'Ringkasan isi penugasan',
+};
+
+/**
+ * Corrective Pass "B.1.1 Required ringkasan_isi + Validation-Aware Autofill"
+ * — `preview.validation` (bila ada, saat ini hanya B.1.1/`penugasan_kdh`,
+ * lihat `prosnpAutoFillOrchestrator.js`) dipakai utk menghitung kesiapan
+ * Apply SECARA LIVE mengikuti state centang/edit pengguna saat ini — backend
+ * validation (`prosnpSuratPenugasanService.validatePayload`) TETAP menjadi
+ * satu-satunya sumber kebenaran aturan; helper ini hanya MENCERMINKAN aturan
+ * yg SAMA lebih awal supaya user tidak pernah menekan Apply yang pasti gagal.
+ */
+function computeApplyReadiness(validation, fields, checked, nilaiAkhirFn) {
+  if (!validation) return { ready: true, missingLabels: [] }; // tipe_form lain: belum diotorisasi, fallback ke perilaku lama
+  const byKey = Object.fromEntries((fields || []).map((f) => [f.field_key, f]));
+  const isSelectedWithValue = (key) => {
+    if (!checked[key]) return false;
+    const f = byKey[key];
+    if (!f) return false;
+    const v = nilaiAkhirFn(f);
+    return v !== null && v !== undefined && v !== '';
+  };
+  const missingRequired = (validation.required_fields || []).filter((key) => !isSelectedWithValue(key));
+  const missingGroups = (validation.required_any_of_groups || []).filter(
+    (g) => !g.fields.some((key) => checked[key] && nilaiAkhirFn(byKey[key] || {}) === true),
+  );
+  const missingLabels = [
+    ...missingRequired.map((key) => FIELD_LABEL[key] || key),
+    ...missingGroups.map((g) => g.message),
+  ];
+  return { ready: missingRequired.length === 0 && missingGroups.length === 0, missingLabels };
+}
 
 export default function ProsnAutofillModal({ pengisianId, entityType, onApplied, label = '+ Unggah & Analisis Dokumen' }) {
   const [show, setShow] = useState(false);
@@ -58,8 +92,15 @@ export default function ProsnAutofillModal({ pengisianId, entityType, onApplied,
     try {
       const hasil = await analisisBuktiProsn(buktiId, {});
       setPreview(hasil);
+      const requiredSet = new Set(hasil.validation?.required_fields || []);
       const defaultChecked = {};
-      (hasil.fields || []).forEach((f) => { defaultChecked[f.field_key] = f.confidence === 'HIGH' || f.confidence === 'MEDIUM'; });
+      (hasil.fields || []).forEach((f) => {
+        const punyaNilai = f.value !== null && f.value !== undefined && f.value !== '';
+        // Field WAJIB (mis. ringkasan_isi) selalu dicentang default bila punya
+        // nilai, TERLEPAS dari tingkat keyakinan — field opsional tetap
+        // memakai heuristik lama (hanya HIGH/MEDIUM yang auto-centang).
+        defaultChecked[f.field_key] = requiredSet.has(f.field_key) ? punyaNilai : (f.confidence === 'HIGH' || f.confidence === 'MEDIUM');
+      });
       setChecked(defaultChecked);
       setEdited({});
       setStep('preview');
@@ -69,8 +110,10 @@ export default function ProsnAutofillModal({ pengisianId, entityType, onApplied,
   };
 
   const nilaiAkhir = (f) => (f.field_key in edited ? edited[f.field_key] : f.value);
+  const kesiapanApply = preview ? computeApplyReadiness(preview.validation, preview.fields, checked, nilaiAkhir) : { ready: true, missingLabels: [] };
 
   const terapkan = async () => {
+    if (!kesiapanApply.ready) { toast.error(`Belum dapat diterapkan: ${kesiapanApply.missingLabels.join('; ')}.`); return; }
     const fieldsTerpilih = preview.fields
       .filter((f) => checked[f.field_key] && f.value !== null && f.value !== undefined)
       .map((f) => ({ ...f, value: nilaiAkhir(f) }));
@@ -131,12 +174,19 @@ export default function ProsnAutofillModal({ pengisianId, entityType, onApplied,
               {preview.warnings?.length > 0 && (
                 <Alert variant="warning" className="small py-2">{preview.warnings.join(' ')}</Alert>
               )}
+              {!kesiapanApply.ready && (
+                <Alert variant="danger" className="small py-2">
+                  Belum dapat diterapkan: {kesiapanApply.missingLabels.join('; ')}.
+                </Alert>
+              )}
               <Table size="sm" responsive className="align-middle mb-0">
                 <thead><tr><th style={{ width: 36 }} /><th>Field</th><th>Nilai Usulan</th><th>Sumber</th><th>Keyakinan</th></tr></thead>
                 <tbody>
                   {preview.fields.map((f) => {
                     const isNotFound = f.value === null || f.value === undefined;
                     const nilai = nilaiAkhir(f);
+                    const wajib = preview.validation?.required_fields?.includes(f.field_key);
+                    const dalamGrupWajib = preview.validation?.required_any_of_groups?.some((g) => g.fields.includes(f.field_key));
                     return (
                       <tr key={f.field_key}>
                         <td>
@@ -146,7 +196,11 @@ export default function ProsnAutofillModal({ pengisianId, entityType, onApplied,
                             onChange={(e) => setChecked((s) => ({ ...s, [f.field_key]: e.target.checked }))}
                           />
                         </td>
-                        <td><small>{f.field_key}</small></td>
+                        <td>
+                          <small>{f.field_key}</small>
+                          {wajib && <Badge bg="danger" className="ms-1" title="Field ini wajib diisi agar Apply berhasil">Wajib</Badge>}
+                          {!wajib && dalamGrupWajib && <Badge bg="warning" text="dark" className="ms-1" title="Salah satu dari grup cakupan ini wajib dipilih">Salah satu wajib</Badge>}
+                        </td>
                         <td>
                           {isNotFound ? (
                             <Form.Control size="sm" disabled placeholder="Data tidak ditemukan" />
@@ -171,7 +225,7 @@ export default function ProsnAutofillModal({ pengisianId, entityType, onApplied,
         {step === 'preview' && (
           <Modal.Footer>
             <Button variant="secondary" onClick={close} disabled={busy}>Batal</Button>
-            <Button variant="primary" onClick={terapkan} disabled={busy || !jumlahTerpilih}>
+            <Button variant="primary" onClick={terapkan} disabled={busy || !jumlahTerpilih || !kesiapanApply.ready} title={!kesiapanApply.ready ? kesiapanApply.missingLabels.join('; ') : undefined}>
               {busy ? <Spinner size="sm" animation="border" /> : `Gunakan ${jumlahTerpilih} Hasil`}
             </Button>
           </Modal.Footer>

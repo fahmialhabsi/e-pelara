@@ -132,6 +132,15 @@ async function runBinaryE2ESection() {
       assert.strictEqual(f.cakupan_pengadaan.value, true);
       assert.strictEqual(f.cakupan_pengelolaan.value, true);
       assert.strictEqual(f.cakupan_penyaluran.value, true);
+      // Corrective Pass "B.1.1 Required ringkasan_isi" (§13 mandat) — ringkasan
+      // WAJIB grounded RULE_DERIVED, BUKAN lagi potongan OCR mentah LOW-confidence.
+      assert.ok(f.ringkasan_isi.value, 'ringkasan_isi TIDAK BOLEH null pada dokumen dgn cakupan tugas yang grounded.');
+      assert.strictEqual(f.ringkasan_isi.source_type, 'RULE_DERIVED');
+      assert.ok(/Penugasan/i.test(f.ringkasan_isi.value), 'ringkasan_isi harus memuat konsep "Penugasan".');
+      assert.ok(/Cadangan\s+Pangan\s+Pemerintah\s+Daerah/i.test(f.ringkasan_isi.value), 'ringkasan_isi harus memuat konsep "Cadangan Pangan Pemerintah Daerah".');
+      assert.ok(/pengadaan/i.test(f.ringkasan_isi.value) && /pengelolaan/i.test(f.ringkasan_isi.value) && /penyaluran/i.test(f.ringkasan_isi.value), 'ringkasan_isi harus memuat dukungan semantik pengadaan/pengelolaan/penyaluran.');
+      assert.ok(!/GUBERNUR\s+MALUKU\s+UTARA\s+Nomor/i.test(f.ringkasan_isi.value), 'ringkasan_isi TIDAK BOLEH berisi junk OCR heading surat.');
+      assert.ok(!/Hg\s+Kepala/i.test(f.ringkasan_isi.value), 'ringkasan_isi TIDAK BOLEH menyuntikkan noise OCR "Hg Kepala" dari recipient.');
     });
   } else {
     skipTest('BINARY E2E — FILE 1 [FIELD_EXTRACTION]', `berkas tidak ditemukan di ${file1Path}`);
@@ -419,6 +428,22 @@ async function runTextGoldenUnitSection() {
     assert.strictEqual(f.cakupan_pengadaan.value, true);
     assert.strictEqual(f.cakupan_pengelolaan.value, true);
     assert.strictEqual(f.cakupan_penyaluran.value, true);
+  });
+
+  await test('FILE 1 — ringkasan_isi RULE_DERIVED grounded, TIDAK menyuntikkan noise OCR recipient', async () => {
+    const f = byKey(extractSuratPenugasanFields(GOLDEN_TEXT_FILE_1));
+    assert.ok(f.ringkasan_isi.value);
+    assert.strictEqual(f.ringkasan_isi.source_type, 'RULE_DERIVED');
+    assert.ok(/Penugasan/i.test(f.ringkasan_isi.value));
+    assert.ok(/Cadangan\s+Pangan\s+Pemerintah\s+Daerah/i.test(f.ringkasan_isi.value));
+    assert.ok(!/GUBERNUR\s+MALUKU\s+UTARA\s+Nomor/i.test(f.ringkasan_isi.value));
+  });
+
+  await test('ringkasan_isi TIDAK PERNAH mengarang bila tidak ada satu pun fakta grounded (cakupan/CPPD/CBP)', async () => {
+    const textTanpaFakta = 'SURAT PENUGASAN\nNOMOR : 999/XX/2025\n\nMenugaskan pejabat untuk hal lain yang tidak relevan.';
+    const f = byKey(extractSuratPenugasanFields(textTanpaFakta));
+    assert.strictEqual(f.ringkasan_isi.value, null, 'Tanpa fakta grounded, ringkasan_isi HARUS null — bukan mengarang isi.');
+    assert.strictEqual(f.ringkasan_isi.requires_review, true);
   });
 
   // --- §31, §33 — FILE 2 ---

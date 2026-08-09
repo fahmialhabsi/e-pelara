@@ -68,6 +68,40 @@ const TIPE_FORM_ENTITY_TYPE = {
   inovasi_dan_perkada: 'INOVASI',
 };
 
+/**
+ * Corrective Pass "B.1.1 Required ringkasan_isi + Validation-Aware Autofill"
+ * — TERBATAS pada `penugasan_kdh` sesuai mandat (TIDAK digeneralisasi ke
+ * B.1.2/B.1.3/B.1.4 tanpa otorisasi terpisah). Metadata required-fields
+ * ditarik dari SATU sumber kebenaran (`suratService.getRequiredFieldsMeta`,
+ * sama persis dgn yang dipakai `validatePayload` saat apply) — supaya UI
+ * tahu field mana yang wajib SEBELUM mengirim request yang pasti ditolak
+ * backend, tanpa menduplikasi aturan validasi di tempat terpisah.
+ */
+const REQUIRED_FIELDS_PROVIDER_BY_TIPE_FORM = {
+  penugasan_kdh: () => suratService.getRequiredFieldsMeta(),
+};
+
+function computeValidationState(tipeForm, fields) {
+  const provider = REQUIRED_FIELDS_PROVIDER_BY_TIPE_FORM[tipeForm];
+  if (!provider) return null; // tipe_form lain belum diotorisasi utk validation-aware metadata pass ini
+  const meta = provider();
+  const byKey = Object.fromEntries(fields.map((f) => [f.field_key, f]));
+  const hasValue = (key) => {
+    const f = byKey[key];
+    return !!f && f.value !== null && f.value !== undefined && f.value !== '';
+  };
+  const missingRequiredFields = meta.requiredFields.filter((key) => !hasValue(key));
+  const anyOfSatisfied = meta.cakupanGroup.anyOf.some((key) => byKey[key] && byKey[key].value === true);
+  const anyOfGroup = { fields: [...meta.cakupanGroup.anyOf], message: meta.cakupanGroup.message };
+  return {
+    required_fields: meta.requiredFields,
+    required_any_of_groups: [anyOfGroup],
+    missing_required_fields: missingRequiredFields,
+    missing_any_of_groups: anyOfSatisfied ? [] : [anyOfGroup],
+    apply_ready: missingRequiredFields.length === 0 && anyOfSatisfied,
+  };
+}
+
 /** §14 — Pagu/Realisasi Anggaran, opsional utk B.1.1/B.1.2/B.1.4 (B.1.3 punya jalur DPA cascading sendiri, TIDAK disentuh). */
 async function recallPaguRealisasi(masterIndikatorId, tahun, opdPenanggungJawabId) {
   const nomen = await nomenclatureResolverAdapter.resolveNomenclature(masterIndikatorId, tahun, opdPenanggungJawabId);
@@ -155,10 +189,14 @@ async function buildAutoFillPreview({ buktiId, tenantId }) {
 
   const narrativeDraft = await narrativeDraftAdapter.buildNarrativeDraft({ tipeForm, confirmedFields: docFields });
 
+  const allFields = [...docFields, ...recallFields];
+  const validation = computeValidationState(tipeForm, allFields);
+
   return {
     bukti_id: Number(buktiId),
     klasifikasi,
-    fields: [...docFields, ...recallFields],
+    fields: allFields,
+    ...(validation ? { validation } : {}),
     narrative_draft: narrativeDraft,
     warnings,
   };
@@ -372,4 +410,4 @@ async function applyAutofillTransaction({ buktiId, pengisianId, entityType, fiel
   });
 }
 
-module.exports = { resolveOpdScope, buildAutoFillPreview, applyAutofill, loadPengisianContext };
+module.exports = { resolveOpdScope, buildAutoFillPreview, applyAutofill, loadPengisianContext, computeValidationState };

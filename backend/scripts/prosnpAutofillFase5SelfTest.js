@@ -255,6 +255,94 @@ async function uploadStagingFixture(pengisianId, actor) {
       assert.ok(found, 'Baris harus benar2 ter-commit (jalur transaction internal existing tetap berjalan).');
     });
 
+    // === B.1.1 VALIDATION-AWARE AUTOFILL (Corrective Pass ringkasan_isi + required-fields) ===
+    // Fixture PNG sintetis dibuat di memori (pola SAMA persis dgn image-ocr.png
+    // existing, `renderTextToPngBuffer` dari generateFixtures.js) — TIDAK memakai
+    // text-layer.pdf krn fixture itu SUDAH terdokumentasi tidak stabil dgn
+    // pdf-parse/pdfjs-dist versi terpasang (lihat CATATAN TAMBAHAN di bawah).
+    console.log('\n=== B.1.1 VALIDATION-AWARE AUTOFILL: ringkasan_isi deterministik + required-fields ===');
+    const { createCanvas: createCanvasB11 } = require('canvas');
+    function renderTextToPngBufferB11(text) {
+      const width = 900;
+      const lines = text.split('\n');
+      const height = 60 + lines.length * 30;
+      const canvas = createCanvasB11(width, height);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'white'; ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = 'black'; ctx.font = '24px sans-serif';
+      lines.forEach((line, i) => ctx.fillText(line, 30, 40 + i * 30));
+      return canvas.toBuffer('image/png');
+    }
+    const SURAT_B11_TEXT = [
+      'SURAT PENUGASAN',
+      'NOMOR : 090/456/DISPANGAN/2025',
+      '',
+      'Menugaskan pejabat melaksanakan pengadaan, pengelolaan, dan penyaluran',
+      'Cadangan Pangan Pemerintah Daerah serta Cadangan Beras Pemerintah.',
+      '',
+      'Ditetapkan di Sofifi pada tanggal 05 Januari 2025.',
+      '',
+      'GUBERNUR MALUKU UTARA,',
+      '',
+      'UJI SIGNER FASE LIMA',
+    ].join('\n');
+    const FIXTURE_PNG_B11 = path.join(require('os').tmpdir(), `prosnp-b11-fase5-${Date.now()}.png`);
+    fs.writeFileSync(FIXTURE_PNG_B11, renderTextToPngBufferB11(SURAT_B11_TEXT));
+    async function uploadStagingPngFixtureB11(pengisianId, actor) {
+      const stat = fs.statSync(FIXTURE_PNG_B11);
+      const file = { path: FIXTURE_PNG_B11, originalname: 'surat-penugasan-uji.png', filename: `surat-penugasan-uji-${Date.now()}-${Math.random()}.png`, mimetype: 'image/png', size: stat.size };
+      return workflow.createBukti(pengisianId, { judul: 'Bukti autofill B.1.1 Fase 5', entity_type: 'PENGISIAN' }, file, actor, TENANT_ID);
+    }
+
+    let previewB11, fieldsB11, buktiB11;
+    await test('buildAutoFillPreview() B.1.1: validation.required_fields sesuai getRequiredFieldsMeta, ringkasan_isi grounded RULE_DERIVED (bukan junk OCR)', async () => {
+      buktiB11 = await uploadStagingPngFixtureB11(b11.pengisian.id, ACTOR_OPERATOR);
+      previewB11 = await orchestrator.buildAutoFillPreview({ buktiId: buktiB11.id, tenantId: TENANT_ID });
+      fieldsB11 = previewB11.fields;
+      assert.ok(previewB11.validation, 'preview.validation harus ada utk tipe_form penugasan_kdh.');
+      assert.deepStrictEqual(previewB11.validation.required_fields, ['nomor_surat', 'tanggal_surat', 'pejabat_penandatangan', 'ringkasan_isi']);
+      const ringkasan = fieldsB11.find((f) => f.field_key === 'ringkasan_isi');
+      assert.ok(ringkasan.value, `ringkasan_isi harus grounded (bukan junk OCR/null), aktual: ${JSON.stringify(ringkasan)}`);
+      assert.strictEqual(ringkasan.source_type, 'RULE_DERIVED');
+      assert.ok(!/NOMOR\s*:/.test(ringkasan.value), 'ringkasan_isi TIDAK BOLEH berisi potongan heading/nomor surat mentah.');
+    });
+
+    await test('validation.apply_ready = false ketika required field (mis. pejabat_penandatangan) tidak tersedia', async () => {
+      const fieldsTanpaSigner = fieldsB11.map((f) => (f.field_key === 'pejabat_penandatangan' ? { ...f, value: null } : f));
+      const validasi = orchestrator.computeValidationState('penugasan_kdh', fieldsTanpaSigner);
+      assert.strictEqual(validasi.apply_ready, false);
+      assert.ok(validasi.missing_required_fields.includes('pejabat_penandatangan'));
+    });
+
+    await test('TEST — APPLY SUCCESS: seluruh field wajib grounded dari OCR -> apply_ready true -> POST berhasil, register tercipta, TIDAK ada 400 "wajib diisi"', async () => {
+      const validasi = orchestrator.computeValidationState('penugasan_kdh', fieldsB11);
+      assert.strictEqual(validasi.apply_ready, true, `Prasyarat: seluruh field wajib B.1.1 harus grounded dari OCR fixture ini. missing=${JSON.stringify(validasi.missing_required_fields)}`);
+      assert.strictEqual(validasi.missing_required_fields.length, 0);
+      const hasil = await orchestrator.applyAutofill({ buktiId: buktiB11.id, pengisianId: b11.pengisian.id, entityType: 'SURAT_PENUGASAN', fields: fieldsB11, actor: ACTOR_OPERATOR, tenantId: TENANT_ID });
+      assert.strictEqual(hasil.created, true);
+      assert.ok(hasil.entity.ringkasan_isi, 'ringkasan_isi harus benar2 tersimpan di register (bukan gagal PROSNP_VALIDATION_ERROR).');
+      assert.ok(!/GUBERNUR\s+MALUKU\s+UTARA\s+Nomor/i.test(hasil.entity.ringkasan_isi));
+    });
+
+    await test('NEGATIVE — required-field block: ringkasan_isi dihapus dari fields -> apply_ready false -> backend TETAP menolak (PROSNP_VALIDATION_ERROR) bila somehow terkirim', async () => {
+      const buktiNegatif = await uploadStagingPngFixtureB11(b11.pengisian.id, ACTOR_OPERATOR);
+      const previewNegatif = await orchestrator.buildAutoFillPreview({ buktiId: buktiNegatif.id, tenantId: TENANT_ID });
+      const fieldsTanpaRingkasan = previewNegatif.fields.filter((f) => f.field_key !== 'ringkasan_isi');
+      const validasi = orchestrator.computeValidationState('penugasan_kdh', fieldsTanpaRingkasan);
+      assert.strictEqual(validasi.apply_ready, false, 'apply_ready harus false ketika ringkasan_isi hilang dari daftar fields.');
+      assert.ok(validasi.missing_required_fields.includes('ringkasan_isi'));
+      // UI TIDAK PERNAH mengirim request ini krn apply_ready=false (§7) — dibuktikan
+      // di sini backend TETAP menolak by-design (defense-in-depth) bila somehow terkirim.
+      let threw = null;
+      try {
+        await orchestrator.applyAutofill({ buktiId: buktiNegatif.id, pengisianId: b11.pengisian.id, entityType: 'SURAT_PENUGASAN', fields: fieldsTanpaRingkasan, actor: ACTOR_OPERATOR, tenantId: TENANT_ID });
+      } catch (e) { threw = e; }
+      assert.ok(threw, 'applyAutofill harus tetap ditolak backend validation walau somehow terkirim tanpa ringkasan_isi.');
+      assert.strictEqual(threw.code, 'PROSNP_VALIDATION_ERROR');
+      assert.ok(/Ringkasan isi penugasan wajib diisi/i.test(threw.message));
+    });
+    fs.unlinkSync(FIXTURE_PNG_B11);
+
     console.log(`\n=== HASIL TEST FASE 5 (smoke + Q + R + ATOMIC): ${pass} lulus, ${fail} gagal ===`);
     console.log('CATATAN KETERBATASAN (§36/§42 P2, wajib dicatat apa adanya): Test R dijalankan via Promise.all pada connection pool Sequelize proses Node.js tunggal (bukan 2 proses/klien terpisah sepenuhnya). Row-lock InnoDB pada STEP 2 (§31) terverifikasi bekerja dgn 2 koneksi pool berbeda dalam proses ini — namun verifikasi concurrency independen penuh (2 proses/koneksi terpisah total) tetap disarankan sebelum klaim production-ready, sesuai instruksi §36 Test R.');
     console.log('CATATAN TAMBAHAN: fixture text-layer.pdf (Test E Fase 3) ditemukan intermiten inkompatibel dgn pdf-parse/pdfjs-dist versi terpasang (\"bad XRef entry\"/font glyph tak ter-resolve) — Fase 5 memakai fixture gambar (jalur OCR murni) utk menghindari flakiness ini; direkomendasikan regenerasi text-layer.pdf dgn tool PDF lain atau upgrade pdf-parse/pdfjs-dist sebelum production-ready.');
