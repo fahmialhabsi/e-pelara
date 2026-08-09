@@ -65,11 +65,23 @@ function fakeBuktiRow(id, filePath, mimeType) {
     assert.strictEqual(result.code, 'EXTRACT_FAILED');
   });
 
-  await test('TEST E.5 — MIME tidak didukung (docx/xlsx) -> UNSUPPORTED_DOCUMENT', async () => {
-    const bukti = fakeBuktiRow(DUMMY_TENANT_BUKTI_ID, path.join(FIXTURE_DIR, 'unreadable.pdf'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  await test('TEST E.5 — MIME tidak didukung (xlsx) -> UNSUPPORTED_DOCUMENT', async () => {
+    // DOCX (application/vnd.openxmlformats-officedocument.wordprocessingml.document)
+    // TIDAK LAGI unsupported sejak Corrective Pass "Binary E2E Final
+    // Verification" (§8 mandat — dukungan DOCX minimal via mammoth) — lihat
+    // TEST E.6 di bawah utk assert jalur DOCX. xlsx dipakai di sini krn tetap
+    // benar2 belum didukung, menjaga kontrak "mime benar2 asing -> UNSUPPORTED_DOCUMENT".
+    const bukti = fakeBuktiRow(DUMMY_TENANT_BUKTI_ID, path.join(FIXTURE_DIR, 'unreadable.pdf'), 'application/vnd.ms-excel');
     const result = await extractTextFromBukti(bukti, null);
     assert.strictEqual(result.extractFailed, true);
     assert.strictEqual(result.code, 'UNSUPPORTED_DOCUMENT');
+  });
+
+  await test('TEST E.6 — DOCX rusak/bukan DOCX valid -> EXTRACT_FAILED (bukan hasil palsu)', async () => {
+    const bukti = fakeBuktiRow(DUMMY_TENANT_BUKTI_ID, path.join(FIXTURE_DIR, 'unreadable.pdf'), 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    const result = await extractTextFromBukti(bukti, null);
+    assert.strictEqual(result.extractFailed, true);
+    assert.strictEqual(result.code, 'EXTRACT_FAILED');
   });
 
   // === TEST S — Document Type Regulatory Semantics ===

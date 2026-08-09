@@ -57,16 +57,146 @@ function extractTanggalSurat(text) {
   return field('tanggal_surat', tanggal.value, { confidence: 'HIGH', method: 'regex_tanggal_indonesia_v1', sourceRef: { text_offset: [tanggal.index, tanggal.index + tanggal.raw.length] } });
 }
 
-function extractPejabatPenandatangan(text) {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const cutoff = Math.floor(lines.length * 0.6);
-  for (let i = Math.max(cutoff, lines.length - 15); i < lines.length; i += 1) {
-    const line = lines[i];
-    if (/^[A-Z][A-Z.,\s]{4,60}$/.test(line) && !/^(SURAT|KEPUTUSAN|PERATURAN|NOTULEN|LAPORAN|NOMOR|MENIMBANG|MENGINGAT|MEMUTUSKAN|MENETAPKAN|KESATU|KEDUA|KETIGA)\b/.test(line)) {
-      return field('pejabat_penandatangan', line, { confidence: 'MEDIUM', method: 'heuristik_baris_akhir_v1', reason: 'Baris huruf kapital dekat akhir dokumen, kemiripan nama pejabat — verifikasi manual disarankan.' });
+// Marker jabatan penanda tangan yang dikenal (bisa diperluas tanpa mengubah
+// algoritma). Harus persis satu BARIS (bukan substring kalimat lain) supaya
+// tidak salah tangkap kalimat biasa yang kebetulan menyebut jabatan ini.
+const OFFICE_MARKER_PATTERNS = [
+  { pattern: /^(PJ\.?\s+)?GUBERNUR\s+MALUKU\s+UTARA\s*,?\s*$/i, isPj: (line) => /^PJ\.?\s+/i.test(line), jabatan: 'Gubernur Maluku Utara' },
+];
+const NON_PERSON_LABELS = /^(NIP|TEMBUSAN|SEKRETARIS\s+DAERAH|SEKDA|ASISTEN|KARO\s+HUKUM|KEPALA\s+BIRO|NOTULIS|AN\.|A\.N\.|U\.B\.)\b/i;
+
+/**
+ * Corrective Pass "Real-World 2025 Golden Evidence" — signer WAJIB dicari di
+ * SELURUH dokumen (multi-page; teks sudah digabung lintas halaman oleh
+ * `prosnpDocumentTextExtractor.js`), BUKAN hanya beberapa baris terakhir
+ * (bug lama: window `lines.length-15` gagal menjangkau signer di halaman 2
+ * bila ada blok Tembusan/lampiran sesudahnya). Anchor: cari marker
+ * jabatan/office TERAKHIR SEBELUM Tembusan (signature block selalu mendekati
+ * akhir isi surat, tapi SEBELUM daftar tembusan) — bukan window baris tetap.
+ * Nama diambil dari baris SETELAH marker jabatan, menolak label non-orang
+ * (§39 False Positive Guard). Tidak pernah mengarang nama bila tidak grounded.
+ */
+function extractSignerBlock(text) {
+  const lines = String(text || '').split(/\r?\n/).map((l) => l.trim());
+  // WAJIB huruf awal kapital ("Tembusan"/"TEMBUSAN") — heading Tembusan SELALU
+  // baris mandiri berkapital. Case-insensitive penuh salah menangkap kalimat
+  // isi yang KEBETULAN word-wrap sehingga baris baru dimulai dgn kata
+  // "tembusan" huruf kecil di tengah kalimat (temuan biner nyata: Surat
+  // Penugasan asli — "...disampaikan kepada Gubernur ... dengan\ntembusan
+  // kepada Menteri Dalam Negeri..." memotong wilayah pencarian SEBELUM
+  // mencapai blok tanda tangan sesungguhnya).
+  const tembusanIndex = lines.findIndex((l) => /^(?:Tembusan|TEMBUSAN)\b/.test(l));
+  const searchEnd = tembusanIndex === -1 ? lines.length : tembusanIndex;
+
+  let officeLineIndex = -1;
+  let officeMarker = null;
+  for (let i = searchEnd - 1; i >= 0; i -= 1) {
+    if (!lines[i]) continue; // eslint-disable-line no-continue
+    const found = OFFICE_MARKER_PATTERNS.find((m) => m.pattern.test(lines[i]));
+    if (found) { officeLineIndex = i; officeMarker = found; break; }
+  }
+  if (officeLineIndex === -1) return { jabatan: null, nama: null, officeLineIndex: -1 };
+
+  const isPj = officeMarker.isPj(lines[officeLineIndex]);
+  const jabatan = isPj ? `Pj. ${officeMarker.jabatan}` : officeMarker.jabatan;
+
+  for (let i = officeLineIndex + 1; i < Math.min(officeLineIndex + 6, searchEnd); i += 1) {
+    const candidate = lines[i];
+    if (!candidate) continue; // eslint-disable-line no-continue
+    if (NON_PERSON_LABELS.test(candidate)) break;
+    // Hasil OCR dokumen ter-scan kerap menyisipkan noise non-huruf di awal
+    // baris nama (mis. "¢/;SAMSUDDIN ABDUL KADIR") — buang HANYA prefix
+    // non-huruf generik ini sebelum validasi pola nama, TANPA menebak isi.
+    const cleaned = candidate.replace(/^[^A-Za-z]+/, '').trim();
+    if (/^[A-Z][A-Za-z.,'\s-]{3,60}$/.test(cleaned) && !/\d{4,}/.test(cleaned)) {
+      return { jabatan, nama: cleaned.replace(/,\s*$/, '').trim(), officeLineIndex };
     }
   }
-  return field('pejabat_penandatangan', null);
+  // Jabatan ketemu tapi nama tidak grounded -- JANGAN mengarang nama (§17/§39).
+  return { jabatan, nama: null, officeLineIndex };
+}
+
+function extractPejabatPenandatangan(text) {
+  const { nama } = extractSignerBlock(text);
+  if (!nama) return field('pejabat_penandatangan', null);
+  return field('pejabat_penandatangan', nama, { confidence: 'HIGH', method: 'anchor_office_marker_v2', reason: 'Nama ditemukan tepat setelah marker jabatan penanda tangan (bukan window baris tetap) — mendukung dokumen multi-halaman.' });
+}
+
+/**
+ * §17 — `jabatan_penandatangan`, field INFORMASIONAL utk preview UI. TIDAK
+ * ada kolom DB `jabatan_penandatangan` pada `ProsnSuratPenugasan` (hanya
+ * `pejabat_penandatangan` menyimpan nama) — field ini sengaja TIDAK dibaca
+ * `createCore`/`fieldsToPayload` sehingga aman diikutsertakan tanpa migration
+ * (§45 NO DATABASE CHANGE), murni konteks tambahan bagi peninjau.
+ */
+function extractJabatanPenandatangan(text) {
+  const { jabatan } = extractSignerBlock(text);
+  if (!jabatan) return field('jabatan_penandatangan', null);
+  return field('jabatan_penandatangan', jabatan, { confidence: 'HIGH', method: 'anchor_office_marker_v2', reason: 'Diturunkan dari marker jabatan yang sama dengan pejabat_penandatangan (informasional, tidak disimpan sbg kolom terpisah).' });
+}
+
+/**
+ * §18 — Penerima tugas/OPD. Pola "Kepada Yth./Yth./Kepala ..." — TIDAK
+ * melakukan fuzzy-matching ke master OPD (murni ekstraksi teks mentah),
+ * SELALU requires_review sesuai instruksi eksplisit ("Jika text candidate
+ * tidak dapat diresolusi dgn aman: requires_review"). field_key memakai nama
+ * kolom asli `opd_penerima_nama` (ProsnSuratPenugasan) supaya benar2
+ * ter-terapkan bila user mengonfirmasi, bukan sekadar informasional.
+ */
+function extractOpdPenerimaNama(text) {
+  // Dicari BERBASIS BARIS (label harus berada di AWAL baris), bukan substring
+  // bebas di seluruh dokumen — pola lama (`Kepada\s+...`) mensyaratkan spasi
+  // persis setelah "Kepada", sehingga gagal pada label surat yang lazim
+  // ditulis "Kepada," (koma) dan malah salah menangkap kemunculan kata
+  // "kepada" di tengah kalimat isi surat (temuan biner nyata: Surat Penugasan
+  // asli menangkap "kepada Perum Bulog, dengan ini kami sampaikan..." krn itu
+  // kemunculan PERTAMA yg diikuti spasi, bukan label "Kepada," yg sebenarnya).
+  const lines = String(text || '').split(/\r?\n/);
+  const LABEL_LINE = /^\s*(?:Kepada|Yth\.?)\b[\s,:.-]*(.*)$/i;
+  for (let i = 0; i < lines.length; i += 1) {
+    const m = lines[i].match(LABEL_LINE);
+    if (!m) continue; // eslint-disable-line no-continue
+    const sameLine = m[1] && m[1].trim().length >= 5 ? m[1].trim() : null;
+    let raw = sameLine;
+    if (!raw) {
+      for (let j = i + 1; j < Math.min(i + 6, lines.length); j += 1) {
+        const candidate = lines[j].trim();
+        if (!candidate || candidate.length < 5) continue; // eslint-disable-line no-continue -- lewati baris kosong/kota pendek ("di", "Sofifi")
+        raw = candidate;
+        break;
+      }
+    }
+    if (!raw) continue; // eslint-disable-line no-continue
+    // Lepas noise OCR non-huruf di awal baris + prefiks jabatan personal
+    // ("Kepala"/"Yth." SEBELUM nama OPD itu sendiri) supaya field ini
+    // merepresentasikan NAMA OPD, bukan jabatan orangnya — mis. "Kepala Dinas
+    // Pangan Provinsi Maluku Utara" -> "Dinas Pangan Provinsi Maluku Utara".
+    const kandidat = raw
+      .replace(/^[^A-Za-z]+/, '')
+      .replace(/^(?:Yth\.?|Kepala)\s+/i, '')
+      .trim()
+      .replace(/[.,]$/, '');
+    if (!kandidat || kandidat.length < 5 || /^di$/i.test(kandidat)) continue; // eslint-disable-line no-continue
+    return field('opd_penerima_nama', kandidat, { confidence: 'MEDIUM', method: 'regex_kepada_yth_v2', requiresReview: true, reason: 'Kandidat penerima dari label "Kepada/Yth." pada baris — bukan hasil pencocokan master OPD, wajib ditinjau.' });
+  }
+  return field('opd_penerima_nama', null);
+}
+
+/**
+ * §19 — Tanggal berlaku HARUS berbeda dari tanggal_surat: HANYA diisi bila
+ * dokumen SECARA EKSPLISIT menyatakan frasa "berlaku" (mis. "berlaku sejak
+ * tanggal ...", "terhitung mulai tanggal ..."). TIDAK PERNAH mengasumsikan
+ * tanggal_berlaku = tanggal_surat begitu saja walau kebetulan sama nilainya
+ * pada sebagian dokumen. field_key memakai nama kolom asli
+ * `tanggal_mulai_berlaku` (ProsnSuratPenugasan).
+ */
+function extractTanggalMulaiBerlaku(text) {
+  const cue = text.match(/berlaku\s*(?:sejak|mulai|terhitung\s+mulai)?\s*(?:tanggal\s*)?/i);
+  if (!cue) return field('tanggal_mulai_berlaku', null);
+  const windowText = text.slice(cue.index, cue.index + 100);
+  const tanggal = extractIndonesianDate(windowText);
+  if (!tanggal) return field('tanggal_mulai_berlaku', null);
+  return field('tanggal_mulai_berlaku', tanggal.value, { confidence: 'HIGH', method: 'regex_tanggal_berlaku_v1', reason: 'Ditemukan dekat frasa eksplisit "berlaku" — bukan diasumsikan sama dgn tanggal_surat.' });
 }
 
 function extractCakupan(text) {
@@ -109,9 +239,12 @@ function extractSuratPenugasanFields(text) {
     extractNomorSurat(text),
     extractTanggalSurat(text),
     extractPejabatPenandatangan(text),
+    extractJabatanPenandatangan(text),
+    extractOpdPenerimaNama(text),
+    extractTanggalMulaiBerlaku(text),
     ...extractCakupan(text),
     extractRingkasanIsi(text),
   ];
 }
 
-module.exports = { extractSuratPenugasanFields, extractIndonesianDate, BULAN_ID, field };
+module.exports = { extractSuratPenugasanFields, extractIndonesianDate, extractSignerBlock, BULAN_ID, field };

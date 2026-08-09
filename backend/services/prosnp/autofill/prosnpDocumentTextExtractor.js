@@ -10,11 +10,23 @@
  */
 const fs = require('fs');
 const pdfParse = require('pdf-parse');
+const mammoth = require('mammoth');
 const { createCanvas } = require('canvas');
 const Tesseract = require('tesseract.js');
 const db = require('../../../models');
+const { extractDocxTables, resolveLabelValuePairs } = require('./docxStructuredExtractor');
+
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 const TEXT_LAYER_MIN_CHARS = 40;
+// §21/§28 corrective — PDF hasil scan multi-halaman kadang menyisakan SEDIKIT
+// teks asli tertanam (mis. blok tanda tangan digital/stempel pada satu
+// halaman) sehingga total karakter melewati TEXT_LAYER_MIN_CHARS flat padahal
+// isi sesungguhnya adalah gambar tanpa text-layer (temuan biner nyata: PDF
+// Pergub 15 halaman hanya mengandung 76 karakter total/±5 karakter per
+// halaman). Ambang kini juga MENSYARATKAN kepadatan rata-rata per halaman,
+// bukan hanya total absolut, sebelum menganggap text-layer valid.
+const MIN_CHARS_PER_PAGE = 50;
 const RENDER_SCALE = 3.0; // dokumen naratif ProSN tidak butuh presisi angka setinggi parser Rupiah SIPD
 
 async function renderPdfPageToPng(doc, pageNumber, scale = RENDER_SCALE) {
@@ -28,22 +40,45 @@ async function renderPdfPageToPng(doc, pageNumber, scale = RENDER_SCALE) {
   return canvas.toBuffer('image/png');
 }
 
+/**
+ * §29 corrective — kegagalan render/OCR pada SATU halaman tidak lagi
+ * menggagalkan SELURUH ekstraksi (halaman lain yang sudah berhasil tetap
+ * dipakai). Mengembalikan `failedPages` agar caller dapat menandai hasil
+ * sebagai PARTIAL_EXTRACTION alih-alih EXTRACT_FAILED penuh.
+ */
 async function ocrPdfViaRender(buffer) {
   const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
   const worker = await Tesseract.createWorker('ind+eng');
   try {
     let combined = '';
+    const failedPages = [];
     for (let i = 1; i <= doc.numPages; i += 1) {
-      const png = await renderPdfPageToPng(doc, i);
-      // eslint-disable-next-line no-await-in-loop
-      const { data } = await worker.recognize(png);
-      combined += `${data.text || ''}\n`;
+      try {
+        const png = await renderPdfPageToPng(doc, i);
+        // eslint-disable-next-line no-await-in-loop
+        const { data } = await worker.recognize(png);
+        combined += `${data.text || ''}\n`;
+      } catch (_pageError) {
+        failedPages.push(i);
+      }
     }
-    return combined.trim();
+    return { text: combined.trim(), totalPages: doc.numPages, failedPages };
   } finally {
     await worker.terminate();
   }
+}
+
+/**
+ * §27/§8 corrective — dukungan DOCX MINIMAL via `mammoth` (satu-satunya
+ * dependency baru yang diotorisasi CEA, sudah diaudit tidak ada alternatif
+ * baca DOCX yang terpasang di repo). Hanya `extractRawText` (plain text) —
+ * TIDAK ada parser bisnis kedua, TIDAK mengeksekusi macro/embedded
+ * object/script apa pun (mammoth murni membaca XML docx sbg teks).
+ */
+async function extractDocxRawText(buffer) {
+  const result = await mammoth.extractRawText({ buffer });
+  return { text: (result.value || '').trim(), warnings: (result.messages || []).map((m) => m.message) };
 }
 
 async function ocrImage(buffer) {
@@ -66,12 +101,16 @@ async function extractTextFromBukti(bukti, transaction) {
   const warnings = [];
   let text = '';
   let method = null;
+  let partialExtraction = false;
+  let docxStructure = null;
 
   if (mime === 'application/pdf') {
     const buffer = fs.readFileSync(bukti.file_path);
     try {
       const parsed = await pdfParse(buffer);
-      if (parsed.text && parsed.text.trim().length >= TEXT_LAYER_MIN_CHARS) {
+      const trimmedLen = parsed.text ? parsed.text.trim().length : 0;
+      const requiredMin = Math.max(TEXT_LAYER_MIN_CHARS, (parsed.numpages || 1) * MIN_CHARS_PER_PAGE);
+      if (trimmedLen >= requiredMin) {
         text = parsed.text.trim();
         method = 'pdf_text_layer';
       }
@@ -80,9 +119,14 @@ async function extractTextFromBukti(bukti, transaction) {
     }
     if (!method) {
       try {
-        text = await ocrPdfViaRender(buffer);
+        const ocrResult = await ocrPdfViaRender(buffer);
+        text = ocrResult.text;
         method = 'ocr_pdf_render';
         if (text) warnings.push('Ekstraksi PDF text-layer kosong, memakai OCR — periksa ulang hasil.');
+        if (ocrResult.failedPages.length) {
+          partialExtraction = true;
+          warnings.push(`OCR gagal pada ${ocrResult.failedPages.length} dari ${ocrResult.totalPages} halaman (halaman: ${ocrResult.failedPages.join(', ')}) — hasil ekstraksi sebagian, periksa ulang manual.`);
+        }
       } catch (error) {
         warnings.push(`OCR PDF gagal: ${error.message}`);
       }
@@ -94,6 +138,45 @@ async function extractTextFromBukti(bukti, transaction) {
       method = 'ocr_image';
     } catch (error) {
       warnings.push(`OCR gambar gagal: ${error.message}`);
+    }
+  } else if (mime === DOCX_MIME) {
+    try {
+      const buffer = fs.readFileSync(bukti.file_path);
+      const docxResult = await extractDocxRawText(buffer);
+      if (docxResult.text) {
+        text = docxResult.text;
+        method = 'docx_raw_text';
+        warnings.push(...docxResult.warnings);
+      }
+      // P1 corrective — dukungan structured table (mandat §8-§12): baca
+      // `word/document.xml` langsung utk merekonstruksi hubungan sel
+      // label->value yang HILANG saat mammoth.extractRawText meratakan
+      // tabel jadi teks linear. Best-effort — kegagalan di sini TIDAK
+      // menggagalkan ekstraksi teks dasar yang sudah berhasil di atas.
+      // Pasangan label:value yang terbukti di-PREPEND (bukan append) ke
+      // teks mentah mammoth — field extractor existing (regex label/value
+      // generik, first-match-wins) HARUS menemukan versi bersih ini LEBIH
+      // DULU daripada versi tabel yang sudah terlanjur rusak akibat
+      // flattening pada teks asli (mis. "Pimpinan RapatAgenda Rapat"
+      // tergabung tanpa pemisah) — append di akhir TERBUKTI tidak cukup
+      // krn versi rusak yang lebih awal tetap menang. Heading dokumen asli
+      // (dipakai classifier) tetap aman krn preamble pendek (~350 char)
+      // jauh di bawah HEADING_WINDOW_CHARS (600) milik classifier.
+      try {
+        const structured = await extractDocxTables(buffer);
+        if (structured.tables.length) {
+          docxStructure = structured;
+          const pairs = structured.tables.flatMap((t) => resolveLabelValuePairs(t));
+          if (pairs.length) {
+            const preamble = pairs.map((p) => `${p.label} : ${p.value}`).join('\n');
+            text = text ? `${preamble}\n\n${text}` : preamble;
+          }
+        }
+      } catch (_structError) {
+        // ekstraksi struktur tabel murni best-effort, lihat komentar di atas.
+      }
+    } catch (error) {
+      warnings.push(`Ekstraksi DOCX gagal: ${error.message}`);
     }
   } else {
     return { text: '', method: null, warnings: ['Ekstraksi otomatis belum mendukung format ini — isi manual.'], extractFailed: true, code: 'UNSUPPORTED_DOCUMENT' };
@@ -108,7 +191,7 @@ async function extractTextFromBukti(bukti, transaction) {
     { where: { id: bukti.id }, transaction },
   );
 
-  return { text, method, warnings, extractFailed: false, code: null };
+  return { text, method, warnings, extractFailed: false, code: partialExtraction ? 'PARTIAL_EXTRACTION' : null, docx_structure: docxStructure };
 }
 
 module.exports = { extractTextFromBukti, TEXT_LAYER_MIN_CHARS };
