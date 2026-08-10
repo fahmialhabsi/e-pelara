@@ -172,6 +172,26 @@ function fakeBuktiRow(id, filePath, mimeType) {
     assert.strictEqual(unsur.requires_review, true);
   });
 
+  await test('rapatForkopimdaFieldExtractor: sinyal Forkopimda eksplisit -> is_forkopimda=true MEDIUM, requires_review, independen dari unsur_forkopimda_hadir', async () => {
+    const text = 'RAPAT KOORDINASI FORKOPIMDA\nDihadiri GUBERNUR dan DANDIM.\ntanggal 10 Februari 2025';
+    const fields = extractRapatForkopimdaFields(text);
+    const isForkopimda = fields.find((f) => f.field_key === 'is_forkopimda');
+    const jenisForum = fields.find((f) => f.field_key === 'jenis_forum');
+    assert.strictEqual(isForkopimda.value, true);
+    assert.strictEqual(isForkopimda.confidence, 'MEDIUM');
+    assert.strictEqual(isForkopimda.requires_review, true);
+    assert.strictEqual(jenisForum.value, 'Forkopimda', 'jenis_forum harus tetap ada berdampingan dgn is_forkopimda (bukan digantikan).');
+  });
+
+  await test('rapatForkopimdaFieldExtractor: TIDAK ada sinyal Forkopimda -> is_forkopimda=null (BUKAN false yg dipalsukan sbg fakta)', async () => {
+    const text = 'Rapat internal biasa membahas administrasi kantor, tanggal 10 Februari 2025.';
+    const fields = extractRapatForkopimdaFields(text);
+    const isForkopimda = fields.find((f) => f.field_key === 'is_forkopimda');
+    assert.strictEqual(isForkopimda.value, null);
+    assert.strictEqual(isForkopimda.confidence, 'NONE');
+    assert.strictEqual(isForkopimda.source_type, 'NOT_FOUND');
+  });
+
   console.log(`\n=== HASIL TEST FASE 3 (E + S + smoke B.1.1/B.1.2): ${pass} lulus, ${fail} gagal ===`);
   process.exit(fail > 0 ? 1 : 0);
 })().catch((error) => {

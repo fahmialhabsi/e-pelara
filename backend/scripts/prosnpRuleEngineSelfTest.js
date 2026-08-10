@@ -157,6 +157,38 @@ test('BOUNDARY: surat 2025-06-30 (Semester I) TIDAK terhitung pada Semester II m
   assert.strictEqual(hasil.detail.jumlah_surat_sah, 0);
   assert.strictEqual(hasil.detail.bulan_terpenuhi.length, 0);
 });
+test('TIMEZONE FIX: surat 2025-06-30 DITERIMA di Semester I ITU SENDIRI (hari terakhir semester, bukan ditolak "Di luar rentang periode")', () => {
+  const surat = [{ id: 1, nomor_surat: 'Z/1', tanggal_surat: '2025-06-30', cakupan_pengadaan: true }];
+  const hasil = hitungB11(surat, B11_SEMESTER1_2025, semuaValid);
+  assert.strictEqual(hasil.detail.jumlah_surat_sah, 1, 'hari terakhir Semester I harus sah, bukan ditolak krn timezone.');
+  assert.deepStrictEqual(hasil.detail.bulan_terpenuhi, ['2025-06']);
+  assert.strictEqual(hasil.detail.surat_ditolak.length, 0);
+});
+test('TIMEZONE FIX: surat 2025-07-01 TETAP ditolak dari Semester I ("Di luar rentang periode") — bukan efek samping normalisasi', () => {
+  const surat = [{ id: 1, nomor_surat: 'Z/2', tanggal_surat: '2025-07-01', cakupan_pengadaan: true }];
+  const hasil = hitungB11(surat, B11_SEMESTER1_2025, semuaValid);
+  assert.strictEqual(hasil.detail.jumlah_surat_sah, 0);
+  assert.ok(hasil.detail.surat_ditolak[0].alasan.includes('Di luar rentang periode'));
+});
+test('TIMEZONE FIX: surat 2025-12-31 DITERIMA di Semester II ITU SENDIRI (hari terakhir semester)', () => {
+  const surat = [{ id: 1, nomor_surat: 'Z/3', tanggal_surat: '2025-12-31', cakupan_pengadaan: true }];
+  const hasil = hitungB11(surat, B11_SEMESTER2_2025, semuaValid);
+  assert.strictEqual(hasil.detail.jumlah_surat_sah, 1, '31 Desember harus sah di Semester II, bukan ditolak krn timezone.');
+  assert.deepStrictEqual(hasil.detail.bulan_terpenuhi, ['2025-12']);
+  assert.strictEqual(hasil.detail.surat_ditolak.length, 0);
+});
+test('TIMEZONE FIX: surat 2026-01-01 TETAP ditolak dari Semester II ("Di luar rentang periode")', () => {
+  const surat = [{ id: 1, nomor_surat: 'Z/4', tanggal_surat: '2026-01-01', cakupan_pengadaan: true }];
+  const hasil = hitungB11(surat, B11_SEMESTER2_2025, semuaValid);
+  assert.strictEqual(hasil.detail.jumlah_surat_sah, 0);
+  assert.ok(hasil.detail.surat_ditolak[0].alasan.includes('Di luar rentang periode'));
+});
+test('TIMEZONE FIX: month window tidak berubah — Semester I tetap Jan-Jun, Semester II tetap Jul-Des', () => {
+  const w1 = semesterEvaluationWindow(B11_SEMESTER1_2025);
+  assert.deepStrictEqual(w1.months, ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06']);
+  const w2 = semesterEvaluationWindow(B11_SEMESTER2_2025);
+  assert.deepStrictEqual(w2.months, ['2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12']);
+});
 test('INVALID SEMESTER: semester=3 -> error eksplisit, TIDAK fallback diam-diam ke tanggal_tenggat/Jan-Des', () => {
   assert.throws(() => hitungB11([], { tahun: 2025, semester: 3 }, semuaValid), /semester tidak valid/i);
 });
@@ -168,8 +200,12 @@ test('INVALID TAHUN: tahun=null -> error eksplisit, TIDAK fallback ke tahun sist
 });
 
 console.log('=== B.1.2 — Koordinasi Forkopimda (evidence per-rapat) ===');
-// Bentuk lama {tanggal_mulai,tanggal_tenggat} — TIDAK DIUBAH, hitungB12 protected (§31 mandat).
-const SEMESTER1_2025 = { tanggal_mulai: '2025-01-01', tanggal_tenggat: '2025-06-30' };
+// Corrective pass "B.1.2 Semester Evaluation Window": hitungB12 kini menurunkan
+// cakupan bulan dari tahun+semester (reuse semesterEvaluationWindow B.1.1),
+// BUKAN lagi tanggal_mulai/tanggal_tenggat — fixture di bawah ditambah
+// tahun/semester (mekanis saja, tanggal_mulai/tanggal_tenggat tetap
+// dipertahankan agar tidak mengubah bentuk fixture, meski kini diabaikan).
+const SEMESTER1_2025 = { tahun: 2025, semester: 1, tanggal_mulai: '2025-01-01', tanggal_tenggat: '2025-06-30' };
 const evidenceLengkap = () => ({ lengkap: true, kurang: [] });
 const evidenceKurang = () => ({ lengkap: false, kurang: ['notulen'] });
 test('2 rapat sah setiap bulan (evidence lengkap per rapat) -> skor 2,00', () => {
@@ -212,6 +248,59 @@ test('rapat tanpa topik ProSN/CBP tidak dihitung', () => {
   const rapat = [{ id: 1, tanggal_rapat: '2025-01-05', is_forkopimda: true }];
   const hasil = hitungB12(rapat, SEMESTER1_2025, evidenceLengkap);
   assert.strictEqual(hasil.detail.jumlah_rapat_sah, 0);
+});
+
+console.log('=== B.1.2 — Semester Evaluation Window (corrective pass) ===');
+test('SEMESTER I: window Jan-Jun, Juli TIDAK muncul walau tanggal_tenggat=2025-07-31', () => {
+  const periodeProduksi = { tahun: 2025, semester: 1, tanggal_mulai: '2025-01-01', tanggal_tenggat: '2025-07-31' };
+  const hasil = hitungB12([], periodeProduksi, evidenceLengkap);
+  const bulan = Object.keys(hasil.detail.hasil_faktual);
+  assert.deepStrictEqual(bulan, ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06']);
+  assert.ok(!bulan.includes('2025-07'), 'Juli TIDAK BOLEH masuk window Semester I.');
+});
+test('SEMESTER II: window Jul-Des, Desember penuh masuk, Januari tahun berikutnya TIDAK muncul', () => {
+  const periodeProduksi = { tahun: 2025, semester: 2, tanggal_mulai: '2025-07-01', tanggal_tenggat: '2025-12-01' };
+  const hasil = hitungB12([], periodeProduksi, evidenceLengkap);
+  const bulan = Object.keys(hasil.detail.hasil_faktual);
+  assert.deepStrictEqual(bulan, ['2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12']);
+  assert.ok(bulan.includes('2025-12'), 'Desember harus tetap masuk walau tanggal_tenggat=2025-12-01 (awal Desember).');
+  assert.ok(!bulan.includes('2026-01'), 'Januari tahun berikutnya TIDAK BOLEH masuk window Semester II.');
+});
+test('DEADLINE-DECOUPLING: tanggal_tenggat berbeda (2025-07-01 vs 2025-07-31) pada Semester I SAMA -> window hitungB12 IDENTIK', () => {
+  const a = hitungB12([], { tahun: 2025, semester: 1, tanggal_mulai: '2025-01-01', tanggal_tenggat: '2025-07-01' }, evidenceLengkap);
+  const b = hitungB12([], { tahun: 2025, semester: 1, tanggal_mulai: '2025-01-01', tanggal_tenggat: '2025-07-31' }, evidenceLengkap);
+  assert.deepStrictEqual(Object.keys(a.detail.hasil_faktual), Object.keys(b.detail.hasil_faktual));
+});
+test('BATAS Jun30/Jul01 Semester I: rapat 30 Juni temporally IN, rapat 1 Juli temporally OUT ("Di luar rentang periode")', () => {
+  const periodeProduksi = { tahun: 2025, semester: 1, tanggal_mulai: '2025-01-01', tanggal_tenggat: '2025-07-31' };
+  const dalam = hitungB12([{ id: 1, tanggal_rapat: '2025-06-30', is_forkopimda: true, topik_pengadaan: true }], periodeProduksi, evidenceLengkap);
+  assert.strictEqual(dalam.detail.jumlah_rapat_sah, 1, '30 Juni harus dihitung sah (temporal IN).');
+  const luar = hitungB12([{ id: 2, tanggal_rapat: '2025-07-01', is_forkopimda: true, topik_pengadaan: true }], periodeProduksi, evidenceLengkap);
+  assert.strictEqual(luar.detail.jumlah_rapat_sah, 0, '1 Juli harus ditolak (temporal OUT dari Semester I).');
+  assert.ok(luar.detail.rapat_tidak_sah[0].alasan.includes('Di luar rentang periode'));
+});
+test('BATAS Des31/Jan01 Semester II: rapat 31 Des temporally IN, rapat 1 Jan tahun berikutnya temporally OUT', () => {
+  const periodeProduksi = { tahun: 2025, semester: 2, tanggal_mulai: '2025-07-01', tanggal_tenggat: '2025-12-01' };
+  const dalam = hitungB12([{ id: 1, tanggal_rapat: '2025-12-31', is_forkopimda: true, topik_pengadaan: true }], periodeProduksi, evidenceLengkap);
+  assert.strictEqual(dalam.detail.jumlah_rapat_sah, 1, '31 Desember harus dihitung sah (temporal IN Semester II).');
+  const luar = hitungB12([{ id: 2, tanggal_rapat: '2026-01-01', is_forkopimda: true, topik_pengadaan: true }], periodeProduksi, evidenceLengkap);
+  assert.strictEqual(luar.detail.jumlah_rapat_sah, 0, '1 Januari tahun berikutnya harus ditolak (temporal OUT dari Semester II).');
+  assert.ok(luar.detail.rapat_tidak_sah[0].alasan.includes('Di luar rentang periode'));
+});
+test('PRODUCTION-LIKE: rapat 20 Juni 2025 (spt entity 146) temporally eligible utk Semester I, TIDAK ditolak "Di luar rentang periode"', () => {
+  const periodeProduksi = { tahun: 2025, semester: 1, tanggal_mulai: '2025-01-01', tanggal_tenggat: '2025-07-31' };
+  const hasil = hitungB12([{ id: 146, tanggal_rapat: '2025-06-20', is_forkopimda: true, topik_pengadaan: true, topik_pengelolaan: true, topik_penyaluran: true }], periodeProduksi, evidenceLengkap);
+  assert.strictEqual(hasil.detail.jumlah_rapat_sah, 1, '20 Juni harus lolos temporal eligibility (bukan ditolak krn tanggal).');
+  assert.strictEqual(hasil.detail.rapat_tidak_sah.length, 0);
+});
+test('PRODUCTION-LIKE: rapat 20 Agustus 2025 (spt entity 143) TETAP di luar Semester I ("Di luar rentang periode")', () => {
+  const periodeProduksi = { tahun: 2025, semester: 1, tanggal_mulai: '2025-01-01', tanggal_tenggat: '2025-07-31' };
+  const hasil = hitungB12([{ id: 143, tanggal_rapat: '2025-08-20', is_forkopimda: true, topik_pengadaan: true }], periodeProduksi, evidenceLengkap);
+  assert.strictEqual(hasil.detail.jumlah_rapat_sah, 0);
+  assert.ok(hasil.detail.rapat_tidak_sah[0].alasan.includes('Di luar rentang periode'));
+});
+test('INVALID SEMESTER B.1.2: semester tidak valid -> error eksplisit, TIDAK fallback diam-diam ke tanggal_mulai/tanggal_tenggat', () => {
+  assert.throws(() => hitungB12([], { tahun: 2025, semester: 3, tanggal_mulai: '2025-01-01', tanggal_tenggat: '2025-07-31' }, evidenceLengkap));
 });
 
 console.log('=== B.1.3 — Neraca & Capaian Cadangan Pangan Beras ===');

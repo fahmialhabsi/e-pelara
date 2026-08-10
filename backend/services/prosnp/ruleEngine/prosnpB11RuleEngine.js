@@ -79,8 +79,25 @@ function semesterEvaluationWindow(periode) {
  *   `tanggal_mulai`/`tanggal_tenggat` periode (metadata administratif).
  * @param {(suratId:number) => boolean} adaBuktiValid - cek SURAT_PENUGASAN valid terikat ke surat ini
  */
+/**
+ * Micro corrective "B.1.1 Semester Boundary Timezone" — `semesterEvaluationWindow`
+ * mengonstruksi `start`/`end` via komponen LOKAL (`new Date(tahun,bulan,hari)`),
+ * sedangkan `toDate()` mem-parse `tanggal_surat` sbg UTC midnight. Di server
+ * dgn timezone di depan UTC, hari TERAKHIR semester (30 Jun/31 Des) versi
+ * lokal jatuh SEBELUM versi UTC dari tanggal kalender yang sama, membuat
+ * surat yg bertanggal persis hari itu keliru dianggap "di luar periode".
+ * Normalisasi ke UTC-midnight di sini HANYA mengoreksi representasi jam utk
+ * perbandingan — TIDAK mengubah nilai/kalender yang sudah benar dari
+ * `semesterEvaluationWindow` itu sendiri (fungsi itu tidak diubah).
+ */
+function toUtcMidnight(date) {
+  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+}
+
 function hitungB11(suratList, periode, adaBuktiValid) {
-  const { start: periodeMulai, end: periodeAkhir, months: semuaBulan } = semesterEvaluationWindow(periode);
+  const { start, end, months: semuaBulan } = semesterEvaluationWindow(periode);
+  const periodeMulai = toUtcMidnight(start);
+  const periodeAkhir = toUtcMidnight(end);
 
   const nomorTerlihat = new Map();
   const duplikat = [];

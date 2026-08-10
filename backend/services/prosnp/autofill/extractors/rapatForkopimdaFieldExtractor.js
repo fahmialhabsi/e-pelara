@@ -38,6 +38,22 @@ function extractJenisForum(text) {
   return field('jenis_forum', isForkopimda ? 'Forkopimda' : null, { confidence: isForkopimda ? 'MEDIUM' : 'NONE', method: 'keyword_match_v1' });
 }
 
+/**
+ * Corrective pass "B.1.2 is_forkopimda Boolean Extraction" — kolom boolean
+ * `is_forkopimda` (satu-satunya syarat forum-type yang dibaca rule engine
+ * B.1.2, lihat prosnpB12RuleEngine.js) sebelumnya TIDAK PERNAH diekstrak sama
+ * sekali, walau sinyal teksnya identik dgn `extractJenisForum` di atas —
+ * akibatnya field ini selalu jatuh ke default model (`false`) meski dokumen
+ * eksplisit menyebut Forkopimda. Fungsi ini menggunakan SIS SINYAL yang sama
+ * (bukan classifier baru/lebih luas). Ketiadaan sinyal TIDAK PERNAH
+ * disimpulkan sbg `false` (itu bukan fakta dokumen) — `field()` otomatis
+ * mengembalikan `null`/NONE/requires_review saat value null.
+ */
+function extractIsForkopimda(text) {
+  const isForkopimda = /FORKOPIMDA|FORUM KOORDINASI PIMPINAN/i.test(text);
+  return field('is_forkopimda', isForkopimda ? true : null, { confidence: 'MEDIUM', method: 'keyword_match_v1', requiresReview: true });
+}
+
 function extractPimpinanRapat(text) {
   const m = text.match(/(?:dipimpin\s+oleh|pimpinan\s+rapat)\s*:?\s*([^\n]{3,80})/i);
   if (!m) return field('pimpinan_rapat', null);
@@ -148,6 +164,7 @@ function extractRapatForkopimdaFields(text) {
     extractTanggalRapat(text),
     extractNamaForum(text),
     extractJenisForum(text),
+    extractIsForkopimda(text),
     extractPimpinanRapat(text),
     extractLokasi(text),
     extractAgenda(text),

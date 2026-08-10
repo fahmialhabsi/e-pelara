@@ -177,6 +177,9 @@ async function runBinaryE2ESection() {
       assert.ok(f.catatan_angka_pendukung.value && /50/.test(f.catatan_angka_pendukung.value), '50 Ton harus terekstrak sbg catatan pendukung.');
       assert.strictEqual(f.catatan_angka_pendukung.requires_review, true, '50 Ton TIDAK BOLEH pernah authoritative — selalu requires_review.');
       assert.ok(!('target_ton' in f), 'rapatForkopimdaFieldExtractor TIDAK BOLEH pernah mengisi target_ton B.1.3 dari Notulen.');
+      assert.strictEqual(f.is_forkopimda.value, true, 'Notulen binary asli memuat sinyal Forkopimda eksplisit -> is_forkopimda harus true (corrective pass).');
+      assert.strictEqual(f.is_forkopimda.confidence, 'MEDIUM');
+      assert.strictEqual(f.is_forkopimda.requires_review, true);
     });
   } else {
     skipTest('BINARY E2E — FILE 2 (DOCX) [FIELD_EXTRACTION]', `berkas tidak ditemukan di ${file2Path}`);
@@ -458,6 +461,13 @@ async function runTextGoldenUnitSection() {
     assert.strictEqual(f.lokasi.value, 'Bela Hotel Ternate');
     assert.ok(/CPPD/i.test(f.agenda.value) && /CBP/i.test(f.agenda.value), 'agenda harus memuat konsep CPPD & CBP.');
     assert.strictEqual(f.notulis.value, 'Syarifudin Sima, S.Hut., MP');
+  });
+  await test('FILE 2 — is_forkopimda=true MEDIUM dari sinyal Forkopimda eksplisit pada Notulen asli (corrective pass)', async () => {
+    const f = byKey(extractRapatForkopimdaFields(GOLDEN_TEXT_FILE_2));
+    assert.strictEqual(f.is_forkopimda.value, true);
+    assert.strictEqual(f.is_forkopimda.confidence, 'MEDIUM');
+    assert.strictEqual(f.is_forkopimda.requires_review, true);
+    assert.strictEqual(f.jenis_forum.value, 'Forkopimda', 'jenis_forum tetap ada berdampingan dgn is_forkopimda.');
   });
   await test('FILE 2 — "50 Ton" hanya SUPPORTING, TIDAK PERNAH authoritative target_ton', async () => {
     const f = byKey(extractRapatForkopimdaFields(GOLDEN_TEXT_FILE_2));
