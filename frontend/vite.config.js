@@ -15,6 +15,7 @@ export default defineConfig({
     include: [
       "src/features/rpjmd/services/**/*.test.js",
       "src/features/audit/**/*.test.js",
+      "src/features/prosnp/components/**/*.test.js",
       "src/utils/mapBackendErrorsToFormik.test.js",
       "src/validations/indikatorSchemas.test.js",
     ],
