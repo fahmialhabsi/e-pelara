@@ -545,6 +545,36 @@ export default function ProsnPeriodeDetailPage() {
     });
   };
 
+  // Sama seperti refreshBukti — dipakai oleh section register B.1.1-B.1.4/MBG
+  // (tipe_form baru) yang meneruskan onChanged ke sini setelah CRUD baris
+  // register atau "Hitung Ulang Skor". Sebelumnya section-section itu memakai
+  // onChanged={load}, yang me-rebuild SELURUH state `forms` dari server
+  // (buildFormState) — menimpa field yang sedang diketik user (mis. Sumber
+  // Data) tapi belum di-Simpan. Fungsi ini hanya menimpa field yang memang
+  // dihasilkan backend (skor, status, lock_version, diisi_oleh), bukan field
+  // yang diedit lewat input di halaman ini.
+  const refreshPengisianMeta = async (indikatorId, pengisianId) => {
+    const result = await getProsnPengisian(pengisianId);
+    if (!result) return;
+    setForms((prev) => {
+      const prevForm = prev[indikatorId];
+      if (!prevForm) return prev;
+      return {
+        ...prev,
+        [indikatorId]: {
+          ...prevForm,
+          status: result.status ?? prevForm.status,
+          lock_version: result.lock_version ?? prevForm.lock_version,
+          diisi_oleh: result.diisi_oleh ?? prevForm.diisi_oleh,
+          skor_indikatif_internal: result.skor_indikatif_internal ?? null,
+          skor_alasan: result.skor_alasan || null,
+          skor_detail: result.skor_detail || null,
+          skor_dihitung_at: result.skor_dihitung_at || null,
+        },
+      };
+    });
+  };
+
   const openPicker = async (indikatorId) => {
     setPickerFor(indikatorId);
     setPickerSearch('');
@@ -656,28 +686,28 @@ export default function ProsnPeriodeDetailPage() {
               )}
 
               {indikator.tipe_form === 'penugasan_kdh' && (
-                <PenugasanKdhSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
+                <PenugasanKdhSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={() => refreshPengisianMeta(indikator.id, form.pengisianId)} />
               )}
               {indikator.tipe_form === 'koordinasi_forkopimda' && (
-                <KoordinasiForkopimdaSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
+                <KoordinasiForkopimdaSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={() => refreshPengisianMeta(indikator.id, form.pengisianId)} />
               )}
               {indikator.tipe_form === 'cadangan_pangan_beras' && (
-                <CadanganPanganBerasSection indikator={indikator} pengisian={form} periode={periode} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
+                <CadanganPanganBerasSection indikator={indikator} pengisian={form} periode={periode} editable={editable} canReview={isReviewer(user?.role)} onChanged={() => refreshPengisianMeta(indikator.id, form.pengisianId)} />
               )}
               {indikator.tipe_form === 'inovasi_dan_perkada' && (
-                <InovasiPerkadaSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
+                <InovasiPerkadaSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={() => refreshPengisianMeta(indikator.id, form.pengisianId)} />
               )}
               {indikator.tipe_form === 'status_bertingkat_evidence' && (
-                <SatgasMbgSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
+                <SatgasMbgSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={() => refreshPengisianMeta(indikator.id, form.pengisianId)} />
               )}
               {indikator.tipe_form === 'checklist_proporsional_evidence' && (
-                <SarprasKomponenMbgSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
+                <SarprasKomponenMbgSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={() => refreshPengisianMeta(indikator.id, form.pengisianId)} />
               )}
               {indikator.tipe_form === 'pelaporan_berkala_evidence' && (
-                <LaporanSatgasMbgSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
+                <LaporanSatgasMbgSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={() => refreshPengisianMeta(indikator.id, form.pengisianId)} />
               )}
               {indikator.tipe_form === 'capaian_persentase_bertingkat' && (
-                <CapaianPersentaseMbgSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={load} />
+                <CapaianPersentaseMbgSection indikator={indikator} pengisian={form} editable={editable} canReview={isReviewer(user?.role)} onChanged={() => refreshPengisianMeta(indikator.id, form.pengisianId)} />
               )}
 
               {indikator.tipe_form === 'dukungan_program' && (
