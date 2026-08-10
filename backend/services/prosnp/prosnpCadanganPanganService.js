@@ -3,6 +3,7 @@
 const db = require('../../models');
 const { ProsnError } = require('./prosnpWorkflowService');
 const dpaSource = require('./prosnpDpaSourceService');
+const rkaSource = require('./prosnpRkaSourceService');
 
 const B13_KODE = 'B.1.3';
 async function getMasterIndikatorB13Id() {
@@ -17,11 +18,80 @@ async function getMasterIndikatorB13Id() {
  * snapshot diambil dari data DPA nyata. Jika tidak tersedia, wajib eksplisit
  * source_not_available=true + manual_override_alasan — TIDAK BOLEH diam-diam
  * kosong (mencegah "pagu manual tanpa jejak sumber").
+ *
+ * Corrective "B.1.3 DPA/DPPA Authoritative Target Source" — cabang BARU
+ * `payload.source_mode === 'DPA_OPERASIONAL'` (opt-in eksplisit, TIDAK
+ * mengubah perilaku dropdown existing di atas): target_ton B.1.3 diambil
+ * backend-authoritative dari DPA/DPPA aktif Sub Kegiatan EXACT
+ * `2.09.03.1.02.0005` (lihat prosnpDpaSourceService.resolveOperationalTargetB13).
+ * Backend TIDAK PERNAH mempercayai target_ton/source_dpa_id yg dikirim
+ * frontend untuk mode ini — semua diturunkan ulang dari DB (anti-spoof, §10).
+ *
+ * Corrective "B.1.3 RKA Authoritative Target Fallback" — DPA/DPPA dicoba
+ * LEBIH DAHULU; hanya jika hasilnya tidak ditemukan/requires_review (target
+ * NULL, satuan ambigu, atau baris DPA/DPPA tidak ada sama sekali), baru
+ * dicoba fallback ke RKA aktif+APPROVED Sub Kegiatan yang sama
+ * (prosnpRkaSourceService.resolveOperationalTargetB13FromRka). RKA TIDAK
+ * PERNAH menimpa target DPA/DPPA yang sudah valid (mandat §1/§7).
  */
 async function resolveTargetSource(payload) {
   if (payload.source_not_available) {
     if (!payload.manual_override_alasan) throw new ProsnError('Jika sumber APBD tidak tersedia, alasan override manual wajib diisi.', 409, 'PROSNP_DPA_SOURCE_ALASAN_WAJIB');
     return { source_type: 'manual', manual_override_alasan: payload.manual_override_alasan, source_trace: [{ at: new Date().toISOString(), jenis: 'manual', alasan: payload.manual_override_alasan }] };
+  }
+  if (payload.source_mode === 'DPA_OPERASIONAL') {
+    if (!payload.source_tahun || !payload.source_opd_id) {
+      throw new ProsnError('Tahun dan OPD sumber DPA/DPPA operasional wajib dipilih.', 409, 'PROSNP_DPA_OPERASIONAL_PARAM_WAJIB');
+    }
+    const resolusiDpa = await dpaSource.resolveOperationalTargetB13(payload.source_tahun, payload.source_opd_id);
+    if (resolusiDpa.ditemukan && !resolusiDpa.requires_review) {
+      return {
+        source_type: 'sistem',
+        source_tahun: resolusiDpa.source_tahun,
+        source_opd_id: resolusiDpa.source_opd_id,
+        source_sub_kegiatan_id: resolusiDpa.source_sub_kegiatan_id,
+        source_dpa_id: resolusiDpa.source_dpa_id,
+        source_pagu_dpa: resolusiDpa.source_pagu_dpa,
+        source_realisasi: resolusiDpa.source_realisasi,
+        source_snapshot_at: new Date(),
+        manual_override_alasan: null,
+        source_trace: [{
+          at: new Date().toISOString(), jenis: 'sistem_dpa_operasional',
+          kode_sub_kegiatan: resolusiDpa.kode_sub_kegiatan, nama_sub_kegiatan: resolusiDpa.nama_sub_kegiatan,
+          indikator_raw: resolusiDpa.indikator_raw, target_value_raw: resolusiDpa.target_value_raw, target_unit_raw: resolusiDpa.target_unit_raw,
+          target_ton_resolved: resolusiDpa.target_ton, versi: resolusiDpa.version, is_active_version: resolusiDpa.is_active_version,
+          jenis_dokumen: resolusiDpa.jenis_dokumen, parsing_status: resolusiDpa.parsing_status,
+        }],
+        resolved_target_ton: resolusiDpa.target_ton,
+      };
+    }
+    // DPA/DPPA tidak tersedia/tidak valid -> coba fallback RKA aktif+APPROVED (mandat RKA fallback).
+    const resolusiRka = await rkaSource.resolveOperationalTargetB13FromRka(payload.source_tahun, payload.source_opd_id);
+    if (resolusiRka.ditemukan && !resolusiRka.requires_review) {
+      return {
+        source_type: 'sistem',
+        source_tahun: resolusiRka.source_tahun,
+        source_opd_id: resolusiRka.source_opd_id,
+        source_dpa_id: null, // TIDAK memfabrikasi relasi DPA — sumber ini murni RKA (mandat §9)
+        source_snapshot_at: new Date(),
+        manual_override_alasan: null,
+        source_trace: [{
+          at: new Date().toISOString(), jenis: 'sistem_rka_operasional',
+          rka_id: resolusiRka.source_rka_id, tahun: resolusiRka.source_tahun, opd_id: resolusiRka.source_opd_id,
+          kode_sub_kegiatan: resolusiRka.kode_sub_kegiatan, nama_sub_kegiatan: resolusiRka.nama_sub_kegiatan,
+          keluaran_raw: resolusiRka.keluaran_raw, target_value_raw: resolusiRka.target_value_raw, target_unit_raw: resolusiRka.target_unit_raw,
+          target_ton_resolved: resolusiRka.target_ton, tahapan: resolusiRka.tahapan, version: resolusiRka.version,
+          is_active_version: resolusiRka.is_active_version, approval_status: resolusiRka.approval_status,
+          fallback_reason: resolusiDpa.alasan, parsing_status: resolusiRka.parsing_status,
+        }],
+        resolved_target_ton: resolusiRka.target_ton,
+      };
+    }
+    throw new ProsnError(
+      `DPA/DPPA: ${resolusiDpa.alasan || 'tidak tersedia/tidak valid'} — RKA fallback: ${resolusiRka.alasan || 'tidak tersedia/tidak valid'}`,
+      409,
+      'PROSNP_DPA_RKA_OPERASIONAL_TIDAK_VALID',
+    );
   }
   if (!payload.source_tahun || !payload.source_opd_id || !payload.source_kode_sub_kegiatan) {
     return { source_type: 'manual', manual_override_alasan: null, source_trace: null };
@@ -68,12 +138,28 @@ async function listTarget(tenantId, tahun) {
   return db.ProsnCadanganTarget.findAll({ where, order: [['tahun_target', 'DESC'], ['tanggal_keputusan', 'DESC']] });
 }
 
-function validateTargetPayload(payload) {
+function validateTargetPayloadDasar(payload) {
   if (!payload.tahun_target) throw new ProsnError('Tahun target wajib diisi.');
-  if (!payload.nomor_keputusan) throw new ProsnError('Nomor Keputusan Kepala Daerah wajib diisi.');
-  if (!payload.tanggal_keputusan) throw new ProsnError('Tanggal Keputusan wajib diisi.');
-  const target = Number(payload.target_ton);
-  if (!Number.isFinite(target) || target <= 0) throw new ProsnError('Target cadangan pangan beras (ton) wajib diisi dan lebih dari nol — target nol ditolak sesuai mandat.');
+}
+
+/**
+ * Source-aware (corrective "B.1.3 DPA/DPPA Authoritative Target Source",
+ * §10 mandat): target berbasis Keputusan Gubernur tetap mewajibkan
+ * nomor+tanggal keputusan (semantik existing, TIDAK berubah). Target
+ * berbasis DPA/DPPA operasional (source.resolved_target_ton tersedia —
+ * hanya muncul dari resolveTargetSource mode DPA_OPERASIONAL yang sudah
+ * memverifikasi provenance ke DB) TIDAK mewajibkan keduanya, dan target_ton
+ * SELALU diambil dari hasil resolusi backend (bukan payload klien — anti-spoof).
+ */
+function validateTargetSourceConsistency(payload, source) {
+  const dariDpaOperasional = Boolean(source) && Object.prototype.hasOwnProperty.call(source, 'resolved_target_ton');
+  if (!dariDpaOperasional) {
+    if (!payload.nomor_keputusan) throw new ProsnError('Nomor Keputusan Kepala Daerah wajib diisi.');
+    if (!payload.tanggal_keputusan) throw new ProsnError('Tanggal Keputusan wajib diisi.');
+  }
+  const targetTon = Number(dariDpaOperasional ? source.resolved_target_ton : payload.target_ton);
+  if (!Number.isFinite(targetTon) || targetTon <= 0) throw new ProsnError('Target cadangan pangan beras (ton) wajib diisi dan lebih dari nol — target nol ditolak sesuai mandat.');
+  return targetTon;
 }
 
 async function createTargetCore(payload, actor, tenantId, source, transaction) {
@@ -81,8 +167,8 @@ async function createTargetCore(payload, actor, tenantId, source, transaction) {
     await db.ProsnCadanganTarget.update({ status_aktif: false }, { where: { tenant_id: tenantId, tahun_target: String(payload.tahun_target), status_aktif: true }, transaction });
   }
   return db.ProsnCadanganTarget.create({
-    tenant_id: tenantId, tahun_target: String(payload.tahun_target), nomor_keputusan: payload.nomor_keputusan,
-    tanggal_keputusan: payload.tanggal_keputusan, target_ton: Number(payload.target_ton), satuan: payload.satuan || 'Ton',
+    tenant_id: tenantId, tahun_target: String(payload.tahun_target), nomor_keputusan: payload.nomor_keputusan || null,
+    tanggal_keputusan: payload.tanggal_keputusan || null, target_ton: Number(payload.target_ton), satuan: payload.satuan || 'Ton',
     tanggal_mulai_berlaku: payload.tanggal_mulai_berlaku || null, status_aktif: payload.status_aktif !== false,
     catatan: payload.catatan || null, ...source, created_by: actor.id, updated_by: actor.id,
   }, { transaction });
@@ -90,18 +176,23 @@ async function createTargetCore(payload, actor, tenantId, source, transaction) {
 
 /** P1 Atomic Transaction Boundary — lihat catatan sama di prosnpSuratPenugasanService.js. */
 async function createTarget(payload, actor, tenantId, options = {}) {
-  validateTargetPayload(payload);
+  validateTargetPayloadDasar(payload);
   const source = await resolveTargetSource(payload);
-  if (options.transaction) return createTargetCore(payload, actor, tenantId, source, options.transaction);
-  return db.sequelize.transaction((transaction) => createTargetCore(payload, actor, tenantId, source, transaction));
+  const targetTonFinal = validateTargetSourceConsistency(payload, source);
+  const { resolved_target_ton: _resolvedTargetTon, ...sourceUntukDb } = source;
+  const payloadEfektif = { ...payload, target_ton: targetTonFinal };
+  if (options.transaction) return createTargetCore(payloadEfektif, actor, tenantId, sourceUntukDb, options.transaction);
+  return db.sequelize.transaction((transaction) => createTargetCore(payloadEfektif, actor, tenantId, sourceUntukDb, transaction));
 }
 
 async function updateTarget(id, payload, actor, tenantId) {
-  validateTargetPayload(payload);
+  validateTargetPayloadDasar(payload);
   const expectedVersion = assertLockVersion(payload.lock_version);
-  const source = (payload.source_not_available || (payload.source_tahun && payload.source_opd_id && payload.source_kode_sub_kegiatan))
-    ? await resolveTargetSource(payload)
-    : {};
+  const shouldResolveSource = payload.source_not_available || payload.source_mode === 'DPA_OPERASIONAL'
+    || (payload.source_tahun && payload.source_opd_id && payload.source_kode_sub_kegiatan);
+  const source = shouldResolveSource ? await resolveTargetSource(payload) : {};
+  const targetTonFinal = validateTargetSourceConsistency(payload, source);
+  const { resolved_target_ton: _resolvedTargetTon, ...sourceUntukDb } = source;
   return db.sequelize.transaction(async (transaction) => {
     const target = await db.ProsnCadanganTarget.findOne({ where: { id, tenant_id: tenantId }, transaction, lock: transaction.LOCK.UPDATE });
     if (!target) throw new ProsnError('Target tidak ditemukan.', 404, 'PROSNP_NOT_FOUND');
@@ -110,9 +201,9 @@ async function updateTarget(id, payload, actor, tenantId) {
       await db.ProsnCadanganTarget.update({ status_aktif: false }, { where: { tenant_id: tenantId, tahun_target: String(payload.tahun_target), status_aktif: true, id: { [db.Sequelize.Op.ne]: id } }, transaction });
     }
     const [count] = await db.ProsnCadanganTarget.update({
-      tahun_target: String(payload.tahun_target), nomor_keputusan: payload.nomor_keputusan, tanggal_keputusan: payload.tanggal_keputusan,
-      target_ton: Number(payload.target_ton), satuan: payload.satuan || 'Ton', tanggal_mulai_berlaku: payload.tanggal_mulai_berlaku || null,
-      status_aktif: payload.status_aktif !== false, catatan: payload.catatan || null, ...source, updated_by: actor.id, lock_version: expectedVersion + 1,
+      tahun_target: String(payload.tahun_target), nomor_keputusan: payload.nomor_keputusan || null, tanggal_keputusan: payload.tanggal_keputusan || null,
+      target_ton: targetTonFinal, satuan: payload.satuan || 'Ton', tanggal_mulai_berlaku: payload.tanggal_mulai_berlaku || null,
+      status_aktif: payload.status_aktif !== false, catatan: payload.catatan || null, ...sourceUntukDb, updated_by: actor.id, lock_version: expectedVersion + 1,
     }, { where: { id, tenant_id: tenantId, lock_version: expectedVersion }, transaction });
     if (count !== 1) throw new ProsnError('Data telah diubah pengguna lain.', 409, 'PROSNP_VERSION_CONFLICT');
     return db.ProsnCadanganTarget.findByPk(id, { transaction });

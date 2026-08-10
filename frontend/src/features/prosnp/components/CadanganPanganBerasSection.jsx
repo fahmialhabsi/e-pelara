@@ -34,10 +34,11 @@ function emptyTransaksi() {
 function emptyTarget(tahun) {
   return {
     tahun_target: tahun, nomor_keputusan: '', tanggal_keputusan: '', target_ton: '', satuan: 'Ton', tanggal_mulai_berlaku: '', status_aktif: true, catatan: '',
-    source_tahun: '', source_opd_id: '', source_kode_program: '', source_kode_kegiatan: '', source_kode_sub_kegiatan: '',
+    source_mode: 'KEPUTUSAN_GUBERNUR', source_tahun: '', source_opd_id: '', source_kode_program: '', source_kode_kegiatan: '', source_kode_sub_kegiatan: '',
     source_not_available: false, manual_override_alasan: '',
   };
 }
+const B13_KODE_SUB_KEGIATAN_CADANGAN_PANGAN = '2.09.03.1.02.0005';
 function formatRupiah(value) {
   return `Rp ${Number(value || 0).toLocaleString('id-ID')}`;
 }
@@ -107,8 +108,15 @@ export default function CadanganPanganBerasSection({ indikator, pengisian, perio
     finally { setSaving(false); }
   };
 
+  const targetAktifDariDpaOperasional = targetAktif && Array.isArray(targetAktif.source_trace)
+    && targetAktif.source_trace.some((t) => t?.jenis === 'sistem_dpa_operasional');
+  const targetAktifDariRkaOperasional = targetAktif && Array.isArray(targetAktif.source_trace)
+    && targetAktif.source_trace.some((t) => t?.jenis === 'sistem_rka_operasional');
+
   const openTargetModal = () => {
-    setTargetForm(targetAktif ? { ...emptyTarget(periode.tahun), ...targetAktif } : emptyTarget(periode.tahun));
+    setTargetForm(targetAktif
+      ? { ...emptyTarget(periode.tahun), ...targetAktif, source_mode: (targetAktifDariDpaOperasional || targetAktifDariRkaOperasional) ? 'DPA_OPERASIONAL' : 'KEPUTUSAN_GUBERNUR' }
+      : emptyTarget(periode.tahun));
     setSumberOpdList([]); setSumberProgramList([]); setSumberKegiatanList([]); setSumberSubKegiatanList([]);
     setShowTargetModal(true);
   };
@@ -178,7 +186,7 @@ export default function CadanganPanganBerasSection({ indikator, pengisian, perio
       })()}
 
       <div className="d-flex justify-content-between align-items-center mb-2">
-        <strong>Target Cadangan Pangan Beras (Keputusan Kepala Daerah, Tahun {periode.tahun})</strong>
+        <strong>Target Cadangan Pangan Beras — Tahun {periode.tahun}</strong>
         <div className="d-flex gap-2">
           {editable && (
             <ProsnAutofillModal pengisianId={pengisian.id} entityType="CADANGAN_TARGET" onApplied={async () => { await load(); await onChanged(); }} label="+ Unggah & Analisis Keputusan KDH" />
@@ -194,7 +202,9 @@ export default function CadanganPanganBerasSection({ indikator, pengisian, perio
         <div className="small mb-3">
           <div className="d-flex align-items-center gap-2 flex-wrap">
             <span>
-              Nomor <strong>{targetAktif.nomor_keputusan}</strong> ({new Date(targetAktif.tanggal_keputusan).toLocaleDateString('id-ID')}) —
+              {targetAktif.nomor_keputusan && (
+                <>Nomor <strong>{targetAktif.nomor_keputusan}</strong> ({new Date(targetAktif.tanggal_keputusan).toLocaleDateString('id-ID')}) — </>
+              )}
               target <strong>{Number(targetAktif.target_ton).toLocaleString('id-ID')} {targetAktif.satuan}</strong>
             </span>
             <EntityBuktiManager
@@ -204,7 +214,37 @@ export default function CadanganPanganBerasSection({ indikator, pengisian, perio
             />
           </div>
           <div className="d-flex align-items-center gap-2 flex-wrap mt-1">
-            {targetAktif.source_type === 'sistem' ? (
+            {targetAktifDariRkaOperasional ? (() => {
+              const jejak = [...targetAktif.source_trace].reverse().find((t) => t?.jenis === 'sistem_rka_operasional');
+              return (
+                <>
+                  <Badge bg="warning" text="dark">Sumber: RKA Operasional (Fallback)</Badge>
+                  <span className="text-muted">
+                    Sub Kegiatan {jejak?.kode_sub_kegiatan || B13_KODE_SUB_KEGIATAN_CADANGAN_PANGAN}
+                    {jejak?.tahapan && ` · Tahapan ${jejak.tahapan}`}
+                    {jejak?.version !== undefined && ` · Versi ${jejak.version}`}
+                    {jejak?.approval_status && ` · Status: ${jejak.approval_status === 'APPROVED' ? 'Approved' : jejak.approval_status}`}
+                    {targetAktif.source_tahun && ` · Tahun ${targetAktif.source_tahun}`}
+                  </span>
+                  {jejak?.fallback_reason && (
+                    <div className="small text-muted w-100">DPA/DPPA belum menyediakan target valid: {jejak.fallback_reason}</div>
+                  )}
+                </>
+              );
+            })() : targetAktifDariDpaOperasional ? (() => {
+              const jejak = [...targetAktif.source_trace].reverse().find((t) => t?.jenis === 'sistem_dpa_operasional');
+              return (
+                <>
+                  <Badge bg="success">Sumber: DPA/DPPA Operasional</Badge>
+                  <span className="text-muted">
+                    Sub Kegiatan {jejak?.kode_sub_kegiatan || B13_KODE_SUB_KEGIATAN_CADANGAN_PANGAN}
+                    {jejak?.versi !== undefined && ` · Versi ${jejak.versi} (${jejak.is_active_version ? 'Aktif' : 'Tidak Aktif'})`}
+                    {targetAktif.source_tahun && ` · Tahun ${targetAktif.source_tahun}`}
+                    {targetAktif.source_snapshot_at && ` · diperbarui ${new Date(targetAktif.source_snapshot_at).toLocaleString('id-ID')}`}
+                  </span>
+                </>
+              );
+            })() : targetAktif.source_type === 'sistem' ? (
               <>
                 <Badge bg="success">Sumber: Sistem (DPA)</Badge>
                 <span className="text-muted">
@@ -317,22 +357,57 @@ export default function CadanganPanganBerasSection({ indikator, pengisian, perio
 
       <Modal show={showTargetModal} onHide={() => setShowTargetModal(false)}>
         <Form onSubmit={submitTarget}>
-          <Modal.Header closeButton><Modal.Title>Target Cadangan Pangan Beras (Keputusan KDH)</Modal.Title></Modal.Header>
+          <Modal.Header closeButton><Modal.Title>Target Cadangan Pangan Beras</Modal.Title></Modal.Header>
           <Modal.Body>
-            <Form.Group className="mb-2"><Form.Label>Nomor Keputusan *</Form.Label><Form.Control required value={targetForm.nomor_keputusan} onChange={(e) => setTargetForm({ ...targetForm, nomor_keputusan: e.target.value })} /></Form.Group>
-            <Form.Group className="mb-2"><Form.Label>Tanggal Keputusan *</Form.Label><Form.Control required type="date" value={targetForm.tanggal_keputusan} onChange={(e) => setTargetForm({ ...targetForm, tanggal_keputusan: e.target.value })} /></Form.Group>
-            <Form.Group className="mb-2"><Form.Label>Target (Ton) *</Form.Label><Form.Control required type="number" step="0.01" value={targetForm.target_ton} onChange={(e) => setTargetForm({ ...targetForm, target_ton: e.target.value })} /></Form.Group>
-            <Form.Group className="mb-2"><Form.Label>Tanggal Mulai Berlaku</Form.Label><Form.Control type="date" value={targetForm.tanggal_mulai_berlaku} onChange={(e) => setTargetForm({ ...targetForm, tanggal_mulai_berlaku: e.target.value })} /></Form.Group>
-            <Form.Group className="mb-2"><Form.Label>Catatan</Form.Label><Form.Control as="textarea" rows={2} value={targetForm.catatan} onChange={(e) => setTargetForm({ ...targetForm, catatan: e.target.value })} /></Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label className="fw-semibold">Sumber Target Operasional</Form.Label>
+              <Form.Select value={targetForm.source_mode} onChange={(e) => setTargetForm({ ...targetForm, source_mode: e.target.value })}>
+                <option value="KEPUTUSAN_GUBERNUR">Keputusan Gubernur (isi manual)</option>
+                <option value="DPA_OPERASIONAL">DPA/DPPA Operasional (Sub Kegiatan {B13_KODE_SUB_KEGIATAN_CADANGAN_PANGAN})</option>
+              </Form.Select>
+            </Form.Group>
 
-            <hr />
-            <Form.Label className="fw-semibold">Sumber Pagu/Realisasi (mandat §10 — telusuri ke APBD nyata)</Form.Label>
-            <Form.Check
-              type="switch" className="mb-2" label="Sumber APBD tidak tersedia — isi manual (wajib jelaskan alasan)"
-              checked={!!targetForm.source_not_available}
-              onChange={(e) => setTargetForm({ ...targetForm, source_not_available: e.target.checked })}
-            />
-            {targetForm.source_not_available ? (
+            {targetForm.source_mode === 'DPA_OPERASIONAL' ? (
+              <>
+                <div className="small text-muted mb-2">
+                  Target akan diambil otomatis dari DPA/DPPA aktif Sub Kegiatan <strong>{B13_KODE_SUB_KEGIATAN_CADANGAN_PANGAN}</strong> (Pengelolaan
+                  Cadangan Pangan Pemerintah Provinsi) sesuai Tahun dan OPD yang dipilih — angka target TIDAK diisi manual di sini.
+                </div>
+                <Row>
+                  <Col md={6}><Form.Group className="mb-2"><Form.Label>Tahun APBD *</Form.Label>
+                    <Form.Select required value={targetForm.source_tahun} onChange={(e) => setTargetForm({ ...targetForm, source_tahun: e.target.value, source_opd_id: '' })}>
+                      <option value="">— pilih —</option>
+                      {sumberTahunList.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </Form.Select>
+                  </Form.Group></Col>
+                  <Col md={6}><Form.Group className="mb-2"><Form.Label>OPD *</Form.Label>
+                    <Form.Select required disabled={!targetForm.source_tahun} value={targetForm.source_opd_id} onChange={(e) => setTargetForm({ ...targetForm, source_opd_id: e.target.value })}>
+                      <option value="">— pilih —</option>
+                      {sumberOpdList.map((o) => <option key={o.opd_penanggung_jawab_id} value={o.opd_penanggung_jawab_id}>{o.nama_opd}</option>)}
+                    </Form.Select>
+                  </Form.Group></Col>
+                </Row>
+                <Form.Group className="mb-2"><Form.Label>Tanggal Mulai Berlaku</Form.Label><Form.Control type="date" value={targetForm.tanggal_mulai_berlaku} onChange={(e) => setTargetForm({ ...targetForm, tanggal_mulai_berlaku: e.target.value })} /></Form.Group>
+                <Form.Group className="mb-2"><Form.Label>Catatan</Form.Label><Form.Control as="textarea" rows={2} value={targetForm.catatan} onChange={(e) => setTargetForm({ ...targetForm, catatan: e.target.value })} /></Form.Group>
+              </>
+            ) : (
+              <>
+                <Form.Group className="mb-2"><Form.Label>Nomor Keputusan *</Form.Label><Form.Control required value={targetForm.nomor_keputusan} onChange={(e) => setTargetForm({ ...targetForm, nomor_keputusan: e.target.value })} /></Form.Group>
+                <Form.Group className="mb-2"><Form.Label>Tanggal Keputusan *</Form.Label><Form.Control required type="date" value={targetForm.tanggal_keputusan} onChange={(e) => setTargetForm({ ...targetForm, tanggal_keputusan: e.target.value })} /></Form.Group>
+                <Form.Group className="mb-2"><Form.Label>Target (Ton) *</Form.Label><Form.Control required type="number" step="0.01" value={targetForm.target_ton} onChange={(e) => setTargetForm({ ...targetForm, target_ton: e.target.value })} /></Form.Group>
+                <Form.Group className="mb-2"><Form.Label>Tanggal Mulai Berlaku</Form.Label><Form.Control type="date" value={targetForm.tanggal_mulai_berlaku} onChange={(e) => setTargetForm({ ...targetForm, tanggal_mulai_berlaku: e.target.value })} /></Form.Group>
+                <Form.Group className="mb-2"><Form.Label>Catatan</Form.Label><Form.Control as="textarea" rows={2} value={targetForm.catatan} onChange={(e) => setTargetForm({ ...targetForm, catatan: e.target.value })} /></Form.Group>
+
+                <hr />
+                <Form.Label className="fw-semibold">Sumber Pagu/Realisasi (mandat §10 — telusuri ke APBD nyata)</Form.Label>
+                <Form.Check
+                  type="switch" className="mb-2" label="Sumber APBD tidak tersedia — isi manual (wajib jelaskan alasan)"
+                  checked={!!targetForm.source_not_available}
+                  onChange={(e) => setTargetForm({ ...targetForm, source_not_available: e.target.checked })}
+                />
+              </>
+            )}
+            {targetForm.source_mode !== 'DPA_OPERASIONAL' && (targetForm.source_not_available ? (
               <Form.Group className="mb-2">
                 <Form.Label>Alasan Override Manual *</Form.Label>
                 <Form.Control required as="textarea" rows={2} value={targetForm.manual_override_alasan} onChange={(e) => setTargetForm({ ...targetForm, manual_override_alasan: e.target.value })} />
@@ -373,7 +448,7 @@ export default function CadanganPanganBerasSection({ indikator, pengisian, perio
                   <Col md={12}><div className="small text-success mb-2">Pagu DPA: {formatRupiah(subKegiatanTerpilih.pagu_dpa)} (status {subKegiatanTerpilih.approval_status})</div></Col>
                 )}
               </Row>
-            )}
+            ))}
           </Modal.Body>
           <Modal.Footer>
             <Button variant="light" onClick={() => setShowTargetModal(false)}>Batal</Button>
