@@ -157,6 +157,12 @@ export default function CadanganPanganBerasSection({ indikator, pengisian, perio
         }
         return (
           <div className="alert alert-light border small mb-3">
+            {detail.jenis_penilaian === 'progress_checkpoint_semester_1' && (
+              <Badge bg="warning" text="dark" className="mb-2">Progres Indikatif s.d. Semester I — bukan skor final tahunan</Badge>
+            )}
+            {detail.jenis_penilaian === 'annual_regulatory_final' && (
+              <Badge bg="success" className="mb-2">Skor Regulasi Tahunan B.1.3</Badge>
+            )}
             <Row className="gy-1">
               <Col md={4}><strong>Target Cadangan Beras:</strong> {detail.target_ton !== null && detail.target_ton !== undefined ? `${Number(detail.target_ton).toLocaleString('id-ID')} Ton` : '—'}</Col>
               <Col md={4}><strong>Saldo/Realisasi Semester:</strong> {detail.saldo_akhir !== null && detail.saldo_akhir !== undefined ? `${Number(detail.saldo_akhir).toLocaleString('id-ID')} Ton` : '—'}</Col>

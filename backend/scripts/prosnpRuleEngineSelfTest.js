@@ -303,6 +303,87 @@ test('INVALID SEMESTER B.1.2: semester tidak valid -> error eksplisit, TIDAK fal
   assert.throws(() => hitungB12([], { tahun: 2025, semester: 3, tanggal_mulai: '2025-01-01', tanggal_tenggat: '2025-07-31' }, evidenceLengkap));
 });
 
+console.log('=== B.1.2 — Final Regulatory Scoring Decision: frekuensi rata-rata bulanan (bukan .every() semua bulan) ===');
+// Sebar N rapat sah ke daftar bulan (1-6) scr round-robin — evidence lengkap, is_forkopimda, ada topik.
+function buatRapatSah(n, bulanList) {
+  const rapat = [];
+  for (let i = 0; i < n; i++) {
+    const bulan = bulanList[i % bulanList.length];
+    rapat.push({ id: i + 1, tanggal_rapat: `2025-${String(bulan).padStart(2, '0')}-15`, is_forkopimda: true, topik_pengadaan: true });
+  }
+  return rapat;
+}
+test('D. 0 rapat sah -> skor 0.00', () => {
+  const hasil = hitungB12([], SEMESTER1_2025, evidenceLengkap);
+  assert.strictEqual(hasil.detail.jumlah_rapat_sah, 0);
+  assert.strictEqual(hasil.detail.frekuensi_rata_rata_bulanan, 0);
+  assert.strictEqual(hasil.skor, 0.00);
+});
+test('E. 1 rapat sah -> skor 0.00', () => {
+  const hasil = hitungB12(buatRapatSah(1, [6]), SEMESTER1_2025, evidenceLengkap);
+  assert.strictEqual(hasil.detail.jumlah_rapat_sah, 1);
+  assert.strictEqual(hasil.skor, 0.00);
+});
+test('F. 5 rapat sah -> skor 0.00', () => {
+  const hasil = hitungB12(buatRapatSah(5, [1, 2, 3, 4, 5]), SEMESTER1_2025, evidenceLengkap);
+  assert.strictEqual(hasil.detail.jumlah_rapat_sah, 5);
+  assert.strictEqual(hasil.skor, 0.00);
+});
+test('G. 6 rapat sah (merata) -> rata-rata 1.00 -> skor 1.00', () => {
+  const hasil = hitungB12(buatRapatSah(6, [1, 2, 3, 4, 5, 6]), SEMESTER1_2025, evidenceLengkap);
+  assert.strictEqual(hasil.detail.frekuensi_rata_rata_bulanan, 1.00);
+  assert.strictEqual(hasil.skor, 1.00);
+});
+test('H. 11 rapat sah -> rata-rata 1.83 -> skor 1.00', () => {
+  const hasil = hitungB12(buatRapatSah(11, [1, 2, 3, 4, 5, 6]), SEMESTER1_2025, evidenceLengkap);
+  assert.strictEqual(hasil.detail.frekuensi_rata_rata_bulanan, 1.83);
+  assert.strictEqual(hasil.skor, 1.00);
+});
+test('I. 12 rapat sah (merata) -> rata-rata 2.00 -> skor 2.00', () => {
+  const hasil = hitungB12(buatRapatSah(12, [1, 2, 3, 4, 5, 6]), SEMESTER1_2025, evidenceLengkap);
+  assert.strictEqual(hasil.detail.frekuensi_rata_rata_bulanan, 2.00);
+  assert.strictEqual(hasil.skor, 2.00);
+});
+test('J. >12 rapat sah (13) -> skor tetap 2.00', () => {
+  const hasil = hitungB12(buatRapatSah(13, [1, 2, 3, 4, 5, 6]), SEMESTER1_2025, evidenceLengkap);
+  assert.strictEqual(hasil.skor, 2.00);
+});
+test('K. Distribusi TIDAK MERATA: 6 rapat sah terkonsentrasi di 3 bulan -> tetap skor 1.00 (bukan 0 spt model .every() lama)', () => {
+  const hasil = hitungB12(buatRapatSah(6, [2, 4, 6]), SEMESTER1_2025, evidenceLengkap);
+  assert.strictEqual(hasil.detail.jumlah_rapat_sah, 6);
+  assert.strictEqual(hasil.skor, 1.00);
+  assert.ok(hasil.detail.bulan_kosong.length > 0, 'bulan_kosong tetap terisi sbg fakta walau tidak lagi memaksa skor 0');
+});
+test('L. Distribusi TIDAK MERATA: 12 rapat sah terkonsentrasi di 2 bulan -> tetap skor 2.00', () => {
+  const hasil = hitungB12(buatRapatSah(12, [3, 5]), SEMESTER1_2025, evidenceLengkap);
+  assert.strictEqual(hasil.detail.jumlah_rapat_sah, 12);
+  assert.strictEqual(hasil.skor, 2.00);
+});
+test('M. Bulan kosong tetap tampil sbg FAKTA di hasil_faktual/bulan_kosong walau tidak menggerbang skor', () => {
+  const hasil = hitungB12(buatRapatSah(6, [1]), SEMESTER1_2025, evidenceLengkap);
+  assert.strictEqual(Object.keys(hasil.detail.hasil_faktual).length, 6, 'hasil_faktual tetap memuat 6 bulan');
+  assert.deepStrictEqual(hasil.detail.bulan_kosong, ['2025-02', '2025-03', '2025-04', '2025-05', '2025-06']);
+  assert.strictEqual(hasil.skor, 1.00, '6 rapat sah dlm 1 bulan tetap rata-rata 1.00/bulan -> skor 1.00, bulan kosong lain hanya fakta');
+});
+test('N. Rapat di luar periode/bukan Forkopimda TIDAK masuk numerator jumlah_rapat_sah', () => {
+  const rapat = [
+    { id: 1, tanggal_rapat: '2025-07-15', is_forkopimda: true, topik_pengadaan: true }, // di luar S1
+    { id: 2, tanggal_rapat: '2025-01-15', is_forkopimda: false, topik_pengadaan: true }, // bukan Forkopimda
+  ];
+  const hasil = hitungB12(rapat, SEMESTER1_2025, evidenceLengkap);
+  assert.strictEqual(hasil.detail.jumlah_rapat_sah, 0);
+});
+test('O. Rapat dgn evidence tidak valid TIDAK dihitung sah', () => {
+  const rapat = [{ id: 1, tanggal_rapat: '2025-01-15', is_forkopimda: true, topik_pengadaan: true }];
+  const hasil = hitungB12(rapat, SEMESTER1_2025, evidenceKurang);
+  assert.strictEqual(hasil.detail.jumlah_rapat_sah, 0);
+});
+test('alasan skor B.1.2 menyebut jumlah rapat, bulan evaluasi, dan frekuensi rata-rata (bukan lagi klaim "semua bulan")', () => {
+  const hasil = hitungB12(buatRapatSah(6, [1, 2, 3, 4, 5, 6]), SEMESTER1_2025, evidenceLengkap);
+  assert.ok(/6 rapat/.test(hasil.alasan) && /rata-rata/.test(hasil.alasan), hasil.alasan);
+  assert.ok(!/SEMUA bulan/i.test(hasil.detail.interpretasi_skor_internal));
+});
+
 console.log('=== B.1.3 — Neraca & Capaian Cadangan Pangan Beras ===');
 test('target nol/tidak ada ditolak (skor 0, tidak menghitung capaian)', () => {
   const hasil = hitungB13([], null, '2025-06-30', true, [], null);
@@ -351,34 +432,106 @@ test('rekonsiliasi perlu_rekonsiliasi tercermin di detail', () => {
   assert.strictEqual(hasil.detail.rekonsiliasi.status, 'perlu_rekonsiliasi');
 });
 
-console.log('=== B.1.4 — Inovasi dan Perkada (evidence-aware) ===');
-test('inovasi diterapkan + bukti implementasi + Perkada + dokumen => skor 2.00', () => {
+console.log('=== B.1.3 — Final Regulatory Scoring Decision: tier boundary presisi + Semester I progress vs Semester II annual final ===');
+const targetB13 = { target_ton: 1000, nomor_keputusan: 'X' };
+function b13Volume(v) { return [{ jenis_transaksi: 'saldo_awal', volume: v }]; }
+test('tier boundary 49.99% -> 0.00', () => {
+  assert.strictEqual(hitungB13(b13Volume(499.9), targetB13, '2025-06-30', true, [], null).skor, 0.00);
+});
+test('tier boundary tepat 50% -> 0.25', () => {
+  assert.strictEqual(hitungB13(b13Volume(500), targetB13, '2025-06-30', true, [], null).skor, 0.25);
+});
+test('tier boundary 89.x% -> 0.25', () => {
+  assert.strictEqual(hitungB13(b13Volume(895), targetB13, '2025-06-30', true, [], null).skor, 0.25);
+});
+test('tier boundary tepat 90% -> 1.25', () => {
+  assert.strictEqual(hitungB13(b13Volume(900), targetB13, '2025-06-30', true, [], null).skor, 1.25);
+});
+test('tier boundary 99.x% -> 1.25', () => {
+  assert.strictEqual(hitungB13(b13Volume(995), targetB13, '2025-06-30', true, [], null).skor, 1.25);
+});
+test('tier boundary tepat 100% -> 2.50', () => {
+  assert.strictEqual(hitungB13(b13Volume(1000), targetB13, '2025-06-30', true, [], null).skor, 2.50);
+});
+test('tier boundary >100% (150%) -> tetap 2.50', () => {
+  assert.strictEqual(hitungB13(b13Volume(1500), targetB13, '2025-06-30', true, [], null).skor, 2.50);
+});
+test('Semester I -> diklasifikasikan sbg progress checkpoint (BUKAN annual final), skor/tier TIDAK berubah', () => {
+  const hasil = hitungB13(b13Volume(500), targetB13, '2025-06-30', true, [], null, '1');
+  assert.strictEqual(hasil.skor, 0.25, 'tier tidak boleh berubah krn label semester');
+  assert.strictEqual(hasil.detail.jenis_penilaian, 'progress_checkpoint_semester_1');
+  assert.ok(/Progres Indikatif/.test(hasil.alasan));
+});
+test('Semester II/akhir tahun -> diklasifikasikan sbg annual regulatory final, skor/tier TIDAK berubah', () => {
+  const hasil = hitungB13(b13Volume(500), targetB13, '2025-12-01', true, [], null, '2');
+  assert.strictEqual(hasil.skor, 0.25, 'tier tidak boleh berubah krn label semester');
+  assert.strictEqual(hasil.detail.jenis_penilaian, 'annual_regulatory_final');
+  assert.ok(/Skor Regulasi Tahunan/.test(hasil.alasan));
+});
+test('semester tidak diberikan (backward compat, mis. dari test/caller lama) -> jenis_penilaian null, skor tetap sama', () => {
+  const hasil = hitungB13(b13Volume(500), targetB13, '2025-06-30', true, [], null);
+  assert.strictEqual(hasil.skor, 0.25);
+  assert.strictEqual(hasil.detail.jenis_penilaian, null);
+});
+test('target tahunan SAMA dipakai baik utk label Semester I maupun Semester II -> tidak dibagi otomatis', () => {
+  const s1 = hitungB13(b13Volume(500), targetB13, '2025-06-30', true, [], null, '1');
+  const s2 = hitungB13(b13Volume(500), targetB13, '2025-12-01', true, [], null, '2');
+  assert.strictEqual(s1.detail.target_ton, targetB13.target_ton);
+  assert.strictEqual(s2.detail.target_ton, targetB13.target_ton);
+  assert.strictEqual(s1.detail.target_ton, s2.detail.target_ton, 'target tahunan tidak boleh berbeda/dibagi antar semester');
+});
+test('target tidak tersedia -> perilaku aman tetap sama (skor 0, capaian_persen null) terlepas dari semester', () => {
+  const hasil = hitungB13([], null, '2025-06-30', true, [], null, '1');
+  assert.strictEqual(hasil.skor, 0);
+  assert.strictEqual(hasil.detail.capaian_persen, null);
+  assert.strictEqual(hasil.detail.jenis_penilaian, 'progress_checkpoint_semester_1', 'label tetap muncul walau target belum ada');
+});
+
+console.log('=== B.1.4 — Inovasi dan Perkada (Final Regulatory Scoring Decision — regulatory/internal separated) ===');
+test('A. tidak ada inovasi -> skor 0', () => {
+  const hasil = hitungB14([], () => false, () => false);
+  assert.strictEqual(hasil.skor, 0.00);
+});
+test('B. inovasi relevan, Perkada belum ada -> skor 1.00', () => {
+  const inovasi = [{ id: 1, nama_inovasi: 'Y', relevansi_pengelolaan: true, status_implementasi: 'gagasan', status_perkada: 'belum_ada' }];
+  const hasil = hitungB14(inovasi, () => false, () => false);
+  assert.strictEqual(hasil.skor, 1.00);
+});
+test('C. inovasi relevan + Perkada ditetapkan + dokumen valid -> skor 2.00', () => {
   const inovasi = [{ id: 1, nama_inovasi: 'X', relevansi_pengadaan: true, status_implementasi: 'diterapkan_penuh', status_perkada: 'ditetapkan' }];
   const hasil = hitungB14(inovasi, () => true, () => true);
   assert.strictEqual(hasil.skor, 2.00, hasil.alasan);
 });
-test('inovasi diterapkan + bukti implementasi, tanpa Perkada => skor 1.00', () => {
-  const inovasi = [{ id: 1, nama_inovasi: 'Y', relevansi_pengelolaan: true, status_implementasi: 'diterapkan_sebagian', status_perkada: 'belum_ada' }];
-  const hasil = hitungB14(inovasi, () => false, () => true);
-  assert.strictEqual(hasil.skor, 1.00);
+test('D. inovasi+Perkada valid, TANPA bukti implementasi -> regulatory score TETAP 2.00 (evidence implementasi tidak lagi menggerbang skor)', () => {
+  const inovasi = [{ id: 1, nama_inovasi: 'Y2', relevansi_pengelolaan: true, status_implementasi: 'gagasan', status_perkada: 'ditetapkan' }];
+  const hasil = hitungB14(inovasi, () => true, () => false);
+  assert.strictEqual(hasil.skor, 2.00, hasil.alasan);
+  assert.strictEqual(hasil.detail.inovasi[0].kelengkapan_internal.bukti_implementasi_ada, false, 'kelengkapan internal tetap tercatat tidak lengkap, terpisah dari skor');
 });
-test('diterapkan TAPI belum ada BUKTI_IMPLEMENTASI valid => skor 0 (status saja tidak cukup)', () => {
-  const inovasi = [{ id: 1, nama_inovasi: 'Y2', relevansi_pengelolaan: true, status_implementasi: 'diterapkan_penuh', status_perkada: 'belum_ada' }];
-  const hasil = hitungB14(inovasi, () => false, () => false);
-  assert.strictEqual(hasil.skor, 0.00, hasil.alasan);
-});
-test('gagasan belum diterapkan => skor 0', () => {
+test('E. inovasi relevan, tanpa Perkada, TANPA bukti implementasi -> regulatory score TETAP 1.00', () => {
   const inovasi = [{ id: 1, nama_inovasi: 'Z', relevansi_penyaluran: true, status_implementasi: 'gagasan', status_perkada: 'belum_ada' }];
-  const hasil = hitungB14(inovasi, () => false, () => true);
+  const hasil = hitungB14(inovasi, () => false, () => false);
+  assert.strictEqual(hasil.skor, 1.00);
+  assert.strictEqual(hasil.detail.inovasi[0].kelengkapan_internal.diterapkan, false);
+});
+test('F. bukti implementasi ADA tapi TIDAK ADA fakta regulatori (inovasi tidak relevan) -> TIDAK BOLEH memalsukan tier, tetap skor 0', () => {
+  const inovasi = [{ id: 1, nama_inovasi: 'V', relevansi_pengadaan: false, relevansi_pengelolaan: false, relevansi_penyaluran: false, status_implementasi: 'diterapkan_penuh', status_perkada: 'ditetapkan' }];
+  const hasil = hitungB14(inovasi, () => true, () => true);
   assert.strictEqual(hasil.skor, 0.00);
 });
-test('Perkada ditetapkan TANPA dokumen tidak menghasilkan skor penuh', () => {
+test('G. status kelengkapan internal independen dari skor regulasi (inovasi lengkap penuh tapi skor tetap ditentukan murni oleh inovasi+Perkada)', () => {
+  const inovasi = [{ id: 1, nama_inovasi: 'X', relevansi_pengadaan: true, status_implementasi: 'diterapkan_penuh', status_perkada: 'ditetapkan' }];
+  const hasil = hitungB14(inovasi, () => true, () => true);
+  assert.strictEqual(hasil.detail.inovasi[0].kelengkapan_internal.status, 'diimplementasikan_dengan_bukti');
+  assert.strictEqual(hasil.skor, 2.00);
+});
+test('Perkada ditetapkan TANPA dokumen valid -> skor tetap dibatasi 1.00 (dokumen Perkada tetap wajib membuktikan fakta regulatori "Perkada ada")', () => {
   const inovasi = [{ id: 1, nama_inovasi: 'W', relevansi_pengadaan: true, status_implementasi: 'diterapkan_penuh', status_perkada: 'ditetapkan' }];
   const hasil = hitungB14(inovasi, () => false, () => true);
-  assert.strictEqual(hasil.skor, 1.00, 'Perkada tanpa dokumen harus dibatasi skor 1.00, bukan 2.00');
+  assert.strictEqual(hasil.skor, 1.00, 'Perkada tanpa dokumen valid harus dibatasi skor 1.00, bukan 2.00 — ini pembuktian fakta regulatori, bukan gerbang kualitas internal');
 });
-test('inovasi tidak relevan dengan objek ProSN ditolak (skor 0)', () => {
-  const inovasi = [{ id: 1, nama_inovasi: 'V', relevansi_pengadaan: false, relevansi_pengelolaan: false, relevansi_penyaluran: false, status_implementasi: 'diterapkan_penuh', status_perkada: 'ditetapkan' }];
+test('inovasi tidak relevan dengan objek ProSN ditolak (skor 0) meski Perkada & implementasi lengkap', () => {
+  const inovasi = [{ id: 1, nama_inovasi: 'V2', relevansi_pengadaan: false, relevansi_pengelolaan: false, relevansi_penyaluran: false, status_implementasi: 'diterapkan_penuh', status_perkada: 'ditetapkan' }];
   const hasil = hitungB14(inovasi, () => true, () => true);
   assert.strictEqual(hasil.skor, 0.00);
 });

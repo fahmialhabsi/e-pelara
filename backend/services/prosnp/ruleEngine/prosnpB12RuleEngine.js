@@ -8,10 +8,23 @@
  * DAFTAR_HADIR + NOTULEN yang terikat LANGSUNG (entity_type/entity_id) ke
  * rapat tsb (lihat prosnpEvidenceGateService.rapatMemilikiBuktiLengkap).
  *
- * Skor:
- *   2,00 = setiap bulan kalender dalam periode punya >=2 rapat sah
- *   1,00 = setiap bulan kalender dalam periode punya >=1 rapat sah
- *   0,00 = ada bulan tanpa rapat sah sama sekali
+ * Corrective Pass "B.1.2 Regulatory Conformance" (Final Regulatory Scoring
+ * Decision, disahkan Project Owner 10 Agustus 2026) — redaksi Kepmendagri
+ * 700.1.1.4-180/2026 TIDAK memuat kata "setiap"/kuantifier universal utk
+ * B.1.2 (berbeda dari B.1.1 yang memuatnya), dan tier skor 0 memakai
+ * denominator "6 (enam) bulan" (bukan "1 bulan") — mengindikasikan model
+ * FREKUENSI RATA-RATA BULANAN SELAMA SATU SEMESTER, bukan gerbang independen
+ * per-bulan. Model `.every()` (semua bulan harus memenuhi ambang) yang
+ * dipakai SEBELUMNYA terbukti over-strict dan sudah DIHAPUS.
+ *
+ * Skor (final):
+ *   frekuensi_rata_rata_bulanan = jumlah_rapat_sah / jumlah_bulan_evaluasi (6)
+ *   >= 2  => 2,00
+ *   >= 1 dan < 2 => 1,00
+ *   < 1   => 0,00
+ * Satu/beberapa bulan kosong TIDAK LAGI otomatis memaksa skor 0 — distribusi
+ * bulanan faktual (`hasil_faktual`, `bulan_kosong`) tetap dihasilkan sbg FAKTA
+ * transparansi, terpisah dari penentuan skor.
  *
  * Corrective Pass "B.1.2 Semester Evaluation Window" — cakupan bulan
  * penilaian kinerja diturunkan dari `periode.tahun` + `periode.semester`
@@ -97,19 +110,25 @@ function hitungB12(rapatList, periode, evidenceCheck) {
   }
 
   const bulanKosong = [...perBulan.entries()].filter(([, v]) => v.sah === 0).map(([bulan]) => bulan);
-  const semuaMin2 = [...perBulan.values()].every((v) => v.sah >= 2);
-  const semuaMin1 = [...perBulan.values()].every((v) => v.sah >= 1);
+  const jumlahBulanEvaluasi = perBulan.size;
+  // Perbandingan tier memakai nilai EKSAK (bukan yg sudah dibulatkan) agar
+  // tidak ada bug pembulatan di batas tier (mis. 11/6=1.8333 harus tegas <2).
+  const frekuensiEksak = jumlahBulanEvaluasi > 0 ? sah.length / jumlahBulanEvaluasi : 0;
+  const frekuensiRataRataBulanan = Math.round(frekuensiEksak * 100) / 100;
 
   let skor;
   let alasanSkor;
-  if (perBulan.size === 0) {
+  if (jumlahBulanEvaluasi === 0) {
     skor = 0; alasanSkor = 'Rentang periode tidak valid.';
-  } else if (semuaMin2) {
-    skor = 2.00; alasanSkor = 'Setiap bulan dalam periode memiliki minimal 2 rapat Forkopimda sah (evidence per-rapat lengkap).';
-  } else if (semuaMin1) {
-    skor = 1.00; alasanSkor = 'Setiap bulan dalam periode memiliki minimal 1 rapat Forkopimda sah, belum konsisten 2x/bulan.';
+  } else if (frekuensiEksak >= 2) {
+    skor = 2.00;
+    alasanSkor = `Terdapat ${sah.length} rapat Forkopimda sah dalam ${jumlahBulanEvaluasi} bulan evaluasi, setara rata-rata ${frekuensiRataRataBulanan.toFixed(2)} rapat per bulan (>= 2 kali/bulan).`;
+  } else if (frekuensiEksak >= 1) {
+    skor = 1.00;
+    alasanSkor = `Terdapat ${sah.length} rapat Forkopimda sah dalam ${jumlahBulanEvaluasi} bulan evaluasi, setara rata-rata ${frekuensiRataRataBulanan.toFixed(2)} rapat per bulan (>= 1 dan < 2 kali/bulan).`;
   } else {
-    skor = 0.00; alasanSkor = `Terdapat bulan tanpa rapat Forkopimda sah: ${bulanKosong.join(', ')}.`;
+    skor = 0.00;
+    alasanSkor = `Terdapat ${sah.length} rapat Forkopimda sah dalam ${jumlahBulanEvaluasi} bulan evaluasi, setara rata-rata ${frekuensiRataRataBulanan.toFixed(2)} rapat per bulan (< 1 kali/bulan, ambang batas terendah menurut redaksi "hanya 1 kali dalam 6 bulan").`;
   }
 
   return {
@@ -118,10 +137,14 @@ function hitungB12(rapatList, periode, evidenceCheck) {
     detail: {
       jumlah_rapat_sah: sah.length,
       jumlah_rapat_tidak_sah: ditolak.length,
+      jumlah_bulan_evaluasi: jumlahBulanEvaluasi,
+      frekuensi_rata_rata_bulanan: frekuensiRataRataBulanan,
       hasil_faktual: Object.fromEntries([...perBulan.entries()].map(([bulan, v]) => [bulan, { jumlah_rapat_total: v.total, jumlah_rapat_sah: v.sah, jumlah_rapat_ditolak: v.ditolak, alasan_penolakan: v.alasan_penolakan }])),
       interpretasi_skor_internal:
-        'Redaksi Kepmendagri dapat ditafsirkan lebih dari satu cara. Interpretasi internal: skor 2,00 mensyaratkan SEMUA bulan ' +
-        'dalam periode (bukan hanya rata-rata) punya >=2 rapat sah; skor 1,00 bila semua bulan >=1; skor 0 bila ada satu saja bulan kosong.',
+        'Final Regulatory Scoring Decision (disahkan Project Owner 10 Agustus 2026): skor B.1.2 dihitung dari frekuensi rata-rata ' +
+        'rapat Forkopimda sah per bulan selama satu semester (jumlah rapat sah dibagi jumlah bulan evaluasi) — >=2/bulan -> 2,00; ' +
+        '>=1 dan <2/bulan -> 1,00; <1/bulan -> 0,00. Satu/beberapa bulan kosong TIDAK otomatis memaksa skor 0 — lihat bulan_kosong ' +
+        'di bawah sbg fakta distribusi, terpisah dari penentuan skor.',
       bulan_kosong: bulanKosong,
       rapat_tidak_sah: ditolak,
     },
