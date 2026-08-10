@@ -92,12 +92,19 @@ async function ocrImage(buffer) {
 }
 
 /**
- * §9 kontrak: mengembalikan { text, method, warnings, extractFailed, code }
- * dan MENYIMPAN cache ke `ProsnBuktiDukung` bila berhasil (idempotent —
- * analisis ulang menimpa cache, tidak menambah baris).
+ * Corrective "Evidence & Operasi Pangan Phase 0" (mandat §25) — inti logika
+ * ekstraksi (§9 kontrak asli) diekstrak jadi fungsi murni TANPA DB write,
+ * agar dapat dipakai ulang oleh modul lain (FoodOps) yang menyimpan file di
+ * tabel BUKAN `prosnp_bukti_dukung`. TIDAK ADA perubahan logika/algoritma
+ * satu baris pun — murni pemindahan body `extractTextFromBukti` ke sini,
+ * dengan parameter `{ file_path, mime_type }` menggantikan objek `bukti`.
+ * `extractTextFromBukti` di bawah menjadi wrapper tipis yang memanggil ini
+ * lalu melakukan DB write yang SAMA PERSIS seperti sebelumnya — perilaku
+ * ProSN 100% tidak berubah (dibuktikan regresi Fase3/Fase4/Fase5/Real
+ * Evidence tetap hijau).
  */
-async function extractTextFromBukti(bukti, transaction) {
-  const mime = bukti.mime_type;
+async function extractTextFromFile({ file_path: filePath, mime_type: mimeType }) {
+  const mime = mimeType;
   const warnings = [];
   let text = '';
   let method = null;
@@ -105,7 +112,7 @@ async function extractTextFromBukti(bukti, transaction) {
   let docxStructure = null;
 
   if (mime === 'application/pdf') {
-    const buffer = fs.readFileSync(bukti.file_path);
+    const buffer = fs.readFileSync(filePath);
     try {
       const parsed = await pdfParse(buffer);
       const trimmedLen = parsed.text ? parsed.text.trim().length : 0;
@@ -133,7 +140,7 @@ async function extractTextFromBukti(bukti, transaction) {
     }
   } else if (mime === 'image/jpeg' || mime === 'image/png') {
     try {
-      const buffer = fs.readFileSync(bukti.file_path);
+      const buffer = fs.readFileSync(filePath);
       text = await ocrImage(buffer);
       method = 'ocr_image';
     } catch (error) {
@@ -141,7 +148,7 @@ async function extractTextFromBukti(bukti, transaction) {
     }
   } else if (mime === DOCX_MIME) {
     try {
-      const buffer = fs.readFileSync(bukti.file_path);
+      const buffer = fs.readFileSync(filePath);
       const docxResult = await extractDocxRawText(buffer);
       if (docxResult.text) {
         text = docxResult.text;
@@ -186,12 +193,26 @@ async function extractTextFromBukti(bukti, transaction) {
     return { text: '', method, warnings: warnings.length ? warnings : ['Teks tidak terbaca sama sekali dari berkas ini.'], extractFailed: true, code: 'EXTRACT_FAILED' };
   }
 
-  await db.ProsnBuktiDukung.update(
-    { extracted_text_cache: text, extracted_at: new Date(), extraction_method: method },
-    { where: { id: bukti.id }, transaction },
-  );
-
   return { text, method, warnings, extractFailed: false, code: partialExtraction ? 'PARTIAL_EXTRACTION' : null, docx_structure: docxStructure };
 }
 
-module.exports = { extractTextFromBukti, TEXT_LAYER_MIN_CHARS };
+/**
+ * §9 kontrak asli ProSN: mengembalikan { text, method, warnings, extractFailed, code }
+ * dan MENYIMPAN cache ke `ProsnBuktiDukung` bila berhasil (idempotent —
+ * analisis ulang menimpa cache, tidak menambah baris). Perilaku IDENTIK
+ * dengan sebelum refactor — hanya inti logika kini didelegasikan ke
+ * `extractTextFromFile` (lihat komentar di atasnya).
+ */
+async function extractTextFromBukti(bukti, transaction) {
+  const result = await extractTextFromFile({ file_path: bukti.file_path, mime_type: bukti.mime_type });
+  if (result.extractFailed) return result;
+
+  await db.ProsnBuktiDukung.update(
+    { extracted_text_cache: result.text, extracted_at: new Date(), extraction_method: result.method },
+    { where: { id: bukti.id }, transaction },
+  );
+
+  return result;
+}
+
+module.exports = { extractTextFromBukti, extractTextFromFile, TEXT_LAYER_MIN_CHARS };

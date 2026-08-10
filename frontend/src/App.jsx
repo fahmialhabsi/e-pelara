@@ -66,6 +66,7 @@ import mrRoutes from './routes/mrRoutes';
 import sdiRoutes from './routes/sdiRoutes';
 import renjaDataPendukungRoutes from './routes/renjaDataPendukungRoutes';
 import prosnpRoutes from './routes/prosnpRoutes';
+import foodOperationsRoutes from './routes/foodOperationsRoutes';
 const TenantManagementPage = React.lazy(() => import('./admin/TenantManagementPage'));
 const SubscriptionAdminPage = React.lazy(() => import('./admin/SubscriptionAdminPage'));
 const PricingPage = React.lazy(() => import('./pages/PricingPage'));
@@ -650,6 +651,7 @@ function InnerApp() {
               ...sdiRoutes,
               ...renjaDataPendukungRoutes,
               ...prosnpRoutes,
+              ...foodOperationsRoutes,
             ].map(
               ({ path, element, role }, index) => (
                 <Route

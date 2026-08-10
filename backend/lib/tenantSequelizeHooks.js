@@ -27,6 +27,10 @@ const TENANTED_MODEL_NAMES = [
   "ProsnPemeriksaan",
   "ProsnRiwayatStatus",
   "ProsnArsip",
+  "FoodOpsDocument",
+  "FoodOpsRegulationMeta",
+  "FoodOpsDocumentLink",
+  "FoodOpsEvent",
 ];
 
 function mergeTenantWhere(where, tenantId) {

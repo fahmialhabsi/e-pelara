@@ -91,6 +91,7 @@ const menuItems = [
   },
   { label: 'LAKIP', icon: <DashboardIcon />, path: '/dashboard-lakip' },
   { label: 'ProSN', icon: <FactCheckIcon />, path: '/prosnp/periode' },
+  { label: 'Evidence & Operasi Pangan', icon: <FolderIcon />, path: '/food-operations/dashboard' },
   { label: 'LK — Dashboard', icon: <DashboardIcon />, path: '/lk/dashboard' },
   { label: 'LK — LAK', icon: <DashboardIcon />, path: '/lk/lak' },
   { label: 'LK — CALK', icon: <DashboardIcon />, path: '/lk/calk' },

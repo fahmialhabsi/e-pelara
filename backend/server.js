@@ -369,6 +369,11 @@ const renjaRecallRoutes = require('./routes/renjaRecallRoutes');
 const renjaTabelCRoutes = require('./routes/renjaTabelCRoutes');
 const prosnpRoutes = require('./routes/prosnpRoutes');
 
+// USE EVIDENCE & OPERASI PANGAN (FOOD OPERATIONS) — Phase 0 Foundation
+const foodOpsDocumentRoutes = require('./routes/foodOpsDocumentRoutes');
+const foodOpsRegulationRoutes = require('./routes/foodOpsRegulationRoutes');
+const foodOpsEventRoutes = require('./routes/foodOpsEventRoutes');
+
 // USE RKA
 const rkaRoutes = require('./routes/rkaRoutes');
 const tapdRoutes = require('./routes/tapdRoutes');
@@ -571,6 +576,11 @@ app.use('/api/renja-inovasi-bidang-urusan', renjaInovasiBidangUrusanRoutes);
 app.use('/api/renja-recall', renjaRecallRoutes);
 app.use('/api/permendagri14/tabel-c', renjaTabelCRoutes);
 app.use('/api/prosnp', prosnpRoutes);
+
+// USE EVIDENCE & OPERASI PANGAN (FOOD OPERATIONS) — Phase 0 Foundation
+app.use('/api/food-operations', foodOpsDocumentRoutes);
+app.use('/api/food-operations', foodOpsRegulationRoutes);
+app.use('/api/food-operations', foodOpsEventRoutes);
 
 // Audit konsistensi perencanaan (domain v2)
 app.use('/api/audit', auditPlanningRoutes);
