@@ -226,6 +226,12 @@ export async function hitungUlangProsnSkor(pengisianId) {
   return response.data?.data;
 }
 
+// ── Internal Field Autofill (Sumber Data/Hambatan/Tindak Lanjut) — saran, tidak menulis DB ──
+export async function previewProsnInternalAutofill(pengisianId) {
+  const response = await api.post(`/prosnp/pengisian/${pengisianId}/internal-autofill-preview`);
+  return response.data?.data;
+}
+
 // ── Aksi periode ──
 export async function siapkanEksporProsnPeriode(id) {
   const response = await api.post(`/prosnp/periode/${id}/siap-ekspor`);

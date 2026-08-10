@@ -15,6 +15,7 @@ import {
   transitionProsnPengisian,
   updateProsnPengisian,
 } from '../services/prosnpApi';
+import ProsnInternalAutofillSuggestion from '../components/ProsnInternalAutofillSuggestion';
 import PenugasanKdhSection from '../components/PenugasanKdhSection';
 import KoordinasiForkopimdaSection from '../components/KoordinasiForkopimdaSection';
 import CadanganPanganBerasSection from '../components/CadanganPanganBerasSection';
@@ -885,6 +886,23 @@ export default function ProsnPeriodeDetailPage() {
               <div className="small text-uppercase text-muted mb-2">
                 Catatan Internal (bukan fakta utama indikator)
               </div>
+              {editable && KETAHANAN_PANGAN_TIPE_FORM_BARU.includes(indikator.tipe_form) && (
+                <ProsnInternalAutofillSuggestion
+                  pengisianId={form.pengisianId}
+                  hasExistingContent={() => Boolean(
+                    (form.sumber_data && form.sumber_data.trim())
+                    || (form.hambatan && form.hambatan.trim())
+                    || (form.tindak_lanjut && form.tindak_lanjut.trim()),
+                  )}
+                  onApply={(result) => {
+                    setField(indikator.id, 'sumber_data', result.sumber_data || '');
+                    setField(indikator.id, 'hambatan', result.hambatan || '');
+                    setField(indikator.id, 'hambatan_kategori_id', result.kategori_hambatan_id ?? '');
+                    setField(indikator.id, 'tindak_lanjut', result.tindak_lanjut || '');
+                    setField(indikator.id, 'tindak_lanjut_kategori_id', result.kategori_tindak_lanjut_id ?? '');
+                  }}
+                />
+              )}
               <Row>
                 {!KETAHANAN_PANGAN_TIPE_FORM_BARU.includes(indikator.tipe_form) && (
                   <Col md={4}>

@@ -23,6 +23,7 @@ const ownershipService = require('../services/prosnp/prosnpIndikatorOwnershipSer
 const masterIndikatorService = require('../services/prosnp/prosnpMasterIndikatorService');
 const evidenceRebindService = require('../services/prosnp/prosnpEvidenceRebindService');
 const autofillOrchestrator = require('../services/prosnp/autofill/prosnpAutoFillOrchestrator');
+const internalFieldAutofillService = require('../services/prosnp/prosnpInternalFieldAutofillService');
 
 const ok = (res, data, status = 200) => res.status(status).json({ success: true, data, meta: {} });
 const fail = (res, error) => {
@@ -89,6 +90,9 @@ async function deleteInovasi(req, res) { try { await inovasiService.remove(Numbe
 
 // ── Rule Engine ──
 async function hitungUlangSkor(req, res) { try { return ok(res, await ruleEngineService.hitungUlang(Number(req.params.pengisianId), req.tenantId)); } catch (e) { return fail(res, e); } }
+
+// ── Internal Field Autofill (Sumber Data/Hambatan/Tindak Lanjut) — READ-ONLY, tidak menulis DB ──
+async function previewInternalAutofill(req, res) { try { return ok(res, await internalFieldAutofillService.previewInternalAutofill(Number(req.params.pengisianId), req.tenantId)); } catch (e) { return fail(res, e); } }
 
 // ── MBG 2.1 Satgas ──
 async function getSatgasMbg(req, res) { try { return ok(res, await mbgSatgasService.getByPengisian(Number(req.params.pengisianId), req.tenantId)); } catch (e) { return fail(res, e); } }
@@ -195,7 +199,7 @@ module.exports = {
   listCadanganTarget, createCadanganTarget, updateCadanganTarget, refreshCadanganTargetSnapshot,
   listStokTransaksi, createStokTransaksi, updateStokTransaksi, deleteStokTransaksi,
   listInovasi, createInovasi, updateInovasi, deleteInovasi,
-  hitungUlangSkor, listMasterIndikator, listNomenklaturMapping, listKomoditas,
+  hitungUlangSkor, previewInternalAutofill, listMasterIndikator, listNomenklaturMapping, listKomoditas,
   setAlasanRekonsiliasi, getNeracaTahunan,
   listDpaSourceTahun, listDpaSourceOpd, listDpaSourceProgram, listDpaSourceKegiatan, listDpaSourceSubKegiatan,
   getSatgasMbg, createSatgasMbg, updateSatgasMbg,

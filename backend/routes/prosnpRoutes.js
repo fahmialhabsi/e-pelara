@@ -90,6 +90,9 @@ router.delete('/inovasi/:id', verifyToken, allowRoles(WRITE), b1x.deleteInovasi)
 // ── Rule Engine ──
 router.post('/pengisian/:pengisianId/hitung-ulang', verifyToken, allowRoles(READ), b1x.hitungUlangSkor);
 
+// ── Internal Field Autofill (Sumber Data/Hambatan/Tindak Lanjut) — saran, READ-ONLY, tidak menulis DB ──
+router.post('/pengisian/:pengisianId/internal-autofill-preview', verifyToken, allowRoles(READ), b1x.previewInternalAutofill);
+
 // ── Rekonsiliasi Semester B.1.3 ──
 router.post('/pengisian/:pengisianId/rekonsiliasi-alasan', verifyToken, allowRoles(WRITE), b1x.setAlasanRekonsiliasi);
 router.get('/periode/:id/neraca-tahunan', verifyToken, allowRoles(READ), b1x.getNeracaTahunan);
