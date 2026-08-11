@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasValidBuktiEntityIdentity, classifyDiscoveryState } from "./EntityBuktiManager";
+import { hasValidBuktiEntityIdentity, classifyDiscoveryState, buildEvidenceDiscoveryCriteria } from "./EntityBuktiManager";
 
 describe("hasValidBuktiEntityIdentity (UI Evidence Counter Refresh — Identifier Guard §5)", () => {
   it("valid utk entityType spesifik dengan entityId numerik (B.1.1 SURAT_PENUGASAN)", () => {
@@ -55,5 +55,59 @@ describe("classifyDiscoveryState (Corrective B.1.3 Registry-First Evidence Disco
 
   it("NOT_FOUND bila tidak ada kandidat sama sekali", () => {
     expect(classifyDiscoveryState({ hasBoundEvidence: false, candidatesReady: true, candidates: [] })).toBe("NOT_FOUND");
+  });
+
+  it("F8 — kandidat tunggal STRONG (kredibel tapi belum EXACT) tetap diperlakukan sbg ONE_EXACT, bukan dinaikkan diam-diam jadi state lain", () => {
+    expect(classifyDiscoveryState({ hasBoundEvidence: false, candidatesReady: true, candidates: [{ relevance: "STRONG" }] })).toBe("ONE_EXACT");
+  });
+});
+
+describe("buildEvidenceDiscoveryCriteria (Corrective B.1.3 Semantic-Safe Candidate Ranking + Berita Acara False-NOT_FOUND Fix)", () => {
+  it("F1 — B.1.3/STOK_TRANSAKSI: document_type TIDAK dikirim (undefined) walau kategori punya padanan legacy (berita_acara)", () => {
+    const criteria = buildEvidenceDiscoveryCriteria({
+      entityType: "STOK_TRANSAKSI", entityId: 214, kategori: "berita_acara",
+      entityJenisTransaksi: "penyaluran", entityBusinessDate: "2025-04-05",
+    });
+    expect(criteria.document_type).toBeUndefined();
+    expect(criteria.kategori_prosn).toBe("berita_acara");
+  });
+
+  it("F2 — B.1.3/STOK_TRANSAKSI: document_type tetap undefined utk kategori lain juga (dokumen_penetapan), bukan hanya berita_acara", () => {
+    const criteria = buildEvidenceDiscoveryCriteria({
+      entityType: "STOK_TRANSAKSI", entityId: 213, kategori: "dokumen_penetapan",
+      entityJenisTransaksi: "saldo_awal", entityBusinessDate: "2025-01-01",
+    });
+    expect(criteria.document_type).toBeUndefined();
+  });
+
+  it("F3 — B.1.3/STOK_TRANSAKSI: kategori_prosn, jenis_transaksi, dan entity_business_date tetap terkirim apa adanya (tidak hilang krn fix ini)", () => {
+    const criteria = buildEvidenceDiscoveryCriteria({
+      entityType: "STOK_TRANSAKSI", entityId: 214, kategori: "dokumen_penyaluran",
+      entityJenisTransaksi: "penyaluran", entityBusinessDate: "2025-04-05",
+    });
+    expect(criteria).toMatchObject({
+      entity_type: "STOK_TRANSAKSI", entity_id: 214, kategori_prosn: "dokumen_penyaluran",
+      jenis_transaksi: "penyaluran", entity_business_date: "2025-04-05",
+    });
+  });
+
+  it("F4 — legacy consumer preservation: entityType SURAT_PENUGASAN (B.1.1) TETAP mengirim document_type legacy seperti sebelum fix", () => {
+    const criteria = buildEvidenceDiscoveryCriteria({ entityType: "SURAT_PENUGASAN", entityId: 96, kategori: "surat_penugasan" });
+    expect(criteria.document_type).toBe("surat_tugas");
+  });
+
+  it("F5 — legacy consumer preservation: entityType RAPAT (B.1.2) TETAP mengirim document_type legacy utk berita_acara (perilaku existing tidak berubah)", () => {
+    const criteria = buildEvidenceDiscoveryCriteria({ entityType: "RAPAT", entityId: 5, kategori: "berita_acara" });
+    expect(criteria.document_type).toBe("berita_acara");
+  });
+
+  it("F6 — legacy consumer: kategori tanpa padanan legacy (mis. dokumen_koreksi) tetap menghasilkan document_type undefined utk entityType non-STOK_TRANSAKSI (perilaku existing, bukan efek fix ini)", () => {
+    const criteria = buildEvidenceDiscoveryCriteria({ entityType: "SURAT_PENUGASAN", entityId: 96, kategori: "dokumen_koreksi" });
+    expect(criteria.document_type).toBeUndefined();
+  });
+
+  it("F7 — entity_id diteruskan apa adanya (termasuk 0, bukan di-drop krn falsy)", () => {
+    const criteria = buildEvidenceDiscoveryCriteria({ entityType: "STOK_TRANSAKSI", entityId: 0, kategori: "berita_acara" });
+    expect(criteria.entity_id).toBe(0);
   });
 });

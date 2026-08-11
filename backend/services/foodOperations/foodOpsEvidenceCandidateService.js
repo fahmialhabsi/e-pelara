@@ -58,6 +58,32 @@ function yearOf(dateValue) {
 }
 
 /**
+ * Corrective "B.1.3 Semantic-Safe Candidate Ranking" — model relevansi MURNI
+ * (tanpa akses DB, testable langsung), memisahkan TIGA dimensi independen
+ * (mandat §1/§2):
+ *  - identityMatch: checksum ATAU sudah tertaut eksplisit ke entity/record ini
+ *    — status IDENTITAS, bukan rekomendasi, SELALU EXACT (tidak berubah).
+ *  - semanticMatch: document_type tersimpan cocok dgn kategori/type yang
+ *    diminta. document_type='other' (data legacy) TIDAK PERNAH dihitung
+ *    sbg cocok — genuinely unknown, bukan dianggap salah ATAU benar diam-diam.
+ *  - businessContextMatch: dokumen tertaut ke FoodOps Event yang tanggalnya
+ *    persis sama dgn transaksi (konteks bisnis sama).
+ * Invarian wajib (mandat §4): businessContextMatch=true DENGAN
+ * semanticMatch=false/unknown TIDAK PERNAH menghasilkan EXACT — hanya STRONG.
+ * Konteks bisnis semata (termasuk kategori dgn mapping kosong spt
+ * dokumen_koreksi, dimana semanticMatch SELALU false) tidak pernah cukup utk
+ * EXACT sendirian (mandat §3).
+ */
+function deriveRelevance({ identityMatch, semanticMatch, businessContextMatch, yearMatches, predatesMatch }) {
+  if (identityMatch) return RELEVANCE.EXACT;
+  if (businessContextMatch && semanticMatch) return RELEVANCE.EXACT;
+  if (businessContextMatch) return RELEVANCE.STRONG;
+  if (semanticMatch && yearMatches) return RELEVANCE.STRONG;
+  if (semanticMatch || yearMatches || predatesMatch) return RELEVANCE.POSSIBLE;
+  return null;
+}
+
+/**
  * Resolusi konteks bisnis (mandat §7/§8) — cari SATU FoodOpsEvent yang secara
  * deterministik mewakili kejadian bisnis yang sama dgn transaksi ini: tenant
  * sama + event_type padanan jenis_transaksi + tanggal_mulai PERSIS SAMA dgn
@@ -146,51 +172,47 @@ async function findCandidates(tenantId, criteria = {}) {
   const results = candidates
     .map((doc) => {
       const reasons = [];
-      let relevance = null;
       let contextEventInfo = null;
 
       const isAlreadyBound = alreadyLinkedIds.has(doc.id);
-      if (checksum && doc.checksum_sha256 === checksum) {
-        relevance = RELEVANCE.EXACT;
-        reasons.push('Checksum berkas identik — kemungkinan besar dokumen yang sama persis.');
-      }
-      if (isAlreadyBound) {
-        relevance = RELEVANCE.EXACT;
-        reasons.push('Sudah tertaut ke entitas ini sebelumnya.');
-      }
-      if (!relevance && contextEvent && contextLinkedIds.has(doc.id)) {
-        relevance = RELEVANCE.EXACT;
-        reasons.push(`Tertaut ke kegiatan "${contextEvent.nama_kegiatan}" yang tanggalnya persis sama dgn transaksi ini (${contextEvent.tanggal_mulai}) — konteks bisnis yang sama.`);
-        contextEventInfo = { event_id: contextEvent.id, nama_kegiatan: contextEvent.nama_kegiatan, tanggal_mulai: contextEvent.tanggal_mulai };
-      }
+      const checksumMatch = Boolean(checksum && doc.checksum_sha256 === checksum);
+      const identityMatch = isAlreadyBound || checksumMatch;
 
       const docYear = yearOf(doc.tanggal_dokumen);
-      const yearMatches = tahun && docYear && String(tahun) === docYear;
-      const typeMatchesExplicit = documentType && doc.document_type === documentType;
-      const typeMatchesKategori = kategoriTypes.includes(doc.document_type);
-      const typeMatches = typeMatchesExplicit || typeMatchesKategori;
-      if (!relevance) {
-        if (typeMatches && yearMatches) {
-          relevance = RELEVANCE.STRONG;
-          reasons.push(`Jenis dokumen (${doc.document_type}) dan tahun (${docYear}) cocok dengan yang diharapkan.`);
-        } else if (typeMatches) {
-          relevance = RELEVANCE.POSSIBLE;
-          reasons.push(`Jenis dokumen (${doc.document_type}) cocok, tahun belum tentu sama.`);
-        } else if (yearMatches) {
-          relevance = RELEVANCE.POSSIBLE;
-          reasons.push(`Tahun dokumen (${docYear}) cocok, jenis dokumen belum tentu sesuai.`);
-        }
-      }
-      // Sinyal tambahan (mandat §6.A/§17 CASE 1): dokumen kelas penetapan/regulasi
-      // yang berlaku SEBELUM/PADA tanggal transaksi yang dijustifikasinya (mis.
-      // PKS 2024-12-14 mendasari saldo_awal 2025-01-01) — TIDAK bergantung pada
-      // document_type (banyak dokumen nyata ber-type 'other'), SENGAJA hanya
-      // POSSIBLE (bukan STRONG/EXACT) krn kelas dokumen saja bukan bukti kuat.
-      if (!relevance && bolehBerlakuSebelum && KELAS_DOKUMEN_PENETAPAN.has(doc.document_class) && doc.tanggal_dokumen && doc.tanggal_dokumen <= entityBusinessDate) {
-        relevance = RELEVANCE.POSSIBLE;
+      const yearMatches = Boolean(tahun && docYear && String(tahun) === docYear);
+      const typeMatchesExplicit = Boolean(documentType && doc.document_type === documentType);
+      // document_type='other' TIDAK PERNAH dihitung sbg cocok secara semantik —
+      // banyak dokumen legacy nyata ber-type 'other' terlepas dari isinya
+      // (mandat §5 "do not silently infer/write a canonical type"); kategoriTypes
+      // kosong (mis. dokumen_koreksi) membuat .includes() SELALU false, sesuai
+      // maksud (mandat §3 "empty mapping must not grant context-only EXACT").
+      const semanticMatch = typeMatchesExplicit || kategoriTypes.includes(doc.document_type);
+      const businessContextMatch = Boolean(contextEvent && contextLinkedIds.has(doc.id));
+      const predatesMatch = Boolean(bolehBerlakuSebelum && KELAS_DOKUMEN_PENETAPAN.has(doc.document_class) && doc.tanggal_dokumen && doc.tanggal_dokumen <= entityBusinessDate);
+
+      const relevance = deriveRelevance({ identityMatch, semanticMatch, businessContextMatch, yearMatches, predatesMatch });
+      if (!relevance) return null;
+
+      if (businessContextMatch) contextEventInfo = { event_id: contextEvent.id, nama_kegiatan: contextEvent.nama_kegiatan, tanggal_mulai: contextEvent.tanggal_mulai };
+
+      // Reasons dibangun mengikuti sinyal MANA yang benar-benar berkontribusi ke
+      // relevance akhir (mandat §10 "reasons jelas membedakan identity dari
+      // rekomendasi semantik+konteks") — bukan lagi first-match-wins tunggal.
+      if (checksumMatch) reasons.push('Checksum berkas identik — kemungkinan besar dokumen yang sama persis.');
+      if (isAlreadyBound) reasons.push('Sudah tertaut ke entitas ini sebelumnya.');
+      if (businessContextMatch && semanticMatch) {
+        reasons.push(`Tertaut ke kegiatan "${contextEvent.nama_kegiatan}" (${contextEvent.tanggal_mulai}) DAN jenis dokumen (${doc.document_type}) cocok dgn kategori yang diminta — konteks bisnis maupun semantik sama-sama cocok.`);
+      } else if (businessContextMatch) {
+        reasons.push(`Tertaut ke kegiatan "${contextEvent.nama_kegiatan}" yang tanggalnya persis sama dgn transaksi ini (${contextEvent.tanggal_mulai}) — konteks bisnis cocok, TAPI jenis dokumen tersimpan (${doc.document_type}) belum dapat dipastikan sesuai kategori yang diminta — periksa secara manual.`);
+      } else if (semanticMatch && yearMatches) {
+        reasons.push(`Jenis dokumen (${doc.document_type}) dan tahun (${docYear}) cocok dengan yang diharapkan.`);
+      } else if (semanticMatch) {
+        reasons.push(`Jenis dokumen (${doc.document_type}) cocok, tahun belum tentu sama.`);
+      } else if (yearMatches) {
+        reasons.push(`Tahun dokumen (${docYear}) cocok, jenis dokumen belum tentu sesuai.`);
+      } else if (predatesMatch) {
         reasons.push(`Dokumen kelas ${doc.document_class} berlaku sejak ${doc.tanggal_dokumen}, sebelum/pada tanggal transaksi (${entityBusinessDate}) — periksa relevansinya secara manual.`);
       }
-      if (!relevance) return null;
 
       if (doc.status_verifikasi === 'valid') reasons.push('Sudah berstatus Valid.');
       else reasons.push(`Status verifikasi saat ini: ${doc.status_verifikasi} — belum tentu dapat langsung dipakai.`);

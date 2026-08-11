@@ -115,6 +115,16 @@ const cleanup = { periodeIds: [], documentIds: [], eventIds: [], tenantIds: [] }
     }, fakeFile('surat-jalan-uji'), ACTOR_ADMIN, TENANT_ID)).document;
     cleanup.documentIds.push(docSuratJalan.id);
 
+    // Dokumen SEMANTIK cocok (surat_jalan) DAN tertaut ke Event yang sama —
+    // dipakai utk membuktikan EXACT hanya diberikan bila KEDUA dimensi
+    // (semantik + konteks bisnis) sama-sama cocok (mandat corrective §2).
+    const docSuratJalanEvent = (await documentService.createDocument({
+      document_class: 'ACTIVITY_DOCUMENT', document_type: 'surat_jalan', judul: 'Surat Jalan Uji — Event+Semantik Cocok',
+      tanggal_dokumen: `${TAHUN_UJI}-08-20`,
+    }, fakeFile('surat-jalan-event-uji'), ACTOR_ADMIN, TENANT_ID)).document;
+    cleanup.documentIds.push(docSuratJalanEvent.id);
+    await linkService.createLink({ document_id: docSuratJalanEvent.id, entity_type: 'EVENT', entity_id: eventCocok.id, relation_type: 'Evidence' }, ACTOR_ADMIN, TENANT_ID);
+
     console.log('\n=== T1/T2 — tahun mencapai discovery + normalisasi Dokumen Penetapan ===');
     await test('T1/T2 — kategori_prosn=dokumen_penetapan + tahun cocok -> docTypeYear STRONG', async () => {
       const results = await candidateService.findCandidates(TENANT_ID, { kategori_prosn: 'dokumen_penetapan', tahun: TAHUN_UJI });
@@ -141,25 +151,83 @@ const cleanup = { periodeIds: [], documentIds: [], eventIds: [], tenantIds: [] }
       assert.strictEqual(found.relevance, 'POSSIBLE', 'PKS tanpa sinyal lain harus POSSIBLE (bukan STRONG/EXACT) — jujur ttg ketidakpastian.');
     });
 
-    console.log('\n=== T5/T6 — resolusi konteks bisnis Event (tanpa hardcode ID) ===');
-    await test('T5/T6 — transaksi penyaluran (tanggal persis sama dgn Event) -> dokumen terikat Event tsb EXACT via context_event', async () => {
+    console.log('\n=== T5/T6 — konteks bisnis Event SENDIRIAN (tanpa semantik cocok) -> STRONG, BUKAN EXACT (corrective) ===');
+    await test('T5/T6 — dokumen "other" terikat Event dgn tanggal persis sama, tapi document_type TIDAK cocok kategori -> STRONG, bukan EXACT', async () => {
       const results = await candidateService.findCandidates(TENANT_ID, {
         kategori_prosn: 'dokumen_penyaluran', jenis_transaksi: trxPenyaluran.jenis_transaksi, entity_business_date: trxPenyaluran.tanggal,
       });
       const found = results.find((c) => c.document_id === bastCocok.id);
-      assert.ok(found, 'BAST yg terikat ke Event dgn tanggal_mulai persis sama harus ditemukan.');
-      assert.strictEqual(found.relevance, 'EXACT');
-      assert.ok(found.context_event, 'Field context_event harus terisi.');
+      assert.ok(found, 'BAST yg terikat ke Event dgn tanggal_mulai persis sama harus tetap ditemukan (discoverable).');
+      assert.strictEqual(found.relevance, 'STRONG', 'Konteks bisnis SENDIRIAN (tanpa semantik cocok) hanya boleh STRONG, tidak boleh EXACT (bug corrective).');
+      assert.ok(found.context_event, 'Field context_event harus tetap terisi.');
       assert.strictEqual(found.context_event.event_id, eventCocok.id);
     });
 
-    console.log('\n=== T7 — dokumen dari Event TIDAK cocok tidak pernah EXACT via context ===');
-    await test('T7 — BAST dari Event tanggal berbeda TIDAK EXACT via context_event (boleh tidak muncul sama sekali)', async () => {
+    console.log('\n=== T10 — konteks bisnis + semantik SAMA-SAMA cocok -> EXACT ===');
+    await test('T10 — dokumen surat_jalan (semantik cocok) DAN terikat Event yg sama (konteks cocok) -> EXACT', async () => {
+      const results = await candidateService.findCandidates(TENANT_ID, {
+        kategori_prosn: 'dokumen_penyaluran', jenis_transaksi: trxPenyaluran.jenis_transaksi, entity_business_date: trxPenyaluran.tanggal,
+      });
+      const found = results.find((c) => c.document_id === docSuratJalanEvent.id);
+      assert.ok(found, 'Dokumen semantik+konteks cocok harus ditemukan.');
+      assert.strictEqual(found.relevance, 'EXACT', 'Konteks bisnis DAN semantik sama-sama cocok -> EXACT (kombinasi dua dimensi, bukan salah satu saja).');
+    });
+
+    console.log('\n=== T7 — dokumen dari Event TIDAK cocok & tanpa sinyal lain -> tidak muncul sama sekali (bukan sekadar bukan-EXACT) ===');
+    await test('T7 — BAST dari Event tanggal berbeda, tanpa sinyal tahun/semantik/predates -> TIDAK ditemukan sama sekali (excluded)', async () => {
       const results = await candidateService.findCandidates(TENANT_ID, {
         kategori_prosn: 'dokumen_penyaluran', jenis_transaksi: trxPenyaluran.jenis_transaksi, entity_business_date: trxPenyaluran.tanggal,
       });
       const found = results.find((c) => c.document_id === bastTidakCocok.id);
-      if (found) assert.notStrictEqual(found.relevance, 'EXACT', 'Dokumen dari Event yg tanggalnya TIDAK cocok tidak boleh EXACT.');
+      assert.ok(!found, 'Dokumen tanpa identity/semantik/konteks/tahun/predates yg cocok tidak boleh muncul sama sekali (bukan false-EXACT, bukan false-included).');
+    });
+
+    console.log('\n=== T11 — identityMatch via checksum SELALU EXACT, walau kategori mapping-nya kosong (dokumen_koreksi) ===');
+    await test('T11 — checksum cocok -> EXACT meski semanticMatch & businessContextMatch keduanya false', async () => {
+      // kategori_prosn=dokumen_koreksi (mapping KOSONG) + tanpa jenis_transaksi/entity_business_date
+      // (jadi businessContextMatch pasti false juga) — satu-satunya sinyal yg mungkin bikin EXACT
+      // di sini murni identityMatch via checksum, independen total dari kategori/konteks.
+      const results = await candidateService.findCandidates(TENANT_ID, { kategori_prosn: 'dokumen_koreksi', checksum_sha256: docSuratJalanEvent.checksum_sha256 });
+      const found = results.find((c) => c.document_id === docSuratJalanEvent.id);
+      assert.ok(found, 'Dokumen dgn checksum cocok harus ditemukan walau kategori dokumen_koreksi mapping-nya kosong.');
+      assert.strictEqual(found.relevance, 'EXACT', 'identityMatch via checksum harus SELALU EXACT, independen dari semanticMatch/businessContextMatch.');
+    });
+
+    console.log('\n=== T12 — dokumen_koreksi (mapping KOSONG) + Event sama -> STRONG saja, TIDAK PERNAH EXACT dari konteks semata (mandat override) ===');
+    await test('T12 — kategori_prosn=dokumen_koreksi + Event konteks cocok -> semanticMatch selalu false -> STRONG, bukan EXACT', async () => {
+      const results = await candidateService.findCandidates(TENANT_ID, {
+        kategori_prosn: 'dokumen_koreksi', jenis_transaksi: trxPenyaluran.jenis_transaksi, entity_business_date: trxPenyaluran.tanggal,
+      });
+      const found = results.find((c) => c.document_id === docSuratJalanEvent.id);
+      assert.ok(found, 'Dokumen terikat Event yg sama harus tetap muncul sbg kandidat walau kategori dokumen_koreksi.');
+      assert.strictEqual(found.relevance, 'STRONG', 'dokumen_koreksi mapping kosong -> semanticMatch SELALU false -> konteks bisnis semata maksimal STRONG (override eksplisit mandat).');
+    });
+
+    console.log('\n=== T14 — Dokumen Penetapan + dokumen ber-type lain (other) yg terikat Event sama -> STRONG, bukan EXACT ===');
+    await test('T14 — kategori_prosn=dokumen_penetapan (types: keputusan_gubernur/dst) + BAST "other" terikat Event sama -> STRONG', async () => {
+      const results = await candidateService.findCandidates(TENANT_ID, {
+        kategori_prosn: 'dokumen_penetapan', jenis_transaksi: trxPenyaluran.jenis_transaksi, entity_business_date: trxPenyaluran.tanggal,
+      });
+      const found = results.find((c) => c.document_id === bastCocok.id);
+      assert.ok(found, 'Dokumen "other" terikat Event yg sama harus tetap muncul (discoverable) utk kategori Dokumen Penetapan.');
+      assert.strictEqual(found.relevance, 'STRONG', 'document_type "other" tidak pernah dihitung cocok semantik dgn dokumen_penetapan -> STRONG saja, bukan EXACT.');
+    });
+
+    console.log('\n=== T18 — Berita Acara: TIDAK PERNAH ada hard DB filter server-side utk kategori_prosn (dokumen "other" tetap discoverable) ===');
+    await test('T18 — kategori_prosn=berita_acara TANPA document_type eksplisit -> BAST "other" terikat Event sama tetap ditemukan (bukan NOT_FOUND, bukan EXACT palsu)', async () => {
+      const results = await candidateService.findCandidates(TENANT_ID, {
+        kategori_prosn: 'berita_acara', jenis_transaksi: trxPenyaluran.jenis_transaksi, entity_business_date: trxPenyaluran.tanggal,
+      });
+      const found = results.find((c) => c.document_id === bastCocok.id);
+      assert.ok(found, 'BAST asli tersimpan document_type="other" TIDAK boleh hilang krn filter DB keras — harus tetap discoverable (root-cause Berita Acara false NOT_FOUND).');
+      assert.strictEqual(found.relevance, 'STRONG', 'Discoverable via konteks bisnis, tapi TIDAK boleh EXACT palsu krn semantik document_type belum terbukti cocok.');
+    });
+
+    console.log('\n=== T19 — tahun TIDAK cocok + kategori mapping kosong -> dokumen tidak kredibel sama sekali, excluded total ===');
+    await test('T19 — dokumen dgn tahun berbeda & tanpa sinyal identity/semantik/konteks/predates -> TIDAK muncul sama sekali', async () => {
+      const results = await candidateService.findCandidates(TENANT_ID, { kategori_prosn: 'dokumen_koreksi', tahun: String(Number(TAHUN_UJI) + 1) });
+      const found = results.find((c) => c.document_id === docTypeYear.id);
+      assert.ok(!found, 'Tanpa identity/semantik(mapping kosong)/konteks/tahun/predates yg cocok, dokumen tidak boleh muncul sbg kandidat sama sekali.');
     });
 
     console.log('\n=== T8 — tenant isolation, tidak ada kebocoran lintas tenant ===');

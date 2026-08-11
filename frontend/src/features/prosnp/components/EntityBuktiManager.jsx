@@ -32,6 +32,16 @@ const VERIFIKASI_LABEL = { uploaded: 'Terunggah', valid: 'Valid', invalid: 'Tida
  * B.1.3 (dokumen_penetapan/dokumen_penyaluran/dst.) secara otoritatif sendiri
  * (mandat §19 "server authoritative for canonical category normalization"),
  * jadi mapping frontend ini TETAP dipertahankan apa adanya utk kategori lain.
+ * Corrective "B.1.3 Semantic-Safe Candidate Ranking + Berita Acara False-
+ * NOT_FOUND Fix": mapping legacy ini TIDAK LAGI dikirim sbg `document_type`
+ * eksplisit utk entityType STOK_TRANSAKSI (B.1.3) — `berita_acara` di sini
+ * bertabrakan dgn dokumen nyata yang tersimpan `document_type='other'`, dan
+ * eksplisit `document_type` jadi filter DB KERAS di backend (sebelum ranking
+ * semantik apa pun jalan), mengecualikan dokumen itu total dari hasil (root
+ * cause false NOT_FOUND). Utk B.1.3, `kategori_prosn` SUDAH cukup — backend
+ * mengevaluasi kecocokan document_type sbg SINYAL in-memory, bukan filter DB.
+ * Konsumen lain (B.1.1/B.1.2, entityType selain STOK_TRANSAKSI) TETAP memakai
+ * filter eksplisit ini apa adanya (perilaku existing tidak berubah).
  */
 const KATEGORI_TO_FOOD_OPS_DOCUMENT_TYPE = {
   surat_penugasan: 'surat_tugas', keputusan_kdh: 'keputusan_gubernur',
@@ -65,6 +75,24 @@ export function classifyDiscoveryState({ hasBoundEvidence, candidates, candidate
   if (credible.length > 1) return 'MULTIPLE';
   if ((candidates || []).length > 0) return 'POSSIBLE';
   return 'NOT_FOUND';
+}
+
+/**
+ * Corrective "B.1.3 Semantic-Safe Candidate Ranking + Berita Acara False-
+ * NOT_FOUND Fix" — konstruksi criteria diskoveri, MURNI FUNGSI (testable tanpa
+ * render). `document_type` legacy SENGAJA tidak dikirim utk entityType
+ * STOK_TRANSAKSI (B.1.3) — lihat komentar `KATEGORI_TO_FOOD_OPS_DOCUMENT_TYPE`
+ * di atas utk alasan lengkapnya. Konsumen lain (B.1.1/B.1.2/dst.) tetap
+ * mengirim `document_type` apa adanya (perilaku existing tidak berubah).
+ */
+export function buildEvidenceDiscoveryCriteria({ entityType, entityId, kategori, entityJenisTransaksi, entityBusinessDate }) {
+  return {
+    entity_type: entityType, entity_id: entityId,
+    document_type: entityType === 'STOK_TRANSAKSI' ? undefined : KATEGORI_TO_FOOD_OPS_DOCUMENT_TYPE[kategori],
+    kategori_prosn: kategori,
+    jenis_transaksi: entityJenisTransaksi,
+    entity_business_date: entityBusinessDate,
+  };
 }
 
 /**
@@ -282,13 +310,7 @@ export default function EntityBuktiManager({ pengisianId, entityType, entityId, 
                 <div className="border rounded p-2 mb-3 bg-light">
                   <div className="small text-muted mb-2">Sistem mencari dokumen yang relevan di Evidence &amp; Operasi Pangan berdasarkan kategori dan konteks record ini — tidak perlu unggah ulang berkas yang sama bila sudah ditemukan.</div>
                   <FoodOpsEvidenceCandidatePanel
-                    criteria={{
-                      entity_type: entityType, entity_id: entityId,
-                      document_type: KATEGORI_TO_FOOD_OPS_DOCUMENT_TYPE[kategori],
-                      kategori_prosn: kategori,
-                      jenis_transaksi: entityJenisTransaksi,
-                      entity_business_date: entityBusinessDate,
-                    }}
+                    criteria={buildEvidenceDiscoveryCriteria({ entityType, entityId, kategori, entityJenisTransaksi, entityBusinessDate })}
                     onUse={bindFromFoodOps}
                     onResult={(rows) => { setCandidates(rows); setCandidatesReady(true); }}
                   />
