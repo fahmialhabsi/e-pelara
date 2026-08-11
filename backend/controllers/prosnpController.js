@@ -5,6 +5,7 @@ const workflow = require('../services/prosnp/prosnpWorkflowService');
 const { buildExcel } = require('../services/prosnp/prosnpExcelExportService');
 const { exportB13Template } = require('../services/prosnp/prosnpExcelTemplateExportService');
 const { listDukunganProgramDariSistem } = require('../services/prosnp/prosnpDukunganSistemService');
+const foodOpsDocumentService = require('../services/foodOperations/foodOpsDocumentService');
 const fs = require('fs');
 
 const normalizeOpdName = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -70,7 +71,32 @@ async function updatePengisian(req, res) { try { return ok(res, await workflow.u
 async function transitionPengisian(req, res) { try { return ok(res, await workflow.transitionPengisian(Number(req.params.id), req.body.status_tujuan, req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
 async function getPengisian(req, res) { try { return ok(res, await workflow.getPengisianScoped(Number(req.params.id), req.tenantId)); } catch (e) { return fail(res, e); } }
 function removeFailedUpload(file) { if (file?.path) fs.unlink(file.path, () => {}); }
-async function createBukti(req, res) { try { return ok(res, await workflow.createBukti(Number(req.params.id), req.body, req.file, req.user, req.tenantId), 201); } catch (e) { removeFailedUpload(req.file); return fail(res, e); } }
+/**
+ * Corrective "B.1.3 Registry-First Evidence Discovery" §11/STATE F — guard
+ * duplikat-unggah TERBATAS ke entity_type=STOK_TRANSAKSI SAJA (mandat: "for
+ * B.1.3 evidence"). SENGAJA tidak menyentuh workflow.createBukti (dipakai
+ * bersama B.1.1/B.1.2/B.1.4/MBG, protected) — reuse checksum FoodOps registry
+ * yang sudah ada (`foodOpsDocumentService.computeChecksum`/
+ * `findDuplicateByChecksum`), tidak menciptakan mekanisme duplikat baru.
+ */
+async function createBukti(req, res) {
+  try {
+    if (req.body.entity_type === 'STOK_TRANSAKSI' && req.file) {
+      const checksum = foodOpsDocumentService.computeChecksum(req.file.path);
+      const duplicate = await foodOpsDocumentService.findDuplicateByChecksum(req.tenantId, checksum);
+      if (duplicate) {
+        removeFailedUpload(req.file);
+        return res.status(409).json({
+          success: false,
+          message: `Berkas ini identik dengan dokumen yang sudah terdaftar di Evidence & Operasi Pangan: "${duplicate.judul}". Gunakan dokumen yang sudah ada, jangan unggah ulang.`,
+          code: 'PROSNP_EVIDENCE_DUPLICATE_IN_REGISTRY',
+          data: { existing_document: { id: duplicate.id, judul: duplicate.judul, document_type: duplicate.document_type, status_verifikasi: duplicate.status_verifikasi } },
+        });
+      }
+    }
+    return ok(res, await workflow.createBukti(Number(req.params.id), req.body, req.file, req.user, req.tenantId), 201);
+  } catch (e) { removeFailedUpload(req.file); return fail(res, e); }
+}
 async function reviseBukti(req, res) { try { return ok(res, await workflow.reviseBukti(Number(req.params.id), req.body, req.file, req.user, req.tenantId), 201); } catch (e) { removeFailedUpload(req.file); return fail(res, e); } }
 async function checklistBukti(req, res) { try { return ok(res, await workflow.checklistBukti(Number(req.params.id), req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
 async function listBuktiEntity(req, res) { try { return ok(res, await workflow.listBuktiUntukEntity(Number(req.params.id), req.query.entity_type, req.query.entity_id, req.tenantId)); } catch (e) { return fail(res, e); } }

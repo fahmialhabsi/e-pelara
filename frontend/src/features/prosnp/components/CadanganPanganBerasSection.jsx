@@ -293,6 +293,7 @@ export default function CadanganPanganBerasSection({ indikator, pengisian, perio
                       pengisianId={pengisian.id} entityType="STOK_TRANSAKSI" entityId={trx.id}
                       kategoriPilihan={['dokumen_pengadaan', 'bukti_penerimaan', 'dokumen_penyaluran', 'berita_acara', 'dokumen_penetapan', 'dokumen_koreksi']}
                       canUpload={editable} canReview={canReview}
+                      entityBusinessDate={trx.tanggal} entityJenisTransaksi={trx.jenis_transaksi}
                     />
                   )}
                 </td>
