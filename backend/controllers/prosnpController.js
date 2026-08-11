@@ -45,6 +45,8 @@ async function createPeriode(req, res) {
     return ok(res, await workflow.createPeriod(payload, req.user, req.tenantId), 201);
   } catch (e) { return fail(res, e); }
 }
+/** Corrective "B.1.3 Period Cutoff Wiring" (mandat §3) — update terbatas (tanggal_cutoff/tanggal_tenggat/catatan). */
+async function updatePeriode(req, res) { try { return ok(res, await workflow.updatePeriode(Number(req.params.id), req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
 async function activatePeriode(req, res) { try { return ok(res, await workflow.activatePeriod(Number(req.params.id), req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
 async function initializeIndikator(req, res) { try { return ok(res, await workflow.initializePeriodIndicators(Number(req.params.id), req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
 async function createIndikator(req, res) { try { return ok(res, await workflow.createIndikator(Number(req.params.id), req.body, req.user, req.tenantId), 201); } catch (e) { return fail(res, e); } }
@@ -111,4 +113,4 @@ async function exportB13TemplateNasional(req, res) {
   } catch (e) { return fail(res, e); }
 }
 
-module.exports = { getKonteks, listPeriode, createPeriode, createIndikator, initializeIndikator, activatePeriode, getPeriode, getPengisian, updatePengisian, transitionPengisian, createBukti, reviseBukti, checklistBukti, listBuktiEntity, setStatusVerifikasiBukti, downloadBukti, periksaPengisian, listAntrianPemeriksaan, listKategoriReferensi, archivePeriode, reopenPeriode, siapkanEksporPeriode, exportExcel, exportB13TemplateNasional, getDukunganSistem };
+module.exports = { getKonteks, listPeriode, createPeriode, updatePeriode, createIndikator, initializeIndikator, activatePeriode, getPeriode, getPengisian, updatePengisian, transitionPengisian, createBukti, reviseBukti, checklistBukti, listBuktiEntity, setStatusVerifikasiBukti, downloadBukti, periksaPengisian, listAntrianPemeriksaan, listKategoriReferensi, archivePeriode, reopenPeriode, siapkanEksporPeriode, exportExcel, exportB13TemplateNasional, getDukunganSistem };

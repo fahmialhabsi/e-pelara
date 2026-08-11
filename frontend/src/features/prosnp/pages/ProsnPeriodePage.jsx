@@ -6,17 +6,42 @@ import { useAuth } from '../../../hooks/useAuth';
 import {
   activateProsnPeriode,
   createProsnPeriode,
+  exportProsnB13TemplateNasional,
   exportProsnExcel,
   getProsnKonteks,
   getProsnPeriode,
   initializeProsnIndikator,
+  siapkanEksporProsnPeriode,
+  updateProsnPeriode,
 } from '../services/prosnpApi';
 
-const STATUS = { draft: 'secondary', aktif: 'success', terkunci: 'warning', diarsipkan: 'dark' };
+/**
+ * Corrective "B.1.3 Period Cutoff Wiring" — turunan default tanggal_cutoff per
+ * semester (30 Juni/31 Desember), SAMA PERSIS dgn `resolveDefaultCutoff` di
+ * backend (`prosnpB13RuleEngine.js`) — murni utk mengisi default form,
+ * backend tetap satu-satunya sumber kebenaran saat menyimpan.
+ */
+function defaultCutoffUntukSemester(tahun, semester) {
+  if (!tahun) return '';
+  if (String(semester) === '1') return `${tahun}-06-30`;
+  if (String(semester) === '2') return `${tahun}-12-31`;
+  return '';
+}
+
+const STATUS = { draft: 'secondary', aktif: 'success', terkunci: 'warning', siap_diekspor: 'success', diarsipkan: 'dark' };
 const canManage = (role) =>
   ['SUPER_ADMIN', 'ADMINISTRATOR'].includes(String(role || '').toUpperCase());
 const canReview = (role) =>
   ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS'].includes(String(role || '').toUpperCase());
+
+function ringkasanSkor(row) {
+  const indikatorAktif = (row.indikators || []).filter((i) => i.aktif);
+  const totalBobot = indikatorAktif.reduce((sum, i) => sum + (Number(i.bobot_maksimal) || 0), 0);
+  const totalSkor = indikatorAktif.reduce((sum, i) => sum + (Number(i.pengisian?.skor_indikatif_internal) || 0), 0);
+  const jumlahDiperiksa = indikatorAktif.filter((i) => i.pengisian?.status === 'diperiksa').length;
+  const jumlahBermasalah = indikatorAktif.filter((i) => i.pengisian?.skor_indikatif_internal !== null && Number(i.pengisian?.skor_indikatif_internal) === 0).length;
+  return { totalBobot, totalSkor, jumlahDiperiksa, jumlahBermasalah, totalIndikator: indikatorAktif.length };
+}
 
 export default function ProsnPeriodePage() {
   const { user } = useAuth();
@@ -33,8 +58,19 @@ export default function ProsnPeriodePage() {
     perangkat_daerah_id: '',
     tanggal_mulai: '',
     tanggal_tenggat: '',
+    tanggal_cutoff: '',
   });
+  const [editCutoffRow, setEditCutoffRow] = useState(null);
+  const [editCutoffForm, setEditCutoffForm] = useState({ tanggal_tenggat: '', tanggal_cutoff: '' });
+  const [savingCutoff, setSavingCutoff] = useState(false);
   const editable = canManage(user?.role);
+
+  const setSemester = (semester) => {
+    setForm((current) => ({ ...current, semester, tanggal_cutoff: defaultCutoffUntukSemester(current.tahun, semester) }));
+  };
+  const setTahun = (tahun) => {
+    setForm((current) => ({ ...current, tahun, tanggal_cutoff: defaultCutoffUntukSemester(tahun, current.semester) }));
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -99,6 +135,34 @@ export default function ProsnPeriodePage() {
       toast.error(error?.response?.data?.message || 'Indikator belum dapat diinisialisasi.');
     }
   };
+  const openEditCutoff = (row) => {
+    setEditCutoffRow(row);
+    setEditCutoffForm({ tanggal_tenggat: row.tanggal_tenggat || '', tanggal_cutoff: row.tanggal_cutoff || '' });
+  };
+  const saveEditCutoff = async (event) => {
+    event.preventDefault();
+    setSavingCutoff(true);
+    try {
+      await updateProsnPeriode(editCutoffRow.id, editCutoffForm);
+      toast.success('Tanggal cutoff/tenggat periode berhasil disimpan.');
+      setEditCutoffRow(null);
+      await load();
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'Tanggal cutoff/tenggat gagal disimpan.');
+    } finally {
+      setSavingCutoff(false);
+    }
+  };
+  const siapkanEkspor = async (row) => {
+    if (!window.confirm(`Tandai periode "${row.nama}" siap ekspor? Seluruh indikator aktif harus sudah berstatus Diperiksa.`)) return;
+    try {
+      await siapkanEksporProsnPeriode(row.id);
+      toast.success('Periode ditandai siap ekspor.');
+      await load();
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'Periode belum dapat ditandai siap ekspor.');
+    }
+  };
   const downloadExcel = async (row) => {
     try {
       const response = await exportProsnExcel(row.id);
@@ -110,6 +174,19 @@ export default function ProsnPeriodePage() {
       URL.revokeObjectURL(url);
     } catch (error) {
       toast.error(error?.response?.data?.message || 'Ekspor Excel gagal.');
+    }
+  };
+  const downloadB13Template = async (row) => {
+    try {
+      const response = await exportProsnB13TemplateNasional(row.id);
+      const url = URL.createObjectURL(new Blob([response.data]));
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `Tabel_B.1.3_${row.tahun}-${row.semester}.xlsx`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'Ekspor template nasional B.1.3 gagal — pastikan skor B.1.3 sudah dihitung ulang dan target sudah diisi.');
     }
   };
 
@@ -176,6 +253,7 @@ export default function ProsnPeriodePage() {
                   <th>Tahun</th>
                   <th>OPD</th>
                   <th>Indikator</th>
+                  <th>Skor Indikatif</th>
                   <th>Status</th>
                   <th className="text-end">Aksi</th>
                 </tr>
@@ -199,9 +277,44 @@ export default function ProsnPeriodePage() {
                       <td>{row.perangkatDaerah?.nama || row.perangkat_daerah_id}</td>
                       <td>{row.indikators?.length || 0}</td>
                       <td>
+                        {(() => {
+                          const r = ringkasanSkor(row);
+                          return (
+                            <div>
+                              <strong>{r.totalSkor.toFixed(2)}</strong> / {r.totalBobot.toFixed(2)}
+                              <div className="small text-muted">
+                                {r.jumlahDiperiksa}/{r.totalIndikator} diperiksa
+                                {r.jumlahBermasalah > 0 && <span className="text-danger"> · {r.jumlahBermasalah} skor 0</span>}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      <td>
                         <Badge bg={STATUS[row.status] || 'secondary'}>{row.status}</Badge>
                       </td>
                       <td className="text-end">
+                        {editable && (
+                          <Button
+                            size="sm"
+                            variant="outline-secondary"
+                            className="me-2"
+                            onClick={() => openEditCutoff(row)}
+                            title="Ubah tanggal cutoff data / tenggat pengisian"
+                          >
+                            Cutoff
+                          </Button>
+                        )}
+                        {row.status === 'aktif' && canManage(user?.role) && (
+                          <Button
+                            size="sm"
+                            variant="outline-success"
+                            className="me-2"
+                            onClick={() => siapkanEkspor(row)}
+                          >
+                            Tandai Siap Ekspor
+                          </Button>
+                        )}
                         {row.status === 'aktif' && (
                           <Button
                             size="sm"
@@ -236,16 +349,25 @@ export default function ProsnPeriodePage() {
                         <Button
                           size="sm"
                           variant="outline-secondary"
+                          className="me-2"
                           onClick={() => downloadExcel(row)}
                         >
                           Excel
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline-success"
+                          onClick={() => downloadB13Template(row)}
+                          title="Ekspor Template Nasional B.1.3 (Tabel Cadangan Pangan Beras, format resmi)"
+                        >
+                          Template B.1.3
                         </Button>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="6" className="text-center text-muted py-4">
+                    <td colSpan="7" className="text-center text-muted py-4">
                       Belum ada periode ProSN.
                     </td>
                   </tr>
@@ -268,7 +390,7 @@ export default function ProsnPeriodePage() {
                   <Form.Control
                     required
                     value={form.tahun}
-                    onChange={(e) => setForm({ ...form, tahun: e.target.value })}
+                    onChange={(e) => setTahun(e.target.value)}
                   />
                 </Form.Group>
               </Col>
@@ -277,7 +399,7 @@ export default function ProsnPeriodePage() {
                   <Form.Label>Semester</Form.Label>
                   <Form.Select
                     value={form.semester}
-                    onChange={(e) => setForm({ ...form, semester: e.target.value })}
+                    onChange={(e) => setSemester(e.target.value)}
                   >
                     <option value="tahunan">Tahunan</option>
                     <option value="1">1</option>
@@ -333,6 +455,17 @@ export default function ProsnPeriodePage() {
                 </Form.Group>
               </Col>
             </Row>
+            <Form.Group className="mt-3">
+              <Form.Label>Tanggal Cutoff Data</Form.Label>
+              <Form.Control
+                type="date"
+                value={form.tanggal_cutoff}
+                onChange={(e) => setForm({ ...form, tanggal_cutoff: e.target.value })}
+              />
+              <Form.Text className="text-muted">
+                Batas tanggal data yang diperhitungkan dalam periode penilaian. Berbeda dari tenggat internal pengisian.
+              </Form.Text>
+            </Form.Group>
           </Modal.Body>
           <Modal.Footer>
             <Button variant="light" onClick={() => setShowModal(false)}>
@@ -344,6 +477,44 @@ export default function ProsnPeriodePage() {
               style={{ backgroundColor: '#276749', borderColor: '#276749' }}
             >
               {saving ? 'Menyimpan…' : 'Simpan Draft'}
+            </Button>
+          </Modal.Footer>
+        </Form>
+      </Modal>
+      <Modal show={!!editCutoffRow} onHide={() => setEditCutoffRow(null)}>
+        <Form onSubmit={saveEditCutoff}>
+          <Modal.Header closeButton>
+            <Modal.Title>Cutoff &amp; Tenggat — {editCutoffRow?.nama}</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <Form.Group className="mb-3">
+              <Form.Label>Tenggat (administratif)</Form.Label>
+              <Form.Control
+                required
+                type="date"
+                value={editCutoffForm.tanggal_tenggat}
+                onChange={(e) => setEditCutoffForm({ ...editCutoffForm, tanggal_tenggat: e.target.value })}
+              />
+              <Form.Text className="text-muted">Batas waktu OPD menyelesaikan pengisian data.</Form.Text>
+            </Form.Group>
+            <Form.Group>
+              <Form.Label>Tanggal Cutoff Data</Form.Label>
+              <Form.Control
+                type="date"
+                value={editCutoffForm.tanggal_cutoff}
+                onChange={(e) => setEditCutoffForm({ ...editCutoffForm, tanggal_cutoff: e.target.value })}
+              />
+              <Form.Text className="text-muted">
+                Batas tanggal data yang diperhitungkan dalam periode penilaian. Berbeda dari tenggat internal pengisian.
+              </Form.Text>
+            </Form.Group>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="light" onClick={() => setEditCutoffRow(null)}>
+              Batal
+            </Button>
+            <Button type="submit" disabled={savingCutoff} style={{ backgroundColor: '#276749', borderColor: '#276749' }}>
+              {savingCutoff ? 'Menyimpan…' : 'Simpan'}
             </Button>
           </Modal.Footer>
         </Form>

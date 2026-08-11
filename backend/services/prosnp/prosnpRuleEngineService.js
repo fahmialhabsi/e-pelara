@@ -74,12 +74,12 @@ async function hitungUlangB12(pengisianId, tenantId) {
 }
 
 async function hitungUlangB13(pengisianId, tenantId) {
-  const { transaksiTerverifikasiUntukPeriode, jalankanRekonsiliasi } = require('./prosnpB13SemesterService');
+  const { transaksiTerverifikasiUntukPeriode, jalankanRekonsiliasi, resolveCutoff } = require('./prosnpB13SemesterService');
   return db.sequelize.transaction(async (transaction) => {
     const pengisian = await getPengisianKonteks(pengisianId, tenantId, transaction);
     if (pengisian.indikator.tipe_form !== 'cadangan_pangan_beras') throw new ProsnError('Indikator ini bukan bertipe Cadangan Pangan Beras.', 409, 'PROSNP_TIPE_MISMATCH');
     const periode = pengisian.indikator.periode;
-    const tanggalCutoff = periode.tanggal_cutoff || periode.tanggal_tenggat;
+    const tanggalCutoff = resolveCutoff(periode);
     const tahun = String(periode.tahun);
 
     // Rekonsiliasi Semester (mandat §9): pastikan carry-forward Semester II ada &

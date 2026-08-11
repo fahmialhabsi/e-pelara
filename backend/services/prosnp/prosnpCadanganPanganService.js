@@ -247,6 +247,40 @@ function validateTransaksiPayload(payload) {
   if (!Number.isFinite(volume) || volume < 0) throw new ProsnError('Volume wajib diisi (angka >= 0).');
 }
 
+const BULAN_INDO = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+const NAMA_SEMESTER = { 1: 'Semester I', 2: 'Semester II' };
+function formatTanggalIndo(tanggal) {
+  const t = new Date(tanggal);
+  return `${t.getUTCDate()} ${BULAN_INDO[t.getUTCMonth()]} ${t.getUTCFullYear()}`;
+}
+function semesterDariTanggal(tanggal) {
+  const t = new Date(tanggal);
+  return { tahun: String(t.getUTCFullYear()), semester: t.getUTCMonth() + 1 <= 6 ? 1 : 2 };
+}
+
+/**
+ * Corrective "B.1.3 Period Cutoff Wiring + Semester Transaction Placement
+ * Guard" (mandat §6-8): transaksi stok manual WAJIB berada di jendela
+ * kalender semester periode yang dipilih — mencegah data tahun berjalan
+ * silang-tercatat di periode semester yang salah (root cause carry-forward
+ * 0 Ton yang ditemukan audit read-only sebelumnya). HANYA berlaku utk
+ * periode semester='1'/'2' — periode 'tahunan' tidak punya jendela
+ * semester utk divalidasi, sengaja dilewati (bukan aturan bisnis baru).
+ * Baris carry-forward system-generated (`pastikanCarryForward` di
+ * prosnpB13SemesterService.js) TIDAK melalui createTransaksi/updateTransaksi
+ * sama sekali sehingga guard ini otomatis tidak pernah menghalanginya.
+ */
+function assertTanggalDalamSemesterPeriode(tanggal, periode) {
+  const semesterPeriode = String(periode.semester);
+  if (semesterPeriode !== '1' && semesterPeriode !== '2') return;
+  const aktual = semesterDariTanggal(tanggal);
+  if (aktual.tahun === String(periode.tahun) && String(aktual.semester) === semesterPeriode) return;
+  throw new ProsnError(
+    `Tanggal transaksi ${formatTanggalIndo(tanggal)} termasuk ${NAMA_SEMESTER[aktual.semester]} Tahun ${aktual.tahun} dan tidak dapat dicatat pada periode ${NAMA_SEMESTER[semesterPeriode]} Tahun ${periode.tahun}.`,
+    409, 'PROSNP_STOK_SEMESTER_MISMATCH',
+  );
+}
+
 async function listTransaksi(pengisianId, tenantId) {
   return db.ProsnStokTransaksi.findAll({
     where: { pengisian_id: pengisianId, tenant_id: tenantId },
@@ -259,6 +293,7 @@ async function createTransaksi(pengisianId, payload, actor, tenantId) {
   validateTransaksiPayload(payload);
   return db.sequelize.transaction(async (transaction) => {
     const pengisian = await assertPengisianEditable(pengisianId, tenantId, transaction);
+    assertTanggalDalamSemesterPeriode(payload.tanggal, pengisian.indikator.periode);
     const komoditas = await db.ProsnKomoditas.findByPk(payload.komoditas_id, { transaction });
     if (!komoditas) throw new ProsnError('Komoditas tidak ditemukan.', 404, 'PROSNP_NOT_FOUND');
     // Sengaja TIDAK ditolak bila komoditas bukan Beras atau ownership bukan Pemprov (mandat §9.6:
@@ -283,7 +318,8 @@ async function updateTransaksi(id, payload, actor, tenantId) {
   return db.sequelize.transaction(async (transaction) => {
     const trx = await db.ProsnStokTransaksi.findOne({ where: { id, tenant_id: tenantId }, transaction, lock: transaction.LOCK.UPDATE });
     if (!trx) throw new ProsnError('Transaksi tidak ditemukan.', 404, 'PROSNP_NOT_FOUND');
-    await assertPengisianEditable(trx.pengisian_id, tenantId, transaction);
+    const pengisian = await assertPengisianEditable(trx.pengisian_id, tenantId, transaction);
+    assertTanggalDalamSemesterPeriode(payload.tanggal, pengisian.indikator.periode);
     if (trx.lock_version !== expectedVersion) throw new ProsnError('Data telah diubah pengguna lain.', 409, 'PROSNP_VERSION_CONFLICT');
     const [count] = await db.ProsnStokTransaksi.update({
       komoditas_id: payload.komoditas_id, tanggal: payload.tanggal, jenis_transaksi: payload.jenis_transaksi, volume: Number(payload.volume),

@@ -35,6 +35,21 @@
 const JENIS_TAMBAH = new Set(['saldo_awal', 'pengadaan', 'penerimaan_lain_sah', 'koreksi_masuk']);
 const JENIS_KURANG = new Set(['penyaluran', 'susut_rusak', 'koreksi_keluar']);
 
+/**
+ * Corrective "B.1.3 Period Cutoff Wiring" — turunan cutoff SUBSTANTIF default
+ * per semester, dipakai HANYA bila `periode.tanggal_cutoff` belum diisi
+ * eksplisit (mandat §2/§4). `tanggal_tenggat` (tenggat administratif
+ * pengisian) TIDAK BOLEH lagi menjadi proxy diam-diam untuk cutoff data
+ * tahunan B.1.3 — hanya jaring pengaman terakhir utk semester di luar '1'/'2'.
+ */
+function resolveDefaultCutoff(tahun, semester) {
+  const s = semester === undefined || semester === null ? null : String(semester).trim();
+  const tahunStr = String(tahun);
+  if (s === '1') return `${tahunStr}-06-30`;
+  if (s === '2') return `${tahunStr}-12-31`;
+  return null;
+}
+
 /** Klasifikasi presentasi periode — tidak memengaruhi angka/tier, murni label. */
 function klasifikasiPeriode(semester) {
   const s = semester === undefined || semester === null ? null : String(semester).trim();
@@ -138,4 +153,4 @@ function hitungB13(transaksiTerverifikasi, target, tanggalCutoff, targetEvidence
   };
 }
 
-module.exports = { hitungNeraca, hitungB13, klasifikasiPeriode };
+module.exports = { hitungNeraca, hitungB13, klasifikasiPeriode, resolveDefaultCutoff };

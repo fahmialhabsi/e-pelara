@@ -17,6 +17,7 @@ const INPUT = ['SUPER_ADMIN', 'ADMINISTRATOR', 'PROSN_INPUT'];
 router.get('/periode', verifyToken, allowRoles(READ), controller.listPeriode);
 router.get('/konteks', verifyToken, allowRoles(READ), controller.getKonteks);
 router.post('/periode', verifyToken, allowRoles(ADMIN), controller.createPeriode);
+router.patch('/periode/:id', verifyToken, allowRoles(ADMIN), controller.updatePeriode);
 router.get('/periode/:id', verifyToken, allowRoles(READ), controller.getPeriode);
 router.post('/periode/:id/indikator', verifyToken, allowRoles(ADMIN), controller.createIndikator);
 router.post('/periode/:id/inisialisasi-indikator', verifyToken, allowRoles(ADMIN), controller.initializeIndikator);

@@ -15,6 +15,11 @@ export async function createProsnPeriode(payload) {
   return response.data?.data;
 }
 
+export async function updateProsnPeriode(id, payload) {
+  const response = await api.patch(`/prosnp/periode/${id}`, payload);
+  return response.data?.data;
+}
+
 export async function activateProsnPeriode(id) {
   const response = await api.post(`/prosnp/periode/${id}/aktifkan`);
   return response.data?.data;
