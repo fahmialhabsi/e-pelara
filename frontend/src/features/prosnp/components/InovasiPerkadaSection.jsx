@@ -104,10 +104,17 @@ export default function InovasiPerkadaSection({ indikator, pengisian, editable, 
         </Table>
       ) : <div className="text-muted small mb-2">Belum ada inovasi dicatat.</div>}
 
+      {/* Corrective "B.1.4 Tambah Inovasi Modal — Footer Accessibility Fix"
+          (sama persis root cause & pola fix dgn B.1.2, diverifikasi terpisah
+          dari source): <Form> sebelumnya membungkus Modal.Header+Modal.Body+
+          Modal.Footer sekaligus, merusak layout flex `.modal-dialog-scrollable`
+          milik Bootstrap. <Form> sekarang HANYA membungkus isi Modal.Body;
+          tombol Simpan terhubung ke form via atribut native `form` (HTML5),
+          perilaku submit TIDAK berubah sama sekali. */}
       <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" scrollable>
-        <Form onSubmit={submit}>
-          <Modal.Header closeButton><Modal.Title>{editing ? 'Ubah' : 'Tambah'} Inovasi</Modal.Title></Modal.Header>
-          <Modal.Body>
+        <Modal.Header closeButton><Modal.Title>{editing ? 'Ubah' : 'Tambah'} Inovasi</Modal.Title></Modal.Header>
+        <Modal.Body>
+          <Form id="formTambahInovasi" onSubmit={submit}>
             <Form.Group className="mb-2"><Form.Label>Nama Inovasi *</Form.Label><Form.Control required value={form.nama_inovasi} onChange={(e) => setForm({ ...form, nama_inovasi: e.target.value })} /></Form.Group>
             <Row>
               <Col md={6}><Form.Group className="mb-2"><Form.Label>Masalah Awal</Form.Label><Form.Control as="textarea" rows={2} value={form.masalah_awal} onChange={(e) => setForm({ ...form, masalah_awal: e.target.value })} /></Form.Group></Col>
@@ -159,12 +166,12 @@ export default function InovasiPerkadaSection({ indikator, pengisian, editable, 
               <Col md={12}><Form.Group className="mb-2"><Form.Label>Nomor Perkada {form.status_perkada === 'ditetapkan' && '*'}</Form.Label><Form.Control required={form.status_perkada === 'ditetapkan'} value={form.nomor_perkada} onChange={(e) => setForm({ ...form, nomor_perkada: e.target.value })} /></Form.Group></Col>
             </Row>
             <div className="small text-muted">Dokumen Perkada diunggah lewat bagian Bukti Dukung di bawah (kategori: Perkada) — tanpa dokumen, skor dibatasi maksimal 1.00 meski status sudah Ditetapkan.</div>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="light" onClick={() => setShowModal(false)}>Batal</Button>
-            <Button type="submit" disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan'}</Button>
-          </Modal.Footer>
-        </Form>
+          </Form>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="light" onClick={() => setShowModal(false)}>Batal</Button>
+          <Button type="submit" form="formTambahInovasi" disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan'}</Button>
+        </Modal.Footer>
       </Modal>
     </div>
   );
