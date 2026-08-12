@@ -74,7 +74,7 @@ async function hitungUlangB12(pengisianId, tenantId) {
 }
 
 async function hitungUlangB13(pengisianId, tenantId) {
-  const { transaksiTerverifikasiUntukPeriode, jalankanRekonsiliasi, resolveCutoff } = require('./prosnpB13SemesterService');
+  const { transaksiTerverifikasiUntukPeriode, jalankanRekonsiliasi, resolveCutoff, hitungRealisasiTahunan } = require('./prosnpB13SemesterService');
   return db.sequelize.transaction(async (transaction) => {
     const pengisian = await getPengisianKonteks(pengisianId, tenantId, transaction);
     if (pengisian.indikator.tipe_form !== 'cadangan_pangan_beras') throw new ProsnError('Indikator ini bukan bertipe Cadangan Pangan Beras.', 409, 'PROSNP_TIPE_MISMATCH');
@@ -104,6 +104,14 @@ async function hitungUlangB13(pengisianId, tenantId) {
       rekonsiliasi,
       periode.semester,
     );
+
+    // Corrective "B.1.3 Saldo vs Realisasi" (mandat §9-14): transparansi TAMBAHAN,
+    // murni presentasi — TIDAK mengubah formula/tier/skor (`hasil.skor` di atas
+    // sudah final). Realisasi = kumulatif penyaluran TAHUN BERJALAN, terpisah
+    // konseptual dari saldo_akhir (posisi stok); carry-forward tidak pernah dihitung
+    // sbg realisasi (lihat komentar `hitungRealisasiTahunan`).
+    hasil.detail.realisasi_penyaluran_ton = await hitungRealisasiTahunan(tenantId, periode, hasil.detail.per_jenis, transaction);
+
     await simpanSkor(pengisianId, hasil, transaction);
     return hasil;
   });

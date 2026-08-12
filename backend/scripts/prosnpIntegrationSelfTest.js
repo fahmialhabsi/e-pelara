@@ -20,7 +20,6 @@ const rapatService = require('../services/prosnp/prosnpRapatForkopimdaService');
 const cadanganService = require('../services/prosnp/prosnpCadanganPanganService');
 const inovasiService = require('../services/prosnp/prosnpInovasiService');
 const ruleEngineService = require('../services/prosnp/prosnpRuleEngineService');
-const semesterService = require('../services/prosnp/prosnpB13SemesterService');
 const dpaSourceService = require('../services/prosnp/prosnpDpaSourceService');
 
 const TENANT_ID = 1;
@@ -151,31 +150,26 @@ async function uploadBukti(pengisianId, entityType, entityId, kategori, actor) {
       assert.strictEqual(pengisianS2.rekonsiliasi_status, 'ok', 'tidak ada perubahan di Semester I setelah carry-forward -> status harus ok');
     });
 
-    await test('rekonsiliasi mendeteksi selisih bila Semester I dikoreksi SETELAH carry-forward dibuat', async () => {
+    await test('Corrective "B.1.3 Carry-Forward Synchronization" — carry-forward SELF-HEAL otomatis bila Semester I dikoreksi SETELAH carry-forward dibuat (bukan lagi berhenti di status perlu_rekonsiliasi)', async () => {
       const beras = await db.ProsnKomoditas.findOne({ where: { kode: 'BERAS' } });
       const trxKoreksi = await cadanganService.createTransaksi(b13S1.pengisian.id, { komoditas_id: beras.id, tanggal: `${TAHUN_UJI}-03-01`, jenis_transaksi: 'koreksi_masuk', volume: 20, ownership: 'pemerintah_provinsi', status_verifikasi: 'valid' }, ACTOR_OPERATOR, TENANT_ID);
       const bukti = await uploadBukti(b13S1.pengisian.id, 'STOK_TRANSAKSI', trxKoreksi.id, 'dokumen_koreksi', ACTOR_OPERATOR);
       await workflow.setStatusVerifikasiBukti(bukti.id, { status_verifikasi: 'valid', lock_version: 0 }, ACTOR_PENGAWAS, TENANT_ID);
-      await ruleEngineService.hitungUlangB13(b13S1.pengisian.id, TENANT_ID); // saldo akhir S1 sekarang 100, tapi carry-forward S2 masih 80
+      await ruleEngineService.hitungUlangB13(b13S1.pengisian.id, TENANT_ID); // saldo akhir S1 sekarang 100, tapi carry-forward S2 masih 80 (stale)
 
-      await ruleEngineService.hitungUlangB13(b13S2.pengisian.id, TENANT_ID); // trigger jalankanRekonsiliasi lagi
+      // Corrective: hitungUlangB13 Semester II HARUS mensinkronkan carry-forward
+      // IN PLACE (80->100) SEBELUM skoring, secara otomatis — tanpa panggilan
+      // manual, tanpa berhenti di status administratif "perlu_rekonsiliasi"
+      // (mandat "jangan biarkan status=selisih bila transaksi yg sama berhasil
+      // menyelesaikan mismatch-nya").
+      const hasilS2 = await ruleEngineService.hitungUlangB13(b13S2.pengisian.id, TENANT_ID);
       const pengisianS2 = await db.ProsnPengisian.findByPk(b13S2.pengisian.id);
-      assert.strictEqual(pengisianS2.rekonsiliasi_status, 'perlu_rekonsiliasi', `harus terdeteksi selisih (S1 terkini=100, carry-forward tersimpan=80), got status=${pengisianS2.rekonsiliasi_status}`);
-      assert.strictEqual(Number(pengisianS2.rekonsiliasi_selisih), -20);
+      assert.strictEqual(pengisianS2.rekonsiliasi_status, 'ok', `carry-forward harus SELF-HEAL otomatis, status harus jujur 'ok' pasca-sinkronisasi, got status=${pengisianS2.rekonsiliasi_status}`);
+      assert.strictEqual(Number(pengisianS2.rekonsiliasi_selisih), 0);
 
-      const belumDiisi = await db.ProsnPengisian.findByPk(b13S2.pengisian.id);
-      await workflow.transitionPengisian(b13S2.pengisian.id, 'dalam_pengisian', { lock_version: belumDiisi.lock_version }, ACTOR_ADMIN, TENANT_ID);
-
-      let threw = false;
-      try {
-        const fresh = await db.ProsnPengisian.findByPk(b13S2.pengisian.id);
-        await workflow.transitionPengisian(b13S2.pengisian.id, 'lengkap', { lock_version: fresh.lock_version }, ACTOR_ADMIN, TENANT_ID);
-      } catch (error) { threw = true; assert.strictEqual(error.code, 'PROSNP_RECONCILIATION_REQUIRED'); }
-      assert.ok(threw, 'status Lengkap harus ditolak selama rekonsiliasi belum dijelaskan');
-
-      await semesterService.setAlasanRekonsiliasi(b13S2.pengisian.id, 'Koreksi masuk Semester I dicatat setelah carry-forward dibuat.', ACTOR_OPERATOR, TENANT_ID);
-      const setelahAlasan = await db.ProsnPengisian.findByPk(b13S2.pengisian.id);
-      assert.strictEqual(setelahAlasan.rekonsiliasi_alasan, 'Koreksi masuk Semester I dicatat setelah carry-forward dibuat.');
+      const carryForwardSesudah = await db.ProsnStokTransaksi.findOne({ where: { pengisian_id: b13S2.pengisian.id, is_carry_forward: true } });
+      assert.strictEqual(Number(carryForwardSesudah.volume), 100, 'baris carry-forward yg SAMA harus ter-update ke saldo akhir Semester I terkini (100), bukan tetap 80.');
+      assert.strictEqual(hasilS2.detail.per_jenis.saldo_awal, 100, 'skor Semester II yg baru dihitung harus memakai opening balance yg SUDAH tersinkron (100), bukan nilai stale (80).');
     });
 
     console.log('\n=== Evidence Binding — B.1.4 ===');

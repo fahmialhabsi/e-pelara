@@ -47,6 +47,20 @@ async function transaksiTerverifikasiUntukPeriode(periodeId, tenantId, cutoff, t
  * Pastikan pengisian Semester II punya baris saldo_awal carry-forward dari
  * saldo akhir Semester I (dibuat SEKALI, ditandai is_carry_forward=true).
  * Dipanggil otomatis sebelum hitung ulang skor B.1.3 Semester II.
+ *
+ * Corrective "B.1.3 Carry-Forward Synchronization" (mandat §2/§3) — carry-
+ * forward adalah REKAM SISTEM TURUNAN (derived), BUKAN fakta bisnis mandiri
+ * yg boleh membeku begitu dibuat. Invarian arsitektur: saldo pembuka
+ * Semester II = saldo akhir Semester I YANG AUTHORITATIVE SAAT INI. Karena
+ * itu, bila baris carry-forward sudah ada TAPI nilainya tidak lagi cocok dgn
+ * saldo akhir Semester I terkini (mis. Semester I diverifikasi/dikoreksi
+ * setelah carry-forward dibuat), baris YANG SAMA di-UPDATE IN PLACE (bukan
+ * dibuat baris baru, bukan dihapus-buat-ulang) — identitas record (is_carry_
+ * forward=true, status_verifikasi=valid, ownership, komoditas, relasi
+ * periode/pengisian) tetap dipertahankan, HANYA volume+sumber_data disegarkan
+ * ke nilai live. Pola create-if-missing (baris `!existing`) TETAP menjamin
+ * idempotency pembuatan (tidak pernah lebih dari satu baris carry-forward per
+ * pengisian) — yg berubah HANYA cabang "sudah ada tapi stale".
  */
 async function pastikanCarryForward(pengisian, tenantId, actorId, transaction) {
   const periode = pengisian.indikator.periode;
@@ -61,34 +75,50 @@ async function pastikanCarryForward(pengisian, tenantId, actorId, transaction) {
   const cutoffSemester1 = resolveCutoff(periodeSemester1);
   const { included } = await transaksiTerverifikasiUntukPeriode(periodeSemester1.id, tenantId, cutoffSemester1, transaction);
   const { saldo_akhir: saldoAkhirSemester1 } = hitungNeraca(included);
+  const sumberData = `Carry-forward otomatis dari saldo akhir Semester I ${periode.tahun} (periode #${periodeSemester1.id}).`;
 
   const existing = await db.ProsnStokTransaksi.findOne({
     where: { tenant_id: tenantId, pengisian_id: pengisian.id, is_carry_forward: true },
     transaction,
   });
-  const komoditasBeras = await db.ProsnKomoditas.findOne({ where: { kode: 'BERAS' }, transaction });
 
   if (!existing) {
+    const komoditasBeras = await db.ProsnKomoditas.findOne({ where: { kode: 'BERAS' }, transaction });
     await db.ProsnStokTransaksi.create({
       tenant_id: tenantId, periode_id: periode.id, indikator_id: pengisian.indikator_id, pengisian_id: pengisian.id,
       komoditas_id: komoditasBeras.id, tanggal: periode.tanggal_mulai, jenis_transaksi: 'saldo_awal',
       volume: saldoAkhirSemester1, satuan: 'Ton', ownership: 'pemerintah_provinsi', status_verifikasi: 'valid',
-      is_carry_forward: true, sumber_data: `Carry-forward otomatis dari saldo akhir Semester I ${periode.tahun} (periode #${periodeSemester1.id}).`,
+      is_carry_forward: true, sumber_data: sumberData,
       created_by: actorId, updated_by: actorId,
     }, { transaction });
-    return { dibuat: true, nilai: saldoAkhirSemester1, cocok: true, selisih: 0 };
+    return { dibuat: true, disinkronkan: false, nilai: saldoAkhirSemester1, cocok: true, selisih: 0 };
   }
 
-  const selisih = Math.round((Number(existing.volume) - saldoAkhirSemester1) * 100) / 100;
-  return { dibuat: false, nilai_tersimpan: Number(existing.volume), nilai_semester1_terkini: saldoAkhirSemester1, cocok: selisih === 0, selisih };
+  const nilaiTersimpanSebelum = Number(existing.volume);
+  const selisihSebelumSinkron = Math.round((nilaiTersimpanSebelum - saldoAkhirSemester1) * 100) / 100;
+  if (selisihSebelumSinkron === 0) {
+    return { dibuat: false, disinkronkan: false, nilai_tersimpan: nilaiTersimpanSebelum, nilai_semester1_terkini: saldoAkhirSemester1, cocok: true, selisih: 0 };
+  }
+
+  // Stale -> sinkronkan baris YANG SAMA di tempat (bukan baris baru).
+  await existing.update({ volume: saldoAkhirSemester1, sumber_data: sumberData, updated_by: actorId }, { transaction });
+  return {
+    dibuat: false, disinkronkan: true,
+    nilai_tersimpan_sebelum: nilaiTersimpanSebelum, nilai_tersimpan_sesudah: saldoAkhirSemester1,
+    nilai_semester1_terkini: saldoAkhirSemester1, cocok: true, selisih: 0, selisih_sebelum_sinkron: selisihSebelumSinkron,
+  };
 }
 
 /**
- * Cek rekonsiliasi: bila carry-forward yg tersimpan sudah TIDAK cocok lagi
- * dengan saldo akhir Semester I terkini (mis. Semester I dikoreksi setelah
- * carry-forward dibuat), tandai PERLU_REKONSILIASI — tidak menggagalkan,
- * tapi memerlukan alasan + bukti rekonsiliasi valid sebelum status Lengkap
- * (mandat §9.2, ditegakkan di guard assertKelengkapanTipeBaru).
+ * Cek rekonsiliasi + PICU SINKRONISASI OTOMATIS (mandat corrective §2/§5) —
+ * `pastikanCarryForward` sekarang self-heal: bila carry-forward stale, baris
+ * disinkronkan IN PLACE sebelum fungsi ini kembali, sehingga `hasil.cocok`
+ * SELALU true setelah pemanggilan ini selesai (baik krn memang sudah sinkron
+ * sejak awal, ATAU krn baru saja disinkronkan). Metadata rekonsiliasi HARUS
+ * jujur menggambarkan KEADAAN SETELAH sinkronisasi (mandat §5) — bukan status
+ * "perlu_rekonsiliasi" yg beku pasca-perbaikan otomatis berhasil. Informasi
+ * selisih SEBELUM sinkron (bila ada) tetap dikembalikan (bukan disimpan ke
+ * kolom baru) utk transparansi pemanggil/API, tanpa menambah skema.
  */
 async function jalankanRekonsiliasi(pengisian, tenantId, actorId, transaction) {
   const hasil = await pastikanCarryForward(pengisian, tenantId, actorId, transaction);
@@ -96,12 +126,41 @@ async function jalankanRekonsiliasi(pengisian, tenantId, actorId, transaction) {
     await pengisian.update({ rekonsiliasi_status: 'tidak_berlaku', rekonsiliasi_selisih: null }, { transaction });
     return { status: 'tidak_berlaku' };
   }
-  if (hasil.cocok) {
-    await pengisian.update({ rekonsiliasi_status: 'ok', rekonsiliasi_selisih: 0, rekonsiliasi_diperiksa_at: new Date() }, { transaction });
-    return { status: 'ok', selisih: 0 };
-  }
-  await pengisian.update({ rekonsiliasi_status: 'perlu_rekonsiliasi', rekonsiliasi_selisih: hasil.selisih, rekonsiliasi_diperiksa_at: new Date() }, { transaction });
-  return { status: 'perlu_rekonsiliasi', selisih: hasil.selisih, detail: hasil };
+  await pengisian.update({ rekonsiliasi_status: 'ok', rekonsiliasi_selisih: 0, rekonsiliasi_diperiksa_at: new Date() }, { transaction });
+  return {
+    status: 'ok', selisih: 0,
+    disinkronkan: Boolean(hasil.disinkronkan),
+    selisih_sebelum_sinkron: hasil.disinkronkan ? hasil.selisih_sebelum_sinkron : 0,
+  };
+}
+
+/**
+ * Corrective "B.1.3 Saldo vs Realisasi" (mandat §9/§10/§14) — realisasi
+ * penyaluran KUMULATIF TAHUNAN, terpisah konseptual dari saldo (posisi
+ * stok). HANYA menjumlah transaksi berjenis 'penyaluran' yg eligible —
+ * carry-forward/saldo_awal TIDAK PERNAH ikut terhitung sbg realisasi (ia
+ * berjenis 'saldo_awal', otomatis dikecualikan oleh bucket per_jenis di
+ * `hitungNeraca`, bukan filter tambahan yg rawan lupa).
+ * Semester I: realisasi = penyaluran Semester I sendiri (`perJenisSendiri`,
+ * sudah tersedia dari neraca yg baru dihitung `hitungUlangB13` — TIDAK query
+ * ulang).
+ * Semester II/tahunan: realisasi = penyaluran Semester I (query independen
+ * thd TABEL TRANSAKSI FISIKNYA, bukan lewat representasi carry-forward yg
+ * derivatif — mencegah double count) + penyaluran Semester II sendiri.
+ */
+async function hitungRealisasiTahunan(tenantId, periode, perJenisSendiri, transaction) {
+  if (String(periode.semester) !== '2') return perJenisSendiri.penyaluran;
+
+  const periodeSemester1 = await db.ProsnPeriode.findOne({
+    where: { tenant_id: tenantId, tahun: periode.tahun, semester: '1', perangkat_daerah_id: periode.perangkat_daerah_id },
+    transaction,
+  });
+  if (!periodeSemester1) return perJenisSendiri.penyaluran;
+
+  const cutoffSemester1 = resolveCutoff(periodeSemester1);
+  const { included: includedSemester1 } = await transaksiTerverifikasiUntukPeriode(periodeSemester1.id, tenantId, cutoffSemester1, transaction);
+  const { per_jenis: perJenisSemester1 } = hitungNeraca(includedSemester1);
+  return Math.round((perJenisSemester1.penyaluran + perJenisSendiri.penyaluran) * 100) / 100;
 }
 
 async function setAlasanRekonsiliasi(pengisianId, alasan, actor, tenantId) {
@@ -144,4 +203,4 @@ async function getNeracaTahunan(tenantId, tahun, perangkatDaerahId) {
   };
 }
 
-module.exports = { pastikanCarryForward, jalankanRekonsiliasi, setAlasanRekonsiliasi, getNeracaTahunan, transaksiTerverifikasiUntukPeriode, resolveCutoff };
+module.exports = { pastikanCarryForward, jalankanRekonsiliasi, setAlasanRekonsiliasi, getNeracaTahunan, transaksiTerverifikasiUntukPeriode, resolveCutoff, hitungRealisasiTahunan };

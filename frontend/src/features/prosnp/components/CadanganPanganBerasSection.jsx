@@ -43,6 +43,23 @@ function formatRupiah(value) {
   return `Rp ${Number(value || 0).toLocaleString('id-ID')}`;
 }
 
+/**
+ * Corrective "B.1.3 Saldo vs Realisasi" (mandat §10-12) — SALDO (posisi stok)
+ * dan REALISASI (aliran kumulatif penyaluran) adalah dua konsep yang berbeda,
+ * TIDAK boleh digabung jadi satu label gabungan Saldo+Realisasi per semester
+ * (ambigu, tidak jelas mana posisi stok mana aliran kumulatif).
+ * Label berbeda menurut jenis_penilaian (murni presentasi, bukan aritmetika):
+ * Semester I ("Saat Ini") vs Semester II/tahunan ("Sampai Saat Ini"/"Sampai
+ * Dengan Saat Ini" — menegaskan sifat kumulatif tahun berjalan). MURNI FUNGSI,
+ * testable tanpa render.
+ */
+export function labelSaldoRealisasi(jenisPenilaian) {
+  if (jenisPenilaian === 'annual_regulatory_final') {
+    return { saldo: 'Saldo Sampai Saat Ini', realisasi: 'Realisasi Sampai Dengan Saat Ini' };
+  }
+  return { saldo: 'Saldo Saat Ini', realisasi: 'Realisasi Saat Ini' };
+}
+
 export default function CadanganPanganBerasSection({ indikator, pengisian, periode, editable, canReview, onChanged }) {
   const [transaksiList, setTransaksiList] = useState([]);
   const [komoditasList, setKomoditasList] = useState([]);
@@ -163,6 +180,7 @@ export default function CadanganPanganBerasSection({ indikator, pengisian, perio
             </div>
           );
         }
+        const label = labelSaldoRealisasi(detail.jenis_penilaian);
         return (
           <div className="alert alert-light border small mb-3">
             {detail.jenis_penilaian === 'progress_checkpoint_semester_1' && (
@@ -172,9 +190,10 @@ export default function CadanganPanganBerasSection({ indikator, pengisian, perio
               <Badge bg="success" className="mb-2">Skor Regulasi Tahunan B.1.3</Badge>
             )}
             <Row className="gy-1">
-              <Col md={4}><strong>Target Cadangan Beras:</strong> {detail.target_ton !== null && detail.target_ton !== undefined ? `${Number(detail.target_ton).toLocaleString('id-ID')} Ton` : '—'}</Col>
-              <Col md={4}><strong>Saldo/Realisasi Semester:</strong> {detail.saldo_akhir !== null && detail.saldo_akhir !== undefined ? `${Number(detail.saldo_akhir).toLocaleString('id-ID')} Ton` : '—'}</Col>
-              <Col md={4}>
+              <Col md={3}><strong>Target Cadangan Beras:</strong> {detail.target_ton !== null && detail.target_ton !== undefined ? `${Number(detail.target_ton).toLocaleString('id-ID')} Ton` : '—'}</Col>
+              <Col md={3}><strong>{label.saldo}:</strong> {detail.saldo_akhir !== null && detail.saldo_akhir !== undefined ? `${Number(detail.saldo_akhir).toLocaleString('id-ID')} Ton` : '—'}</Col>
+              <Col md={3}><strong>{label.realisasi}:</strong> {detail.realisasi_penyaluran_ton !== null && detail.realisasi_penyaluran_ton !== undefined ? `${Number(detail.realisasi_penyaluran_ton).toLocaleString('id-ID')} Ton` : '—'}</Col>
+              <Col md={3}>
                 <strong>Persentase Capaian:</strong>{' '}
                 {detail.capaian_persen !== null && detail.capaian_persen !== undefined
                   ? `${Number(detail.capaian_persen).toLocaleString('id-ID')} %`
@@ -201,19 +220,30 @@ export default function CadanganPanganBerasSection({ indikator, pengisian, perio
       {targetAktif ? (
         <div className="small mb-3">
           <div className="d-flex align-items-center gap-2 flex-wrap">
-            <span>
-              {targetAktif.nomor_keputusan && (
-                <>Nomor <strong>{targetAktif.nomor_keputusan}</strong> ({new Date(targetAktif.tanggal_keputusan).toLocaleDateString('id-ID')}) — </>
-              )}
-              target <strong>{Number(targetAktif.target_ton).toLocaleString('id-ID')} {targetAktif.satuan}</strong>
-            </span>
+            <span>Target <strong>{Number(targetAktif.target_ton).toLocaleString('id-ID')} {targetAktif.satuan}</strong></span>
             <EntityBuktiManager
               pengisianId={pengisian.id} entityType="CADANGAN_TARGET" entityId={targetAktif.id}
               kategoriPilihan={['keputusan_kdh', 'kartu_stok', 'rekonsiliasi']}
               canUpload={editable} canReview={canReview} label="Bukti Target"
             />
           </div>
+          {/* Corrective "B.1.3 Regulatory Target Provenance" (mandat §15-19) —
+              SUMBER ANGKA OPERASIONAL (RKA/DPA/manual, DARI MANA angka 65 Ton
+              berasal) TIDAK SAMA dgn DASAR PENETAPAN REGULATIF (Keputusan
+              KDH/Kepgub, INSTRUMEN HUKUM yg mengesahkannya). RKA/DPA/DPPA TIDAK
+              PERNAH dinaikkan status jadi instrumen legal — bila nomor/tanggal
+              Keputusan KDH belum ada, keadaan itu ditampilkan APA ADANYA (bukan
+              disamarkan/diam-diam dianggap terverifikasi krn target_ton ada). */}
           <div className="d-flex align-items-center gap-2 flex-wrap mt-1">
+            <strong>Dasar Penetapan Regulatif:</strong>
+            {targetAktif.nomor_keputusan && targetAktif.tanggal_keputusan ? (
+              <span>Keputusan KDH Nomor <strong>{targetAktif.nomor_keputusan}</strong> ({new Date(targetAktif.tanggal_keputusan).toLocaleDateString('id-ID')})</span>
+            ) : (
+              <span className="text-muted fst-italic">Belum tersedia/terverifikasi.</span>
+            )}
+          </div>
+          <div className="d-flex align-items-center gap-2 flex-wrap mt-1">
+            <strong className="text-nowrap">Sumber Angka Operasional:</strong>
             {targetAktifDariRkaOperasional ? (() => {
               const jejak = [...targetAktif.source_trace].reverse().find((t) => t?.jenis === 'sistem_rka_operasional');
               return (
