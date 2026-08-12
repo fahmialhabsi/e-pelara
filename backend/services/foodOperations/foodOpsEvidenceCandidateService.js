@@ -15,12 +15,22 @@ const RELEVANCE = { EXACT: 'EXACT', STRONG: 'STRONG', POSSIBLE: 'POSSIBLE' };
 
 /**
  * Corrective "B.1.3 Registry-First Evidence Discovery" — kamus PADANAN ISTILAH
- * kategori evidence ProSN B.1.3 (Cadangan Pangan Beras) -> document_type
- * FoodOps yang SUDAH ADA di kosakata (`foodOpsConstants.DOCUMENT_TYPE_LABEL`).
- * SENGAJA sempit/jujur (mandat §6 "not permission to bind unrelated
- * documents") — kategori tanpa padanan jelas (mis. dokumen_koreksi) SENGAJA
- * dibiarkan kosong, bukan dipaksakan ke 'other' (yg akan membuat sinyal jenis
- * dokumen jadi tidak berarti krn hampir semua dokumen ber-type 'other').
+ * kategori evidence ProSN (awalnya B.1.3/Cadangan Pangan Beras, kini juga
+ * dipakai B.1.4/Inovasi & Perkada — dictionary ini generik per `kategori_prosn`,
+ * bukan spesifik satu indikator) -> document_type FoodOps yang SUDAH ADA di
+ * kosakata (`foodOpsConstants.DOCUMENT_TYPE_LABEL`). SENGAJA sempit/jujur
+ * (mandat §6 "not permission to bind unrelated documents") — kategori tanpa
+ * padanan jelas (mis. dokumen_koreksi) SENGAJA dibiarkan kosong, bukan
+ * dipaksakan ke 'other' (yg akan membuat sinyal jenis dokumen jadi tidak
+ * berarti krn hampir semua dokumen ber-type 'other').
+ * Corrective "B.1.4 Perkada Evidence Auto-Find/Reuse" — `perkada` ditambahkan:
+ * Perkada (Peraturan Kepala Daerah) di konteks Provinsi = Peraturan Gubernur
+ * (`peraturan_gubernur`), instrumen regulasi yg sama persis dgn yg sudah
+ * dipetakan utk `dokumen_penetapan` B.1.3 — bukan kategori/type baru, murni
+ * menambah satu padanan istilah yg sebelumnya belum ada sama sekali (root
+ * cause "Tidak ditemukan": kategoriTypes kosong utk 'perkada' -> semanticMatch
+ * selalu false -> tidak ada sinyal lain yg berlaku utk evidence regulatif
+ * B.1.4 -> dikecualikan total dari kandidat).
  */
 const KATEGORI_PROSN_TO_FOOD_OPS_TYPES = {
   dokumen_penetapan: ['surat_keputusan', 'keputusan_gubernur', 'peraturan_gubernur'],
@@ -29,6 +39,7 @@ const KATEGORI_PROSN_TO_FOOD_OPS_TYPES = {
   bukti_penerimaan: ['bukti_serah_terima'],
   berita_acara: ['berita_acara'],
   dokumen_koreksi: [],
+  perkada: ['peraturan_gubernur'],
 };
 
 /**
