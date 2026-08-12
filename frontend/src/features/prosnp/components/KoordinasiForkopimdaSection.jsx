@@ -123,10 +123,18 @@ export default function KoordinasiForkopimdaSection({ indikator, pengisian, edit
         </Table>
       ) : <div className="text-muted small mb-2">Belum ada rapat Forkopimda dicatat.</div>}
 
+      {/* Corrective "B.1.2 Tambah Rapat Modal — Footer Accessibility Fix": <Form>
+          sebelumnya membungkus Modal.Header+Modal.Body+Modal.Footer sekaligus,
+          yang merusak layout flex `.modal-dialog-scrollable` milik Bootstrap
+          (Header/Body/Footer HARUS jadi flex child langsung dari modal-content
+          agar modal-body dapat scroll sendiri dan footer tetap accessible).
+          <Form> sekarang HANYA membungkus isi Modal.Body; tombol Simpan
+          terhubung ke form via atribut native `form` (HTML5), perilaku submit
+          TIDAK berubah sama sekali. */}
       <Modal show={showModal} onHide={() => setShowModal(false)} size="lg" scrollable>
-        <Form onSubmit={submit}>
-          <Modal.Header closeButton><Modal.Title>{editing ? 'Ubah' : 'Tambah'} Rapat Forkopimda</Modal.Title></Modal.Header>
-          <Modal.Body>
+        <Modal.Header closeButton><Modal.Title>{editing ? 'Ubah' : 'Tambah'} Rapat Forkopimda</Modal.Title></Modal.Header>
+        <Modal.Body>
+          <Form id="formRapatForkopimda" onSubmit={submit}>
             <Row>
               <Col md={6}><Form.Group className="mb-2"><Form.Label>Tanggal Rapat *</Form.Label><Form.Control required type="date" value={form.tanggal_rapat} onChange={(e) => setForm({ ...form, tanggal_rapat: e.target.value })} /></Form.Group></Col>
               <Col md={6}><Form.Group className="mb-2"><Form.Label>Nama Forum *</Form.Label><Form.Control required value={form.nama_forum} onChange={(e) => setForm({ ...form, nama_forum: e.target.value })} /></Form.Group></Col>
@@ -173,12 +181,12 @@ export default function KoordinasiForkopimdaSection({ indikator, pengisian, edit
             </Row>
             <Form.Group className="mb-2"><Form.Label>Materi</Form.Label><Form.Control as="textarea" rows={2} value={form.materi} onChange={(e) => setForm({ ...form, materi: e.target.value })} /></Form.Group>
             <div className="small text-muted">Undangan, daftar hadir, dan notulen diunggah lewat bagian Bukti Dukung di bawah (kategori: Undangan/Daftar Hadir/Notulen) — rapat baru dihitung sah bila bukti tersebut tersedia dan valid.</div>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="light" onClick={() => setShowModal(false)}>Batal</Button>
-            <Button type="submit" disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan'}</Button>
-          </Modal.Footer>
-        </Form>
+          </Form>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="light" onClick={() => setShowModal(false)}>Batal</Button>
+          <Button type="submit" form="formRapatForkopimda" disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan'}</Button>
+        </Modal.Footer>
       </Modal>
     </div>
   );
