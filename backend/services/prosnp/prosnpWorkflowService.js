@@ -179,7 +179,13 @@ async function updatePengisian(id, payload, actor, tenantId) {
     if (row.indikator.periode.status !== 'aktif') throw new ProsnError('Periode tidak aktif.', 409, 'PROSNP_PERIOD_LOCKED');
     if (row.lock_version !== expectedVersion) throw new ProsnError('Data telah diubah pengguna lain. Muat ulang data terlebih dahulu.', 409, 'PROSNP_VERSION_CONFLICT');
     if (!isAdmin(actor) && row.diisi_oleh && Number(row.diisi_oleh) !== Number(actor.id)) throw new ProsnError('Operator hanya dapat mengubah pengisian miliknya.', 403, 'PROSNP_NOT_OWNER');
-    const editable = ['data_form', 'target_nilai', 'realisasi_nilai', 'satuan', 'sumber_data', 'sumber_data_tanggal_posisi', 'sumber_data_referensi_dokumen', 'periode_data', 'hambatan', 'hambatan_kategori_id', 'tindak_lanjut', 'tindak_lanjut_kategori_id'];
+    // sumber_data_is_auto TIDAK PERNAH dipercaya langsung dari client (anti-spoof)
+    // — controller (prosnpController.updatePengisian) yg menghitung nilainya
+    // server-side (bandingkan sumber_data submitted dgn saran sistem terkini)
+    // SEBELUM memanggil fungsi ini; di sini hanya field yg SUDAH lulus
+    // verifikasi server yg diizinkan tersimpan (mandat "ProSN Semester-II
+    // Readiness — Sumber Data Authoritative Auto-Sync" §19).
+    const editable = ['data_form', 'target_nilai', 'realisasi_nilai', 'satuan', 'sumber_data', 'sumber_data_is_auto', 'sumber_data_tanggal_posisi', 'sumber_data_referensi_dokumen', 'periode_data', 'hambatan', 'hambatan_kategori_id', 'tindak_lanjut', 'tindak_lanjut_kategori_id'];
     // rasio_nilai HANYA boleh diterima dari client utk tipe_form generik lama
     // (target_capaian_rasio, dihitung client-side sejak sebelum redesign). Utk
     // capaian_persentase_bertingkat (spek 34) rasio_nilai SELALU dihitung ulang
@@ -232,11 +238,23 @@ async function adaKategoriValidPadaIndikator(indikatorId, kategoriList, tenantId
  * Cek `minimum_bukti` TETAP dipertahankan sbg lantai keamanan tambahan
  * (bukan satu-satunya, sesuai instruksi "jangan lagi HANYA memakai itu").
  */
-async function assertKelengkapanTipeBaru(row, tenantId, transaction) {
+/**
+ * Corrective "ProSN Semester-II Readiness — Completion Readiness Itemized
+ * Blockers" (mandat §31/Req O) — SATU sumber kebenaran utk seluruh syarat
+ * status Lengkap, dikumpulkan sbg ARRAY (bukan throw-on-first) agar bisa
+ * dipakai DUA cara: (1) `assertKelengkapanTipeBaru` di bawah TETAP throw pada
+ * blocker PERTAMA dgn message/code PERSIS SAMA seperti sebelumnya (urutan
+ * pengecekan tidak berubah — perilaku transisi status Lengkap yang sudah ada
+ * TIDAK diubah sama sekali, mandat "do not change substantive completion
+ * requirements"); (2) endpoint pre-check baru (read-only) bisa menampilkan
+ * SEMUA blocker sekaligus ke user sebelum mencoba transisi.
+ */
+async function collectKelengkapanBlockers(row, tenantId, transaction) {
+  const blockers = [];
   const childModelName = CHILD_MODEL_BY_TIPE_FORM[row.indikator.tipe_form];
   if (childModelName) {
     const jumlahAnak = await db[childModelName].count({ where: { pengisian_id: row.id, tenant_id: tenantId }, transaction });
-    if (jumlahAnak === 0) throw new ProsnError('Belum ada data register yang dicatat untuk indikator ini.', 409, 'PROSNP_REGISTER_EMPTY');
+    if (jumlahAnak === 0) blockers.push({ code: 'PROSNP_REGISTER_EMPTY', message: 'Belum ada data register yang dicatat untuk indikator ini.' });
   }
 
   // Cadangan Pangan Beras dikecualikan dari lantai `minimum_bukti` generik ini:
@@ -252,43 +270,66 @@ async function assertKelengkapanTipeBaru(row, tenantId, transaction) {
       transaction,
     });
     if (buktiValidCount < (row.indikator.minimum_bukti || 1)) {
-      throw new ProsnError(`Bukti wajib berstatus Valid minimal ${row.indikator.minimum_bukti || 1} berkas (saat ini ${buktiValidCount}) — minta Pemeriksa memvalidasi bukti terlebih dahulu.`, 409, 'PROSNP_BUKTI_BELUM_VALID');
+      blockers.push({ code: 'PROSNP_BUKTI_BELUM_VALID', message: `Bukti wajib berstatus Valid minimal ${row.indikator.minimum_bukti || 1} berkas (saat ini ${buktiValidCount}) — minta Pemeriksa memvalidasi bukti terlebih dahulu.` });
     }
   }
 
   if (row.indikator.tipe_form === 'penugasan_kdh') {
     // §6.1: status Lengkap wajib ADA BUKTI_TINDAK_LANJUT valid, terlepas dari surat mana pun.
     const ada = await adaKategoriValidPadaIndikator(row.indikator_id, ['bukti_tindak_lanjut'], tenantId, transaction);
-    if (!ada) throw new ProsnError('Status Lengkap mensyaratkan minimal satu dokumen BUKTI_TINDAK_LANJUT berstatus Valid (mandat §6.1).', 409, 'PROSNP_EVIDENCE_GATE_BUKTI_TINDAK_LANJUT');
+    if (!ada) blockers.push({ code: 'PROSNP_EVIDENCE_GATE_BUKTI_TINDAK_LANJUT', message: 'Status Lengkap mensyaratkan minimal satu dokumen BUKTI_TINDAK_LANJUT berstatus Valid (mandat §6.1).' });
   }
   if (row.indikator.tipe_form === 'cadangan_pangan_beras') {
     // §6.3: KEPUTUSAN_KDH AND (KARTU_STOK OR REKONSILIASI_STOK) — dicek entity-scoped
     // ke ProsnCadanganTarget aktif tahun ini (sama seperti rule engine), bukan
     // per-indikator_id, karena target bersifat tenant+tahun (dipakai lintas periode).
     const target = await db.ProsnCadanganTarget.findOne({ where: { tenant_id: tenantId, tahun_target: row.indikator.periode.tahun, status_aktif: true }, transaction });
-    if (!target) throw new ProsnError('Status Lengkap mensyaratkan Target Cadangan Pangan Beras aktif untuk tahun ini beserta dokumen KEPUTUSAN_KDH berstatus Valid (mandat §6.3).', 409, 'PROSNP_EVIDENCE_GATE_KEPUTUSAN_KDH');
-    const kategoriTarget = await evidenceGate.kategoriValidSetUntukEntity('CADANGAN_TARGET', target.id, tenantId, transaction);
-    if (!kategoriTarget.has('keputusan_kdh')) throw new ProsnError('Status Lengkap mensyaratkan dokumen KEPUTUSAN_KDH berstatus Valid (mandat §6.3).', 409, 'PROSNP_EVIDENCE_GATE_KEPUTUSAN_KDH');
-    if (!kategoriTarget.has('kartu_stok') && !kategoriTarget.has('rekonsiliasi')) {
-      throw new ProsnError('Status Lengkap mensyaratkan dokumen KARTU_STOK atau REKONSILIASI_STOK berstatus Valid (mandat §6.3).', 409, 'PROSNP_EVIDENCE_GATE_KARTU_STOK');
+    if (!target) {
+      blockers.push({ code: 'PROSNP_EVIDENCE_GATE_KEPUTUSAN_KDH', message: 'Status Lengkap mensyaratkan Target Cadangan Pangan Beras aktif untuk tahun ini beserta dokumen KEPUTUSAN_KDH berstatus Valid (mandat §6.3).' });
+    } else {
+      const kategoriTarget = await evidenceGate.kategoriValidSetUntukEntity('CADANGAN_TARGET', target.id, tenantId, transaction);
+      if (!kategoriTarget.has('keputusan_kdh')) blockers.push({ code: 'PROSNP_EVIDENCE_GATE_KEPUTUSAN_KDH', message: 'Status Lengkap mensyaratkan dokumen KEPUTUSAN_KDH berstatus Valid (mandat §6.3).' });
+      if (!kategoriTarget.has('kartu_stok') && !kategoriTarget.has('rekonsiliasi')) {
+        blockers.push({ code: 'PROSNP_EVIDENCE_GATE_KARTU_STOK', message: 'Status Lengkap mensyaratkan dokumen KARTU_STOK atau REKONSILIASI_STOK berstatus Valid (mandat §6.3).' });
+      }
     }
     if (row.rekonsiliasi_status === 'perlu_rekonsiliasi' && !row.rekonsiliasi_alasan) {
-      throw new ProsnError('Terdapat selisih saldo antarsemester yang belum dijelaskan — isi alasan rekonsiliasi dan lampirkan bukti rekonsiliasi valid terlebih dahulu (mandat §9.2).', 409, 'PROSNP_RECONCILIATION_REQUIRED');
+      blockers.push({ code: 'PROSNP_RECONCILIATION_REQUIRED', message: 'Terdapat selisih saldo antarsemester yang belum dijelaskan — isi alasan rekonsiliasi dan lampirkan bukti rekonsiliasi valid terlebih dahulu (mandat §9.2).' });
     }
   }
   if (row.indikator.tipe_form === 'capaian_persentase_bertingkat') {
     // Spek 34 §5/§6 langkah 6 (koreksi wajib #4): metadata sumber wajib diisi sebelum
     // Lengkap, bukan sumber_data teks bebas saja — supaya bisa diaudit lintas-OPD.
-    if (row.target_nilai === null || row.target_nilai === undefined) throw new ProsnError('Target/sasaran wajib diisi sebelum status Lengkap.', 409, 'PROSNP_TARGET_BELUM_DIISI');
-    if (row.realisasi_nilai === null || row.realisasi_nilai === undefined) throw new ProsnError('Realisasi/capaian wajib diisi sebelum status Lengkap.', 409, 'PROSNP_REALISASI_BELUM_DIISI');
+    if (row.target_nilai === null || row.target_nilai === undefined) blockers.push({ code: 'PROSNP_TARGET_BELUM_DIISI', message: 'Target/sasaran wajib diisi sebelum status Lengkap.' });
+    if (row.realisasi_nilai === null || row.realisasi_nilai === undefined) blockers.push({ code: 'PROSNP_REALISASI_BELUM_DIISI', message: 'Realisasi/capaian wajib diisi sebelum status Lengkap.' });
     if (!row.sumber_data_tanggal_posisi || !row.sumber_data_referensi_dokumen) {
-      throw new ProsnError('Tanggal posisi data dan referensi dokumen sumber wajib diisi sebelum status Lengkap (spek Indicator Foundation §3.5).', 409, 'PROSNP_SUMBER_DATA_BELUM_LENGKAP');
+      blockers.push({ code: 'PROSNP_SUMBER_DATA_BELUM_LENGKAP', message: 'Tanggal posisi data dan referensi dokumen sumber wajib diisi sebelum status Lengkap (spek Indicator Foundation §3.5).' });
     }
   }
 
   if (row.skor_indikatif_internal === null || row.skor_indikatif_internal === undefined) {
-    throw new ProsnError('Rule engine belum dijalankan — hitung ulang skor indikatif terlebih dahulu sebelum menandai Lengkap.', 409, 'PROSNP_SKOR_BELUM_DIHITUNG');
+    blockers.push({ code: 'PROSNP_SKOR_BELUM_DIHITUNG', message: 'Rule engine belum dijalankan — hitung ulang skor indikatif terlebih dahulu sebelum menandai Lengkap.' });
   }
+  return blockers;
+}
+
+async function assertKelengkapanTipeBaru(row, tenantId, transaction) {
+  const blockers = await collectKelengkapanBlockers(row, tenantId, transaction);
+  if (blockers.length) throw new ProsnError(blockers[0].message, 409, blockers[0].code);
+}
+
+/**
+ * Endpoint pre-check READ-ONLY (mandat §31/Req O) — tidak pernah mengubah
+ * status, murni menampilkan SEMUA blocker sekaligus (bukan hanya yg pertama)
+ * supaya user tahu persis apa yg harus dilengkapi sebelum mencoba Tandai
+ * Lengkap. Requirement substantif TIDAK berubah — reuse `collectKelengkapanBlockers`
+ * yg SAMA PERSIS dgn yg dipakai `assertKelengkapanTipeBaru`.
+ */
+async function checkCompletionReadiness(id, tenantId) {
+  const row = await getPengisianScoped(id, tenantId, null);
+  if (!TIPE_FORM_BARU.has(row.indikator.tipe_form)) return { ready: true, blockers: [] };
+  const blockers = await collectKelengkapanBlockers(row, tenantId, null);
+  return { ready: blockers.length === 0, blockers };
 }
 
 async function transitionPengisian(id, target, payload, actor, tenantId) {
@@ -599,7 +640,7 @@ async function siapkanEksporPeriode(id, actor, tenantId) {
   });
 }
 
-module.exports = { ProsnError, createPeriod, updatePeriode, createIndikator, initializePeriodIndicators, activatePeriod, updatePengisian, transitionPengisian, listPeriods, listAntrianPemeriksaan, listKategoriReferensi, getPengisianScoped, createBukti, reviseBukti, checklistBukti, listBuktiUntukEntity, setStatusVerifikasiBukti, periksaPengisian, archivePeriod, reopenPeriod, siapkanEksporPeriode, isAdmin,
+module.exports = { ProsnError, createPeriod, updatePeriode, createIndikator, initializePeriodIndicators, activatePeriod, updatePengisian, transitionPengisian, listPeriods, listAntrianPemeriksaan, listKategoriReferensi, getPengisianScoped, createBukti, reviseBukti, checklistBukti, listBuktiUntukEntity, setStatusVerifikasiBukti, periksaPengisian, archivePeriod, reopenPeriod, siapkanEksporPeriode, isAdmin, checkCompletionReadiness,
   // Evidence & Operasi Pangan — Phase 1 (mandat §34): export tambahan MURNI,
   // tidak ada baris kode existing yang diubah. Dipakai foodOpsProsnBindingService
   // agar validasi binding entity/pengisian identik dgn jalur upload ProSN asli

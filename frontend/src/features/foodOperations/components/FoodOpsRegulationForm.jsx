@@ -18,6 +18,26 @@ export function isRegulationFormValid(form, isEditing) {
   return true;
 }
 
+/**
+ * Corrective "ProSN Semester-II Readiness — Regulation Recall-First Autofill"
+ * (mandat §9/Req B) — dokumen kanonis (`FoodOpsDocument`) SUDAH menyimpan
+ * judul/nomor_dokumen/tanggal_dokumen/penerbit; field ini SAH diturunkan
+ * langsung (bukan fabrikasi — sumbernya sudah tersimpan). Field yg TIDAK ada
+ * padanan aman di dokumen (jenis_produk_hukum, tanggal_berlaku, status_berlaku,
+ * legal_hierarchy, scope) SENGAJA dibiarkan kosong/tidak disentuh — bukan
+ * ditebak. MURNI FUNGSI, testable tanpa render. HANYA mengisi field yg MASIH
+ * KOSONG di form saat ini (`currentForm`) — tidak pernah menimpa isian user.
+ */
+export function deriveRegulationAutofill(document, currentForm) {
+  if (!document) return {};
+  const patch = {};
+  if (!currentForm?.judul_resmi) patch.judul_resmi = document.judul || '';
+  if (!currentForm?.nomor) patch.nomor = document.nomor_dokumen || '';
+  if (!currentForm?.tanggal_penetapan) patch.tanggal_penetapan = document.tanggal_dokumen || '';
+  if (!currentForm?.instansi_penerbit) patch.instansi_penerbit = document.penerbit || '';
+  return patch;
+}
+
 export default function FoodOpsRegulationForm({ show, onHide, editing, onSaved }) {
   const [form, setForm] = useState(emptyForm());
   const [regulationDocs, setRegulationDocs] = useState([]);
@@ -50,11 +70,15 @@ export default function FoodOpsRegulationForm({ show, onHide, editing, onSaved }
         <Modal.Body>
           {!editing && (
             <Form.Group className="mb-2"><Form.Label>Dokumen (document_class=REGULATION) *</Form.Label>
-              <Form.Select required value={form.document_id} onChange={(e) => setForm({ ...form, document_id: e.target.value })}>
+              <Form.Select required value={form.document_id} onChange={(e) => {
+                const documentId = e.target.value;
+                const dokumenTerpilih = regulationDocs.find((d) => String(d.id) === String(documentId));
+                setForm((prev) => ({ ...prev, document_id: documentId, ...deriveRegulationAutofill(dokumenTerpilih, prev) }));
+              }}>
                 <option value="">— pilih dokumen yang sudah diunggah —</option>
                 {regulationDocs.map((d) => <option key={d.id} value={d.id}>{d.judul} (v{d.versi})</option>)}
               </Form.Select>
-              <Form.Text muted>Unggah dokumen dgn class &quot;Regulasi&quot; terlebih dahulu di menu Dokumen &amp; Evidence.</Form.Text>
+              <Form.Text muted>Unggah dokumen dgn class &quot;Regulasi&quot; terlebih dahulu di menu Dokumen &amp; Evidence. Memilih dokumen otomatis mengisi Judul Resmi/Nomor/Tanggal Penetapan/Instansi Penerbit dari metadata dokumen (dapat diedit sebelum disimpan).</Form.Text>
             </Form.Group>
           )}
           <Row>

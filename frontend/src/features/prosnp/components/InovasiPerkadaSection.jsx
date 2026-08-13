@@ -5,6 +5,9 @@ import { createProsnInovasi, deleteProsnInovasi, getProsnInovasi, updateProsnIno
 import ProsnSkorIndikatifCard from './ProsnSkorIndikatifCard';
 import EntityBuktiManager from './EntityBuktiManager';
 import ProsnAutofillModal from './ProsnAutofillModal';
+import PreBindEvidencePicker from './PreBindEvidencePicker';
+import { bindFoodOpsEvidenceToProsn } from '../../foodOperations/services/foodOpsApi';
+import { DOCUMENT_TYPE_LABEL } from '../../foodOperations/services/foodOpsConstants';
 
 const STATUS_IMPLEMENTASI_LABEL = { gagasan: 'Gagasan', diterapkan_sebagian: 'Diterapkan Sebagian', diterapkan_penuh: 'Diterapkan Penuh' };
 const STATUS_PERKADA_LABEL = { belum_ada: 'Belum Ada', proses_penyusunan: 'Proses Penyusunan', ditetapkan: 'Ditetapkan' };
@@ -19,6 +22,26 @@ function emptyForm() {
   };
 }
 
+/**
+ * Corrective "ProSN Semester-II Readiness — B.1.4 Field-Level Perkada
+ * Autofill" (mandat §13/Req F) — HANYA field yg SAH diturunkan dari metadata
+ * dokumen Perkada kanonis tersimpan (nomor_dokumen/tanggal_dokumen/
+ * document_type). `status_perkada` diisi 'ditetapkan' HANYA bila saat ini
+ * masih default 'belum_ada' — dokumen Perkada yg SUDAH terbit/tersimpan
+ * secara faktual berarti sudah ditetapkan (bukan tebakan, itu fakta yg
+ * melekat pada eksistensi dokumennya), TIDAK PERNAH menimpa pilihan eksplisit
+ * user (mis. 'proses_penyusunan'). MURNI FUNGSI, testable tanpa render.
+ */
+export function derivePerkadaAutofill(document, currentForm) {
+  if (!document) return {};
+  const patch = {};
+  if (!currentForm?.nomor_perkada) patch.nomor_perkada = document.nomor_dokumen || '';
+  if (!currentForm?.tanggal_perkada) patch.tanggal_perkada = document.tanggal_dokumen || '';
+  if (!currentForm?.jenis_perkada) patch.jenis_perkada = DOCUMENT_TYPE_LABEL[document.document_type] || '';
+  if (!currentForm?.status_perkada || currentForm.status_perkada === 'belum_ada') patch.status_perkada = 'ditetapkan';
+  return patch;
+}
+
 export default function InovasiPerkadaSection({ indikator, pengisian, editable, canReview, onChanged }) {
   // MBG 2.7 (dan indikator non-Ketahanan-Pangan lain yg reuse tipe_form ini di masa
   // depan) pakai toggle relevansi generik, bukan 3 checkbox spesifik pengadaan/
@@ -30,6 +53,7 @@ export default function InovasiPerkadaSection({ indikator, pengisian, editable, 
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
+  const [sourcePerkadaDocument, setSourcePerkadaDocument] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -39,15 +63,27 @@ export default function InovasiPerkadaSection({ indikator, pengisian, editable, 
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [pengisian.id]);
 
-  const openCreate = () => { setEditing(null); setForm(emptyForm()); setShowModal(true); };
-  const openEdit = (inovasi) => { setEditing(inovasi); setForm({ ...emptyForm(), ...inovasi }); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setForm(emptyForm()); setSourcePerkadaDocument(null); setShowModal(true); };
+  const openEdit = (inovasi) => { setEditing(inovasi); setForm({ ...emptyForm(), ...inovasi }); setSourcePerkadaDocument(null); setShowModal(true); };
 
   const submit = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
-      if (editing) await updateProsnInovasi(editing.id, form);
-      else await createProsnInovasi(pengisian.id, form);
+      let record;
+      if (editing) record = await updateProsnInovasi(editing.id, form);
+      else record = await createProsnInovasi(pengisian.id, form);
+      // Corrective "B.1.4 Field-Level Perkada Autofill" (mandat §13) — ikat
+      // dokumen Perkada yg dipilih via PreBindEvidencePicker sbg bukti, baik
+      // saat create MAUPUN edit (Perkada sering baru diketahui setelah inovasi
+      // sudah tercatat) — user SUDAH eksplisit klik "Gunakan" saat memilih.
+      if (sourcePerkadaDocument) {
+        try {
+          await bindFoodOpsEvidenceToProsn({ document_id: sourcePerkadaDocument.id, pengisian_id: pengisian.id, entity_type: 'INOVASI', entity_id: record.id, kategori: 'perkada' });
+        } catch (bindError) {
+          toast.error(bindError?.response?.data?.message || 'Inovasi tersimpan, tapi gagal mengikat dokumen Perkada sbg bukti — tautkan manual lewat Bukti.');
+        }
+      }
       toast.success('Inovasi tersimpan.');
       setShowModal(false);
       await load(); await onChanged();
@@ -65,6 +101,7 @@ export default function InovasiPerkadaSection({ indikator, pengisian, editable, 
       <ProsnSkorIndikatifCard
         pengisianId={pengisian.id} bobotMaksimal={indikator.bobot_maksimal}
         skor={pengisian.skor_indikatif_internal} alasan={pengisian.skor_alasan} dihitungAt={pengisian.skor_dihitung_at}
+        tipeForm={indikator.tipe_form} detail={pengisian.skor_detail}
         onChanged={async () => { await load(); await onChanged(); }}
       />
       <div className="d-flex justify-content-between align-items-center mb-2">
@@ -155,6 +192,11 @@ export default function InovasiPerkadaSection({ indikator, pengisian, editable, 
             </Row>
             <Form.Group className="mb-2"><Form.Label>Relevansi Dijelaskan (wajib bila Sub Kegiatan Basis di luar 4 default B.1.4)</Form.Label><Form.Control as="textarea" rows={2} value={form.relevansi_dijelaskan} onChange={(e) => setForm({ ...form, relevansi_dijelaskan: e.target.value })} /></Form.Group>
             <hr />
+            <PreBindEvidencePicker
+              kategoriProsn="perkada"
+              label="Isi Otomatis field Perkada dari Dokumen Existing (opsional) — tidak perlu unggah ulang."
+              onSelect={(document) => { setSourcePerkadaDocument(document); setForm((prev) => ({ ...prev, ...derivePerkadaAutofill(document, prev) })); }}
+            />
             <Row>
               <Col md={4}><Form.Group className="mb-2"><Form.Label>Status Perkada *</Form.Label>
                 <Form.Select value={form.status_perkada} onChange={(e) => setForm({ ...form, status_perkada: e.target.value })}>

@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../../hooks/useAuth';
 import {
+  checkProsnCompletionReadiness,
   checklistProsnBukti,
   createProsnBukti,
   downloadProsnBukti,
@@ -87,6 +88,7 @@ function buildFormState(indikator) {
     skor_dihitung_at: pengisian.skor_dihitung_at || null,
     satuan: pengisian.satuan ?? indikator.satuan_default ?? '',
     sumber_data: pengisian.sumber_data || '',
+    sumber_data_is_auto: Boolean(pengisian.sumber_data_is_auto),
     sumber_data_tanggal_posisi: pengisian.sumber_data_tanggal_posisi || '',
     sumber_data_referensi_dokumen: pengisian.sumber_data_referensi_dokumen || '',
     periode_data: pengisian.periode_data || '',
@@ -367,6 +369,7 @@ export default function ProsnPeriodeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [forms, setForms] = useState({});
   const [savingId, setSavingId] = useState(null);
+  const [readinessBlockers, setReadinessBlockers] = useState(null);
   const [pickerFor, setPickerFor] = useState(null);
   const [pickerRows, setPickerRows] = useState(null);
   const [pickerLoading, setPickerLoading] = useState(false);
@@ -523,6 +526,20 @@ export default function ProsnPeriodeDetailPage() {
     const form = forms[indikator.id];
     setSavingId(indikator.id);
     try {
+      // Corrective "ProSN Semester-II Readiness — Completion Readiness Itemized
+      // Blockers" (mandat §31/Req O) — SEBELUM mencoba transisi ke Lengkap,
+      // tampilkan SEMUA blocker sekaligus (bukan hanya blocker pertama yg akan
+      // dilempar backend) supaya user tahu persis apa yg harus dilengkapi.
+      // Requirement substantif TIDAK berubah — endpoint ini read-only, murni
+      // reuse pengecekan yg sama dgn yg dijalankan backend saat transisi asli.
+      if (statusTujuan === 'lengkap') {
+        const readiness = await checkProsnCompletionReadiness(form.pengisianId);
+        if (!readiness.ready) {
+          setReadinessBlockers({ indikatorKode: indikator.kode, blockers: readiness.blockers });
+          setSavingId(null);
+          return;
+        }
+      }
       await transitionProsnPengisian(form.pengisianId, { status_tujuan: statusTujuan, lock_version: form.lock_version, ...extra });
       toast.success(`Status ${indikator.kode} diperbarui menjadi ${STATUS_LABEL[statusTujuan] || statusTujuan}.`);
       await load();
@@ -570,6 +587,7 @@ export default function ProsnPeriodeDetailPage() {
           skor_alasan: result.skor_alasan || null,
           skor_detail: result.skor_detail || null,
           skor_dihitung_at: result.skor_dihitung_at || null,
+          sumber_data_is_auto: Boolean(result.sumber_data_is_auto),
         },
       };
     });
@@ -920,12 +938,14 @@ export default function ProsnPeriodeDetailPage() {
                 <ProsnInternalAutofillSuggestion
                   pengisianId={form.pengisianId}
                   savedSumberData={form.sumber_data}
+                  isSumberDataAuto={form.sumber_data_is_auto}
                   skorDihitungAt={form.skor_dihitung_at}
                   hasExistingContent={() => Boolean(
                     (form.sumber_data && form.sumber_data.trim())
                     || (form.hambatan && form.hambatan.trim())
                     || (form.tindak_lanjut && form.tindak_lanjut.trim()),
                   )}
+                  onAutoRefresh={(freshSumberData) => setField(indikator.id, 'sumber_data', freshSumberData)}
                   onApply={(result) => {
                     setField(indikator.id, 'sumber_data', result.sumber_data || '');
                     setField(indikator.id, 'hambatan', result.hambatan || '');
@@ -1113,6 +1133,19 @@ export default function ProsnPeriodeDetailPage() {
             </Table>
           )}
         </Modal.Body>
+      </Modal>
+
+      <Modal show={Boolean(readinessBlockers)} onHide={() => setReadinessBlockers(null)}>
+        <Modal.Header closeButton><Modal.Title>Belum Siap Ditandai Lengkap — {readinessBlockers?.indikatorKode}</Modal.Title></Modal.Header>
+        <Modal.Body>
+          <div className="mb-2">{readinessBlockers?.blockers.length} hal yang perlu dilengkapi sebelum status Lengkap:</div>
+          <ol className="mb-0">
+            {readinessBlockers?.blockers.map((b) => <li key={b.code} className="mb-1">{b.message}</li>)}
+          </ol>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="light" onClick={() => setReadinessBlockers(null)}>Tutup</Button>
+        </Modal.Footer>
       </Modal>
     </div>
   );

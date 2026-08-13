@@ -7,6 +7,7 @@ const { exportB13Template } = require('../services/prosnp/prosnpExcelTemplateExp
 const { listDukunganProgramDariSistem } = require('../services/prosnp/prosnpDukunganSistemService');
 const foodOpsDocumentService = require('../services/foodOperations/foodOpsDocumentService');
 const ruleEngineService = require('../services/prosnp/prosnpRuleEngineService');
+const internalFieldAutofillService = require('../services/prosnp/prosnpInternalFieldAutofillService');
 const fs = require('fs');
 
 const normalizeOpdName = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -68,21 +69,55 @@ async function getPeriode(req, res) {
     return ok(res, row);
   } catch (e) { return fail(res, e); }
 }
-async function updatePengisian(req, res) { try { return ok(res, await workflow.updatePengisian(Number(req.params.id), req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
+/**
+ * Corrective "ProSN Semester-II Readiness — Sumber Data Authoritative
+ * Auto-Sync" (mandat §19) — `sumber_data_is_auto` DIHITUNG SERVER-SIDE di
+ * sini (anti-spoof, TIDAK PERNAH dipercaya langsung dari client): bandingkan
+ * `sumber_data` yang disubmit dgn saran sistem TERKINI (fungsi read-only yg
+ * sama dgn tombol "Isi Otomatis"). Sama persis -> TRUE (aman disegarkan
+ * otomatis nanti tanpa risiko menimpa teks user). Berbeda -> FALSE (user
+ * pernah menulis teks sendiri, jangan pernah disentuh otomatis lagi).
+ * tipe_form yg tidak didukung internal-autofill (mis. MBG) -> tetap FALSE,
+ * gagal-aman (tidak melempar error ke request update itu sendiri).
+ */
+async function updatePengisian(req, res) {
+  try {
+    const payload = { ...req.body };
+    if (Object.prototype.hasOwnProperty.call(payload, 'sumber_data')) {
+      try {
+        const preview = await internalFieldAutofillService.previewInternalAutofill(Number(req.params.id), req.tenantId);
+        const fresh = (preview.sumber_data || '').trim();
+        const submitted = (payload.sumber_data || '').trim();
+        payload.sumber_data_is_auto = Boolean(fresh) && fresh === submitted;
+      } catch { payload.sumber_data_is_auto = false; }
+    }
+    return ok(res, await workflow.updatePengisian(Number(req.params.id), payload, req.user, req.tenantId));
+  } catch (e) { return fail(res, e); }
+}
 async function transitionPengisian(req, res) { try { return ok(res, await workflow.transitionPengisian(Number(req.params.id), req.body.status_tujuan, req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
+/** Corrective "ProSN Semester-II Readiness — Completion Readiness Itemized Blockers" (mandat §31) — READ-ONLY, tidak mengubah status. */
+async function checkCompletionReadiness(req, res) { try { return ok(res, await workflow.checkCompletionReadiness(Number(req.params.id), req.tenantId)); } catch (e) { return fail(res, e); } }
 async function getPengisian(req, res) { try { return ok(res, await workflow.getPengisianScoped(Number(req.params.id), req.tenantId)); } catch (e) { return fail(res, e); } }
 function removeFailedUpload(file) { if (file?.path) fs.unlink(file.path, () => {}); }
 /**
  * Corrective "B.1.3 Registry-First Evidence Discovery" §11/STATE F — guard
- * duplikat-unggah TERBATAS ke entity_type=STOK_TRANSAKSI SAJA (mandat: "for
- * B.1.3 evidence"). SENGAJA tidak menyentuh workflow.createBukti (dipakai
- * bersama B.1.1/B.1.2/B.1.4/MBG, protected) — reuse checksum FoodOps registry
- * yang sudah ada (`foodOpsDocumentService.computeChecksum`/
+ * duplikat-unggah, awalnya TERBATAS ke entity_type=STOK_TRANSAKSI SAJA.
+ * SENGAJA tidak menyentuh workflow.createBukti — reuse checksum FoodOps
+ * registry yang sudah ada (`foodOpsDocumentService.computeChecksum`/
  * `findDuplicateByChecksum`), tidak menciptakan mekanisme duplikat baru.
+ *
+ * Corrective "ProSN Semester-II Readiness — Canonical Duplicate Guard
+ * Generalization" (mandat §8/Req A) — digeneralisasi ke SURAT_PENUGASAN
+ * (B.1.1), RAPAT_FORKOPIMDA (B.1.2), INOVASI (B.1.4) memakai MEKANISME YANG
+ * SAMA PERSIS (bukan logika baru). SENGAJA TIDAK mencakup CADANGAN_TARGET
+ * (evidence Keputusan KDH B.1.3) maupun entity MBG apa pun — B.1.3 FUNCTIONAL
+ * BASELINE FROZEN ("DO NOT alter... evidence semantics") dan MBG PROTECTED,
+ * jadi behavior evidence-nya sengaja dibiarkan persis seperti sebelumnya.
  */
+const DUPLICATE_GUARD_ENTITY_TYPES = new Set(['STOK_TRANSAKSI', 'SURAT_PENUGASAN', 'RAPAT_FORKOPIMDA', 'INOVASI']);
 async function createBukti(req, res) {
   try {
-    if (req.body.entity_type === 'STOK_TRANSAKSI' && req.file) {
+    if (DUPLICATE_GUARD_ENTITY_TYPES.has(req.body.entity_type) && req.file) {
       const checksum = foodOpsDocumentService.computeChecksum(req.file.path);
       const duplicate = await foodOpsDocumentService.findDuplicateByChecksum(req.tenantId, checksum);
       if (duplicate) {
@@ -158,4 +193,4 @@ async function exportB13TemplateNasional(req, res) {
   } catch (e) { return fail(res, e); }
 }
 
-module.exports = { getKonteks, listPeriode, createPeriode, updatePeriode, createIndikator, initializeIndikator, activatePeriode, getPeriode, getPengisian, updatePengisian, transitionPengisian, createBukti, reviseBukti, checklistBukti, listBuktiEntity, setStatusVerifikasiBukti, downloadBukti, periksaPengisian, listAntrianPemeriksaan, listKategoriReferensi, archivePeriode, reopenPeriode, siapkanEksporPeriode, exportExcel, exportB13TemplateNasional, getDukunganSistem };
+module.exports = { getKonteks, listPeriode, createPeriode, updatePeriode, createIndikator, initializeIndikator, activatePeriode, getPeriode, getPengisian, updatePengisian, transitionPengisian, checkCompletionReadiness, createBukti, reviseBukti, checklistBukti, listBuktiEntity, setStatusVerifikasiBukti, downloadBukti, periksaPengisian, listAntrianPemeriksaan, listKategoriReferensi, archivePeriode, reopenPeriode, siapkanEksporPeriode, exportExcel, exportB13TemplateNasional, getDukunganSistem };

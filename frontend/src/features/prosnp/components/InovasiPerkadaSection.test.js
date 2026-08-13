@@ -2,9 +2,37 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { derivePerkadaAutofill } from "./InovasiPerkadaSection";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE = fs.readFileSync(path.join(__dirname, "InovasiPerkadaSection.jsx"), "utf8");
+
+describe("derivePerkadaAutofill (Corrective ProSN Semester-II Readiness — B.1.4 Field-Level Perkada Autofill §13)", () => {
+  const doc = { nomor_dokumen: "PERGUB/UJI/2025", tanggal_dokumen: "2025-06-30", document_type: "peraturan_gubernur" };
+
+  it("P1 — form kosong (status_perkada default belum_ada) -> nomor/tanggal/jenis Perkada diisi, status_perkada jadi ditetapkan", () => {
+    const patch = derivePerkadaAutofill(doc, { status_perkada: "belum_ada" });
+    expect(patch.nomor_perkada).toBe("PERGUB/UJI/2025");
+    expect(patch.tanggal_perkada).toBe("2025-06-30");
+    expect(patch.jenis_perkada).toBe("Peraturan Gubernur");
+    expect(patch.status_perkada).toBe("ditetapkan");
+  });
+
+  it("P2 — status_perkada yang SUDAH eksplisit dipilih user (mis. proses_penyusunan) TIDAK PERNAH ditimpa", () => {
+    const patch = derivePerkadaAutofill(doc, { status_perkada: "proses_penyusunan" });
+    expect(patch.status_perkada).toBeUndefined();
+  });
+
+  it("P3 — field nomor/tanggal/jenis yang sudah diisi user tidak ditimpa", () => {
+    const patch = derivePerkadaAutofill(doc, { nomor_perkada: "sudah diisi user", status_perkada: "belum_ada" });
+    expect(patch.nomor_perkada).toBeUndefined();
+    expect(patch.tanggal_perkada).toBe("2025-06-30");
+  });
+
+  it("P4 — dokumen null -> patch kosong", () => {
+    expect(derivePerkadaAutofill(null, {})).toEqual({});
+  });
+});
 
 /**
  * Corrective "B.1.4 Tambah Inovasi Modal — Footer Accessibility Fix" — sama
@@ -63,7 +91,10 @@ describe("InovasiPerkadaSection — modal Tambah Inovasi footer accessibility (C
   });
 
   it("flow submit existing (create/update) TIDAK berubah — submit() tetap memanggil createProsnInovasi/updateProsnInovasi apa adanya", () => {
-    expect(SOURCE).toContain("if (editing) await updateProsnInovasi(editing.id, form);");
-    expect(SOURCE).toContain("else await createProsnInovasi(pengisian.id, form);");
+    // Corrective "B.1.4 Field-Level Perkada Autofill" (mandat §13) menambah
+    // `record =` (menangkap hasil create/update utk auto-bind dokumen Perkada
+    // terpilih) — pemanggilan create/update ITU SENDIRI TIDAK berubah.
+    expect(SOURCE).toContain("record = await updateProsnInovasi(editing.id, form);");
+    expect(SOURCE).toContain("record = await createProsnInovasi(pengisian.id, form);");
   });
 });

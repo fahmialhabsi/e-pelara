@@ -2,9 +2,33 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { deriveRapatAutofill } from "./KoordinasiForkopimdaSection";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE = fs.readFileSync(path.join(__dirname, "KoordinasiForkopimdaSection.jsx"), "utf8");
+
+describe("deriveRapatAutofill (Corrective ProSN Semester-II Readiness — B.1.2 Recall-First Autofill §12)", () => {
+  const doc = { judul: "Undangan Rapat Uji", tanggal_dokumen: "2025-06-20" };
+
+  it("RA1 — form kosong -> tanggal_rapat/nama_forum diisi dari dokumen Undangan", () => {
+    expect(deriveRapatAutofill(doc, {})).toEqual({ tanggal_rapat: "2025-06-20", nama_forum: "Undangan Rapat Uji" });
+  });
+
+  it("RA2 — field yang sudah diisi user tidak ditimpa", () => {
+    const patch = deriveRapatAutofill(doc, { nama_forum: "sudah diisi user" });
+    expect(patch.nama_forum).toBeUndefined();
+    expect(patch.tanggal_rapat).toBe("2025-06-20");
+  });
+
+  it("RA3 — is_forkopimda TIDAK PERNAH diisi/diubah otomatis dari kemiripan dokumen (mandat §12.E)", () => {
+    const patch = deriveRapatAutofill(doc, {});
+    expect(patch.is_forkopimda).toBeUndefined();
+  });
+
+  it("RA4 — dokumen null -> patch kosong", () => {
+    expect(deriveRapatAutofill(null, {})).toEqual({});
+  });
+});
 
 /**
  * Corrective "B.1.2 Tambah Rapat Modal — Footer Accessibility Fix" — modal
@@ -71,7 +95,10 @@ describe("KoordinasiForkopimdaSection — modal Tambah Rapat footer accessibilit
   });
 
   it("flow submit existing (create/update) TIDAK berubah — submit() tetap memanggil createProsnRapatForkopimda/updateProsnRapatForkopimda apa adanya", () => {
-    expect(SOURCE).toContain("if (editing) await updateProsnRapatForkopimda(editing.id, form);");
-    expect(SOURCE).toContain("else await createProsnRapatForkopimda(pengisian.id, form);");
+    // Corrective "B.1.2 Recall-First Autofill" (mandat §12) menambah `record =`
+    // (menangkap hasil create/update utk auto-bind evidence sumber terpilih) —
+    // pemanggilan create/update ITU SENDIRI (fungsi + argumen) TIDAK berubah.
+    expect(SOURCE).toContain("record = await updateProsnRapatForkopimda(editing.id, form);");
+    expect(SOURCE).toContain("record = await createProsnRapatForkopimda(pengisian.id, form);");
   });
 });

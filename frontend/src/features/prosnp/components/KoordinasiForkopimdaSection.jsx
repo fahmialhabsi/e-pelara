@@ -10,6 +10,8 @@ import {
 import ProsnSkorIndikatifCard from './ProsnSkorIndikatifCard';
 import EntityBuktiManager from './EntityBuktiManager';
 import ProsnAutofillModal from './ProsnAutofillModal';
+import PreBindEvidencePicker from './PreBindEvidencePicker';
+import { bindFoodOpsEvidenceToProsn } from '../../foodOperations/services/foodOpsApi';
 
 const STATUS_TL_LABEL = { belum_ditindaklanjuti: 'Belum Ditindaklanjuti', sedang_diproses: 'Sedang Diproses', selesai: 'Selesai' };
 const UNSUR_FORKOPIMDA = ['Gubernur/Wakil Gubernur', 'Kapolda', 'Danrem/Dandim', 'Kajati/Kajari', 'Ketua Pengadilan', 'Ketua DPRD'];
@@ -23,6 +25,22 @@ function emptyForm() {
   };
 }
 
+/**
+ * Corrective "ProSN Semester-II Readiness — B.1.2 Recall-First Autofill"
+ * (mandat §12/Req E) — HANYA field yg SAH diturunkan dari metadata dokumen
+ * Undangan kanonis (tanggal_dokumen/judul). `is_forkopimda` TIDAK PERNAH
+ * diisi otomatis dari kemiripan semantik (mandat §12.E "never infer
+ * Forkopimda=true from weak similarity") — tetap default sesuai emptyForm(),
+ * user yg menentukan. MURNI FUNGSI, testable tanpa render.
+ */
+export function deriveRapatAutofill(document, currentForm) {
+  if (!document) return {};
+  const patch = {};
+  if (!currentForm?.tanggal_rapat) patch.tanggal_rapat = document.tanggal_dokumen || '';
+  if (!currentForm?.nama_forum) patch.nama_forum = document.judul || '';
+  return patch;
+}
+
 export default function KoordinasiForkopimdaSection({ indikator, pengisian, editable, canReview, onChanged }) {
   const [rapatList, setRapatList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,6 +48,7 @@ export default function KoordinasiForkopimdaSection({ indikator, pengisian, edit
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
+  const [sourceDocument, setSourceDocument] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -39,7 +58,7 @@ export default function KoordinasiForkopimdaSection({ indikator, pengisian, edit
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [pengisian.id]);
 
-  const openCreate = () => { setEditing(null); setForm(emptyForm()); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setForm(emptyForm()); setSourceDocument(null); setShowModal(true); };
   const openEdit = (rapat) => {
     setEditing(rapat);
     setForm({ ...emptyForm(), ...rapat, unsur_forkopimda_hadir: rapat.unsur_forkopimda_hadir || [], lock_version: rapat.lock_version });
@@ -56,8 +75,16 @@ export default function KoordinasiForkopimdaSection({ indikator, pengisian, edit
     e.preventDefault();
     setSaving(true);
     try {
-      if (editing) await updateProsnRapatForkopimda(editing.id, form);
-      else await createProsnRapatForkopimda(pengisian.id, form);
+      let record;
+      if (editing) record = await updateProsnRapatForkopimda(editing.id, form);
+      else record = await createProsnRapatForkopimda(pengisian.id, form);
+      if (!editing && sourceDocument) {
+        try {
+          await bindFoodOpsEvidenceToProsn({ document_id: sourceDocument.id, pengisian_id: pengisian.id, entity_type: 'RAPAT_FORKOPIMDA', entity_id: record.id, kategori: 'undangan' });
+        } catch (bindError) {
+          toast.error(bindError?.response?.data?.message || 'Rapat tersimpan, tapi gagal mengikat dokumen sumber sbg bukti — tautkan manual lewat Bukti.');
+        }
+      }
       toast.success('Rapat Forkopimda tersimpan.');
       setShowModal(false);
       await load();
@@ -79,6 +106,7 @@ export default function KoordinasiForkopimdaSection({ indikator, pengisian, edit
       <ProsnSkorIndikatifCard
         pengisianId={pengisian.id} bobotMaksimal={indikator.bobot_maksimal}
         skor={pengisian.skor_indikatif_internal} alasan={pengisian.skor_alasan} dihitungAt={pengisian.skor_dihitung_at}
+        tipeForm={indikator.tipe_form} detail={pengisian.skor_detail}
         onChanged={async () => { await load(); await onChanged(); }}
       />
       <div className="d-flex justify-content-between align-items-center mb-2">
@@ -135,6 +163,12 @@ export default function KoordinasiForkopimdaSection({ indikator, pengisian, edit
         <Modal.Header closeButton><Modal.Title>{editing ? 'Ubah' : 'Tambah'} Rapat Forkopimda</Modal.Title></Modal.Header>
         <Modal.Body>
           <Form id="formRapatForkopimda" onSubmit={submit}>
+            {!editing && (
+              <PreBindEvidencePicker
+                kategoriProsn="undangan"
+                onSelect={(document) => { setSourceDocument(document); setForm((prev) => ({ ...prev, ...deriveRapatAutofill(document, prev) })); }}
+              />
+            )}
             <Row>
               <Col md={6}><Form.Group className="mb-2"><Form.Label>Tanggal Rapat *</Form.Label><Form.Control required type="date" value={form.tanggal_rapat} onChange={(e) => setForm({ ...form, tanggal_rapat: e.target.value })} /></Form.Group></Col>
               <Col md={6}><Form.Group className="mb-2"><Form.Label>Nama Forum *</Form.Label><Form.Control required value={form.nama_forum} onChange={(e) => setForm({ ...form, nama_forum: e.target.value })} /></Form.Group></Col>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Col, Form, Modal, Row } from 'react-bootstrap';
 import { toast } from 'react-toastify';
-import { createFoodOpsEvent, updateFoodOpsEvent } from '../services/foodOpsApi';
+import { createFoodOpsEvent, getFoodOpsDocuments, updateFoodOpsEvent } from '../services/foodOpsApi';
 import { EVENT_TYPE_LABEL, STATUS_TINDAK_LANJUT_LABEL } from '../services/foodOpsConstants';
 
 function emptyForm(tahun) {
@@ -16,12 +16,37 @@ export function isEventFormValid(form) {
   return Boolean(form?.event_type && form?.tahun && form?.tanggal_mulai && form?.nama_kegiatan);
 }
 
+/**
+ * Corrective "ProSN Semester-II Readiness — Kegiatan Recall-First Autofill"
+ * (mandat §10/Req C) — HANYA field yg SAH diturunkan langsung dari metadata
+ * dokumen kanonis yg sudah tersimpan (judul/tanggal_dokumen/penerbit). Field
+ * yg tidak punya padanan aman (lokasi, pimpinan, hasil, tindak_lanjut) SENGAJA
+ * dibiarkan kosong — dokumen tidak punya struktur data utk itu, menebaknya
+ * akan jadi fabrikasi (mandat §18 "never invent... results, follow-up").
+ * MURNI FUNGSI, testable tanpa render. TIDAK PERNAH menimpa field yg sudah
+ * diisi user.
+ */
+export function deriveEventAutofill(document, currentForm) {
+  if (!document) return {};
+  const patch = {};
+  if (!currentForm?.nama_kegiatan) patch.nama_kegiatan = document.judul || '';
+  if (!currentForm?.tanggal_mulai) patch.tanggal_mulai = document.tanggal_dokumen || '';
+  if (!currentForm?.penanggung_jawab) patch.penanggung_jawab = document.penerbit || '';
+  return patch;
+}
+
 export default function FoodOpsEventForm({ show, onHide, editing, onSaved }) {
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
+  const [sourceDocs, setSourceDocs] = useState([]);
+  const [sourceDocumentId, setSourceDocumentId] = useState('');
 
   useEffect(() => {
-    if (show) setForm(editing ? { ...emptyForm(), ...editing } : emptyForm(String(new Date().getFullYear())));
+    if (show) {
+      setForm(editing ? { ...emptyForm(), ...editing } : emptyForm(String(new Date().getFullYear())));
+      setSourceDocumentId('');
+      if (!editing) getFoodOpsDocuments({}).then(setSourceDocs).catch(() => setSourceDocs([]));
+    }
   }, [show, editing]);
 
   const handleSubmit = async (e) => {
@@ -43,6 +68,21 @@ export default function FoodOpsEventForm({ show, onHide, editing, onSaved }) {
       <Form onSubmit={handleSubmit}>
         <Modal.Header closeButton><Modal.Title>{editing ? 'Ubah' : 'Tambah'} Kegiatan</Modal.Title></Modal.Header>
         <Modal.Body>
+          {!editing && (
+            <Form.Group className="mb-3">
+              <Form.Label>Isi Otomatis dari Dokumen Existing (opsional)</Form.Label>
+              <Form.Select value={sourceDocumentId} onChange={(e) => {
+                const documentId = e.target.value;
+                setSourceDocumentId(documentId);
+                const dokumenTerpilih = sourceDocs.find((d) => String(d.id) === String(documentId));
+                setForm((prev) => ({ ...prev, ...deriveEventAutofill(dokumenTerpilih, prev) }));
+              }}>
+                <option value="">— tidak pakai dokumen sumber (isi manual) —</option>
+                {sourceDocs.map((d) => <option key={d.id} value={d.id}>{d.judul} (v{d.versi})</option>)}
+              </Form.Select>
+              <Form.Text muted>Mengisi Nama Kegiatan/Tanggal Mulai/Penanggung Jawab dari metadata dokumen yang sudah ada — tidak perlu unggah ulang. Field lain (lokasi, pimpinan, hasil, tindak lanjut) tetap diisi manual krn dokumen tidak menyimpan data tsb.</Form.Text>
+            </Form.Group>
+          )}
           <Row>
             <Col md={6}><Form.Group className="mb-2"><Form.Label>Jenis Kegiatan *</Form.Label>
               <Form.Select required value={form.event_type} onChange={(e) => setForm({ ...form, event_type: e.target.value })}>

@@ -237,6 +237,12 @@ export async function previewProsnInternalAutofill(pengisianId) {
   return response.data?.data;
 }
 
+// Corrective "ProSN Semester-II Readiness — Completion Readiness Itemized Blockers" (mandat §31) — READ-ONLY.
+export async function checkProsnCompletionReadiness(pengisianId) {
+  const response = await api.get(`/prosnp/pengisian/${pengisianId}/kesiapan-lengkap`);
+  return response.data?.data;
+}
+
 // ── Aksi periode ──
 export async function siapkanEksporProsnPeriode(id) {
   const response = await api.post(`/prosnp/periode/${id}/siap-ekspor`);

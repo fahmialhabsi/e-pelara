@@ -16,6 +16,7 @@ export default defineConfig({
       "src/features/rpjmd/services/**/*.test.js",
       "src/features/audit/**/*.test.js",
       "src/features/prosnp/components/**/*.test.js",
+      "src/features/prosnp/services/**/*.test.js",
       "src/features/foodOperations/**/*.test.js",
       "src/utils/mapBackendErrorsToFormik.test.js",
       "src/validations/indikatorSchemas.test.js",

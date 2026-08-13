@@ -33,6 +33,7 @@ router.get('/kategori-referensi', verifyToken, allowRoles(READ), controller.list
 router.get('/pengisian/:id', verifyToken, allowRoles(READ), controller.getPengisian);
 router.put('/pengisian/:id', verifyToken, allowRoles(WRITE), controller.updatePengisian);
 router.post('/pengisian/:id/transisi', verifyToken, allowRoles(READ), controller.transitionPengisian);
+router.get('/pengisian/:id/kesiapan-lengkap', verifyToken, allowRoles(READ), controller.checkCompletionReadiness);
 router.post('/pengisian/:id/pemeriksaan', verifyToken, allowRoles(REVIEW), controller.periksaPengisian);
 router.post('/pengisian/:id/bukti', verifyToken, allowRoles(WRITE), uploadSingle, controller.createBukti);
 router.post('/bukti/:id/versi', verifyToken, allowRoles(WRITE), uploadSingle, controller.reviseBukti);

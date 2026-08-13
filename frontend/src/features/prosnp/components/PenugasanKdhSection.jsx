@@ -11,6 +11,8 @@ import {
 import ProsnSkorIndikatifCard from './ProsnSkorIndikatifCard';
 import EntityBuktiManager from './EntityBuktiManager';
 import ProsnAutofillModal from './ProsnAutofillModal';
+import PreBindEvidencePicker from './PreBindEvidencePicker';
+import { bindFoodOpsEvidenceToProsn } from '../../foodOperations/services/foodOpsApi';
 
 const STATUS_TL_LABEL = { belum_ditindaklanjuti: 'Belum Ditindaklanjuti', sedang_diproses: 'Sedang Diproses', selesai: 'Selesai' };
 
@@ -24,6 +26,23 @@ function emptyForm() {
   };
 }
 
+/**
+ * Corrective "ProSN Semester-II Readiness — B.1.1 Recall-First Autofill"
+ * (mandat §11/Req D) — HANYA field yg SAH diturunkan dari metadata dokumen
+ * kanonis tersimpan (nomor_dokumen/tanggal_dokumen). `pejabat_penandatangan`
+ * SENGAJA TIDAK diisi otomatis — dokumen kanonis tidak menyimpan field
+ * penandatangan terstruktur, mengisinya dari `penerbit` (nama OPD/instansi,
+ * BUKAN nama pejabat perorangan) akan jadi fabrikasi identitas (mandat §18
+ * "never invent... person"). MURNI FUNGSI, testable tanpa render.
+ */
+export function deriveSuratAutofill(document, currentForm) {
+  if (!document) return {};
+  const patch = {};
+  if (!currentForm?.nomor_surat) patch.nomor_surat = document.nomor_dokumen || '';
+  if (!currentForm?.tanggal_surat) patch.tanggal_surat = document.tanggal_dokumen || '';
+  return patch;
+}
+
 export default function PenugasanKdhSection({ indikator, pengisian, editable, canReview, onChanged }) {
   const [suratList, setSuratList] = useState([]);
   const [mapping, setMapping] = useState([]);
@@ -32,6 +51,7 @@ export default function PenugasanKdhSection({ indikator, pengisian, editable, ca
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
+  const [sourceDocument, setSourceDocument] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -50,7 +70,7 @@ export default function PenugasanKdhSection({ indikator, pengisian, editable, ca
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [pengisian.id]);
 
-  const openCreate = () => { setEditing(null); setForm(emptyForm()); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setForm(emptyForm()); setSourceDocument(null); setShowModal(true); };
   const openEdit = (surat) => {
     setEditing(surat);
     setForm({
@@ -88,8 +108,20 @@ export default function PenugasanKdhSection({ indikator, pengisian, editable, ca
     e.preventDefault();
     setSaving(true);
     try {
-      if (editing) await updateProsnSuratPenugasan(editing.id, form);
-      else await createProsnSuratPenugasan(pengisian.id, form);
+      let record;
+      if (editing) record = await updateProsnSuratPenugasan(editing.id, form);
+      else record = await createProsnSuratPenugasan(pengisian.id, form);
+      // Corrective "B.1.1 Recall-First Autofill" (mandat §11) — bila record BARU
+      // dibuat dari dokumen existing yg dipilih via PreBindEvidencePicker, ikat
+      // otomatis sbg bukti (reuse sumber kanonis, TIDAK unggah ulang) — user
+      // SUDAH eksplisit klik "Gunakan" saat memilih dokumen, ini bukan silent bind.
+      if (!editing && sourceDocument) {
+        try {
+          await bindFoodOpsEvidenceToProsn({ document_id: sourceDocument.id, pengisian_id: pengisian.id, entity_type: 'SURAT_PENUGASAN', entity_id: record.id, kategori: 'surat_penugasan' });
+        } catch (bindError) {
+          toast.error(bindError?.response?.data?.message || 'Surat tersimpan, tapi gagal mengikat dokumen sumber sbg bukti — tautkan manual lewat Bukti.');
+        }
+      }
       toast.success('Surat penugasan tersimpan.');
       setShowModal(false);
       await load();
@@ -117,6 +149,7 @@ export default function PenugasanKdhSection({ indikator, pengisian, editable, ca
       <ProsnSkorIndikatifCard
         pengisianId={pengisian.id} bobotMaksimal={indikator.bobot_maksimal}
         skor={pengisian.skor_indikatif_internal} alasan={pengisian.skor_alasan} dihitungAt={pengisian.skor_dihitung_at}
+        tipeForm={indikator.tipe_form} detail={pengisian.skor_detail}
         onChanged={async () => { await load(); await onChanged(); }}
       />
       <div className="d-flex justify-content-between align-items-center mb-2">
@@ -171,6 +204,12 @@ export default function PenugasanKdhSection({ indikator, pengisian, editable, ca
         <Form onSubmit={submit}>
           <Modal.Header closeButton><Modal.Title>{editing ? 'Ubah' : 'Tambah'} Surat Penugasan</Modal.Title></Modal.Header>
           <Modal.Body>
+            {!editing && (
+              <PreBindEvidencePicker
+                kategoriProsn="surat_penugasan"
+                onSelect={(document) => { setSourceDocument(document); setForm((prev) => ({ ...prev, ...deriveSuratAutofill(document, prev) })); }}
+              />
+            )}
             <Row>
               <Col md={6}><Form.Group className="mb-2"><Form.Label>Nomor Surat *</Form.Label><Form.Control required value={form.nomor_surat} onChange={(e) => setForm({ ...form, nomor_surat: e.target.value })} /></Form.Group></Col>
               <Col md={6}><Form.Group className="mb-2"><Form.Label>Tanggal Surat *</Form.Label><Form.Control required type="date" value={form.tanggal_surat} onChange={(e) => setForm({ ...form, tanggal_surat: e.target.value })} /></Form.Group></Col>
