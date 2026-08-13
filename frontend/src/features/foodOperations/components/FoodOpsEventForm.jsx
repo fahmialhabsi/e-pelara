@@ -1,13 +1,27 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Col, Form, Modal, Row } from 'react-bootstrap';
 import { toast } from 'react-toastify';
-import { createFoodOpsEvent, getFoodOpsDocuments, updateFoodOpsEvent } from '../services/foodOpsApi';
+import { createFoodOpsEvent, getFoodOpsDocumentLinks, getFoodOpsDocuments, updateFoodOpsEvent } from '../services/foodOpsApi';
 import { EVENT_TYPE_LABEL, STATUS_TINDAK_LANJUT_LABEL } from '../services/foodOpsConstants';
 import FieldProvenanceBadge from '../../prosnp/components/FieldProvenanceBadge';
 
-function emptyForm(tahun) {
+/**
+ * CORRECTIVE MANDATE UAT-03 §4 — Owner UAT DEFECT A: `tahun` sebelumnya
+ * di-pre-seed dgn tahun kalender SISTEM saat form Tambah dibuka
+ * (`emptyForm(String(new Date().getFullYear()))`), SEBELUM dokumen sumber
+ * dipilih. Karena `deriveEventAutofill` hanya mengisi `tahun` bila field itu
+ * MASIH KOSONG, default non-kosong itu (mis. "2026") justru MENGHALANGI
+ * derivasi aman dari `tanggal_dokumen` dokumen sumber (mis. 2025) begitu
+ * user memilihnya — persis skenario Owner (Tanggal Mulai=2025-06-30, Tahun
+ * tetap 2026, tersimpan ke DB). Diperbaiki dgn TIDAK PERNAH pre-seed `tahun`
+ * dgn tahun sistem/klien (mandat §4 "Do NOT use... frontend initialization
+ * year") — form Tambah kini konsisten dgn field wajib lain (nama_kegiatan/
+ * tanggal_mulai) yg juga tidak punya default, murni kosong sampai diisi
+ * user atau diturunkan dari dokumen.
+ */
+function emptyForm() {
   return {
-    event_type: '', tahun: tahun || '', tanggal_mulai: '', tanggal_selesai: '', nama_kegiatan: '', lokasi: '',
+    event_type: '', tahun: '', tanggal_mulai: '', tanggal_selesai: '', nama_kegiatan: '', lokasi: '',
     pimpinan: '', penanggung_jawab: '', agenda: '', hasil: '', tindak_lanjut: '', status_tindak_lanjut: 'belum_ditindaklanjuti',
   };
 }
@@ -48,13 +62,32 @@ export default function FoodOpsEventForm({ show, onHide, editing, onSaved }) {
   const [sourceDocs, setSourceDocs] = useState([]);
   const [sourceDocumentId, setSourceDocumentId] = useState('');
   const [autofillBaseline, setAutofillBaseline] = useState({});
+  const [registeredLineages, setRegisteredLineages] = useState(new Set());
 
   useEffect(() => {
     if (show) {
-      setForm(editing ? { ...emptyForm(), ...editing } : emptyForm(String(new Date().getFullYear())));
+      setForm(editing ? { ...emptyForm(), ...editing } : emptyForm());
       setSourceDocumentId('');
       setAutofillBaseline({});
-      if (!editing) getFoodOpsDocuments({}).then(setSourceDocs).catch(() => setSourceDocs([]));
+      if (!editing) {
+        getFoodOpsDocuments({}).then(setSourceDocs).catch(() => setSourceDocs([]));
+        // CORRECTIVE MANDATE UAT-03 §10/§11 — deteksi "Sudah Terdaftar"
+        // SEBELUM user mengisi form & klik Simpan. Identitas sumber adalah
+        // LINEAGE dokumen (`kelompok_uuid`, mandat §9), bukan document_id
+        // spesifik — mencegah versi baru dari lineage yang sama dari
+        // dianggap kandidat baru setelah lineage itu pernah dipakai. Reuse
+        // endpoint document-links yang SUDAH ADA (`entity_type=EVENT`),
+        // difilter di client ke relation_type KEGIATAN_SOURCE saja (BUKAN
+        // tautan evidence biasa yang dibuat manual lewat "+ Tautkan").
+        getFoodOpsDocumentLinks({ entity_type: 'EVENT' })
+          .then((links) => {
+            const lineages = links
+              .filter((l) => l.relation_type === 'KEGIATAN_SOURCE' && l.document?.kelompok_uuid)
+              .map((l) => l.document.kelompok_uuid);
+            setRegisteredLineages(new Set(lineages));
+          })
+          .catch(() => setRegisteredLineages(new Set()));
+      }
     }
   }, [show, editing]);
 
@@ -62,8 +95,11 @@ export default function FoodOpsEventForm({ show, onHide, editing, onSaved }) {
     e.preventDefault();
     setSaving(true);
     try {
-      if (editing) await updateFoodOpsEvent(editing.id, { ...form, lock_version: editing.lock_version });
-      else await createFoodOpsEvent(form);
+      if (editing) {
+        await updateFoodOpsEvent(editing.id, { ...form, lock_version: editing.lock_version });
+      } else {
+        await createFoodOpsEvent(sourceDocumentId ? { ...form, source_document_id: sourceDocumentId } : form);
+      }
       toast.success('Kegiatan tersimpan.');
       onHide();
       await onSaved();
@@ -89,9 +125,13 @@ export default function FoodOpsEventForm({ show, onHide, editing, onSaved }) {
                 setForm((prev) => ({ ...prev, ...patch }));
               }}>
                 <option value="">— tidak pakai dokumen sumber (isi manual) —</option>
-                {sourceDocs.map((d) => <option key={d.id} value={d.id}>{d.judul} (v{d.versi})</option>)}
+                {sourceDocs.map((d) => (
+                  <option key={d.id} value={d.id} disabled={registeredLineages.has(d.kelompok_uuid)}>
+                    {d.judul} (v{d.versi}){registeredLineages.has(d.kelompok_uuid) ? ' — Sudah Terdaftar' : ''}
+                  </option>
+                ))}
               </Form.Select>
-              <Form.Text muted>Mengisi Nama Kegiatan/Tanggal Mulai/Penanggung Jawab dari metadata dokumen yang sudah ada — tidak perlu unggah ulang. Field lain (lokasi, pimpinan, hasil, tindak lanjut) tetap diisi manual krn dokumen tidak menyimpan data tsb.</Form.Text>
+              <Form.Text muted>Mengisi Nama Kegiatan/Tanggal Mulai/Penanggung Jawab/Tahun dari metadata dokumen yang sudah ada — tidak perlu unggah ulang. Field lain (lokasi, pimpinan, hasil, tindak lanjut) tetap diisi manual krn dokumen tidak menyimpan data tsb. Dokumen berlabel &quot;Sudah Terdaftar&quot; sudah pernah dipakai membuat Kegiatan lain dan tidak dapat dipilih lagi.</Form.Text>
             </Form.Group>
           )}
           <Row>

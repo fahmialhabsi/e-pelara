@@ -7,7 +7,9 @@ const { logActivity } = require('../services/auditService');
 
 const ok = (res, data, status = 200) => res.status(status).json({ success: true, data, meta: {} });
 const fail = (res, error) => {
-  if (error instanceof FoodOpsError) return res.status(error.status).json({ success: false, message: error.message, code: error.code });
+  // CORRECTIVE MANDATE UAT-03 — `details` (existing_link_id/existing_entity_id
+  // pada FOOD_OPS_EVENT_SOURCE_ALREADY_REGISTERED) harus sampai ke frontend.
+  if (error instanceof FoodOpsError) return res.status(error.status).json({ success: false, message: error.message, code: error.code, ...(error.details ? { details: error.details } : {}) });
   console.error('[foodOps]', error);
   return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada modul Evidence & Operasi Pangan.', code: 'FOOD_OPS_INTERNAL_ERROR' });
 };
