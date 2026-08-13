@@ -15,7 +15,9 @@ const ruleEngineService = require('../services/prosnp/prosnpRuleEngineService');
 
 const ok = (res, data, status = 200) => res.status(status).json({ success: true, data, meta: {} });
 const fail = (res, error) => {
-  if (error instanceof FoodOpsError) return res.status(error.status).json({ success: false, message: error.message, code: error.code });
+  // CORRECTIVE MANDATE UAT-01D — `details` (mis. existing_link_id pada
+  // FOOD_OPS_PROSN_BINDING_ALREADY_EXISTS) harus sampai ke frontend.
+  if (error instanceof FoodOpsError) return res.status(error.status).json({ success: false, message: error.message, code: error.code, ...(error.details ? { details: error.details } : {}) });
   console.error('[foodOps]', error);
   return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada modul Evidence & Operasi Pangan.', code: 'FOOD_OPS_INTERNAL_ERROR' });
 };

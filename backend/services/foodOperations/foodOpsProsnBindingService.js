@@ -43,6 +43,30 @@ async function bindDocumentToProsn(documentId, payload, actor, tenantId) {
     if (entityType !== 'PENGISIAN' && !entityId) throw new FoodOpsError('entity_id wajib diisi bila entity_type ditentukan.', 400, 'FOOD_OPS_INVALID_DOCUMENT');
     await assertEntityBinding(entityType, entityId, pengisian.id, tenantId, transaction);
 
+    // CORRECTIVE MANDATE UAT-01D §6 — pertahanan endpoint tulis: TIDAK BOLEH
+    // hanya mengandalkan frontend (yang sebelumnya tidak membaca `already_bound`
+    // dari findCandidates sama sekali — lihat perbaikan di
+    // FoodOpsEvidenceCandidatePanel.jsx). Identitas "sudah tertaut" = tenant +
+    // pengisian + entity_type + entity_id + food_ops_document_id yang SAMA
+    // (mandat §2/§3 — food_ops_document_id sbg identitas kanonis, BUKAN judul/
+    // filename/nomor_dokumen). `pengisian_id` WAJIB ikut discocokkan krn utk
+    // entity_type='PENGISIAN', entity_id SELALU null — tanpa pengisian_id,
+    // dokumen yg sudah dipakai di SATU pengisian akan salah dianggap "sudah
+    // tertaut" utk pengisian LAIN yg sama sekali tidak terkait.
+    const existingLink = await db.ProsnBuktiIndikator.findOne({
+      where: { tenant_id: tenantId, pengisian_id: pengisian.id, entity_type: entityType, entity_id: entityId },
+      include: [{ model: db.ProsnBuktiDukung, as: 'buktiDukung', attributes: ['id', 'food_ops_document_id'], where: { food_ops_document_id: documentId }, required: true }],
+      transaction,
+    });
+    if (existingLink) {
+      throw new FoodOpsError(
+        'Dokumen ini sudah ditautkan sebagai bukti untuk target ProSN yang sama. Tidak perlu menautkan ulang.',
+        409,
+        'FOOD_OPS_PROSN_BINDING_ALREADY_EXISTS',
+        { existing_link_id: existingLink.id, existing_bukti_dukung_id: existingLink.bukti_dukung_id },
+      );
+    }
+
     const bukti = await db.ProsnBuktiDukung.create({
       tenant_id: tenantId,
       periode_id: pengisian.indikator.periode_id,

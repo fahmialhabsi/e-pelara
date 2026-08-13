@@ -8,6 +8,17 @@ import { CANDIDATE_RELEVANCE_LABEL, CANDIDATE_RELEVANCE_VARIANT, DOCUMENT_TYPE_L
  * Evidence & Operasi Pangan — Phase 1 (mandat §25-§27 "Evidence Candidate
  * UX"). Sistem HANYA mengusulkan (recall-first, mandat §24) — TIDAK PERNAH
  * auto-link (mandat §64). Pengguna wajib eksplisit klik "Gunakan/Tautkan".
+ *
+ * CORRECTIVE MANDATE UAT-01D — `findCandidates` (backend) SUDAH SEJAK Req #1
+ * menghitung `already_bound` per kandidat (identitas kanonis
+ * food_ops_document_id, tenant+entity_type+entity_id-scoped), tapi field ini
+ * TIDAK PERNAH dibaca di sini — tombol "Gunakan/Tautkan" selalu dirender
+ * tanpa syarat, membuat dokumen yg SUDAH tertaut ke target yang SAMA tetap
+ * terlihat bisa ditautkan lagi (relevansinya bahkan naik jadi EXACT/"Cocok
+ * Persis" krn identityMatch, justru makin meyakinkan secara visual — akar
+ * defect Owner UAT-01D). Relevansi (seberapa cocok) dan status tertaut
+ * (apakah sudah dipakai utk target ini) adalah DUA konsep terpisah — badge
+ * relevansi tetap tampil, hanya AKSI-nya yang berubah saat already_bound.
  */
 export default function FoodOpsEvidenceCandidatePanel({ criteria, onUse, onResult }) {
   const [candidates, setCandidates] = useState([]);
@@ -54,7 +65,11 @@ export default function FoodOpsEvidenceCandidatePanel({ criteria, onUse, onResul
             </ul>
           </div>
           <div className="d-flex gap-1">
-            <Button size="sm" onClick={() => onUse(c)}>Gunakan/Tautkan</Button>
+            {c.already_bound ? (
+              <Badge bg="secondary">Sudah Ditautkan</Badge>
+            ) : (
+              <Button size="sm" onClick={() => onUse(c)}>Gunakan/Tautkan</Button>
+            )}
           </div>
         </ListGroup.Item>
       ))}
