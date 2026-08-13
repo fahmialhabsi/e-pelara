@@ -79,16 +79,26 @@ const cleanup = { tenantIds: [], documentIds: [], regulationIds: [], eventIds: [
     await test('checksum — versi 1 dan versi 2 punya checksum berbeda (isi berbeda)', async () => {
       assert.notStrictEqual(docV1.checksum_sha256, docV2.checksum_sha256);
     });
-    let docDup;
-    await test('duplicate handling — unggah ulang isi PERSIS SAMA -> ditandai duplicate_of, TIDAK menolak keras', async () => {
+    // CORRECTIVE MANDATE UAT-01A (Owner Final UAT) — sebelumnya EXACT duplicate
+    // hanya ditandai `duplicate_of` TANPA benar-benar diblokir (baris baru +
+    // berkas fisik baru tetap tersimpan, bug dikonfirmasi Owner). Sekarang
+    // HARUS ditolak keras (409), TIDAK membuat baris baru sama sekali.
+    await test('duplicate handling — unggah ulang isi PERSIS SAMA -> DITOLAK (409), TIDAK membuat baris baru', async () => {
       const contohIsi = `%PDF-1.4 dummy konten-identik ${Date.now()}`;
       const first = await documentService.createDocument({ document_class: 'OTHER', document_type: 'other', judul: 'Dok A' }, fakeFile('dupe-a', contohIsi), ACTOR, tenantA.id);
       cleanup.documentIds.push(first.document.id);
-      const second = await documentService.createDocument({ document_class: 'OTHER', document_type: 'other', judul: 'Dok B (isi sama)' }, fakeFile('dupe-b', contohIsi), ACTOR, tenantA.id);
-      cleanup.documentIds.push(second.document.id);
-      docDup = second.document;
-      assert.ok(second.duplicate_of, 'duplicate_of harus terisi krn checksum sama persis dgn dokumen sebelumnya.');
-      assert.strictEqual(second.duplicate_of.id, first.document.id);
+      const totalSebelum = await db.FoodOpsDocument.count({ where: { tenant_id: tenantA.id } });
+      await assert.rejects(
+        () => documentService.createDocument({ document_class: 'OTHER', document_type: 'other', judul: 'Dok B (isi sama)' }, fakeFile('dupe-b', contohIsi), ACTOR, tenantA.id),
+        (error) => {
+          assert.ok(error instanceof FoodOpsError, 'Harus melempar FoodOpsError.');
+          assert.strictEqual(error.status, 409);
+          assert.strictEqual(error.code, 'FOOD_OPS_DOCUMENT_DUPLICATE');
+          return true;
+        },
+      );
+      const totalSesudah = await db.FoodOpsDocument.count({ where: { tenant_id: tenantA.id } });
+      assert.strictEqual(totalSesudah, totalSebelum, 'Upload duplikat yang ditolak TIDAK BOLEH membuat baris baru sama sekali.');
     });
     await test('tenant isolation — dokumen tenant A TIDAK ditemukan oleh tenant B', async () => {
       await assert.rejects(() => documentService.getDocumentDetail(docV1.id, tenantB.id), FoodOpsError);

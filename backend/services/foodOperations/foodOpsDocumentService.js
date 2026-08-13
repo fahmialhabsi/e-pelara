@@ -57,7 +57,27 @@ async function findLikelySameDocument(tenantId, nomorDokumen, excludeChecksum, t
   return db.FoodOpsDocument.findOne({ where, transaction });
 }
 
-/** Mandat §29/§74 — STORE ONCE: cek duplikat sebelum menyimpan baris baru, TIDAK menghapus/menimpa yang lama. */
+/**
+ * Mandat §29/§74 — STORE ONCE: cek duplikat sebelum menyimpan baris baru,
+ * TIDAK menghapus/menimpa yang lama.
+ *
+ * CORRECTIVE MANDATE UAT-01A (Owner Final UAT, ProSN Semester-II Readiness) —
+ * sebelumnya `duplikat` HANYA dihitung dan dikembalikan sbg metadata
+ * informasional (`duplicate_of`) TANPA benar-benar memblokir — baris baru dan
+ * berkas fisik baru tetap tersimpan walau checksum PERSIS sama dgn dokumen
+ * aktif yang sudah ada (bug dikonfirmasi Owner: upload identik ID 232 ->
+ * tetap membuat baris baru ID 399, checksum sama persis). Diperbaiki agar
+ * SESUAI dgn docstring/mandat yang sudah ada: EXACT duplicate (tier A, sama
+ * persis dgn tier EXACT di `findDuplicateByChecksum`/Req #1) SEKARANG
+ * memblokir — TIDAK membuat baris baru sama sekali (dilempar sebelum
+ * `FoodOpsDocument.create` di dalam transaction, jadi tidak ada write DB).
+ * Pembersihan berkas fisik yg sudah terlanjur diunggah multer TETAP jadi
+ * tanggung jawab controller (`removeFailedUpload` di blok catch, pola yg
+ * SUDAH ada & konsisten dgn `prosnpController.createBukti`), TIDAK diduplikasi
+ * di sini. Tier LIKELY_SAME/NEW_VERSION/SEMANTICALLY_RELATED (Req #1) TIDAK
+ * disentuh — tetap non-blocking seperti sebelumnya, mandat ini HANYA tier
+ * EXACT pada endpoint registry generik ini.
+ */
 async function createDocument(payload, file, actor, tenantId) {
   validateCreatePayload(payload);
   if (!file) throw new FoodOpsError('Berkas dokumen wajib diunggah.', 400, 'FOOD_OPS_INVALID_DOCUMENT');
@@ -65,6 +85,13 @@ async function createDocument(payload, file, actor, tenantId) {
 
   return db.sequelize.transaction(async (transaction) => {
     const duplikat = await findDuplicateByChecksum(tenantId, checksum, transaction);
+    if (duplikat) {
+      throw new FoodOpsError(
+        `Berkas ini identik dengan dokumen yang sudah terdaftar: "${duplikat.judul}". Gunakan dokumen yang sudah ada, jangan unggah ulang.`,
+        409,
+        'FOOD_OPS_DOCUMENT_DUPLICATE',
+      );
+    }
     const created = await db.FoodOpsDocument.create({
       tenant_id: tenantId,
       kelompok_uuid: crypto.randomUUID(),
@@ -86,7 +113,7 @@ async function createDocument(payload, file, actor, tenantId) {
       created_by: actor.id,
       updated_by: actor.id,
     }, { transaction });
-    return { document: created, duplicate_of: duplikat ? { id: duplikat.id, judul: duplikat.judul, checksum_sha256: duplikat.checksum_sha256 } : null };
+    return { document: created, duplicate_of: null };
   });
 }
 

@@ -26,12 +26,8 @@ export default function FoodOpsDocumentUploadModal({ show, onHide, onUploaded })
       const formData = new FormData();
       Object.entries(form).forEach(([key, value]) => { if (value) formData.append(key, value); });
       formData.append('file', file);
-      const result = await createFoodOpsDocument(formData);
-      if (result.duplicate_of) {
-        toast.warning(`Berkas identik dengan dokumen "${result.duplicate_of.judul}" (ID ${result.duplicate_of.id}) — tetap disimpan sebagai baris baru.`);
-      } else {
-        toast.success('Dokumen berhasil diunggah.');
-      }
+      await createFoodOpsDocument(formData);
+      toast.success('Dokumen berhasil diunggah.');
       setForm(emptyForm());
       setFile(null);
       onHide();
