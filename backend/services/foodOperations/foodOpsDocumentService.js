@@ -193,7 +193,43 @@ async function getDocumentVersionHistory(id, tenantId) {
   return db.FoodOpsDocument.findAll({ where: { tenant_id: tenantId, kelompok_uuid: current.kelompok_uuid }, order: [['versi', 'ASC']] });
 }
 
-/** Mandat §7 — append-only: baris lama TIDAK ditimpa, hanya status->'digantikan'. */
+/**
+ * Mandat §7 — append-only: baris lama TIDAK ditimpa, hanya status->'digantikan'.
+ *
+ * CORRECTIVE MANDATE UAT-01C — mengekspos endpoint versi yang SUDAH ADA ini
+ * ke UI (sebelumnya tidak ada entrypoint UI sama sekali) menuntut audit ulang
+ * keamanannya sbg jalur yang akan benar-benar dipakai pengguna. Tiga celah
+ * ditemukan & diperbaiki DI SINI SAJA (mandat §2 "fix only what is strictly
+ * necessary"), TIDAK ada perubahan pada createDocument/EXACT/LIKELY_SAME:
+ *
+ * 1) IDENTICAL-VERSION GUARD (mandat §8) — berkas versi baru yg checksum-nya
+ *    PERSIS SAMA dgn versi `lama` yg sedang digantikan bukan versi yg berarti
+ *    -> ditolak (409 FOOD_OPS_DOCUMENT_VERSION_IDENTICAL, kode BARU sempit,
+ *    BUKAN generic LIKELY_SAME new-document flow — mandat §8 eksplisit
+ *    melarang itu krn nomor_dokumen yg sama pada satu lineage versi memang
+ *    disengaja, bukan duplikat).
+ * 2) CROSS-FAMILY EXACT GUARD (mandat §9) — berkas versi baru yg checksum-nya
+ *    PERSIS SAMA dgn dokumen LAIN yg tidak terkait (bukan `lama`) tetap
+ *    memakai invarian EXACT yg SUDAH ADA (`findDuplicateByChecksum`, kode
+ *    existing FOOD_OPS_DOCUMENT_DUPLICATE, sama seperti createDocument) —
+ *    TIDAK menciptakan mesin dedup baru.
+ * 3) RACE-SAFE VERSION NUMBERING (mandat §13/§14) — versi lama TIDAK PERNAH
+ *    dihitung dari `lama.versi + 1` semata (baris `lama` tidak pernah
+ *    memperbarui field `versi` miliknya sendiri setelah digantikan, sehingga
+ *    dua request berurutan yg menargetkan id BERBEDA dlm satu kelompok_uuid
+ *    yg sama berisiko menghitung nomor versi berikutnya yg SAMA) — sekarang
+ *    backend mengunci (`transaction.LOCK.UPDATE`, mekanisme lock yg SUDAH
+ *    ADA, bukan sistem baru) SELURUH baris dlm `kelompok_uuid` yg sama, lalu
+ *    menghitung `MAX(versi)+1` dari situ — race-safe utk lineage yg sama tanpa
+ *    peduli id spesifik mana yg ditargetkan tiap request. `lama.status ===
+ *    'digantikan'` juga ditolak eksplisit (FOOD_OPS_DOCUMENT_NOT_CURRENT) —
+ *    mencegah user membuat versi dari id yg sudah usang (UI stale/cache lama).
+ *
+ * LIKELY_SAME (nomor_dokumen-based, Req #1/UAT-01B) SENGAJA TIDAK dipanggil
+ * di sini (mandat §8: "generic LIKELY_SAME new-document interception must
+ * NOT break intentional NEW_VERSION creation" — nomor_dokumen yg sama pada
+ * satu lineage versi adalah PERILAKU YANG DIHARAPKAN, bukan sinyal duplikat).
+ */
 async function createNewVersion(id, payload, file, actor, tenantId) {
   if (!file) throw new FoodOpsError('Berkas versi baru wajib diunggah.', 400, 'FOOD_OPS_INVALID_DOCUMENT');
   const checksum = computeChecksum(file.path);
@@ -201,11 +237,25 @@ async function createNewVersion(id, payload, file, actor, tenantId) {
   return db.sequelize.transaction(async (transaction) => {
     const lama = await db.FoodOpsDocument.findOne({ where: { id, tenant_id: tenantId }, transaction, lock: transaction.LOCK.UPDATE });
     if (!lama) throw new FoodOpsError('Dokumen tidak ditemukan.', 404, 'FOOD_OPS_NOT_FOUND');
+    if (lama.status === 'digantikan') {
+      throw new FoodOpsError('Dokumen ini sudah memiliki versi yang lebih baru. Buat versi baru dari versi yang sedang aktif (versi terkini).', 409, 'FOOD_OPS_DOCUMENT_NOT_CURRENT');
+    }
+
+    if (checksum === lama.checksum_sha256) {
+      throw new FoodOpsError('Berkas yang diunggah persis sama dengan berkas versi saat ini — bukan versi baru yang berarti.', 409, 'FOOD_OPS_DOCUMENT_VERSION_IDENTICAL');
+    }
+    const duplikatLain = await findDuplicateByChecksum(tenantId, checksum, transaction);
+    if (duplikatLain) {
+      throw new FoodOpsError(`Berkas ini identik dengan dokumen lain yang sudah terdaftar: "${duplikatLain.judul}". Gunakan dokumen yang sudah ada, jangan unggah ulang.`, 409, 'FOOD_OPS_DOCUMENT_DUPLICATE');
+    }
+
+    const lineage = await db.FoodOpsDocument.findAll({ where: { tenant_id: tenantId, kelompok_uuid: lama.kelompok_uuid }, transaction, lock: transaction.LOCK.UPDATE });
+    const nextVersi = Math.max(...lineage.map((d) => d.versi)) + 1;
 
     const baru = await db.FoodOpsDocument.create({
       tenant_id: tenantId,
       kelompok_uuid: lama.kelompok_uuid,
-      versi: lama.versi + 1,
+      versi: nextVersi,
       document_class: lama.document_class,
       document_type: lama.document_type,
       judul: payload?.judul || lama.judul,

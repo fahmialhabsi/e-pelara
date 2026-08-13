@@ -10,35 +10,46 @@ export default function FoodOpsDocumentDetailModal({ show, onHide, documentId, c
   const [doc, setDoc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // CORRECTIVE MANDATE UAT-01C §17 — id yang SEDANG ditampilkan bisa berpindah
+  // ke versi baru setelah "Buat Versi Baru" berhasil (mandat: "opening the
+  // logical/current document should show Version 2 information"), TANPA
+  // menutup modal atau reload penuh. Diinisialisasi dari prop `documentId`
+  // setiap modal dibuka.
+  const [currentId, setCurrentId] = useState(documentId);
+  useEffect(() => { if (show) setCurrentId(documentId); }, [show, documentId]);
 
   const load = async () => {
-    if (!documentId) return;
+    if (!currentId) return;
     setLoading(true);
-    try { setDoc(await getFoodOpsDocumentDetail(documentId)); }
+    try { setDoc(await getFoodOpsDocumentDetail(currentId)); }
     catch { toast.error('Gagal memuat detail dokumen.'); }
     finally { setLoading(false); }
   };
-  useEffect(() => { if (show) load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [show, documentId]);
+  useEffect(() => { if (show) load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [show, currentId]);
 
   const handleClassify = async () => {
     setBusy(true);
-    try { await classifyFoodOpsDocument(documentId); toast.success('Klasifikasi selesai.'); await load(); await onChanged?.(); }
+    try { await classifyFoodOpsDocument(currentId); toast.success('Klasifikasi selesai.'); await load(); await onChanged?.(); }
     catch (error) { toast.error(error?.response?.data?.message || 'Gagal mengklasifikasi dokumen.'); }
     finally { setBusy(false); }
   };
   const handleVerify = async (status) => {
     setBusy(true);
-    try { await verifyFoodOpsDocument(documentId, { status_verifikasi: status, lock_version: doc.lock_version }); toast.success('Status verifikasi diperbarui.'); await load(); await onChanged?.(); }
+    try { await verifyFoodOpsDocument(currentId, { status_verifikasi: status, lock_version: doc.lock_version }); toast.success('Status verifikasi diperbarui.'); await load(); await onChanged?.(); }
     catch (error) { toast.error(error?.response?.data?.message || 'Gagal memperbarui verifikasi.'); }
     finally { setBusy(false); }
   };
   const handleDownload = async () => {
     try {
-      const response = await downloadFoodOpsDocument(documentId);
+      const response = await downloadFoodOpsDocument(currentId);
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = window.document.createElement('a');
       link.href = url; link.setAttribute('download', doc.file_name_original); window.document.body.appendChild(link); link.click(); link.remove();
     } catch { toast.error('Gagal mengunduh dokumen.'); }
+  };
+  const handleVersionCreated = async (newVersionDoc) => {
+    setCurrentId(newVersionDoc.id);
+    await onChanged?.();
   };
 
   return (
@@ -55,6 +66,10 @@ export default function FoodOpsDocumentDetailModal({ show, onHide, documentId, c
               <Col md={4}><span className="text-muted">Nomor:</span> {doc.nomor_dokumen || '—'}</Col>
               <Col md={4}><span className="text-muted">Tanggal:</span> {doc.tanggal_dokumen || '—'}</Col>
               <Col md={4}><span className="text-muted">Penerbit:</span> {doc.penerbit || '—'}</Col>
+              <Col md={12}><span className="text-muted">Checksum (SHA-256):</span> <code className="small">{doc.checksum_sha256 || '—'}</code></Col>
+              <Col md={4}><span className="text-muted">Diunggah oleh:</span> {doc.uploaded_by_nama || doc.created_by || '—'}</Col>
+              <Col md={4}><span className="text-muted">Diunggah pada:</span> {doc.created_at ? new Date(doc.created_at).toLocaleString('id-ID') : '—'}</Col>
+              <Col md={4}><span className="text-muted">Kelompok Versi:</span> <code className="small">{doc.kelompok_uuid || '—'}</code></Col>
               <Col md={12} className="d-flex gap-2 flex-wrap">
                 <Badge bg="secondary">{doc.status}</Badge>
                 <Badge bg={doc.status_verifikasi === 'valid' ? 'success' : 'warning'}>{STATUS_VERIFIKASI_LABEL[doc.status_verifikasi]}</Badge>
@@ -80,10 +95,10 @@ export default function FoodOpsDocumentDetailModal({ show, onHide, documentId, c
             )}
             <hr />
             <h6>Riwayat Versi</h6>
-            <FoodOpsDocumentVersionHistory documentId={documentId} />
+            <FoodOpsDocumentVersionHistory documentId={currentId} canManage onVersionCreated={handleVersionCreated} />
             <hr />
             <h6>Relasi ke Kegiatan/Regulasi/Dokumen Lain</h6>
-            <FoodOpsDocumentLinkManager documentId={documentId} />
+            <FoodOpsDocumentLinkManager documentId={currentId} />
           </>
         )}
       </Modal.Body>
