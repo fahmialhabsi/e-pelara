@@ -6,6 +6,7 @@ import { getFoodOpsDocuments } from '../services/foodOpsApi';
 import { DOCUMENT_CLASS_LABEL, DOCUMENT_TYPE_LABEL, STATUS_VERIFIKASI_LABEL } from '../services/foodOpsConstants';
 import FoodOpsDocumentUploadModal from '../components/FoodOpsDocumentUploadModal';
 import FoodOpsDocumentDetailModal from '../components/FoodOpsDocumentDetailModal';
+import FoodOpsModuleNav from '../components/FoodOpsModuleNav';
 
 const REVIEW_ROLES = ['SUPER_ADMIN', 'ADMINISTRATOR', 'PENGAWAS'];
 const isReviewer = (role) => REVIEW_ROLES.includes(String(role || '').toUpperCase());
@@ -30,6 +31,7 @@ export default function FoodOpsDocumentListPage() {
 
   return (
     <div className="p-3">
+      <FoodOpsModuleNav />
       <div className="d-flex justify-content-between align-items-center mb-3">
         <h4>Dokumen &amp; Evidence</h4>
         <Button onClick={() => setShowUpload(true)}>+ Unggah Dokumen</Button>
@@ -85,7 +87,12 @@ export default function FoodOpsDocumentListPage() {
         </Table>
       ) : <div className="text-muted">Belum ada dokumen.</div>}
 
-      <FoodOpsDocumentUploadModal show={showUpload} onHide={() => setShowUpload(false)} onUploaded={load} />
+      <FoodOpsDocumentUploadModal
+        show={showUpload}
+        onHide={() => setShowUpload(false)}
+        onUploaded={load}
+        onUseExisting={(candidate) => setDetailId(candidate.id)}
+      />
       {detailId && (
         <FoodOpsDocumentDetailModal show={!!detailId} onHide={() => setDetailId(null)} documentId={detailId} canVerify={isReviewer(user?.role)} onChanged={load} />
       )}

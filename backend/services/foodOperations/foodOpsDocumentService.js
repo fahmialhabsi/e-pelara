@@ -57,26 +57,58 @@ async function findLikelySameDocument(tenantId, nomorDokumen, excludeChecksum, t
   return db.FoodOpsDocument.findOne({ where, transaction });
 }
 
+function likelySameCandidatePayload(candidate) {
+  return {
+    id: candidate.id,
+    judul: candidate.judul,
+    nomor_dokumen: candidate.nomor_dokumen,
+    document_class: candidate.document_class,
+    document_type: candidate.document_type,
+    tanggal_dokumen: candidate.tanggal_dokumen,
+    penerbit: candidate.penerbit,
+    versi: candidate.versi,
+    status: candidate.status,
+    status_verifikasi: candidate.status_verifikasi,
+  };
+}
+
 /**
  * Mandat §29/§74 — STORE ONCE: cek duplikat sebelum menyimpan baris baru,
  * TIDAK menghapus/menimpa yang lama.
  *
- * CORRECTIVE MANDATE UAT-01A (Owner Final UAT, ProSN Semester-II Readiness) —
- * sebelumnya `duplikat` HANYA dihitung dan dikembalikan sbg metadata
- * informasional (`duplicate_of`) TANPA benar-benar memblokir — baris baru dan
- * berkas fisik baru tetap tersimpan walau checksum PERSIS sama dgn dokumen
- * aktif yang sudah ada (bug dikonfirmasi Owner: upload identik ID 232 ->
- * tetap membuat baris baru ID 399, checksum sama persis). Diperbaiki agar
- * SESUAI dgn docstring/mandat yang sudah ada: EXACT duplicate (tier A, sama
- * persis dgn tier EXACT di `findDuplicateByChecksum`/Req #1) SEKARANG
- * memblokir — TIDAK membuat baris baru sama sekali (dilempar sebelum
- * `FoodOpsDocument.create` di dalam transaction, jadi tidak ada write DB).
- * Pembersihan berkas fisik yg sudah terlanjur diunggah multer TETAP jadi
- * tanggung jawab controller (`removeFailedUpload` di blok catch, pola yg
- * SUDAH ada & konsisten dgn `prosnpController.createBukti`), TIDAK diduplikasi
- * di sini. Tier LIKELY_SAME/NEW_VERSION/SEMANTICALLY_RELATED (Req #1) TIDAK
- * disentuh — tetap non-blocking seperti sebelumnya, mandat ini HANYA tier
- * EXACT pada endpoint registry generik ini.
+ * CORRECTIVE MANDATE UAT-01A — EXACT duplicate (checksum sama persis) SEKARANG
+ * memblokir (409 FOOD_OPS_DOCUMENT_DUPLICATE) — TIDAK membuat baris baru sama
+ * sekali (dilempar sebelum `FoodOpsDocument.create` di dalam transaction, jadi
+ * tidak ada write DB). Pembersihan berkas fisik yg sudah terlanjur diunggah
+ * multer tetap jadi tanggung jawab controller (`removeFailedUpload` di blok
+ * catch), TIDAK diduplikasi di sini.
+ *
+ * CORRECTIVE MANDATE UAT-01B — Owner UAT membuktikan endpoint registry
+ * generik ini (dipakai SATU-SATUNYA oleh tab "Dokumen & Evidence" — Regulasi/
+ * Kegiatan TERBUKTI TIDAK PERNAH memanggil fungsi ini, hanya mereferensikan
+ * `document_id` yang sudah ada, lihat `foodOpsRegulationService.createRegulationMeta`
+ * & `foodOpsDocumentLinkService.createLink`) adalah SATU-SATUNYA titik yang
+ * belum menerapkan tier LIKELY_SAME (`findLikelySameDocument`, Req #1) —
+ * `prosnpController.createBukti` sudah menerapkannya sejak Req #1, tapi
+ * endpoint generik ini tidak, sehingga ID 427 (nomor_dokumen identik dgn ID
+ * 232, checksum beda) lolos tersimpan sbg baris baru. Diperbaiki dgn REUSE
+ * `findLikelySameDocument` persis (bukan mesin fuzzy-dedup baru, bukan logika
+ * pencocokan baru — mandat §5 "audit and reuse ... the real Owner UAT case
+ * MUST match", nomor_dokumen eksak sudah cukup kuat utk kasus nyata ini):
+ *   - tidak ditemukan LIKELY_SAME -> lanjut simpan seperti biasa.
+ *   - ditemukan, `payload.acknowledge_likely_same` belum true -> STOP, lempar
+ *     409 FOOD_OPS_DOCUMENT_LIKELY_SAME (candidate di `error.details`), TIDAK
+ *     ADA row/file permanen tersimpan (sama seperti EXACT, dilempar sebelum
+ *     `FoodOpsDocument.create`).
+ *   - `payload.acknowledge_likely_same===true` -> backend TIDAK PERNAH
+ *     percaya begitu saja (mandat §16 "do not trust stale frontend state"):
+ *     revalidasi `acknowledged_candidate_id` benar milik tenant ini DAN masih
+ *     persis kandidat LIKELY_SAME yang sama utk submission saat ini (nomor
+ *     dokumen bisa saja diubah user di form sebelum submit ulang, atau
+ *     kandidat sudah tidak aktif lagi) — jika berbeda/stale, tolak
+ *     (409 FOOD_OPS_LIKELY_SAME_STALE), user harus mengulang dari awal.
+ * EXACT TIDAK PERNAH bisa dilewati oleh acknowledge_likely_same — cek EXACT
+ * tetap tanpa syarat, di atas cek LIKELY_SAME manapun.
  */
 async function createDocument(payload, file, actor, tenantId) {
   validateCreatePayload(payload);
@@ -92,6 +124,29 @@ async function createDocument(payload, file, actor, tenantId) {
         'FOOD_OPS_DOCUMENT_DUPLICATE',
       );
     }
+
+    const acknowledgeLikelySame = payload.acknowledge_likely_same === true || payload.acknowledge_likely_same === 'true';
+    if (!acknowledgeLikelySame) {
+      const likelySame = await findLikelySameDocument(tenantId, payload.nomor_dokumen, checksum, transaction);
+      if (likelySame) {
+        throw new FoodOpsError(
+          'Dokumen yang akan diunggah sangat mirip dengan dokumen yang sudah terdaftar. Periksa dokumen berikut sebelum membuat dokumen baru.',
+          409,
+          'FOOD_OPS_DOCUMENT_LIKELY_SAME',
+          { candidate: likelySameCandidatePayload(likelySame) },
+        );
+      }
+    } else {
+      const candidateId = Number(payload.acknowledged_candidate_id);
+      if (!candidateId) throw new FoodOpsError('acknowledged_candidate_id wajib diisi saat acknowledge_likely_same=true.', 400, 'FOOD_OPS_INVALID_DOCUMENT');
+      const candidate = await db.FoodOpsDocument.findOne({ where: { id: candidateId, tenant_id: tenantId }, transaction });
+      if (!candidate) throw new FoodOpsError('Kandidat dokumen tidak valid atau bukan milik tenant ini. Muat ulang dan coba lagi.', 409, 'FOOD_OPS_INVALID_CANDIDATE');
+      const stillLikelySame = await findLikelySameDocument(tenantId, payload.nomor_dokumen, checksum, transaction);
+      if (!stillLikelySame || stillLikelySame.id !== candidate.id) {
+        throw new FoodOpsError('Kondisi dokumen serupa sudah berubah sejak diperiksa terakhir. Muat ulang dan coba lagi.', 409, 'FOOD_OPS_LIKELY_SAME_STALE');
+      }
+    }
+
     const created = await db.FoodOpsDocument.create({
       tenant_id: tenantId,
       kelompok_uuid: crypto.randomUUID(),

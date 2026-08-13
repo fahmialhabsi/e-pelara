@@ -2,12 +2,16 @@
 
 const fs = require('fs');
 const documentService = require('../services/foodOperations/foodOpsDocumentService');
+const bindingService = require('../services/foodOperations/foodOpsProsnBindingService');
 const { FoodOpsError } = require('../services/foodOperations/foodOpsError');
 const { logActivity } = require('../services/auditService');
 
 const ok = (res, data, status = 200) => res.status(status).json({ success: true, data, meta: {} });
 const fail = (res, error) => {
-  if (error instanceof FoodOpsError) return res.status(error.status).json({ success: false, message: error.message, code: error.code });
+  // CORRECTIVE MANDATE UAT-01B — `details` (mis. kandidat LIKELY_SAME) harus
+  // sampai ke frontend agar bisa menampilkan pilihan resolusi eksplisit;
+  // sebelumnya `error.details` selalu dibuang di sini.
+  if (error instanceof FoodOpsError) return res.status(error.status).json({ success: false, message: error.message, code: error.code, ...(error.details ? { details: error.details } : {}) });
   console.error('[foodOps]', error);
   return res.status(500).json({ success: false, message: 'Terjadi kesalahan pada modul Evidence & Operasi Pangan.', code: 'FOOD_OPS_INTERNAL_ERROR' });
 };
@@ -15,6 +19,11 @@ function removeFailedUpload(file) { if (file?.path) fs.unlink(file.path, () => {
 
 async function listDocuments(req, res) {
   try { return ok(res, await documentService.listDocuments(req.tenantId, req.query)); } catch (e) { return fail(res, e); }
+}
+
+/** Phase 1 — ringkasan dashboard registry (mandat §9). */
+async function getDashboardSummary(req, res) {
+  try { return ok(res, await documentService.getDashboardSummary(req.tenantId, req.query)); } catch (e) { return fail(res, e); }
 }
 
 async function createDocument(req, res) {
@@ -60,4 +69,9 @@ async function downloadDocument(req, res) {
   } catch (e) { return fail(res, e); }
 }
 
-module.exports = { listDocuments, createDocument, getDocumentDetail, getVersionHistory, createNewVersion, classifyDocument, verifyDocument, downloadDocument };
+/** Phase 1 — daftar binding ProSN internal yang berasal dari dokumen ini (mandat §11 "Semantic links"). */
+async function getProsnBindings(req, res) {
+  try { return ok(res, await bindingService.listBindingsForDocument(Number(req.params.id), req.tenantId)); } catch (e) { return fail(res, e); }
+}
+
+module.exports = { listDocuments, createDocument, getDocumentDetail, getVersionHistory, createNewVersion, classifyDocument, verifyDocument, downloadDocument, getProsnBindings, getDashboardSummary };
