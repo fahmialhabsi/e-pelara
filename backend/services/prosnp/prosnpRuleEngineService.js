@@ -260,7 +260,55 @@ async function hitungUlang(pengisianId, tenantId) {
   return fn(pengisianId, tenantId);
 }
 
+/**
+ * Corrective "ProSN Semester-II Readiness — Automatic Scoring" (mandat §20/§46)
+ * — auto-recalculate skor SETELAH aksi material (create/update/delete register,
+ * bind evidence, ubah status verifikasi) supaya user TIDAK WAJIB menekan
+ * "Hitung Ulang Skor" secara manual utk alur normal. Tombol manual TETAP ADA
+ * sbg recovery/reconciliation (mandat §21), tidak dihapus.
+ *
+ * SENGAJA dibatasi ke B.1.1/B.1.2/B.1.4 (`AUTO_RECALC_TIPE_FORM`) — B.1.3
+ * (cadangan_pangan_beras) adalah FUNCTIONAL BASELINE FROZEN (mandat §1/§10:
+ * "DO NOT alter any B.1.3 scoring... atau UI behavior" — memicu recalc
+ * otomatis pada evidence-bind bersama akan mengubah KAPAN skor B.1.3
+ * dihitung ulang, sebuah perubahan behavior, walau formulanya sendiri tidak
+ * disentuh) dan seluruh tipe_form MBG (mandat: "MBG PROTECTED — DO NOT alter
+ * business logic, scoring, atau evidence semantics") TETAP di luar cakupan
+ * auto-recalc — keduanya tetap manual-only spt sebelumnya.
+ *
+ * BEST-EFFORT & NON-FATAL (mandat §40.C/§21): kegagalan auto-recalc TIDAK
+ * PERNAH menggagalkan aksi utama (create/update/delete/bind/verifikasi) yg
+ * memicunya — skor tetap bisa disegarkan manual. `hitungUlang*` sendiri sudah
+ * idempotent (murni recompute dari state DB terkini, tidak pernah membuat
+ * baris duplikat) dan tidak pernah menulis balik ke tabel register yg
+ * dibacanya, sehingga tidak ada risiko infinite-loop rekursif (mandat §40.D/E).
+ */
+const AUTO_RECALC_TIPE_FORM = new Set(['penugasan_kdh', 'koordinasi_forkopimda', 'inovasi_dan_perkada']);
+
+async function autoRecalcSkor(pengisianId, tenantId) {
+  if (!pengisianId || !tenantId) return null;
+  try {
+    const pengisian = await getPengisianKonteks(pengisianId, tenantId);
+    if (!AUTO_RECALC_TIPE_FORM.has(pengisian.indikator.tipe_form)) return null;
+    return await hitungUlang(pengisianId, tenantId);
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * Varian jamak (mandat §20 "evidence verification-status change") — satu
+ * bukti/dokumen bisa terikat ke lebih dari satu pengisian scr teoretis;
+ * refresh SEMUA pengisian yg eligible tanpa menghentikan yg lain bila salah
+ * satu gagal.
+ */
+async function autoRecalcSkorBanyak(pengisianIds, tenantId) {
+  const unik = [...new Set((pengisianIds || []).filter(Boolean))];
+  for (const id of unik) await autoRecalcSkor(id, tenantId); // eslint-disable-line no-await-in-loop
+}
+
 module.exports = {
   hitungUlang, hitungUlangB11, hitungUlangB12, hitungUlangB13, hitungUlangB14,
   hitungUlangMbgSatgas, hitungUlangMbgSarpras, hitungUlangMbgLaporan, hitungUlangMbgCapaianPersentase,
+  autoRecalcSkor, autoRecalcSkorBanyak,
 };

@@ -105,7 +105,9 @@ async function remove(id, tenantId) {
     const inovasi = await db.ProsnInovasi.findOne({ where: { id, tenant_id: tenantId }, transaction });
     if (!inovasi) throw new ProsnError('Inovasi tidak ditemukan.', 404, 'PROSNP_NOT_FOUND');
     await assertPengisianEditable(inovasi.pengisian_id, tenantId, transaction);
+    const pengisianId = inovasi.pengisian_id;
     await inovasi.destroy({ transaction });
+    return { pengisian_id: pengisianId };
   });
 }
 

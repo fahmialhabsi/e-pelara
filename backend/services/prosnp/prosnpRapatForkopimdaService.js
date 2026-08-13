@@ -94,7 +94,9 @@ async function remove(id, tenantId) {
     const rapat = await db.ProsnRapatForkopimda.findOne({ where: { id, tenant_id: tenantId }, transaction });
     if (!rapat) throw new ProsnError('Rapat tidak ditemukan.', 404, 'PROSNP_NOT_FOUND');
     await assertPengisianEditable(rapat.pengisian_id, tenantId, transaction);
+    const pengisianId = rapat.pengisian_id;
     await rapat.destroy({ transaction });
+    return { pengisian_id: pengisianId };
   });
 }
 

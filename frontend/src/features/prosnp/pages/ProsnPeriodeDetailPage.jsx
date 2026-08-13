@@ -919,6 +919,8 @@ export default function ProsnPeriodeDetailPage() {
               {editable && KETAHANAN_PANGAN_TIPE_FORM_BARU.includes(indikator.tipe_form) && (
                 <ProsnInternalAutofillSuggestion
                   pengisianId={form.pengisianId}
+                  savedSumberData={form.sumber_data}
+                  skorDihitungAt={form.skor_dihitung_at}
                   hasExistingContent={() => Boolean(
                     (form.sumber_data && form.sumber_data.trim())
                     || (form.hambatan && form.hambatan.trim())

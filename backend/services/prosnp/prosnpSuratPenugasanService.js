@@ -169,7 +169,12 @@ async function remove(id, tenantId) {
     if (!surat) throw new ProsnError('Surat penugasan tidak ditemukan.', 404, 'PROSNP_NOT_FOUND');
     await assertPengisianEditable(surat.pengisian_id, tenantId, transaction);
     await db.ProsnSuratPenugasanDukungan.destroy({ where: { surat_penugasan_id: id }, transaction });
+    const pengisianId = surat.pengisian_id;
     await surat.destroy({ transaction });
+    // Nilai balik ditambah (bukan lagi undefined) semata utk auto-recalc skor
+    // pasca-hapus (mandat "Automatic Scoring" §20) — tidak ada caller lama yg
+    // bergantung pada return value undefined sebelumnya.
+    return { pengisian_id: pengisianId };
   });
 }
 

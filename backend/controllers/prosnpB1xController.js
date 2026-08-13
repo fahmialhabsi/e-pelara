@@ -33,16 +33,56 @@ const fail = (res, error) => {
 };
 
 // ── B.1.1 Surat Penugasan ──
+// Corrective "ProSN Semester-II Readiness — Automatic Scoring" (mandat §20):
+// setiap create/update/delete register memicu autoRecalcSkor best-effort
+// (no-op utk B.1.3/MBG, lihat prosnpRuleEngineService.autoRecalcSkor) supaya
+// user tidak wajib menekan "Hitung Ulang Skor" manual utk alur normal.
 async function listSuratPenugasan(req, res) { try { return ok(res, await suratPenugasanService.listByPengisian(Number(req.params.pengisianId), req.tenantId)); } catch (e) { return fail(res, e); } }
-async function createSuratPenugasan(req, res) { try { return ok(res, await suratPenugasanService.create(Number(req.params.pengisianId), req.body, req.user, req.tenantId), 201); } catch (e) { return fail(res, e); } }
-async function updateSuratPenugasan(req, res) { try { return ok(res, await suratPenugasanService.update(Number(req.params.id), req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
-async function deleteSuratPenugasan(req, res) { try { await suratPenugasanService.remove(Number(req.params.id), req.tenantId); return ok(res, { deleted: true }); } catch (e) { return fail(res, e); } }
+async function createSuratPenugasan(req, res) {
+  try {
+    const hasil = await suratPenugasanService.create(Number(req.params.pengisianId), req.body, req.user, req.tenantId);
+    await ruleEngineService.autoRecalcSkor(Number(req.params.pengisianId), req.tenantId);
+    return ok(res, hasil, 201);
+  } catch (e) { return fail(res, e); }
+}
+async function updateSuratPenugasan(req, res) {
+  try {
+    const hasil = await suratPenugasanService.update(Number(req.params.id), req.body, req.user, req.tenantId);
+    await ruleEngineService.autoRecalcSkor(hasil.pengisian_id, req.tenantId);
+    return ok(res, hasil);
+  } catch (e) { return fail(res, e); }
+}
+async function deleteSuratPenugasan(req, res) {
+  try {
+    const hasil = await suratPenugasanService.remove(Number(req.params.id), req.tenantId);
+    await ruleEngineService.autoRecalcSkor(hasil?.pengisian_id, req.tenantId);
+    return ok(res, { deleted: true });
+  } catch (e) { return fail(res, e); }
+}
 
 // ── B.1.2 Rapat Forkopimda ──
 async function listRapatForkopimda(req, res) { try { return ok(res, await rapatForkopimdaService.listByPengisian(Number(req.params.pengisianId), req.tenantId)); } catch (e) { return fail(res, e); } }
-async function createRapatForkopimda(req, res) { try { return ok(res, await rapatForkopimdaService.create(Number(req.params.pengisianId), req.body, req.user, req.tenantId), 201); } catch (e) { return fail(res, e); } }
-async function updateRapatForkopimda(req, res) { try { return ok(res, await rapatForkopimdaService.update(Number(req.params.id), req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
-async function deleteRapatForkopimda(req, res) { try { await rapatForkopimdaService.remove(Number(req.params.id), req.tenantId); return ok(res, { deleted: true }); } catch (e) { return fail(res, e); } }
+async function createRapatForkopimda(req, res) {
+  try {
+    const hasil = await rapatForkopimdaService.create(Number(req.params.pengisianId), req.body, req.user, req.tenantId);
+    await ruleEngineService.autoRecalcSkor(Number(req.params.pengisianId), req.tenantId);
+    return ok(res, hasil, 201);
+  } catch (e) { return fail(res, e); }
+}
+async function updateRapatForkopimda(req, res) {
+  try {
+    const hasil = await rapatForkopimdaService.update(Number(req.params.id), req.body, req.user, req.tenantId);
+    await ruleEngineService.autoRecalcSkor(hasil.pengisian_id, req.tenantId);
+    return ok(res, hasil);
+  } catch (e) { return fail(res, e); }
+}
+async function deleteRapatForkopimda(req, res) {
+  try {
+    const hasil = await rapatForkopimdaService.remove(Number(req.params.id), req.tenantId);
+    await ruleEngineService.autoRecalcSkor(hasil?.pengisian_id, req.tenantId);
+    return ok(res, { deleted: true });
+  } catch (e) { return fail(res, e); }
+}
 
 // ── B.1.3 Target KDH & Transaksi Stok ──
 async function listCadanganTarget(req, res) { try { return ok(res, await cadanganPanganService.listTarget(req.tenantId, req.query.tahun)); } catch (e) { return fail(res, e); } }
@@ -84,9 +124,27 @@ async function listDpaSourceSubKegiatan(req, res) {
 
 // ── B.1.4 Inovasi ──
 async function listInovasi(req, res) { try { return ok(res, await inovasiService.listByPengisian(Number(req.params.pengisianId), req.tenantId)); } catch (e) { return fail(res, e); } }
-async function createInovasi(req, res) { try { return ok(res, await inovasiService.create(Number(req.params.pengisianId), req.body, req.user, req.tenantId), 201); } catch (e) { return fail(res, e); } }
-async function updateInovasi(req, res) { try { return ok(res, await inovasiService.update(Number(req.params.id), req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
-async function deleteInovasi(req, res) { try { await inovasiService.remove(Number(req.params.id), req.tenantId); return ok(res, { deleted: true }); } catch (e) { return fail(res, e); } }
+async function createInovasi(req, res) {
+  try {
+    const hasil = await inovasiService.create(Number(req.params.pengisianId), req.body, req.user, req.tenantId);
+    await ruleEngineService.autoRecalcSkor(Number(req.params.pengisianId), req.tenantId);
+    return ok(res, hasil, 201);
+  } catch (e) { return fail(res, e); }
+}
+async function updateInovasi(req, res) {
+  try {
+    const hasil = await inovasiService.update(Number(req.params.id), req.body, req.user, req.tenantId);
+    await ruleEngineService.autoRecalcSkor(hasil.pengisian_id, req.tenantId);
+    return ok(res, hasil);
+  } catch (e) { return fail(res, e); }
+}
+async function deleteInovasi(req, res) {
+  try {
+    const hasil = await inovasiService.remove(Number(req.params.id), req.tenantId);
+    await ruleEngineService.autoRecalcSkor(hasil?.pengisian_id, req.tenantId);
+    return ok(res, { deleted: true });
+  } catch (e) { return fail(res, e); }
+}
 
 // ── Rule Engine ──
 async function hitungUlangSkor(req, res) { try { return ok(res, await ruleEngineService.hitungUlang(Number(req.params.pengisianId), req.tenantId)); } catch (e) { return fail(res, e); } }

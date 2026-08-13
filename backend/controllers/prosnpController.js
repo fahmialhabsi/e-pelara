@@ -6,6 +6,7 @@ const { buildExcel } = require('../services/prosnp/prosnpExcelExportService');
 const { exportB13Template } = require('../services/prosnp/prosnpExcelTemplateExportService');
 const { listDukunganProgramDariSistem } = require('../services/prosnp/prosnpDukunganSistemService');
 const foodOpsDocumentService = require('../services/foodOperations/foodOpsDocumentService');
+const ruleEngineService = require('../services/prosnp/prosnpRuleEngineService');
 const fs = require('fs');
 
 const normalizeOpdName = (value) => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -94,13 +95,31 @@ async function createBukti(req, res) {
         });
       }
     }
-    return ok(res, await workflow.createBukti(Number(req.params.id), req.body, req.file, req.user, req.tenantId), 201);
+    const hasil = await workflow.createBukti(Number(req.params.id), req.body, req.file, req.user, req.tenantId);
+    // Corrective "ProSN Semester-II Readiness — Automatic Scoring" (mandat §20
+    // "bind evidence"): pengisianId sudah tersedia langsung dari route param,
+    // no-op utk B.1.3/MBG (lihat autoRecalcSkor).
+    await ruleEngineService.autoRecalcSkor(Number(req.params.id), req.tenantId);
+    return ok(res, hasil, 201);
   } catch (e) { removeFailedUpload(req.file); return fail(res, e); }
 }
 async function reviseBukti(req, res) { try { return ok(res, await workflow.reviseBukti(Number(req.params.id), req.body, req.file, req.user, req.tenantId), 201); } catch (e) { removeFailedUpload(req.file); return fail(res, e); } }
 async function checklistBukti(req, res) { try { return ok(res, await workflow.checklistBukti(Number(req.params.id), req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
 async function listBuktiEntity(req, res) { try { return ok(res, await workflow.listBuktiUntukEntity(Number(req.params.id), req.query.entity_type, req.query.entity_id, req.tenantId)); } catch (e) { return fail(res, e); } }
-async function setStatusVerifikasiBukti(req, res) { try { return ok(res, await workflow.setStatusVerifikasiBukti(Number(req.params.id), req.body, req.user, req.tenantId)); } catch (e) { return fail(res, e); } }
+/**
+ * Corrective "ProSN Semester-II Readiness — Automatic Scoring" (mandat §20
+ * "evidence verification-status change"): satu ProsnBuktiDukung bisa terikat
+ * ke >1 entity/pengisian scr teoretis lewat ProsnBuktiIndikator — refresh
+ * SEMUA pengisian yg terikat, no-op utk yg tidak eligible (B.1.3/MBG).
+ */
+async function setStatusVerifikasiBukti(req, res) {
+  try {
+    const hasil = await workflow.setStatusVerifikasiBukti(Number(req.params.id), req.body, req.user, req.tenantId);
+    const links = await db.ProsnBuktiIndikator.findAll({ where: { bukti_dukung_id: Number(req.params.id), tenant_id: req.tenantId }, attributes: ['pengisian_id'] });
+    await ruleEngineService.autoRecalcSkorBanyak(links.map((l) => l.pengisian_id), req.tenantId);
+    return ok(res, hasil);
+  } catch (e) { return fail(res, e); }
+}
 async function downloadBukti(req, res) {
   try {
     const bukti = await db.ProsnBuktiDukung.findOne({ where: { id: Number(req.params.id), tenant_id: req.tenantId } });
