@@ -3,6 +3,7 @@ import { Button, Col, Form, Modal, Row } from 'react-bootstrap';
 import { toast } from 'react-toastify';
 import { createFoodOpsEvent, getFoodOpsDocuments, updateFoodOpsEvent } from '../services/foodOpsApi';
 import { EVENT_TYPE_LABEL, STATUS_TINDAK_LANJUT_LABEL } from '../services/foodOpsConstants';
+import FieldProvenanceBadge from '../../prosnp/components/FieldProvenanceBadge';
 
 function emptyForm(tahun) {
   return {
@@ -32,6 +33,12 @@ export function deriveEventAutofill(document, currentForm) {
   if (!currentForm?.nama_kegiatan) patch.nama_kegiatan = document.judul || '';
   if (!currentForm?.tanggal_mulai) patch.tanggal_mulai = document.tanggal_dokumen || '';
   if (!currentForm?.penanggung_jawab) patch.penanggung_jawab = document.penerbit || '';
+  // FINAL CLOSURE MANDATE Req #33 — `tahun` AMAN diturunkan sbg tahun dari
+  // `tanggal_dokumen` (bukan sumber baru, murni ekstraksi tahun dari tanggal
+  // yg sudah tervalidasi kanonis di atas).
+  if (!currentForm?.tahun && document.tanggal_dokumen && /^\d{4}/.test(String(document.tanggal_dokumen))) {
+    patch.tahun = String(document.tanggal_dokumen).slice(0, 4);
+  }
   return patch;
 }
 
@@ -40,11 +47,13 @@ export default function FoodOpsEventForm({ show, onHide, editing, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [sourceDocs, setSourceDocs] = useState([]);
   const [sourceDocumentId, setSourceDocumentId] = useState('');
+  const [autofillBaseline, setAutofillBaseline] = useState({});
 
   useEffect(() => {
     if (show) {
       setForm(editing ? { ...emptyForm(), ...editing } : emptyForm(String(new Date().getFullYear())));
       setSourceDocumentId('');
+      setAutofillBaseline({});
       if (!editing) getFoodOpsDocuments({}).then(setSourceDocs).catch(() => setSourceDocs([]));
     }
   }, [show, editing]);
@@ -75,7 +84,9 @@ export default function FoodOpsEventForm({ show, onHide, editing, onSaved }) {
                 const documentId = e.target.value;
                 setSourceDocumentId(documentId);
                 const dokumenTerpilih = sourceDocs.find((d) => String(d.id) === String(documentId));
-                setForm((prev) => ({ ...prev, ...deriveEventAutofill(dokumenTerpilih, prev) }));
+                const patch = deriveEventAutofill(dokumenTerpilih, form);
+                setAutofillBaseline((prev) => ({ ...prev, ...patch }));
+                setForm((prev) => ({ ...prev, ...patch }));
               }}>
                 <option value="">— tidak pakai dokumen sumber (isi manual) —</option>
                 {sourceDocs.map((d) => <option key={d.id} value={d.id}>{d.judul} (v{d.versi})</option>)}
@@ -90,17 +101,17 @@ export default function FoodOpsEventForm({ show, onHide, editing, onSaved }) {
                 {Object.entries(EVENT_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </Form.Select>
             </Form.Group></Col>
-            <Col md={6}><Form.Group className="mb-2"><Form.Label>Tahun *</Form.Label><Form.Control required value={form.tahun} onChange={(e) => setForm({ ...form, tahun: e.target.value })} /></Form.Group></Col>
+            <Col md={6}><Form.Group className="mb-2"><Form.Label>Tahun * <FieldProvenanceBadge baseline={autofillBaseline.tahun} currentValue={form.tahun} onReset={() => setForm((prev) => ({ ...prev, tahun: autofillBaseline.tahun }))} /></Form.Label><Form.Control required value={form.tahun} onChange={(e) => setForm({ ...form, tahun: e.target.value })} /></Form.Group></Col>
           </Row>
-          <Form.Group className="mb-2"><Form.Label>Nama Kegiatan *</Form.Label><Form.Control required value={form.nama_kegiatan} onChange={(e) => setForm({ ...form, nama_kegiatan: e.target.value })} /></Form.Group>
+          <Form.Group className="mb-2"><Form.Label>Nama Kegiatan * <FieldProvenanceBadge baseline={autofillBaseline.nama_kegiatan} currentValue={form.nama_kegiatan} onReset={() => setForm((prev) => ({ ...prev, nama_kegiatan: autofillBaseline.nama_kegiatan }))} /></Form.Label><Form.Control required value={form.nama_kegiatan} onChange={(e) => setForm({ ...form, nama_kegiatan: e.target.value })} /></Form.Group>
           <Row>
-            <Col md={6}><Form.Group className="mb-2"><Form.Label>Tanggal Mulai *</Form.Label><Form.Control required type="date" value={form.tanggal_mulai} onChange={(e) => setForm({ ...form, tanggal_mulai: e.target.value })} /></Form.Group></Col>
+            <Col md={6}><Form.Group className="mb-2"><Form.Label>Tanggal Mulai * <FieldProvenanceBadge baseline={autofillBaseline.tanggal_mulai} currentValue={form.tanggal_mulai} onReset={() => setForm((prev) => ({ ...prev, tanggal_mulai: autofillBaseline.tanggal_mulai }))} /></Form.Label><Form.Control required type="date" value={form.tanggal_mulai} onChange={(e) => setForm({ ...form, tanggal_mulai: e.target.value })} /></Form.Group></Col>
             <Col md={6}><Form.Group className="mb-2"><Form.Label>Tanggal Selesai</Form.Label><Form.Control type="date" value={form.tanggal_selesai} onChange={(e) => setForm({ ...form, tanggal_selesai: e.target.value })} /></Form.Group></Col>
           </Row>
           <Form.Group className="mb-2"><Form.Label>Lokasi</Form.Label><Form.Control value={form.lokasi} onChange={(e) => setForm({ ...form, lokasi: e.target.value })} /></Form.Group>
           <Row>
             <Col md={6}><Form.Group className="mb-2"><Form.Label>Pimpinan</Form.Label><Form.Control value={form.pimpinan} onChange={(e) => setForm({ ...form, pimpinan: e.target.value })} /></Form.Group></Col>
-            <Col md={6}><Form.Group className="mb-2"><Form.Label>Penanggung Jawab</Form.Label><Form.Control value={form.penanggung_jawab} onChange={(e) => setForm({ ...form, penanggung_jawab: e.target.value })} /></Form.Group></Col>
+            <Col md={6}><Form.Group className="mb-2"><Form.Label>Penanggung Jawab <FieldProvenanceBadge baseline={autofillBaseline.penanggung_jawab} currentValue={form.penanggung_jawab} onReset={() => setForm((prev) => ({ ...prev, penanggung_jawab: autofillBaseline.penanggung_jawab }))} /></Form.Label><Form.Control value={form.penanggung_jawab} onChange={(e) => setForm({ ...form, penanggung_jawab: e.target.value })} /></Form.Group></Col>
           </Row>
           <Form.Group className="mb-2"><Form.Label>Agenda</Form.Label><Form.Control as="textarea" rows={2} value={form.agenda} onChange={(e) => setForm({ ...form, agenda: e.target.value })} /></Form.Group>
           <Form.Group className="mb-2"><Form.Label>Hasil</Form.Label><Form.Control as="textarea" rows={2} value={form.hasil} onChange={(e) => setForm({ ...form, hasil: e.target.value })} /></Form.Group>

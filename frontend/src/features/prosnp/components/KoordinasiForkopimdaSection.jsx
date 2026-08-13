@@ -11,6 +11,7 @@ import ProsnSkorIndikatifCard from './ProsnSkorIndikatifCard';
 import EntityBuktiManager from './EntityBuktiManager';
 import ProsnAutofillModal from './ProsnAutofillModal';
 import PreBindEvidencePicker from './PreBindEvidencePicker';
+import FieldProvenanceBadge from './FieldProvenanceBadge';
 import { bindFoodOpsEvidenceToProsn } from '../../foodOperations/services/foodOpsApi';
 
 const STATUS_TL_LABEL = { belum_ditindaklanjuti: 'Belum Ditindaklanjuti', sedang_diproses: 'Sedang Diproses', selesai: 'Selesai' };
@@ -49,6 +50,7 @@ export default function KoordinasiForkopimdaSection({ indikator, pengisian, edit
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
   const [sourceDocument, setSourceDocument] = useState(null);
+  const [autofillBaseline, setAutofillBaseline] = useState({});
 
   const load = async () => {
     setLoading(true);
@@ -58,10 +60,12 @@ export default function KoordinasiForkopimdaSection({ indikator, pengisian, edit
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [pengisian.id]);
 
-  const openCreate = () => { setEditing(null); setForm(emptyForm()); setSourceDocument(null); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setForm(emptyForm()); setSourceDocument(null); setAutofillBaseline({}); setShowModal(true); };
   const openEdit = (rapat) => {
     setEditing(rapat);
     setForm({ ...emptyForm(), ...rapat, unsur_forkopimda_hadir: rapat.unsur_forkopimda_hadir || [], lock_version: rapat.lock_version });
+    setSourceDocument(null);
+    setAutofillBaseline({});
     setShowModal(true);
   };
   const toggleUnsur = (nama) => setForm((prev) => ({
@@ -166,12 +170,17 @@ export default function KoordinasiForkopimdaSection({ indikator, pengisian, edit
             {!editing && (
               <PreBindEvidencePicker
                 kategoriProsn="undangan"
-                onSelect={(document) => { setSourceDocument(document); setForm((prev) => ({ ...prev, ...deriveRapatAutofill(document, prev) })); }}
+                onSelect={(document) => {
+                  setSourceDocument(document);
+                  const patch = deriveRapatAutofill(document, form);
+                  setAutofillBaseline((prev) => ({ ...prev, ...patch }));
+                  setForm((prev) => ({ ...prev, ...patch }));
+                }}
               />
             )}
             <Row>
-              <Col md={6}><Form.Group className="mb-2"><Form.Label>Tanggal Rapat *</Form.Label><Form.Control required type="date" value={form.tanggal_rapat} onChange={(e) => setForm({ ...form, tanggal_rapat: e.target.value })} /></Form.Group></Col>
-              <Col md={6}><Form.Group className="mb-2"><Form.Label>Nama Forum *</Form.Label><Form.Control required value={form.nama_forum} onChange={(e) => setForm({ ...form, nama_forum: e.target.value })} /></Form.Group></Col>
+              <Col md={6}><Form.Group className="mb-2"><Form.Label>Tanggal Rapat * <FieldProvenanceBadge baseline={autofillBaseline.tanggal_rapat} currentValue={form.tanggal_rapat} onReset={() => setForm((prev) => ({ ...prev, tanggal_rapat: autofillBaseline.tanggal_rapat }))} /></Form.Label><Form.Control required type="date" value={form.tanggal_rapat} onChange={(e) => setForm({ ...form, tanggal_rapat: e.target.value })} /></Form.Group></Col>
+              <Col md={6}><Form.Group className="mb-2"><Form.Label>Nama Forum * <FieldProvenanceBadge baseline={autofillBaseline.nama_forum} currentValue={form.nama_forum} onReset={() => setForm((prev) => ({ ...prev, nama_forum: autofillBaseline.nama_forum }))} /></Form.Label><Form.Control required value={form.nama_forum} onChange={(e) => setForm({ ...form, nama_forum: e.target.value })} /></Form.Group></Col>
               <Col md={6}><Form.Group className="mb-2"><Form.Label>Jenis Forum</Form.Label><Form.Control value={form.jenis_forum} onChange={(e) => setForm({ ...form, jenis_forum: e.target.value })} /></Form.Group></Col>
               <Col md={6}><Form.Group className="mb-2"><Form.Label>Pimpinan Rapat</Form.Label><Form.Control value={form.pimpinan_rapat} onChange={(e) => setForm({ ...form, pimpinan_rapat: e.target.value })} /></Form.Group></Col>
               <Col md={6}><Form.Group className="mb-2"><Form.Label>Lokasi</Form.Label><Form.Control value={form.lokasi} onChange={(e) => setForm({ ...form, lokasi: e.target.value })} /></Form.Group></Col>

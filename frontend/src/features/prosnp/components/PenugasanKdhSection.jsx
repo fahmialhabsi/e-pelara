@@ -12,6 +12,7 @@ import ProsnSkorIndikatifCard from './ProsnSkorIndikatifCard';
 import EntityBuktiManager from './EntityBuktiManager';
 import ProsnAutofillModal from './ProsnAutofillModal';
 import PreBindEvidencePicker from './PreBindEvidencePicker';
+import FieldProvenanceBadge from './FieldProvenanceBadge';
 import { bindFoodOpsEvidenceToProsn } from '../../foodOperations/services/foodOpsApi';
 
 const STATUS_TL_LABEL = { belum_ditindaklanjuti: 'Belum Ditindaklanjuti', sedang_diproses: 'Sedang Diproses', selesai: 'Selesai' };
@@ -52,6 +53,7 @@ export default function PenugasanKdhSection({ indikator, pengisian, editable, ca
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
   const [sourceDocument, setSourceDocument] = useState(null);
+  const [autofillBaseline, setAutofillBaseline] = useState({});
 
   const load = async () => {
     setLoading(true);
@@ -70,7 +72,7 @@ export default function PenugasanKdhSection({ indikator, pengisian, editable, ca
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [pengisian.id]);
 
-  const openCreate = () => { setEditing(null); setForm(emptyForm()); setSourceDocument(null); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setForm(emptyForm()); setSourceDocument(null); setAutofillBaseline({}); setShowModal(true); };
   const openEdit = (surat) => {
     setEditing(surat);
     setForm({
@@ -83,6 +85,8 @@ export default function PenugasanKdhSection({ indikator, pengisian, editable, ca
       dukungan: (surat.dukungan || []).map((d) => ({ ...d })),
       lock_version: surat.lock_version,
     });
+    setSourceDocument(null);
+    setAutofillBaseline({});
     setShowModal(true);
   };
 
@@ -207,12 +211,17 @@ export default function PenugasanKdhSection({ indikator, pengisian, editable, ca
             {!editing && (
               <PreBindEvidencePicker
                 kategoriProsn="surat_penugasan"
-                onSelect={(document) => { setSourceDocument(document); setForm((prev) => ({ ...prev, ...deriveSuratAutofill(document, prev) })); }}
+                onSelect={(document) => {
+                  setSourceDocument(document);
+                  const patch = deriveSuratAutofill(document, form);
+                  setAutofillBaseline((prev) => ({ ...prev, ...patch }));
+                  setForm((prev) => ({ ...prev, ...patch }));
+                }}
               />
             )}
             <Row>
-              <Col md={6}><Form.Group className="mb-2"><Form.Label>Nomor Surat *</Form.Label><Form.Control required value={form.nomor_surat} onChange={(e) => setForm({ ...form, nomor_surat: e.target.value })} /></Form.Group></Col>
-              <Col md={6}><Form.Group className="mb-2"><Form.Label>Tanggal Surat *</Form.Label><Form.Control required type="date" value={form.tanggal_surat} onChange={(e) => setForm({ ...form, tanggal_surat: e.target.value })} /></Form.Group></Col>
+              <Col md={6}><Form.Group className="mb-2"><Form.Label>Nomor Surat * <FieldProvenanceBadge baseline={autofillBaseline.nomor_surat} currentValue={form.nomor_surat} onReset={() => setForm((prev) => ({ ...prev, nomor_surat: autofillBaseline.nomor_surat }))} /></Form.Label><Form.Control required value={form.nomor_surat} onChange={(e) => setForm({ ...form, nomor_surat: e.target.value })} /></Form.Group></Col>
+              <Col md={6}><Form.Group className="mb-2"><Form.Label>Tanggal Surat * <FieldProvenanceBadge baseline={autofillBaseline.tanggal_surat} currentValue={form.tanggal_surat} onReset={() => setForm((prev) => ({ ...prev, tanggal_surat: autofillBaseline.tanggal_surat }))} /></Form.Label><Form.Control required type="date" value={form.tanggal_surat} onChange={(e) => setForm({ ...form, tanggal_surat: e.target.value })} /></Form.Group></Col>
               <Col md={6}><Form.Group className="mb-2"><Form.Label>Jenis Dokumen</Form.Label><Form.Control value={form.jenis_dokumen} onChange={(e) => setForm({ ...form, jenis_dokumen: e.target.value })} placeholder="Surat Tugas / SK / Nota Dinas" /></Form.Group></Col>
               <Col md={6}><Form.Group className="mb-2"><Form.Label>Pejabat Penandatangan *</Form.Label><Form.Control required value={form.pejabat_penandatangan} onChange={(e) => setForm({ ...form, pejabat_penandatangan: e.target.value })} /></Form.Group></Col>
               <Col md={6}><Form.Group className="mb-2"><Form.Label>OPD Penerima Tugas</Form.Label><Form.Control value={form.opd_penerima_nama} onChange={(e) => setForm({ ...form, opd_penerima_nama: e.target.value })} /></Form.Group></Col>

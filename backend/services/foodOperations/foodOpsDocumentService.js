@@ -39,6 +39,24 @@ async function findDuplicateByChecksum(tenantId, checksum, transaction) {
   });
 }
 
+/**
+ * Corrective "ProSN Semester-II Readiness — Canonical Duplicate Guard Tier
+ * Distinction" (mandat Req #1) — tier "LIKELY SAME DOCUMENT": identitas
+ * metadata KUAT (nomor_dokumen EKSAK sama) TAPI checksum berkas berbeda —
+ * BUKAN duplikat pasti (mis. hasil scan ulang/kompresi berbeda dari dokumen
+ * fisik yang sama), jadi TIDAK PERNAH memblokir (beda dgn EXACT/checksum yg
+ * memblokir) — murni PERINGATAN + tawaran kandidat existing, keputusan akhir
+ * tetap di user (mandat: "warn user, offer existing source candidate, allow
+ * explicit decision"). Reuse tabel & scoping yg SAMA dgn findDuplicateByChecksum
+ * — TIDAK membuat mesin fuzzy-dedup baru.
+ */
+async function findLikelySameDocument(tenantId, nomorDokumen, excludeChecksum, transaction) {
+  if (!nomorDokumen || !String(nomorDokumen).trim()) return null;
+  const where = { tenant_id: tenantId, nomor_dokumen: String(nomorDokumen).trim(), status: ['aktif', 'perlu_perbaikan'] };
+  if (excludeChecksum) where.checksum_sha256 = { [db.Sequelize.Op.ne]: excludeChecksum };
+  return db.FoodOpsDocument.findOne({ where, transaction });
+}
+
 /** Mandat §29/§74 — STORE ONCE: cek duplikat sebelum menyimpan baris baru, TIDAK menghapus/menimpa yang lama. */
 async function createDocument(payload, file, actor, tenantId) {
   validateCreatePayload(payload);
@@ -169,11 +187,53 @@ async function classifyDocumentById(id, tenantId) {
   return hasil;
 }
 
+/**
+ * Phase 1 (mandat §9) — ringkasan dashboard registry, SELURUH angka dihitung
+ * langsung dari tabel (bukan KPI karangan). `tahun` opsional memfilter
+ * dokumen (via tanggal_dokumen) dan kegiatan sekaligus.
+ */
+async function getDashboardSummary(tenantId, query = {}) {
+  const documentWhere = { tenant_id: tenantId, status: { [db.Sequelize.Op.ne]: 'digantikan' } };
+  if (query.document_class) documentWhere.document_class = query.document_class;
+  if (query.tahun) documentWhere.tanggal_dokumen = db.Sequelize.where(db.Sequelize.fn('YEAR', db.Sequelize.col('tanggal_dokumen')), query.tahun);
+
+  const [totalDokumenAktif, dokumenMenungguVerifikasi, dokumenValid, dokumenPerluKlarifikasi, dokumenSuperseded, regulasiAktif, kegiatanPeriodeBerjalan, activeDocuments, linkedRows, boundRows] = await Promise.all([
+    db.FoodOpsDocument.count({ where: documentWhere }),
+    db.FoodOpsDocument.count({ where: { ...documentWhere, status_verifikasi: ['uploaded', 'needs_clarification'] } }),
+    db.FoodOpsDocument.count({ where: { ...documentWhere, status_verifikasi: 'valid' } }),
+    db.FoodOpsDocument.count({ where: { ...documentWhere, status_verifikasi: 'needs_clarification' } }),
+    db.FoodOpsDocument.count({ where: { tenant_id: tenantId, status: 'digantikan' } }),
+    db.FoodOpsRegulationMeta.count({ where: { tenant_id: tenantId, status_berlaku: 'berlaku' } }),
+    db.FoodOpsEvent.count({ where: { tenant_id: tenantId, status: 'aktif', ...(query.tahun ? { tahun: String(query.tahun) } : {}) } }),
+    db.FoodOpsDocument.findAll({ where: documentWhere, attributes: ['id', 'status_verifikasi'] }),
+    db.FoodOpsDocumentLink.findAll({ where: { tenant_id: tenantId }, attributes: ['document_id'], group: ['document_id'] }),
+    db.ProsnBuktiDukung.findAll({ where: { tenant_id: tenantId, food_ops_document_id: { [db.Sequelize.Op.ne]: null } }, attributes: ['food_ops_document_id'], group: ['food_ops_document_id'] }),
+  ]);
+
+  const linkedIds = new Set(linkedRows.map((r) => r.document_id));
+  const boundIds = new Set(boundRows.map((r) => r.food_ops_document_id));
+  const evidenceBelumTertaut = activeDocuments.filter((d) => !linkedIds.has(d.id)).length;
+  const evidenceCandidateProsn = activeDocuments.filter((d) => !boundIds.has(d.id) && d.status_verifikasi !== 'invalid' && d.status_verifikasi !== 'expired').length;
+
+  return {
+    total_dokumen_aktif: totalDokumenAktif,
+    dokumen_menunggu_verifikasi: dokumenMenungguVerifikasi,
+    dokumen_valid: dokumenValid,
+    dokumen_perlu_klarifikasi: dokumenPerluKlarifikasi,
+    dokumen_superseded: dokumenSuperseded,
+    regulasi_aktif: regulasiAktif,
+    kegiatan_periode_berjalan: kegiatanPeriodeBerjalan,
+    evidence_belum_tertaut: evidenceBelumTertaut,
+    evidence_candidate_prosn: evidenceCandidateProsn,
+  };
+}
+
 module.exports = {
   DOCUMENT_CLASSES,
   DOCUMENT_TYPES,
   computeChecksum,
   findDuplicateByChecksum,
+  findLikelySameDocument,
   createDocument,
   listDocuments,
   getDocumentDetail,
@@ -182,4 +242,5 @@ module.exports = {
   verifyDocument,
   extractDocumentText,
   classifyDocumentById,
+  getDashboardSummary,
 };

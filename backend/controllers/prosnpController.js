@@ -117,6 +117,7 @@ function removeFailedUpload(file) { if (file?.path) fs.unlink(file.path, () => {
 const DUPLICATE_GUARD_ENTITY_TYPES = new Set(['STOK_TRANSAKSI', 'SURAT_PENUGASAN', 'RAPAT_FORKOPIMDA', 'INOVASI']);
 async function createBukti(req, res) {
   try {
+    let similarDocumentWarning = null;
     if (DUPLICATE_GUARD_ENTITY_TYPES.has(req.body.entity_type) && req.file) {
       const checksum = foodOpsDocumentService.computeChecksum(req.file.path);
       const duplicate = await foodOpsDocumentService.findDuplicateByChecksum(req.tenantId, checksum);
@@ -129,12 +130,27 @@ async function createBukti(req, res) {
           data: { existing_document: { id: duplicate.id, judul: duplicate.judul, document_type: duplicate.document_type, status_verifikasi: duplicate.status_verifikasi } },
         });
       }
+      // Corrective "ProSN Semester-II Readiness — Canonical Duplicate Guard Tier
+      // Distinction" (mandat Req #1) — tier "LIKELY SAME DOCUMENT": nomor_dokumen
+      // eksak sama TAPI berkas berbeda (checksum tidak sama, sudah lolos cek di
+      // atas) -> TIDAK memblokir, hanya peringatan non-fatal di response sukses
+      // (mandat: "warn user... do NOT silently merge... allow explicit decision").
+      if (req.body.nomor_dokumen) {
+        const likelySame = await foodOpsDocumentService.findLikelySameDocument(req.tenantId, req.body.nomor_dokumen, checksum);
+        if (likelySame) {
+          similarDocumentWarning = { id: likelySame.id, judul: likelySame.judul, document_type: likelySame.document_type, nomor_dokumen: likelySame.nomor_dokumen };
+        }
+      }
     }
     const hasil = await workflow.createBukti(Number(req.params.id), req.body, req.file, req.user, req.tenantId);
     // Corrective "ProSN Semester-II Readiness — Automatic Scoring" (mandat §20
     // "bind evidence"): pengisianId sudah tersedia langsung dari route param,
     // no-op utk B.1.3/MBG (lihat autoRecalcSkor).
     await ruleEngineService.autoRecalcSkor(Number(req.params.id), req.tenantId);
+    // similar_document_warning HANYA metadata non-fatal (mandat Req #1 tier
+    // LIKELY_SAME) — upload SUDAH berhasil, TIDAK PERNAH memblokir; shape
+    // `data` tetap identik dgn sebelumnya utk konsumen existing.
+    if (similarDocumentWarning) return res.status(201).json({ success: true, data: hasil, meta: { similar_document_warning: similarDocumentWarning } });
     return ok(res, hasil, 201);
   } catch (e) { removeFailedUpload(req.file); return fail(res, e); }
 }

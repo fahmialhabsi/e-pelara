@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 import api from '../../../services/api';
 import { bindFoodOpsEvidenceToProsn } from '../../foodOperations/services/foodOpsApi';
 import FoodOpsEvidenceCandidatePanel from '../../foodOperations/components/FoodOpsEvidenceCandidatePanel';
+import { classifyEvidenceState, evidenceStateMessage } from '../services/evidenceState';
 
 const KATEGORI_LABEL = {
   surat_penugasan: 'Surat Penugasan', keputusan_kdh: 'Keputusan KDH', undangan: 'Undangan',
@@ -277,14 +278,21 @@ export default function EntityBuktiManager({ pengisianId, entityType, entityId, 
                             <Button size="sm" disabled={busy} onClick={() => saveVerifikasi(link)}>Simpan</Button>
                           </>
                         ) : (
-                          <Badge bg={bukti.status_verifikasi === 'valid' ? 'success' : 'secondary'}>{VERIFIKASI_LABEL[bukti.status_verifikasi]}</Badge>
+                          <>
+                            <Badge bg={bukti.status_verifikasi === 'valid' ? 'success' : 'secondary'}>{VERIFIKASI_LABEL[bukti.status_verifikasi]}</Badge>
+                            {(() => {
+                              const state = classifyEvidenceState(bukti);
+                              const msg = evidenceStateMessage(state, KATEGORI_LABEL[bukti.kategori] || bukti.kategori);
+                              return msg ? <div className="small text-muted mt-1">{msg}</div> : null;
+                            })()}
+                          </>
                         )}
                       </td>
                       <td><Button size="sm" variant="outline-secondary" onClick={() => download(bukti)}>Unduh</Button></td>
                     </tr>
                   );
                 }) : (
-                  <tr><td colSpan="4" className="text-center text-muted py-2">Belum ada bukti terikat ke record ini.</td></tr>
+                  <tr><td colSpan="4" className="text-center text-muted py-2">{evidenceStateMessage('MISSING', KATEGORI_LABEL[kategori] || label)}</td></tr>
                 )}
               </tbody>
             </Table>

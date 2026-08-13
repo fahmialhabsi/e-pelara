@@ -6,6 +6,7 @@ import ProsnSkorIndikatifCard from './ProsnSkorIndikatifCard';
 import EntityBuktiManager from './EntityBuktiManager';
 import ProsnAutofillModal from './ProsnAutofillModal';
 import PreBindEvidencePicker from './PreBindEvidencePicker';
+import FieldProvenanceBadge from './FieldProvenanceBadge';
 import { bindFoodOpsEvidenceToProsn } from '../../foodOperations/services/foodOpsApi';
 import { DOCUMENT_TYPE_LABEL } from '../../foodOperations/services/foodOpsConstants';
 
@@ -54,6 +55,7 @@ export default function InovasiPerkadaSection({ indikator, pengisian, editable, 
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
   const [sourcePerkadaDocument, setSourcePerkadaDocument] = useState(null);
+  const [autofillBaseline, setAutofillBaseline] = useState({});
 
   const load = async () => {
     setLoading(true);
@@ -63,8 +65,8 @@ export default function InovasiPerkadaSection({ indikator, pengisian, editable, 
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [pengisian.id]);
 
-  const openCreate = () => { setEditing(null); setForm(emptyForm()); setSourcePerkadaDocument(null); setShowModal(true); };
-  const openEdit = (inovasi) => { setEditing(inovasi); setForm({ ...emptyForm(), ...inovasi }); setSourcePerkadaDocument(null); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setForm(emptyForm()); setSourcePerkadaDocument(null); setAutofillBaseline({}); setShowModal(true); };
+  const openEdit = (inovasi) => { setEditing(inovasi); setForm({ ...emptyForm(), ...inovasi }); setSourcePerkadaDocument(null); setAutofillBaseline({}); setShowModal(true); };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -195,17 +197,22 @@ export default function InovasiPerkadaSection({ indikator, pengisian, editable, 
             <PreBindEvidencePicker
               kategoriProsn="perkada"
               label="Isi Otomatis field Perkada dari Dokumen Existing (opsional) — tidak perlu unggah ulang."
-              onSelect={(document) => { setSourcePerkadaDocument(document); setForm((prev) => ({ ...prev, ...derivePerkadaAutofill(document, prev) })); }}
+              onSelect={(document) => {
+                setSourcePerkadaDocument(document);
+                const patch = derivePerkadaAutofill(document, form);
+                setAutofillBaseline((prev) => ({ ...prev, ...patch }));
+                setForm((prev) => ({ ...prev, ...patch }));
+              }}
             />
             <Row>
-              <Col md={4}><Form.Group className="mb-2"><Form.Label>Status Perkada *</Form.Label>
+              <Col md={4}><Form.Group className="mb-2"><Form.Label>Status Perkada * <FieldProvenanceBadge baseline={autofillBaseline.status_perkada} currentValue={form.status_perkada} onReset={() => setForm((prev) => ({ ...prev, status_perkada: autofillBaseline.status_perkada }))} /></Form.Label>
                 <Form.Select value={form.status_perkada} onChange={(e) => setForm({ ...form, status_perkada: e.target.value })}>
                   {Object.entries(STATUS_PERKADA_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </Form.Select>
               </Form.Group></Col>
-              <Col md={4}><Form.Group className="mb-2"><Form.Label>Jenis Perkada</Form.Label><Form.Control value={form.jenis_perkada} onChange={(e) => setForm({ ...form, jenis_perkada: e.target.value })} /></Form.Group></Col>
-              <Col md={4}><Form.Group className="mb-2"><Form.Label>Tanggal Perkada</Form.Label><Form.Control type="date" value={form.tanggal_perkada} onChange={(e) => setForm({ ...form, tanggal_perkada: e.target.value })} /></Form.Group></Col>
-              <Col md={12}><Form.Group className="mb-2"><Form.Label>Nomor Perkada {form.status_perkada === 'ditetapkan' && '*'}</Form.Label><Form.Control required={form.status_perkada === 'ditetapkan'} value={form.nomor_perkada} onChange={(e) => setForm({ ...form, nomor_perkada: e.target.value })} /></Form.Group></Col>
+              <Col md={4}><Form.Group className="mb-2"><Form.Label>Jenis Perkada <FieldProvenanceBadge baseline={autofillBaseline.jenis_perkada} currentValue={form.jenis_perkada} onReset={() => setForm((prev) => ({ ...prev, jenis_perkada: autofillBaseline.jenis_perkada }))} /></Form.Label><Form.Control value={form.jenis_perkada} onChange={(e) => setForm({ ...form, jenis_perkada: e.target.value })} /></Form.Group></Col>
+              <Col md={4}><Form.Group className="mb-2"><Form.Label>Tanggal Perkada <FieldProvenanceBadge baseline={autofillBaseline.tanggal_perkada} currentValue={form.tanggal_perkada} onReset={() => setForm((prev) => ({ ...prev, tanggal_perkada: autofillBaseline.tanggal_perkada }))} /></Form.Label><Form.Control type="date" value={form.tanggal_perkada} onChange={(e) => setForm({ ...form, tanggal_perkada: e.target.value })} /></Form.Group></Col>
+              <Col md={12}><Form.Group className="mb-2"><Form.Label>Nomor Perkada {form.status_perkada === 'ditetapkan' && '*'} <FieldProvenanceBadge baseline={autofillBaseline.nomor_perkada} currentValue={form.nomor_perkada} onReset={() => setForm((prev) => ({ ...prev, nomor_perkada: autofillBaseline.nomor_perkada }))} /></Form.Label><Form.Control required={form.status_perkada === 'ditetapkan'} value={form.nomor_perkada} onChange={(e) => setForm({ ...form, nomor_perkada: e.target.value })} /></Form.Group></Col>
             </Row>
             <div className="small text-muted">Dokumen Perkada diunggah lewat bagian Bukti Dukung di bawah (kategori: Perkada) — tanpa dokumen, skor dibatasi maksimal 1.00 meski status sudah Ditetapkan.</div>
           </Form>

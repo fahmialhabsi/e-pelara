@@ -4,9 +4,19 @@ import { deriveEventAutofill, isEventFormValid } from "./FoodOpsEventForm";
 describe("deriveEventAutofill (Corrective ProSN Semester-II Readiness — Kegiatan Recall-First Autofill §10)", () => {
   const doc = { judul: "Surat Permintaan Uji", tanggal_dokumen: "2025-04-01", penerbit: "Dinas Pangan" };
 
-  it("K1 — form kosong -> nama_kegiatan/tanggal_mulai/penanggung_jawab diisi dari dokumen", () => {
+  it("K1 — form kosong -> nama_kegiatan/tanggal_mulai/penanggung_jawab/tahun diisi dari dokumen", () => {
     const patch = deriveEventAutofill(doc, {});
-    expect(patch).toEqual({ nama_kegiatan: "Surat Permintaan Uji", tanggal_mulai: "2025-04-01", penanggung_jawab: "Dinas Pangan" });
+    expect(patch).toEqual({ nama_kegiatan: "Surat Permintaan Uji", tanggal_mulai: "2025-04-01", penanggung_jawab: "Dinas Pangan", tahun: "2025" });
+  });
+
+  it("K5 (FINAL CLOSURE MANDATE Req #33) — tahun diturunkan dari tahun tanggal_dokumen, bukan sumber baru", () => {
+    const patch = deriveEventAutofill(doc, {});
+    expect(patch.tahun).toBe("2025");
+  });
+
+  it("K6 (Req #33) — tahun yang sudah diisi user (mis. default tahun berjalan) TIDAK PERNAH ditimpa", () => {
+    const patch = deriveEventAutofill(doc, { tahun: "2026" });
+    expect(patch.tahun).toBeUndefined();
   });
 
   it("K2 — field yang sudah diisi user tidak ditimpa", () => {
