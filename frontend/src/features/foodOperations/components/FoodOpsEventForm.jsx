@@ -3,7 +3,59 @@ import { Button, Col, Form, Modal, Row } from 'react-bootstrap';
 import { toast } from 'react-toastify';
 import { createFoodOpsEvent, getFoodOpsDocumentLinks, getFoodOpsDocuments, updateFoodOpsEvent } from '../services/foodOpsApi';
 import { EVENT_TYPE_LABEL, STATUS_TINDAK_LANJUT_LABEL } from '../services/foodOpsConstants';
-import FieldProvenanceBadge from '../../prosnp/components/FieldProvenanceBadge';
+import FieldProvenanceBadge, { classifyFieldProvenance } from '../../prosnp/components/FieldProvenanceBadge';
+
+/** Field yg diturunkan dari dokumen sumber (mandat closure §13/§14) — dipakai utk reset saat sumber diganti/dihapus. */
+const FIELDS_FROM_EVENT_SOURCE = ['nama_kegiatan', 'tanggal_mulai', 'penanggung_jawab', 'tahun'];
+
+/**
+ * FINAL CLOSURE MANDATE UAT-02/03 §13/§14 — "SOURCE SELECTOR MUST NOT USE
+ * STALE STATE" / "AUTOFILL MUST NEVER OVERWRITE USER OVERRIDE SILENTLY".
+ * Sebelum pass ini, mengganti dokumen sumber (A -> B) TIDAK memicu derivasi
+ * ulang field yg SUDAH terisi dari dokumen A — `deriveEventAutofill` hanya
+ * mengisi field yg MASIH KOSONG, sehingga nilai lama dari A tetap "menempel"
+ * walau sumber sudah berganti ke B (stale state).
+ *
+ * Fungsi ini MURNI, testable tanpa render: mengosongkan HANYA field yg BUKAN
+ * override eksplisit user (dicek via `classifyFieldProvenance` yg SUDAH ADA,
+ * arsitektur override yg sama persis dipakai lintas modul — TIDAK membuat
+ * sistem provenance paralel) sebelum derivasi dari sumber baru dijalankan.
+ * Field yg SUDAH di-override user TETAP dipertahankan apa adanya (mandat:
+ * "Changing unrelated form state must NOT silently restore the source
+ * value"). Dipakai baik utk ganti sumber A->B maupun A->manual (dokumen
+ * kosong): `deriveEventAutofill(null, clearedForm)` mengembalikan `{}`,
+ * sehingga field yg baru dikosongkan tetap kosong (mode manual bersih).
+ */
+export function resetSourceDerivedFields(form, baseline, fields) {
+  const nextForm = { ...form };
+  const nextBaseline = { ...baseline };
+  for (const field of fields) {
+    if (classifyFieldProvenance(baseline?.[field], form?.[field]) !== 'OVERRIDE') {
+      nextForm[field] = '';
+      nextBaseline[field] = undefined;
+    }
+  }
+  return { form: nextForm, baseline: nextBaseline };
+}
+
+/**
+ * FINAL CLOSURE MANDATE §16/§19 — bentuk INI PERSIS bentuk runtime dari
+ * `GET /food-operations/document-links?entity_type=EVENT`
+ * (`foodOpsDocumentLinkService.listLinks`, `include: [{model: FoodOpsDocument,
+ * as: 'document'}]`) — setiap baris link punya `document` NESTED (bukan rata/
+ * digabung), sehingga `kelompok_uuid` HANYA dapat diakses via `l.document.
+ * kelompok_uuid`, bukan `l.kelompok_uuid`. Diekstrak jadi fungsi murni
+ * terpisah (bukan inline di `.then()`) supaya bisa diuji langsung dgn payload
+ * berbentuk array realistis (mandat §16 "Do NOT count a static source regex
+ * check as proof of runtime behavior").
+ */
+export function extractRegisteredLineages(links) {
+  return new Set(
+    (links || [])
+      .filter((l) => l?.relation_type === 'KEGIATAN_SOURCE' && l?.document?.kelompok_uuid)
+      .map((l) => l.document.kelompok_uuid),
+  );
+}
 
 /**
  * CORRECTIVE MANDATE UAT-03 §4 — Owner UAT DEFECT A: `tahun` sebelumnya
@@ -63,12 +115,21 @@ export default function FoodOpsEventForm({ show, onHide, editing, onSaved }) {
   const [sourceDocumentId, setSourceDocumentId] = useState('');
   const [autofillBaseline, setAutofillBaseline] = useState({});
   const [registeredLineages, setRegisteredLineages] = useState(new Set());
+  // FINAL CLOSURE MANDATE §17 — "ASYNCHRONOUS LOADING / RACE SAFETY": daftar
+  // dokumen dan daftar "sudah terdaftar" dimuat scr paralel (dua request
+  // independen) — TANPA penanda ini, selector bisa sempat ter-render
+  // enabled utk SEMUA opsi (krn registeredLineages masih Set kosong) sebelum
+  // fetch document-links selesai. Selector dikunci (disabled) sampai KEDUA
+  // fetch selesai (sukses ATAU gagal — gagal tetap "selesai", fallback aman
+  // ke Set kosong spt sebelumnya).
+  const [registeredStateReady, setRegisteredStateReady] = useState(false);
 
   useEffect(() => {
     if (show) {
       setForm(editing ? { ...emptyForm(), ...editing } : emptyForm());
       setSourceDocumentId('');
       setAutofillBaseline({});
+      setRegisteredStateReady(false);
       if (!editing) {
         getFoodOpsDocuments({}).then(setSourceDocs).catch(() => setSourceDocs([]));
         // CORRECTIVE MANDATE UAT-03 §10/§11 — deteksi "Sudah Terdaftar"
@@ -80,13 +141,9 @@ export default function FoodOpsEventForm({ show, onHide, editing, onSaved }) {
         // difilter di client ke relation_type KEGIATAN_SOURCE saja (BUKAN
         // tautan evidence biasa yang dibuat manual lewat "+ Tautkan").
         getFoodOpsDocumentLinks({ entity_type: 'EVENT' })
-          .then((links) => {
-            const lineages = links
-              .filter((l) => l.relation_type === 'KEGIATAN_SOURCE' && l.document?.kelompok_uuid)
-              .map((l) => l.document.kelompok_uuid);
-            setRegisteredLineages(new Set(lineages));
-          })
-          .catch(() => setRegisteredLineages(new Set()));
+          .then((links) => setRegisteredLineages(extractRegisteredLineages(links)))
+          .catch(() => setRegisteredLineages(new Set()))
+          .finally(() => setRegisteredStateReady(true));
       }
     }
   }, [show, editing]);
@@ -116,15 +173,20 @@ export default function FoodOpsEventForm({ show, onHide, editing, onSaved }) {
           {!editing && (
             <Form.Group className="mb-3">
               <Form.Label>Isi Otomatis dari Dokumen Existing (opsional)</Form.Label>
-              <Form.Select value={sourceDocumentId} onChange={(e) => {
+              <Form.Select disabled={!registeredStateReady} value={sourceDocumentId} onChange={(e) => {
                 const documentId = e.target.value;
                 setSourceDocumentId(documentId);
                 const dokumenTerpilih = sourceDocs.find((d) => String(d.id) === String(documentId));
-                const patch = deriveEventAutofill(dokumenTerpilih, form);
-                setAutofillBaseline((prev) => ({ ...prev, ...patch }));
-                setForm((prev) => ({ ...prev, ...patch }));
+                // FINAL CLOSURE MANDATE §13/§14 — kosongkan dulu field yg BUKAN
+                // override user sebelum derivasi dari sumber baru, supaya nilai
+                // dari sumber SEBELUMNYA tidak "menempel" (stale) saat sumber
+                // diganti atau dikembalikan ke mode manual.
+                const cleared = resetSourceDerivedFields(form, autofillBaseline, FIELDS_FROM_EVENT_SOURCE);
+                const patch = deriveEventAutofill(dokumenTerpilih, cleared.form);
+                setAutofillBaseline({ ...cleared.baseline, ...patch });
+                setForm({ ...cleared.form, ...patch });
               }}>
-                <option value="">— tidak pakai dokumen sumber (isi manual) —</option>
+                <option value="">{registeredStateReady ? '— tidak pakai dokumen sumber (isi manual) —' : 'Memuat status pendaftaran dokumen…'}</option>
                 {sourceDocs.map((d) => (
                   <option key={d.id} value={d.id} disabled={registeredLineages.has(d.kelompok_uuid)}>
                     {d.judul} (v{d.versi}){registeredLineages.has(d.kelompok_uuid) ? ' — Sudah Terdaftar' : ''}

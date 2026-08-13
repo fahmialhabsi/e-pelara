@@ -3,7 +3,51 @@ import { Button, Col, Form, Modal, Row } from 'react-bootstrap';
 import { toast } from 'react-toastify';
 import { createFoodOpsRegulation, getFoodOpsDocuments, getFoodOpsRegulations, updateFoodOpsRegulation } from '../services/foodOpsApi';
 import { JENIS_PRODUK_HUKUM_LABEL } from '../services/foodOpsConstants';
-import FieldProvenanceBadge from '../../prosnp/components/FieldProvenanceBadge';
+import FieldProvenanceBadge, { classifyFieldProvenance } from '../../prosnp/components/FieldProvenanceBadge';
+
+/** Field yg diturunkan dari dokumen sumber (mandat closure §13/§14) — dipakai utk reset saat sumber diganti. */
+const FIELDS_FROM_REGULATION_SOURCE = ['judul_resmi', 'nomor', 'tanggal_penetapan', 'instansi_penerbit', 'tahun', 'jenis_produk_hukum'];
+
+/**
+ * FINAL CLOSURE MANDATE UAT-02/03 §13/§14 — lihat penjelasan lengkap di
+ * `FoodOpsEventForm.jsx` (pola identik, direplikasi di sini krn kedua form
+ * independen/tidak berbagi komponen). Mengosongkan field yg diturunkan dari
+ * dokumen sumber TAPI BUKAN override eksplisit user, sebelum sumber baru
+ * diterapkan — mencegah nilai dari dokumen SEBELUMNYA "menempel" saat
+ * pilihan dokumen diganti.
+ */
+export function resetSourceDerivedFields(form, baseline, fields) {
+  const nextForm = { ...form };
+  const nextBaseline = { ...baseline };
+  for (const field of fields) {
+    if (classifyFieldProvenance(baseline?.[field], form?.[field]) !== 'OVERRIDE') {
+      nextForm[field] = '';
+      nextBaseline[field] = undefined;
+    }
+  }
+  return { form: nextForm, baseline: nextBaseline };
+}
+
+/**
+ * FINAL CLOSURE MANDATE §16/§18 — bentuk INI PERSIS bentuk runtime dari
+ * `GET /food-operations/regulations` (`foodOpsRegulationService.listRegulations`)
+ * — setiap baris `FoodOpsRegulationMeta` punya `document_id` sbg KOLOM
+ * LANGSUNG (bukan nested), beda dgn document-links (Kegiatan) yg document_id-
+ * nya via objek `document` bersarang. Diekstrak jadi fungsi murni terpisah
+ * supaya bisa diuji dgn payload array realistis, bukan hanya cek string sumber.
+ */
+export function extractRegisteredDocumentIds(regulations) {
+  // mandat §18 "document_id type consistency" — dinormalisasi ke Number scr
+  // eksplisit (FoodOpsDocument.id/FoodOpsRegulationMeta.document_id sama-sama
+  // INTEGER, tapi disamakan tegas di sini agar perbandingan `.has(d.id)` tidak
+  // pernah gagal krn perbedaan string vs number dari sumber mana pun).
+  return new Set(
+    (regulations || [])
+      .map((r) => r?.document_id)
+      .filter((id) => id !== undefined && id !== null)
+      .map((id) => Number(id)),
+  );
+}
 
 function emptyForm() {
   return {
@@ -98,11 +142,14 @@ export default function FoodOpsRegulationForm({ show, onHide, editing, onSaved }
   const [registeredDocumentIds, setRegisteredDocumentIds] = useState(new Set());
   const [saving, setSaving] = useState(false);
   const [autofillBaseline, setAutofillBaseline] = useState({});
+  // FINAL CLOSURE MANDATE §17 — lihat penjelasan lengkap di FoodOpsEventForm.jsx.
+  const [registeredStateReady, setRegisteredStateReady] = useState(false);
 
   useEffect(() => {
     if (!show) return;
     setForm(editing ? { ...emptyForm(), ...editing, document_id: editing.document_id } : emptyForm());
     setAutofillBaseline({});
+    setRegisteredStateReady(editing ? true : false);
     getFoodOpsDocuments({ document_class: 'REGULATION' }).then(setRegulationDocs).catch(() => setRegulationDocs([]));
     // CORRECTIVE MANDATE UAT-02 §6 — deteksi "Sudah Terdaftar" SEBELUM user
     // mengisi form & klik Simpan (sebelumnya baru diketahui lewat pesan error
@@ -110,7 +157,10 @@ export default function FoodOpsRegulationForm({ show, onHide, editing, onSaved }
     // Reuse endpoint list Regulasi yg sudah ada (tenant-scoped otomatis oleh
     // backend), TIDAK menambah endpoint/field backend baru sama sekali.
     if (!editing) {
-      getFoodOpsRegulations().then((rows) => setRegisteredDocumentIds(new Set(rows.map((r) => r.document_id)))).catch(() => setRegisteredDocumentIds(new Set()));
+      getFoodOpsRegulations()
+        .then((rows) => setRegisteredDocumentIds(extractRegisteredDocumentIds(rows)))
+        .catch(() => setRegisteredDocumentIds(new Set()))
+        .finally(() => setRegisteredStateReady(true));
     }
   }, [show, editing]);
 
@@ -135,17 +185,21 @@ export default function FoodOpsRegulationForm({ show, onHide, editing, onSaved }
         <Modal.Body>
           {!editing && (
             <Form.Group className="mb-2"><Form.Label>Dokumen (document_class=REGULATION) *</Form.Label>
-              <Form.Select required value={form.document_id} onChange={(e) => {
+              <Form.Select required disabled={!registeredStateReady} value={form.document_id} onChange={(e) => {
                 const documentId = e.target.value;
                 const dokumenTerpilih = regulationDocs.find((d) => String(d.id) === String(documentId));
-                const patch = deriveRegulationAutofill(dokumenTerpilih, form);
-                setAutofillBaseline((prev) => ({ ...prev, ...patch }));
-                setForm((prev) => ({ ...prev, document_id: documentId, ...patch }));
+                // FINAL CLOSURE MANDATE §13/§14 — kosongkan field non-override
+                // sebelum derivasi dari sumber baru (cegah stale state saat
+                // dokumen sumber diganti).
+                const cleared = resetSourceDerivedFields(form, autofillBaseline, FIELDS_FROM_REGULATION_SOURCE);
+                const patch = deriveRegulationAutofill(dokumenTerpilih, cleared.form);
+                setAutofillBaseline({ ...cleared.baseline, ...patch });
+                setForm({ ...cleared.form, document_id: documentId, ...patch });
               }}>
-                <option value="">— pilih dokumen yang sudah diunggah —</option>
+                <option value="">{registeredStateReady ? '— pilih dokumen yang sudah diunggah —' : 'Memuat status pendaftaran dokumen…'}</option>
                 {regulationDocs.map((d) => (
-                  <option key={d.id} value={d.id} disabled={registeredDocumentIds.has(d.id)}>
-                    {d.judul} (v{d.versi}){registeredDocumentIds.has(d.id) ? ' — Sudah Terdaftar' : ''}
+                  <option key={d.id} value={d.id} disabled={registeredDocumentIds.has(Number(d.id))}>
+                    {d.judul} (v{d.versi}){registeredDocumentIds.has(Number(d.id)) ? ' — Sudah Terdaftar' : ''}
                   </option>
                 ))}
               </Form.Select>

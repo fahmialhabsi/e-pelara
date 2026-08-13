@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { deriveRegulationAutofill, isRegulationFormValid } from "./FoodOpsRegulationForm";
+import { deriveRegulationAutofill, extractRegisteredDocumentIds, isRegulationFormValid, resetSourceDerivedFields } from "./FoodOpsRegulationForm";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE = fs.readFileSync(path.join(__dirname, "FoodOpsRegulationForm.jsx"), "utf8");
@@ -103,12 +103,17 @@ describe("FoodOpsRegulationForm — struktur sumber (CORRECTIVE MANDATE UAT-02 �
   });
 
   it("F6 — opsi dokumen yang sudah terdaftar diberi atribut disabled (tidak bisa dipilih -> tidak bisa membuat duplikat)", () => {
-    expect(SOURCE).toMatch(/disabled=\{registeredDocumentIds\.has\(d\.id\)\}/);
+    expect(SOURCE).toMatch(/disabled=\{registeredDocumentIds\.has\(Number\(d\.id\)\)\}/);
   });
 
   it("F7 — dokumen yang BELUM terdaftar tetap dapat dipilih (disabled HANYA bergantung pada keanggotaan Set, bukan flag global)", () => {
-    // disabled={registeredDocumentIds.has(d.id)} bernilai false utk id yang tidak ada di Set -> tetap selectable.
+    // disabled={registeredDocumentIds.has(Number(d.id))} bernilai false utk id yang tidak ada di Set -> tetap selectable.
     expect(SOURCE).not.toMatch(/<option[^>]*disabled(?!=\{registeredDocumentIds)/);
+  });
+
+  it("§17 — selector dikunci (disabled) sampai status pendaftaran selesai dimuat, mencegah race dimana dokumen sudah-terdaftar sempat terlihat selectable", () => {
+    expect(SOURCE).toMatch(/disabled=\{!registeredStateReady\}/);
+    expect(SOURCE).toMatch(/\.finally\(\(\) => setRegisteredStateReady\(true\)\)/);
   });
 
   it("deteksi sudah-terdaftar reuse endpoint list Regulasi yang SUDAH ADA (getFoodOpsRegulations), tidak ada endpoint/field backend baru", () => {
@@ -126,5 +131,59 @@ describe("FoodOpsRegulationForm — struktur sumber (CORRECTIVE MANDATE UAT-02 �
     expect(effectMatch[0]).toMatch(/editing \? \{ \.\.\.emptyForm\(\), \.\.\.editing, document_id: editing\.document_id \} : emptyForm\(\)/);
     // deriveRegulationAutofill hanya dipanggil di dalam onChange document_id, BUKAN di useEffect (yg berlaku juga saat editing).
     expect(effectMatch[0]).not.toMatch(/deriveRegulationAutofill/);
+  });
+});
+
+describe("resetSourceDerivedFields (FINAL CLOSURE MANDATE §13/§14 — cegah stale state saat ganti sumber Regulasi)", () => {
+  const FIELDS = ["judul_resmi", "nomor", "tanggal_penetapan", "instansi_penerbit", "tahun", "jenis_produk_hukum"];
+
+  it("R18 — field yang masih SAMA dgn baseline dikosongkan saat dokumen sumber diganti (A -> B)", () => {
+    const form = { judul_resmi: "Pergub A", nomor: "10.1", tanggal_penetapan: "2025-03-17", instansi_penerbit: "Biro Hukum", tahun: "2025", jenis_produk_hukum: "pergub", catatan: "milik user" };
+    const baseline = { judul_resmi: "Pergub A", nomor: "10.1", tanggal_penetapan: "2025-03-17", instansi_penerbit: "Biro Hukum", tahun: "2025", jenis_produk_hukum: "pergub" };
+    const result = resetSourceDerivedFields(form, baseline, FIELDS);
+    expect(result.form.judul_resmi).toBe("");
+    expect(result.form.nomor).toBe("");
+    expect(result.form.jenis_produk_hukum).toBe("");
+    expect(result.form.catatan).toBe("milik user"); // field manual di luar daftar tidak tersentuh
+  });
+
+  it("field yang SUDAH di-override user (mis. Judul Resmi diedit manual) TIDAK dikosongkan saat sumber diganti", () => {
+    const form = { judul_resmi: "Judul kustom milik user", nomor: "10.1", tahun: "2025" };
+    const baseline = { judul_resmi: "Pergub A (baseline lama)", nomor: "10.1", tahun: "2025" };
+    const result = resetSourceDerivedFields(form, baseline, FIELDS);
+    expect(result.form.judul_resmi).toBe("Judul kustom milik user");
+    expect(result.form.nomor).toBe("");
+  });
+});
+
+describe("extractRegisteredDocumentIds (FINAL CLOSURE MANDATE §16/§18 — bentuk payload API regulations yang REALISTIS)", () => {
+  it("R12/R13 — payload realistis GET /food-operations/regulations (document_id kolom langsung, bukan nested)", () => {
+    const regulations = [
+      { id: 10, tenant_id: 1, document_id: 222, jenis_produk_hukum: "peraturan_gubernur", nomor: "10.1 Tahun 2025" },
+      { id: 11, tenant_id: 1, document_id: 223, jenis_produk_hukum: "keputusan_gubernur", nomor: "365/KPTS/MU/2025" },
+    ];
+    const result = extractRegisteredDocumentIds(regulations);
+    expect(result.has(222)).toBe(true);
+    expect(result.has(223)).toBe(true);
+    expect(result.has(999)).toBe(false);
+  });
+
+  it("§18 — document_id type consistency: string document_id dari respons dinormalisasi ke Number, tetap cocok dgn Number(d.id) di selector", () => {
+    const regulations = [{ id: 10, document_id: "222" }];
+    const result = extractRegisteredDocumentIds(regulations);
+    expect(result.has(222)).toBe(true);
+    expect(result.has("222")).toBe(false); // Set berisi Number, bukan string — pemanggil HARUS Number(d.id) juga (dibuktikan test F6 di atas)
+  });
+
+  it("payload kosong/undefined/null -> Set kosong, tidak melempar", () => {
+    expect(extractRegisteredDocumentIds([]).size).toBe(0);
+    expect(extractRegisteredDocumentIds(undefined).size).toBe(0);
+    expect(extractRegisteredDocumentIds(null).size).toBe(0);
+  });
+
+  it("baris tanpa document_id (respons tidak lengkap) difilter aman, tidak melempar", () => {
+    const regulations = [{ id: 10, document_id: null }, { id: 11 }];
+    expect(() => extractRegisteredDocumentIds(regulations)).not.toThrow();
+    expect(extractRegisteredDocumentIds(regulations).size).toBe(0);
   });
 });
