@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Col, Form, Modal, Row } from 'react-bootstrap';
 import { toast } from 'react-toastify';
-import { createFoodOpsRegulation, getFoodOpsDocuments, updateFoodOpsRegulation } from '../services/foodOpsApi';
+import { createFoodOpsRegulation, getFoodOpsDocuments, getFoodOpsRegulations, updateFoodOpsRegulation } from '../services/foodOpsApi';
 import { JENIS_PRODUK_HUKUM_LABEL } from '../services/foodOpsConstants';
 import FieldProvenanceBadge from '../../prosnp/components/FieldProvenanceBadge';
 
@@ -20,14 +20,57 @@ export function isRegulationFormValid(form, isEditing) {
 }
 
 /**
+ * CORRECTIVE MANDATE UAT-02 — pemetaan document_type (FoodOps, kosakata
+ * `foodOpsClassifier.FOOD_OPS_DOCUMENT_TYPES`) -> jenis_produk_hukum
+ * (Regulasi, kosakata `JENIS_PRODUK_HUKUM_LABEL`) HANYA utk pasangan yang
+ * SECARA ISTILAH persis padanan 1:1 tanpa penafsiran (nama resmi vs
+ * singkatan standarnya, bukan tebakan) — dibuktikan per baris:
+ *   undang_undang -> uu           ("Undang-Undang" = "UU")
+ *   peraturan_pemerintah -> pp    ("Peraturan Pemerintah" = "PP")
+ *   peraturan_presiden -> perpres ("Peraturan Presiden" = "Perpres")
+ *   permendagri -> permendagri    (istilah SAMA PERSIS di kedua kosakata)
+ *   peraturan_daerah -> perda     ("Peraturan Daerah" = "Perda")
+ *   peraturan_gubernur -> pergub  ("Peraturan Gubernur" = "Pergub", kasus Owner UAT-02 A)
+ *   keputusan_gubernur -> kepgub  ("Keputusan Gubernur" = "Kepgub", kasus Owner UAT-02 B)
+ *   surat_keputusan -> sk         ("Surat Keputusan" = singkatan baku "SK")
+ * document_type LAIN (surat_tugas/undangan/daftar_hadir/notulen/dokumentasi/
+ * berita_acara/kartu_stok/kartu_gudang/kartu_persediaan/laporan/
+ * bukti_serah_terima/surat_jalan/materi/other) BUKAN jenis produk hukum sama
+ * sekali — TIDAK dipetakan, dibiarkan kosong (mandat §4 "if ambiguous, leave
+ * unfilled"). `perpu`/`permen_lain`/`kepmendagri`/`lainnya` di
+ * JENIS_PRODUK_HUKUM_LABEL TIDAK punya padanan document_type FoodOps apa pun
+ * — tidak ada yang bisa dipetakan KE nilai-nilai itu.
+ */
+const DOCUMENT_TYPE_TO_JENIS_PRODUK_HUKUM = {
+  undang_undang: 'uu',
+  peraturan_pemerintah: 'pp',
+  peraturan_presiden: 'perpres',
+  permendagri: 'permendagri',
+  peraturan_daerah: 'perda',
+  peraturan_gubernur: 'pergub',
+  keputusan_gubernur: 'kepgub',
+  surat_keputusan: 'sk',
+};
+
+/**
  * Corrective "ProSN Semester-II Readiness — Regulation Recall-First Autofill"
  * (mandat §9/Req B) — dokumen kanonis (`FoodOpsDocument`) SUDAH menyimpan
  * judul/nomor_dokumen/tanggal_dokumen/penerbit; field ini SAH diturunkan
- * langsung (bukan fabrikasi — sumbernya sudah tersimpan). Field yg TIDAK ada
- * padanan aman di dokumen (jenis_produk_hukum, tanggal_berlaku, status_berlaku,
- * legal_hierarchy, scope) SENGAJA dibiarkan kosong/tidak disentuh — bukan
- * ditebak. MURNI FUNGSI, testable tanpa render. HANYA mengisi field yg MASIH
- * KOSONG di form saat ini (`currentForm`) — tidak pernah menimpa isian user.
+ * langsung (bukan fabrikasi — sumbernya sudah tersimpan).
+ *
+ * CORRECTIVE MANDATE UAT-02 — `jenis_produk_hukum` SEKARANG diturunkan via
+ * `DOCUMENT_TYPE_TO_JENIS_PRODUK_HUKUM` di atas bila document_type sumber
+ * punya padanan deterministik. Field lain yg SUDAH ditelusuri TIDAK punya
+ * sumber aman (mandat §8/§9, ditelusuri penuh: `FoodOpsDocument` tidak
+ * punya kolom tanggal-berlaku/catatan terpisah, dan `klasifikasi_meta`
+ * — {document_type, confidence, reason, method, requires_review,
+ * identity_evidence, reference_mentions} — juga tidak menyimpan field
+ * terstruktur utk keduanya, hanya string heading yg cocok, bukan
+ * tanggal/catatan tersendiri) TETAP SENGAJA dibiarkan kosong/tidak
+ * disentuh — bukan ditebak: `tanggal_berlaku`, `status_berlaku`,
+ * `legal_hierarchy`, `scope`, `catatan`. MURNI FUNGSI, testable tanpa
+ * render. HANYA mengisi field yg MASIH KOSONG di form saat ini
+ * (`currentForm`) — tidak pernah menimpa isian user.
  */
 export function deriveRegulationAutofill(document, currentForm) {
   if (!document) return {};
@@ -42,12 +85,17 @@ export function deriveRegulationAutofill(document, currentForm) {
   if (!currentForm?.tahun && document.tanggal_dokumen && /^\d{4}/.test(String(document.tanggal_dokumen))) {
     patch.tahun = String(document.tanggal_dokumen).slice(0, 4);
   }
+  if (!currentForm?.jenis_produk_hukum) {
+    const mapped = DOCUMENT_TYPE_TO_JENIS_PRODUK_HUKUM[document.document_type];
+    if (mapped) patch.jenis_produk_hukum = mapped;
+  }
   return patch;
 }
 
 export default function FoodOpsRegulationForm({ show, onHide, editing, onSaved }) {
   const [form, setForm] = useState(emptyForm());
   const [regulationDocs, setRegulationDocs] = useState([]);
+  const [registeredDocumentIds, setRegisteredDocumentIds] = useState(new Set());
   const [saving, setSaving] = useState(false);
   const [autofillBaseline, setAutofillBaseline] = useState({});
 
@@ -56,6 +104,14 @@ export default function FoodOpsRegulationForm({ show, onHide, editing, onSaved }
     setForm(editing ? { ...emptyForm(), ...editing, document_id: editing.document_id } : emptyForm());
     setAutofillBaseline({});
     getFoodOpsDocuments({ document_class: 'REGULATION' }).then(setRegulationDocs).catch(() => setRegulationDocs([]));
+    // CORRECTIVE MANDATE UAT-02 §6 — deteksi "Sudah Terdaftar" SEBELUM user
+    // mengisi form & klik Simpan (sebelumnya baru diketahui lewat pesan error
+    // backend "Dokumen ini sudah memiliki metadata regulasi." SETELAH submit).
+    // Reuse endpoint list Regulasi yg sudah ada (tenant-scoped otomatis oleh
+    // backend), TIDAK menambah endpoint/field backend baru sama sekali.
+    if (!editing) {
+      getFoodOpsRegulations().then((rows) => setRegisteredDocumentIds(new Set(rows.map((r) => r.document_id)))).catch(() => setRegisteredDocumentIds(new Set()));
+    }
   }, [show, editing]);
 
   const handleSubmit = async (e) => {
@@ -87,13 +143,17 @@ export default function FoodOpsRegulationForm({ show, onHide, editing, onSaved }
                 setForm((prev) => ({ ...prev, document_id: documentId, ...patch }));
               }}>
                 <option value="">— pilih dokumen yang sudah diunggah —</option>
-                {regulationDocs.map((d) => <option key={d.id} value={d.id}>{d.judul} (v{d.versi})</option>)}
+                {regulationDocs.map((d) => (
+                  <option key={d.id} value={d.id} disabled={registeredDocumentIds.has(d.id)}>
+                    {d.judul} (v{d.versi}){registeredDocumentIds.has(d.id) ? ' — Sudah Terdaftar' : ''}
+                  </option>
+                ))}
               </Form.Select>
-              <Form.Text muted>Unggah dokumen dgn class &quot;Regulasi&quot; terlebih dahulu di menu Dokumen &amp; Evidence. Memilih dokumen otomatis mengisi Judul Resmi/Nomor/Tanggal Penetapan/Instansi Penerbit dari metadata dokumen (dapat diedit sebelum disimpan).</Form.Text>
+              <Form.Text muted>Unggah dokumen dgn class &quot;Regulasi&quot; terlebih dahulu di menu Dokumen &amp; Evidence. Memilih dokumen otomatis mengisi Judul Resmi/Nomor/Tanggal Penetapan/Instansi Penerbit/Jenis Produk Hukum dari metadata dokumen (dapat diedit sebelum disimpan). Dokumen yang berlabel &quot;Sudah Terdaftar&quot; sudah memiliki metadata Regulasi dan tidak dapat dipilih lagi.</Form.Text>
             </Form.Group>
           )}
           <Row>
-            <Col md={6}><Form.Group className="mb-2"><Form.Label>Jenis Produk Hukum *</Form.Label>
+            <Col md={6}><Form.Group className="mb-2"><Form.Label>Jenis Produk Hukum * <FieldProvenanceBadge baseline={autofillBaseline.jenis_produk_hukum} currentValue={form.jenis_produk_hukum} onReset={() => setForm((prev) => ({ ...prev, jenis_produk_hukum: autofillBaseline.jenis_produk_hukum }))} /></Form.Label>
               <Form.Select required value={form.jenis_produk_hukum} onChange={(e) => setForm({ ...form, jenis_produk_hukum: e.target.value })}>
                 <option value="">— pilih —</option>
                 {Object.entries(JENIS_PRODUK_HUKUM_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}

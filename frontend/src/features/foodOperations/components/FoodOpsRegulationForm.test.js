@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { deriveRegulationAutofill, isRegulationFormValid } from "./FoodOpsRegulationForm";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SOURCE = fs.readFileSync(path.join(__dirname, "FoodOpsRegulationForm.jsx"), "utf8");
 
 describe("deriveRegulationAutofill (Corrective ProSN Semester-II Readiness — Regulation Recall-First Autofill §9)", () => {
   const doc = { judul: "Peraturan Gubernur Uji", nomor_dokumen: "PERGUB/001/2025", tanggal_dokumen: "2025-01-01", penerbit: "Biro Hukum" };
@@ -34,16 +40,91 @@ describe("deriveRegulationAutofill (Corrective ProSN Semester-II Readiness — R
     expect(deriveRegulationAutofill(null, {})).toEqual({});
   });
 
-  it("R4 — field yang TIDAK ADA di dokumen (mis. jenis_produk_hukum/tanggal_berlaku/status_berlaku) TIDAK PERNAH ditebak — hanya field yg eksplisit dipetakan", () => {
+  it("R4 — field tanpa sumber aman (tanggal_berlaku/status_berlaku/legal_hierarchy/scope/catatan) TIDAK PERNAH ditebak — ditelusuri penuh, tidak ada padanan di FoodOpsDocument/klasifikasi_meta (mandat UAT-02 §8/§9)", () => {
     const patch = deriveRegulationAutofill(doc, {});
-    expect(patch.jenis_produk_hukum).toBeUndefined();
     expect(patch.tanggal_berlaku).toBeUndefined();
     expect(patch.status_berlaku).toBeUndefined();
+    expect(patch.legal_hierarchy).toBeUndefined();
+    expect(patch.scope).toBeUndefined();
+    expect(patch.catatan).toBeUndefined();
+  });
+
+  it("R4b — dokumen tanpa document_type (mis. fixture generik) -> jenis_produk_hukum tidak diisi (tidak ada dasar pemetaan)", () => {
+    const patch = deriveRegulationAutofill(doc, {});
+    expect(patch.jenis_produk_hukum).toBeUndefined();
+  });
+});
+
+describe("deriveRegulationAutofill — pemetaan Jenis Produk Hukum (CORRECTIVE MANDATE UAT-02, kasus Owner UAT-02 A/B)", () => {
+  const baseDoc = { judul: "Uji", nomor_dokumen: "X/1/2025", tanggal_dokumen: "2025-01-01", penerbit: "Uji" };
+
+  it("UAT-02 A — peraturan_gubernur -> pergub (kasus Owner: Peraturan Gubernur Maluku Utara Nomor 10.1 Tahun 2025)", () => {
+    expect(deriveRegulationAutofill({ ...baseDoc, document_type: "peraturan_gubernur" }, {}).jenis_produk_hukum).toBe("pergub");
+  });
+
+  it("UAT-02 B — keputusan_gubernur -> kepgub (kasus Owner: Keputusan Gubernur Maluku Utara Nomor 365/KPTS/MU/2025)", () => {
+    expect(deriveRegulationAutofill({ ...baseDoc, document_type: "keputusan_gubernur" }, {}).jenis_produk_hukum).toBe("kepgub");
+  });
+
+  it("pemetaan deterministik lain yang dibuktikan istilahnya persis padanan (UU/PP/Perpres/Permendagri/Perda/SK)", () => {
+    expect(deriveRegulationAutofill({ ...baseDoc, document_type: "undang_undang" }, {}).jenis_produk_hukum).toBe("uu");
+    expect(deriveRegulationAutofill({ ...baseDoc, document_type: "peraturan_pemerintah" }, {}).jenis_produk_hukum).toBe("pp");
+    expect(deriveRegulationAutofill({ ...baseDoc, document_type: "peraturan_presiden" }, {}).jenis_produk_hukum).toBe("perpres");
+    expect(deriveRegulationAutofill({ ...baseDoc, document_type: "permendagri" }, {}).jenis_produk_hukum).toBe("permendagri");
+    expect(deriveRegulationAutofill({ ...baseDoc, document_type: "peraturan_daerah" }, {}).jenis_produk_hukum).toBe("perda");
+    expect(deriveRegulationAutofill({ ...baseDoc, document_type: "surat_keputusan" }, {}).jenis_produk_hukum).toBe("sk");
+  });
+
+  it("document_type ambigu/bukan produk hukum (mis. undangan/notulen/laporan/other) TIDAK dipetakan — dibiarkan kosong, bukan ditebak", () => {
+    for (const type of ["undangan", "notulen", "laporan", "berita_acara", "dokumentasi", "other", "surat_tugas", "surat_jalan", "materi", "kartu_stok"]) {
+      expect(deriveRegulationAutofill({ ...baseDoc, document_type: type }, {}).jenis_produk_hukum).toBeUndefined();
+    }
+  });
+
+  it("jenis_produk_hukum yang SUDAH diisi user TIDAK PERNAH ditimpa oleh pemetaan", () => {
+    const patch = deriveRegulationAutofill({ ...baseDoc, document_type: "peraturan_gubernur" }, { jenis_produk_hukum: "kepgub" });
+    expect(patch.jenis_produk_hukum).toBeUndefined();
+  });
+
+  it("dokumen null -> tidak melempar, patch kosong (termasuk jenis_produk_hukum)", () => {
+    expect(deriveRegulationAutofill(null, {}).jenis_produk_hukum).toBeUndefined();
   });
 });
 
 describe("isRegulationFormValid (existing, unchanged)", () => {
   it("tetap valid seperti sebelumnya", () => {
     expect(isRegulationFormValid({ jenis_produk_hukum: "pergub", document_id: "1" }, false)).toBe(true);
+  });
+});
+
+describe("FoodOpsRegulationForm — struktur sumber (CORRECTIVE MANDATE UAT-02 §6, sudah-terdaftar)", () => {
+  it("F5 — opsi dokumen yang sudah terdaftar berlabel 'Sudah Terdaftar'", () => {
+    expect(SOURCE).toMatch(/Sudah Terdaftar/);
+  });
+
+  it("F6 — opsi dokumen yang sudah terdaftar diberi atribut disabled (tidak bisa dipilih -> tidak bisa membuat duplikat)", () => {
+    expect(SOURCE).toMatch(/disabled=\{registeredDocumentIds\.has\(d\.id\)\}/);
+  });
+
+  it("F7 — dokumen yang BELUM terdaftar tetap dapat dipilih (disabled HANYA bergantung pada keanggotaan Set, bukan flag global)", () => {
+    // disabled={registeredDocumentIds.has(d.id)} bernilai false utk id yang tidak ada di Set -> tetap selectable.
+    expect(SOURCE).not.toMatch(/<option[^>]*disabled(?!=\{registeredDocumentIds)/);
+  });
+
+  it("deteksi sudah-terdaftar reuse endpoint list Regulasi yang SUDAH ADA (getFoodOpsRegulations), tidak ada endpoint/field backend baru", () => {
+    expect(SOURCE).toMatch(/getFoodOpsRegulations\(\)/);
+  });
+
+  it("deteksi sudah-terdaftar HANYA berjalan pada mode Tambah (!editing) — tidak mempengaruhi form Ubah sama sekali", () => {
+    const guardMatch = SOURCE.match(/if \(!editing\) \{\s*getFoodOpsRegulations/);
+    expect(guardMatch).toBeTruthy();
+  });
+
+  it("F10 — mode Ubah TIDAK menjalankan deriveRegulationAutofill/pemetaan apa pun — form diisi langsung dari `editing`, nilai tersimpan (Tanggal Berlaku/Catatan/Status Berlaku) tidak mungkin tertimpa", () => {
+    const effectMatch = SOURCE.match(/useEffect\(\(\) => \{[\s\S]*?\n {2}\}, \[show, editing\]\);/);
+    expect(effectMatch).toBeTruthy();
+    expect(effectMatch[0]).toMatch(/editing \? \{ \.\.\.emptyForm\(\), \.\.\.editing, document_id: editing\.document_id \} : emptyForm\(\)/);
+    // deriveRegulationAutofill hanya dipanggil di dalam onChange document_id, BUKAN di useEffect (yg berlaku juga saat editing).
+    expect(effectMatch[0]).not.toMatch(/deriveRegulationAutofill/);
   });
 });
