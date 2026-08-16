@@ -69,8 +69,21 @@ function guardApproved(entityType) {
 
       next();
     } catch (err) {
+      // Sprint 3 — S3-06: sebelumnya fail-open (next() dipanggil begitu
+      // saja saat guard sendiri gagal mengevaluasi approval_status), yang
+      // berarti error internal/DB transient bisa membuat mutation pada
+      // dokumen APPROVED lolos tanpa terverifikasi. Prinsip fail-closed:
+      // kegagalan MENGEVALUASI guard otorisasi tidak boleh menjadi
+      // otorisasi itu sendiri. Tidak membocorkan detail error internal ke
+      // client (hanya log server-side via console.warn, sudah ada).
       console.warn("[guardApproved] Error:", err.message);
-      next(); // fail-open agar server tidak crash karena guard
+      return res.status(503).json({
+        success: false,
+        code: "APPROVAL_GUARD_UNAVAILABLE",
+        message:
+          `Status persetujuan dokumen ${etype.toUpperCase()} tidak dapat diverifikasi saat ini. ` +
+          "Perubahan ditolak sementara demi keamanan data — silakan coba lagi.",
+      });
     }
   };
 }

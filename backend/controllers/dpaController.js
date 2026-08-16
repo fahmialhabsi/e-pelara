@@ -3,10 +3,70 @@
  * RKA → RPJMD → PREVIEW GUARANTEED (NO EMPTY UI)
  */
 
-const { Dpa, PeriodeRpjmd, PlanningAuditEvent, LkDispang } = require('../models');
+const { Dpa, PeriodeRpjmd, PlanningAuditEvent, LkDispang, OpdPenanggungJawab } = require('../models');
 const { flagNeedsRecallAman, flagLkSnapshotsPerluRecall } = require('../services/recallDataService');
 const Joi = require('joi');
 const { splitPlanningBody } = require('../helpers/planningDocumentMutation');
+
+// Sprint 3 — S3-04: update/destroy DPA sebelumnya hanya findByPk(id) tanpa
+// constraint opd_id, meski dpaModel.js punya kolom opd_id dan dipakai untuk
+// query lain di file ini. Boundary di bawah persis mengikuti pola yang
+// sudah diterapkan di renjaController.js (assertRenjaOpdBoundary) dan
+// approvalController.js (resolveCallerOpdId) — resolusi nama OPD → id lewat
+// OpdPenanggungJawab, server-derived dari req.user.opd, tidak pernah dari
+// req.body/req.query/req.params. SUPER_ADMIN dikecualikan (otoritas
+// tenant-wide yang sudah ada).
+async function assertDpaOpdBoundary(req, row) {
+  if (req.user?.role === 'SUPER_ADMIN') return { ok: true };
+
+  const targetOpdId = row?.opd_id ?? null;
+  if (targetOpdId === null || targetOpdId === undefined) {
+    return { ok: true };
+  }
+
+  const opdName = req.user?.opd;
+  if (!opdName) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        success: false,
+        error: 'Anda tidak berwenang mengubah DPA milik OPD lain.',
+        code: 'DPA_OPD_FORBIDDEN',
+      },
+    };
+  }
+
+  let callerOpdId = null;
+  try {
+    const opdRow = await OpdPenanggungJawab.findOne({ where: { nama_opd: opdName } });
+    callerOpdId = opdRow?.id ?? null;
+  } catch (err) {
+    return {
+      ok: false,
+      status: 503,
+      body: {
+        success: false,
+        error: 'Batas kewenangan OPD tidak dapat diverifikasi saat ini. Aksi ditolak sementara demi keamanan data — silakan coba lagi.',
+        code: 'DPA_OPD_BOUNDARY_UNAVAILABLE',
+      },
+    };
+  }
+
+  if (callerOpdId === null || callerOpdId !== targetOpdId) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        success: false,
+        error: 'Anda tidak berwenang mengubah DPA milik OPD lain.',
+        code: 'DPA_OPD_FORBIDDEN',
+      },
+    };
+  }
+
+  return { ok: true };
+}
 
 const {
   writePlanningAudit,
@@ -884,6 +944,9 @@ module.exports = {
         });
       }
 
+      const boundary = await assertDpaOpdBoundary(req, oldRow);
+      if (!boundary.ok) return res.status(boundary.status).json(boundary.body);
+
       const mergedPayload = {
         tahun: value.tahun ?? oldRow.tahun,
         periode_id: value.periode_id ?? oldRow.periode_id,
@@ -973,6 +1036,9 @@ module.exports = {
       if (!oldRow) {
         return res.status(404).json({ success: false, error: 'Data tidak ditemukan' });
       }
+
+      const boundaryDelete = await assertDpaOpdBoundary(req, oldRow);
+      if (!boundaryDelete.ok) return res.status(boundaryDelete.status).json(boundaryDelete.body);
 
       const { change_reason_text, change_reason_file } = splitPlanningBody(req.body);
 

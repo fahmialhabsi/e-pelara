@@ -2,8 +2,103 @@
 // Workflow persetujuan bertahap: DRAFT → SUBMITTED → APPROVED / REJECTED
 // User biasa bisa SUBMIT; Admin (SUPER_ADMIN, ADMINISTRATOR) bisa APPROVE/REJECT/REVISE
 
-const { ApprovalLog, sequelize: db } = require("../models");
+const { ApprovalLog, OpdPenanggungJawab, sequelize: db } = require("../models");
 const { sendNotification, broadcastToRole } = require("../services/notificationService");
+const { isWorkflowAdminRole } = require("../services/planningWorkflowService");
+
+// Sprint 3 — S3-03: sebelumnya approve/reject/revise mengoperasikan entity
+// murni lewat {entity_type, entity_id} tanpa constraint tenant/OPD apa pun —
+// role workflow-admin apa pun bisa approve/reject/revise dokumen OPD lain.
+// Boundary di bawah HANYA diterapkan pada 4 entity_type yang tabelnya
+// terbukti punya kolom opd_id (dpa, rka, renja, rkpd — dikonfirmasi lewat
+// pembacaan langsung models/dpaModel.js, rkaModel.js, renjaModel.js,
+// rkpdModel.js). lakip/renstra/rpjmd TIDAK punya kolom opd_id sama sekali
+// pada tabel dasarnya (dikonfirmasi lewat pembacaan langsung
+// models/lakipModel.js, renstraModel.js, rpjmdModel.js) — untuk ketiganya,
+// OPD ownership diklasifikasikan NOT_APPLICABLE, tidak dipaksakan constraint
+// buatan yang tidak didukung skema data yang ada.
+const OPD_SCOPED_ENTITY_TABLES = {
+  dpa: "dpa",
+  rka: "rka",
+  renja: "renja",
+  rkpd: "rkpd",
+};
+
+/**
+ * Resolusi opd_id numerik milik caller dari server-side authenticated
+ * context (req.user.opd — nama OPD dari JWT), TIDAK PERNAH dari
+ * req.body/req.query/req.params. Mengikuti pola resolusi nama→id yang
+ * sudah ada di controllers/tujuanController.js (OpdPenanggungJawab lookup
+ * by nama_opd), bukan mapping baru yang diciptakan sendiri.
+ */
+async function resolveCallerOpdId(req) {
+  const opdName = req.user?.opd;
+  if (!opdName) return null;
+  const opdRow = await OpdPenanggungJawab.findOne({ where: { nama_opd: opdName } });
+  return opdRow?.id ?? null;
+}
+
+/**
+ * Fail-closed authorization boundary untuk approve/reject/revise.
+ * Mengembalikan { ok: true } bila transisi diizinkan, atau
+ * { ok: false, status, body } bila harus ditolak.
+ *
+ * SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide yang
+ * sudah ada, server-derived dari req.user.role — bukan bypass baru).
+ * Untuk entity_type di luar OPD_SCOPED_ENTITY_TABLES (lakip/renstra/rpjmd),
+ * tidak ada constraint OPD yang diberlakukan (NOT_APPLICABLE).
+ */
+async function assertApprovalOpdBoundary(req, entity_type, entity_id) {
+  const table = OPD_SCOPED_ENTITY_TABLES[String(entity_type).toLowerCase()];
+  if (!table) {
+    return { ok: true }; // NOT_APPLICABLE — tabel tidak punya kolom opd_id
+  }
+
+  if (isWorkflowAdminRole(req.user?.role) && req.user?.role === "SUPER_ADMIN") {
+    return { ok: true }; // otoritas tenant-wide, server-derived
+  }
+
+  let targetOpdId;
+  try {
+    const [[row]] = await db.query(
+      `SELECT opd_id FROM \`${table}\` WHERE id = :id LIMIT 1`,
+      { replacements: { id: parseInt(entity_id) } }
+    );
+    targetOpdId = row?.opd_id ?? null;
+  } catch (err) {
+    console.warn(`[approval] Gagal verifikasi opd_id target di ${table}:`, err.message);
+    return {
+      ok: false,
+      status: 503,
+      body: {
+        success: false,
+        code: "APPROVAL_OPD_BOUNDARY_UNAVAILABLE",
+        message: "Batas kewenangan OPD untuk dokumen ini tidak dapat diverifikasi saat ini. Aksi ditolak sementara demi keamanan data — silakan coba lagi.",
+      },
+    };
+  }
+
+  if (targetOpdId === null) {
+    // Dokumen tidak ditemukan / belum punya opd_id — biarkan validasi normal
+    // (404/422 di alur existing) yang menangani, bukan boundary check ini.
+    return { ok: true };
+  }
+
+  const callerOpdId = await resolveCallerOpdId(req);
+  if (callerOpdId === null || callerOpdId !== targetOpdId) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        success: false,
+        code: "APPROVAL_OPD_FORBIDDEN",
+        message: "Anda tidak berwenang melakukan aksi persetujuan pada dokumen milik OPD lain.",
+      },
+    };
+  }
+
+  return { ok: true };
+}
 
 // Mapping entity_type → nama tabel DB (tabel yang punya kolom approval_status)
 const ENTITY_TABLE_MAP = {
@@ -170,6 +265,9 @@ const approve = async (req, res) => {
   const v = validateEntity(entity_type, entity_id);
   if (!v.ok) return res.status(400).json({ success: false, message: v.msg });
 
+  const boundary = await assertApprovalOpdBoundary(req, entity_type, v.id);
+  if (!boundary.ok) return res.status(boundary.status).json(boundary.body);
+
   try {
     const currentStatus = await getCurrentStatus(entity_type, entity_id);
     const transition = TRANSITIONS.APPROVE;
@@ -229,6 +327,9 @@ const reject = async (req, res) => {
   if (!catatan || String(catatan).trim() === "")
     return res.status(400).json({ success: false, message: "Alasan penolakan (catatan) wajib diisi" });
 
+  const boundaryReject = await assertApprovalOpdBoundary(req, entity_type, v.id);
+  if (!boundaryReject.ok) return res.status(boundaryReject.status).json(boundaryReject.body);
+
   try {
     const currentStatus = await getCurrentStatus(entity_type, entity_id);
     const transition = TRANSITIONS.REJECT;
@@ -286,6 +387,9 @@ const revise = async (req, res) => {
   const { entity_type, entity_id, catatan } = req.body;
   const v = validateEntity(entity_type, entity_id);
   if (!v.ok) return res.status(400).json({ success: false, message: v.msg });
+
+  const boundaryRevise = await assertApprovalOpdBoundary(req, entity_type, v.id);
+  if (!boundaryRevise.ok) return res.status(boundaryRevise.status).json(boundaryRevise.body);
 
   try {
     const currentStatus = await getCurrentStatus(entity_type, entity_id);

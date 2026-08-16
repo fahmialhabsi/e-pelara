@@ -8,6 +8,7 @@ const {
   Rkpd,
   RPJMD,
   PlanningAuditEvent,
+  OpdPenanggungJawab,
   sequelize,
 } = require('../models');
 const { linkRenjaToRkpd } = require('../services/renjaRkpdLinkService');
@@ -597,12 +598,76 @@ const createRenja = async (req, res) => {
   }
 };
 
+// Sprint 3 — S3-04: update/delete Renja sebelumnya hanya findByPk(id) tanpa
+// constraint opd_id apa pun — role WRITE_ROLES apa pun bisa mengubah/hapus
+// Renja milik OPD lain hanya dengan mengetahui id. renjaModel.js dikonfirmasi
+// punya kolom opd_id (line 165). Pola resolusi caller opd_id (nama→id via
+// OpdPenanggungJawab) mengikuti persis controllers/tujuanController.js —
+// tidak menciptakan mapping baru. SUPER_ADMIN dikecualikan (otoritas
+// tenant-wide yang sudah ada, server-derived dari req.user.role).
+async function assertRenjaOpdBoundary(req, row) {
+  if (req.user?.role === 'SUPER_ADMIN') return { ok: true };
+
+  const targetOpdId = row?.opd_id ?? null;
+  if (targetOpdId === null || targetOpdId === undefined) {
+    // Baris tanpa opd_id (data lama) — biarkan alur existing yang menangani,
+    // bukan boundary check ini, agar tidak memblok record legacy tanpa bukti.
+    return { ok: true };
+  }
+
+  const opdName = req.user?.opd;
+  if (!opdName) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        success: false,
+        code: 'RENJA_OPD_FORBIDDEN',
+        message: 'Anda tidak berwenang mengubah Renja milik OPD lain.',
+      },
+    };
+  }
+
+  let callerOpdId = null;
+  try {
+    const opdRow = await OpdPenanggungJawab.findOne({ where: { nama_opd: opdName } });
+    callerOpdId = opdRow?.id ?? null;
+  } catch (err) {
+    return {
+      ok: false,
+      status: 503,
+      body: {
+        success: false,
+        code: 'RENJA_OPD_BOUNDARY_UNAVAILABLE',
+        message: 'Batas kewenangan OPD tidak dapat diverifikasi saat ini. Aksi ditolak sementara demi keamanan data — silakan coba lagi.',
+      },
+    };
+  }
+
+  if (callerOpdId === null || callerOpdId !== targetOpdId) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        success: false,
+        code: 'RENJA_OPD_FORBIDDEN',
+        message: 'Anda tidak berwenang mengubah Renja milik OPD lain.',
+      },
+    };
+  }
+
+  return { ok: true };
+}
+
 const updateRenja = async (req, res) => {
   try {
     const row = await Renja.findByPk(req.params.id);
     if (!row) {
       return res.status(404).json({ success: false, message: 'Renja tidak ditemukan' });
     }
+
+    const boundary = await assertRenjaOpdBoundary(req, row);
+    if (!boundary.ok) return res.status(boundary.status).json(boundary.body);
 
     const {
       payload: bodyRest,
@@ -678,6 +743,9 @@ const deleteRenja = async (req, res) => {
     if (!row) {
       return res.status(404).json({ success: false, message: 'Renja tidak ditemukan' });
     }
+
+    const boundaryDelete = await assertRenjaOpdBoundary(req, row);
+    if (!boundaryDelete.ok) return res.status(boundaryDelete.status).json(boundaryDelete.body);
 
     const { change_reason_text, change_reason_file } = splitPlanningBody(req.body);
     const before = toPlain(row);

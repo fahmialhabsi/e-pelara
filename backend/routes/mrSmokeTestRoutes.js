@@ -3,6 +3,31 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../models");
+const verifyToken = require("../middlewares/verifyToken");
+const allowRoles = require("../middlewares/allowRoles");
+
+// Sprint 3 — S3-02: seluruh route diagnostic di file ini sebelumnya tidak
+// memiliki verifyToken/allowRoles sama sekali, padahal beberapa endpoint
+// (context-chain, risk-chain, mitigation-chain, monitoring-chain,
+// snapshot-output-chain, custom-risk-include) mengembalikan data record MR
+// planning sungguhan (bukan hanya metadata registry), dan beberapa error
+// path membocorkan error.stack saat NODE_ENV=development. Defense-in-depth:
+// (1) autentikasi + role SUPER_ADMIN (role tersempit yang ada, konsisten
+// dengan sifat diagnostic/dev-tool endpoint ini), dan (2) blokir total di
+// production terlepas dari role, karena tool ini sengaja dirancang untuk
+// smoke-test development, bukan operasional produksi.
+router.use(verifyToken, allowRoles(["SUPER_ADMIN"]));
+
+router.use((req, res, next) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(404).json({
+      success: false,
+      message: "Not found.",
+    });
+  }
+  return next();
+});
+
 const parsePositiveInt = (value) => {
   if (value === undefined || value === null || value === "") return null;
 
