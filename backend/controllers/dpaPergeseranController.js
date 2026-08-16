@@ -6,11 +6,76 @@ const {
   Dpa,
   RkaRincianBelanja,
   Tapd,
+  OpdPenanggungJawab,
 } = require('../models');
 const puppeteer = require('puppeteer');
 
 const ANGKA_ROMAWI = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 const formatRp = (val) => `Rp${Number(val || 0).toLocaleString('id-ID')},00`;
+
+// Sprint 4 — S4-02 (S4-DISC-005/006/007/008/009): DpaPergeseran dan
+// DpaPerubahan TIDAK punya kolom opd_id sendiri (dikonfirmasi lewat
+// pemeriksaan model). Kepemilikan diresolusi lewat dpa_id -> Dpa.opd_id,
+// mengikuti PERSIS pola assertDpaOpdBoundary(req, row) yang sudah ada di
+// controllers/dpaController.js (S3-04) — resolusi nama OPD -> id lewat
+// OpdPenanggungJawab, server-derived dari req.user.opd (TIDAK PERNAH dari
+// req.body/req.query/req.params). SUPER_ADMIN dikecualikan (otoritas
+// tenant-wide, AD-S4-02). Fail closed (503) bila resolusi kepemilikan
+// gagal karena error internal. Menerima row Dpa yang SUDAH di-load bila
+// tersedia (S4-DISC-008), untuk menghindari query duplikat.
+async function assertDpaPergeseranOpdBoundary(req, dpaRow) {
+  if (req.user?.role === 'SUPER_ADMIN') return { ok: true };
+
+  const targetOpdId = dpaRow?.opd_id ?? null;
+  if (targetOpdId === null || targetOpdId === undefined) {
+    // DPA tidak ditemukan / belum punya opd_id — biarkan validasi normal
+    // (404/422 existing) yang menangani, bukan boundary check ini.
+    return { ok: true };
+  }
+
+  const opdName = req.user?.opd;
+  if (!opdName) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        success: false,
+        message: 'Anda tidak berwenang melakukan aksi ini pada DPA milik OPD lain.',
+        code: 'DPA_PERGESERAN_OPD_FORBIDDEN',
+      },
+    };
+  }
+
+  let callerOpdId = null;
+  try {
+    const opdRow = await OpdPenanggungJawab.findOne({ where: { nama_opd: opdName } });
+    callerOpdId = opdRow?.id ?? null;
+  } catch (err) {
+    return {
+      ok: false,
+      status: 503,
+      body: {
+        success: false,
+        message: 'Batas kewenangan OPD tidak dapat diverifikasi saat ini. Aksi ditolak sementara demi keamanan data — silakan coba lagi.',
+        code: 'DPA_PERGESERAN_OPD_BOUNDARY_UNAVAILABLE',
+      },
+    };
+  }
+
+  if (callerOpdId === null || callerOpdId !== targetOpdId) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        success: false,
+        message: 'Anda tidak berwenang melakukan aksi ini pada DPA milik OPD lain.',
+        code: 'DPA_PERGESERAN_OPD_FORBIDDEN',
+      },
+    };
+  }
+
+  return { ok: true };
+}
 
 module.exports = {
   // =============================================
@@ -127,6 +192,13 @@ module.exports = {
           .json({ success: false, message: 'tanggal, alasan, dan items wajib diisi' });
       }
 
+      // S4-DISC-005: resolusi dpa_id -> Dpa.opd_id sebelum membuat pergeseran.
+      const dpaSumberForBoundary = await Dpa.findByPk(dpa_id);
+      const boundaryCreate = await assertDpaPergeseranOpdBoundary(req, dpaSumberForBoundary);
+      if (!boundaryCreate.ok) {
+        return res.status(boundaryCreate.status).json(boundaryCreate.body);
+      }
+
       // Hitung nomor pergeseran otomatis
       const count = await DpaPergeseran.count({ where: { dpa_id } });
       const nomor_pergeseran = count + 1;
@@ -229,6 +301,14 @@ module.exports = {
           message: 'Hanya pergeseran berstatus DRAFT yang bisa disetujui',
         });
 
+      // S4-DISC-006: resolusi DpaPergeseran.dpa_id -> Dpa.opd_id SEBELUM
+      // approval atau sinkronisasi pagu apa pun.
+      const dpaForSetujuiPergeseran = await Dpa.findByPk(pergeseran.dpa_id);
+      const boundarySetujui = await assertDpaPergeseranOpdBoundary(req, dpaForSetujuiPergeseran);
+      if (!boundarySetujui.ok) {
+        return res.status(boundarySetujui.status).json(boundarySetujui.body);
+      }
+
       await pergeseran.update({
         status: 'DISETUJUI',
         approved_by: req.user?.id || null,
@@ -265,6 +345,14 @@ module.exports = {
         return res
           .status(400)
           .json({ success: false, message: 'Hanya pergeseran DRAFT yang bisa dihapus' });
+
+      // S4-DISC-007: resolusi kepemilikan SEBELUM menghapus item maupun
+      // parent — penolakan cross-OPD tidak boleh menyisakan efek samping.
+      const dpaForDeletePergeseran = await Dpa.findByPk(pergeseran.dpa_id);
+      const boundaryDelete = await assertDpaPergeseranOpdBoundary(req, dpaForDeletePergeseran);
+      if (!boundaryDelete.ok) {
+        return res.status(boundaryDelete.status).json(boundaryDelete.body);
+      }
 
       await DpaPergeseranItem.destroy({ where: { pergeseran_id: pergeseran.id } });
       await pergeseran.destroy();
@@ -638,6 +726,14 @@ module.exports = {
       const dpa = await Dpa.findByPk(dpa_id);
       if (!dpa) return res.status(404).json({ success: false, message: 'DPA tidak ditemukan' });
 
+      // S4-DISC-008: gunakan `dpa` yang SUDAH di-load di atas (dpa.opd_id),
+      // TIDAK query ulang — sesuai instruksi mandat untuk menghindari query
+      // duplikat.
+      const boundarySavePerubahan = await assertDpaPergeseranOpdBoundary(req, dpa);
+      if (!boundarySavePerubahan.ok) {
+        return res.status(boundarySavePerubahan.status).json(boundarySavePerubahan.body);
+      }
+
       const paguSemula = Number(dpa.anggaran);
       const paguMenjadiNum = Number(pagu_menjadi);
       const selisihTotal = paguMenjadiNum - paguSemula;
@@ -734,6 +830,19 @@ module.exports = {
         return res.status(404).json({ success: false, message: 'Perubahan tidak ditemukan' });
       if (perubahan.status === 'DISETUJUI')
         return res.status(400).json({ success: false, message: 'Sudah disetujui sebelumnya' });
+
+      // S4-DISC-009: resolusi DpaPerubahan.dpa_id -> Dpa.opd_id SEBELUM
+      // mutasi status atau sinkronisasi pagu apa pun. Rantai ini didukung
+      // langsung oleh kolom dpa_id pada model DpaPerubahan (dikonfirmasi
+      // lewat pemeriksaan sumber), sama seperti pola savePerubahan di atas.
+      const dpaForSetujuiPerubahan = await Dpa.findByPk(perubahan.dpa_id);
+      const boundarySetujuiPerubahan = await assertDpaPergeseranOpdBoundary(
+        req,
+        dpaForSetujuiPerubahan,
+      );
+      if (!boundarySetujuiPerubahan.ok) {
+        return res.status(boundarySetujuiPerubahan.status).json(boundarySetujuiPerubahan.body);
+      }
 
       await perubahan.update({ status: 'DISETUJUI' });
 

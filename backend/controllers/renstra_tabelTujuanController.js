@@ -11,6 +11,63 @@ const {
 
 const { attachCacheToRows, applyPaguFromCache } = require('../services/renstraPaguCacheHelper');
 
+// Sprint 4 — S4-01 (S4-DISC-001/002/004): OPD boundary untuk mutasi
+// RenstraTabelTujuan dan ketiga jalur mutasi history revisinya. Per
+// keputusan arsitektur CEA AD-S4-01:
+// RenstraTabelTujuan.opd_id -> RenstraOPD.id -> RenstraOPD.nama_opd
+// adalah rantai resolusi kepemilikan yang otoritatif; TIDAK ada hop kedua
+// lewat OpdPenanggungJawab (dikonfirmasi lewat pemeriksaan sumber:
+// RenstraOPD sudah punya kolom nama_opd sendiri). req.user.opd (nama OPD
+// dari JWT, lihat middlewares/verifyToken.js) dibandingkan LANGSUNG
+// terhadap RenstraOPD.nama_opd. SUPER_ADMIN dikecualikan (otoritas
+// tenant-wide, AD-S4-02 — lihat juga S4-DISC-003: delete handler sengaja
+// TIDAK disentuh). Fail closed (503) bila resolusi kepemilikan gagal
+// karena error internal. TIDAK PERNAH mempercayai id/OPD dari
+// req.body/req.query/req.params sebagai bukti otorisasi.
+async function assertRenstraTabelTujuanOpdBoundary(req, renstraTabelTujuanId, transaction) {
+  if (req.user?.role === 'SUPER_ADMIN') return { ok: true };
+
+  let target;
+  try {
+    target = await RenstraTabelTujuan.findByPk(renstraTabelTujuanId, {
+      include: [{ model: RenstraOPD, as: 'opd' }],
+      transaction,
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      status: 503,
+      body: {
+        message: 'Batas kewenangan OPD untuk data ini tidak dapat diverifikasi saat ini. Aksi ditolak sementara demi keamanan data — silakan coba lagi.',
+        code: 'RENSTRA_TABEL_TUJUAN_OPD_BOUNDARY_UNAVAILABLE',
+        blocked: true,
+      },
+    };
+  }
+
+  const targetOpdName = target?.opd?.nama_opd ?? null;
+  if (targetOpdName === null || targetOpdName === undefined) {
+    // Resource/relasi OPD tidak ditemukan — biarkan alur existing (404/422)
+    // yang menangani, bukan boundary check ini.
+    return { ok: true };
+  }
+
+  const callerOpdName = req.user?.opd;
+  if (!callerOpdName || callerOpdName !== targetOpdName) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        message: 'Anda tidak berwenang melakukan aksi ini pada data Renstra milik OPD lain.',
+        code: 'RENSTRA_TABEL_TUJUAN_OPD_FORBIDDEN',
+        blocked: true,
+      },
+    };
+  }
+
+  return { ok: true };
+}
+
 const TARGET_FIELDS = [
   'target_tahun_1',
   'target_tahun_2',
@@ -586,6 +643,14 @@ exports.update = async (req, res) => {
       return res.status(404).json({ message: 'Data not found' });
     }
 
+    // S4-DISC-001: ADMINISTRATOR OPD-scoped tidak boleh mengubah data
+    // Renstra milik OPD lain.
+    const boundaryUpdate = await assertRenstraTabelTujuanOpdBoundary(req, id, t);
+    if (!boundaryUpdate.ok) {
+      await t.rollback();
+      return res.status(boundaryUpdate.status).json(boundaryUpdate.body);
+    }
+
     const payloadBase = {
       ...req.body,
       ...buildLockedPaguPayload(),
@@ -716,6 +781,14 @@ exports.revisi = async (req, res) => {
       });
     }
 
+    // S4-DISC-002: ADMINISTRATOR OPD-scoped tidak boleh merevisi data
+    // Renstra milik OPD lain.
+    const boundaryRevisi = await assertRenstraTabelTujuanOpdBoundary(req, id, t);
+    if (!boundaryRevisi.ok) {
+      await t.rollback();
+      return res.status(boundaryRevisi.status).json(boundaryRevisi.body);
+    }
+
     const beforeJson = row.toJSON();
 
     const payload = sanitizeTujuanPayload(req.body);
@@ -804,6 +877,32 @@ exports.verifikasiHistory = async (req, res) => {
     const { history_id } = req.params;
     const actorId = getActorId(req);
 
+    // S4-DISC-004: sebelumnya UPDATE langsung tanpa resolusi kepemilikan.
+    // SELECT dulu untuk mendapatkan renstra_tabel_tujuan_id parent (juga
+    // memulihkan 404 yang sebelumnya tersembunyi di balik UPDATE 0-row).
+    const [historyRowsVerifikasi] = await sequelize.query(
+      `SELECT renstra_tabel_tujuan_id FROM renstra_tabel_tujuan_history WHERE id = :history_id LIMIT 1`,
+      { replacements: { history_id }, transaction: t },
+    );
+    const historyForVerifikasi = historyRowsVerifikasi[0];
+    if (!historyForVerifikasi) {
+      await t.rollback();
+      return res.status(404).json({
+        message: 'History revisi tidak ditemukan',
+        blocked: true,
+      });
+    }
+
+    const boundaryVerifikasi = await assertRenstraTabelTujuanOpdBoundary(
+      req,
+      historyForVerifikasi.renstra_tabel_tujuan_id,
+      t,
+    );
+    if (!boundaryVerifikasi.ok) {
+      await t.rollback();
+      return res.status(boundaryVerifikasi.status).json(boundaryVerifikasi.body);
+    }
+
     await sequelize.query(
       `
       UPDATE renstra_tabel_tujuan_history
@@ -864,6 +963,18 @@ exports.approveHistory = async (req, res) => {
       });
     }
 
+    // S4-DISC-004: resolusi kepemilikan lewat parent
+    // renstra_tabel_tujuan_id SEBELUM approve.
+    const boundaryApprove = await assertRenstraTabelTujuanOpdBoundary(
+      req,
+      history.renstra_tabel_tujuan_id,
+      t,
+    );
+    if (!boundaryApprove.ok) {
+      await t.rollback();
+      return res.status(boundaryApprove.status).json(boundaryApprove.body);
+    }
+
     if (history.status_revisi !== 'verifikasi') {
       await t.rollback();
       return res.status(400).json({
@@ -917,6 +1028,32 @@ exports.tolakHistory = async (req, res) => {
   try {
     const { history_id } = req.params;
     const actorId = getActorId(req);
+
+    // S4-DISC-004: sebelumnya UPDATE langsung tanpa resolusi kepemilikan.
+    // SELECT dulu untuk mendapatkan renstra_tabel_tujuan_id parent (juga
+    // memulihkan 404 yang sebelumnya tersembunyi di balik UPDATE 0-row).
+    const [historyRowsTolak] = await sequelize.query(
+      `SELECT renstra_tabel_tujuan_id FROM renstra_tabel_tujuan_history WHERE id = :history_id LIMIT 1`,
+      { replacements: { history_id }, transaction: t },
+    );
+    const historyForTolak = historyRowsTolak[0];
+    if (!historyForTolak) {
+      await t.rollback();
+      return res.status(404).json({
+        message: 'History revisi tidak ditemukan',
+        blocked: true,
+      });
+    }
+
+    const boundaryTolak = await assertRenstraTabelTujuanOpdBoundary(
+      req,
+      historyForTolak.renstra_tabel_tujuan_id,
+      t,
+    );
+    if (!boundaryTolak.ok) {
+      await t.rollback();
+      return res.status(boundaryTolak.status).json(boundaryTolak.body);
+    }
 
     await sequelize.query(
       `

@@ -228,6 +228,88 @@ test('behavioral: allowRoles pada setiap route divisionRoutes tidak lagi menghas
 
 console.log('\n=== S3-02 (lanjutan): perilaku runtime autentikasi mrSmokeTestRoutes.js ===');
 
+
+console.log('\n=== S4-DISC-010: realisasiIndikatorRoutes.js — autentikasi + otorisasi + perbaikan referensi model pada POST / ===');
+
+test('module memuat tanpa error (syntax valid)', () => {
+  delete require.cache[require.resolve('../routes/realisasiIndikatorRoutes')];
+  const router = require('../routes/realisasiIndikatorRoutes');
+  assert.ok(router, 'router harus ter-export');
+});
+
+test('POST / terdaftar dengan verifyToken dan allowRoles pada handler chain (bukan lagi handler inline tanpa proteksi)', () => {
+  delete require.cache[require.resolve('../routes/realisasiIndikatorRoutes')];
+  const router = require('../routes/realisasiIndikatorRoutes');
+  const layers = getRouteLayers(router, 'post', '/');
+  assert.strictEqual(layers.length, 1, 'harus ada tepat 1 route POST / terdaftar');
+  const names = layers[0].handlerNames;
+  assert.ok(
+    names.length >= 3,
+    `route POST / harus punya >=3 handler (verifyToken, allowRoles, controller), ditemukan ${names.length}: ${names.join(', ')}`
+  );
+  assert.strictEqual(names[0], 'verifyToken', `handler pertama harus verifyToken, ditemukan: ${names.join(', ')}`);
+});
+
+test('behavioral: role di luar WRITE (mis. PENGAWAS) ditolak oleh allowRoles, next() TIDAK dipanggil', () => {
+  delete require.cache[require.resolve('../routes/realisasiIndikatorRoutes')];
+  const router = require('../routes/realisasiIndikatorRoutes');
+  const layers = router.stack.filter(
+    (l) => l.route && l.route.path === '/' && Object.keys(l.route.methods).includes('post')
+  );
+  assert.strictEqual(layers.length, 1);
+  const allowRolesHandler = layers[0].route.stack[1]?.handle;
+  assert.ok(allowRolesHandler, 'harus ada handler allowRoles pada index ke-2 (setelah verifyToken)');
+
+  const req = { user: { role: 'PENGAWAS' } };
+  let statusCode = null;
+  let bodyOut = null;
+  const res = {
+    status(code) {
+      statusCode = code;
+      return this;
+    },
+    json(body) {
+      bodyOut = body;
+      return this;
+    },
+  };
+  let nextCalled = false;
+  allowRolesHandler(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.strictEqual(nextCalled, false, 'next() TIDAK BOLEH dipanggil untuk role yang tidak diizinkan');
+  assert.strictEqual(statusCode, 403, `role PENGAWAS harus ditolak 403, didapat ${statusCode}, body=${JSON.stringify(bodyOut)}`);
+});
+
+test('behavioral: role WRITE (SUPER_ADMIN) diizinkan lewat allowRoles, next() dipanggil', () => {
+  delete require.cache[require.resolve('../routes/realisasiIndikatorRoutes')];
+  const router = require('../routes/realisasiIndikatorRoutes');
+  const layers = router.stack.filter(
+    (l) => l.route && l.route.path === '/' && Object.keys(l.route.methods).includes('post')
+  );
+  const allowRolesHandler = layers[0].route.stack[1]?.handle;
+
+  const req = { user: { role: 'SUPER_ADMIN' } };
+  let statusCode = null;
+  const res = {
+    status(code) {
+      statusCode = code;
+      return this;
+    },
+    json() {
+      return this;
+    },
+  };
+  let nextCalled = false;
+  allowRolesHandler(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.strictEqual(nextCalled, true, 'next() HARUS dipanggil untuk role SUPER_ADMIN (WRITE role)');
+  assert.strictEqual(statusCode, null, 'tidak boleh ada respons error untuk role yang diizinkan');
+});
+
 async function runAsyncTests() {
   await testAsync(
     'behavioral: tanpa req.user/token, request ke /models ditolak sebelum mencapai handler DB',
@@ -378,6 +460,111 @@ async function runAsyncTests() {
           process.env.NODE_ENV = originalNodeEnv;
         }
         delete require.cache[require.resolve('../routes/mrSmokeTestRoutes')];
+      }
+    }
+  );
+
+
+  await testAsync(
+    'behavioral: request TANPA token ke POST / ditolak sebelum mencapai handler mutasi (verifyToken menolak lebih dulu)',
+    async () => {
+      delete require.cache[require.resolve('../routes/realisasiIndikatorRoutes')];
+      const router = require('../routes/realisasiIndikatorRoutes');
+      const layers = router.stack.filter(
+        (l) => l.route && l.route.path === '/' && Object.keys(l.route.methods).includes('post')
+      );
+      const verifyTokenHandler = layers[0].route.stack[0]?.handle;
+      assert.ok(verifyTokenHandler, 'harus ada handler verifyToken pada index pertama');
+
+      const req = {
+        user: null,
+        headers: {},
+        query: {},
+        params: {},
+        body: {},
+        cookies: {},
+        header(name) {
+          return this.headers[String(name).toLowerCase()];
+        },
+        get(name) {
+          return this.header(name);
+        },
+      };
+      let statusCode = null;
+      let bodyOut = null;
+      const res = {
+        status(code) {
+          statusCode = code;
+          return this;
+        },
+        json(body) {
+          bodyOut = body;
+          return this;
+        },
+        clearCookie() {
+          return this;
+        },
+        cookie() {
+          return this;
+        },
+      };
+      let nextCalled = false;
+      const next = () => {
+        nextCalled = true;
+      };
+
+      await verifyTokenHandler(req, res, next);
+
+      assert.strictEqual(nextCalled, false, 'next() TIDAK BOLEH dipanggil untuk request tanpa token');
+      assert.ok(
+        statusCode === 401 || statusCode === 403,
+        `request tanpa autentikasi harus ditolak (401/403), didapat statusCode=${statusCode}, body=${JSON.stringify(bodyOut)}`
+      );
+    }
+  );
+
+  await testAsync(
+    'handler createRealisasi menggunakan model RealisasiIndikator yang benar (bukan lagi referensi `db` yang undefined) — bukti tanpa DB nyata',
+    async () => {
+      delete require.cache[require.resolve('../controllers/realisasiIndikatorController')];
+      const controller = require('../controllers/realisasiIndikatorController');
+      const models = require('../models');
+
+      const originalCreate = models.RealisasiIndikator.create;
+      let createCalledWith = null;
+      models.RealisasiIndikator.create = async (payload) => {
+        createCalledWith = payload;
+        return { id_realisasi: 1, ...payload };
+      };
+
+      try {
+        const req = { body: { indikator_id: 7, periode: '2026-01', nilai_realisasi: 88.5 } };
+        let statusCode = null;
+        let bodyOut = null;
+        const res = {
+          status(code) {
+            statusCode = code;
+            return this;
+          },
+          json(body) {
+            bodyOut = body;
+            return this;
+          },
+        };
+
+        await controller.createRealisasi(req, res);
+
+        assert.strictEqual(
+          statusCode,
+          201,
+          `harus 201, didapat ${statusCode}, body=${JSON.stringify(bodyOut)} (ReferenceError db is not defined akan muncul di sini bila defect lama belum diperbaiki)`
+        );
+        assert.ok(createCalledWith, 'RealisasiIndikator.create() harus dipanggil dengan payload yang benar');
+        assert.strictEqual(createCalledWith.indikator_id, 7);
+        assert.strictEqual(createCalledWith.periode, '2026-01');
+        assert.strictEqual(createCalledWith.nilai_realisasi, 88.5);
+      } finally {
+        models.RealisasiIndikator.create = originalCreate;
       }
     }
   );

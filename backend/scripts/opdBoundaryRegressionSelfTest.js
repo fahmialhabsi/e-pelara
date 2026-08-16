@@ -580,6 +580,764 @@ await test('operasi normal (bukan error) pada dokumen APPROVED tetap ditolak 403
   );
 });
 
+
+console.log('\n=== S4-01/S4-DISC-001: renstra_tabelTujuanController.update — boundary OPD ===');
+
+await test('update RenstraTabelTujuan — caller OPD BEDA dari target -> DITOLAK 403, RenstraTabelTujuan.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_tabelTujuanController')];
+
+  const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+  let updateCalled = false;
+  const originalTransaction = models.sequelize.transaction;
+  const originalFindByPk = models.RenstraTabelTujuan.findByPk;
+  const originalUpdate = models.RenstraTabelTujuan.update;
+  models.sequelize.transaction = async () => fakeT;
+  models.RenstraTabelTujuan.findByPk = async (id, options) => {
+    if (options && options.include) {
+      return { id: 99, opd_id: 2, opd: { id: 2, nama_opd: 'Dinas Uji Coba B' } };
+    }
+    return { id: 99, opd_id: 2 };
+  };
+  models.RenstraTabelTujuan.update = async () => {
+    updateCalled = true;
+  };
+
+  try {
+    const controller = require('../controllers/renstra_tabelTujuanController');
+    const req = {
+      params: { id: '99' },
+      body: {},
+      user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+    };
+    const res = fakeRes();
+    await controller.update(req, res);
+
+    assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.strictEqual(res.body?.code, 'RENSTRA_TABEL_TUJUAN_OPD_FORBIDDEN');
+    assert.strictEqual(updateCalled, false, 'RenstraTabelTujuan.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+  } finally {
+    models.sequelize.transaction = originalTransaction;
+    models.RenstraTabelTujuan.findByPk = originalFindByPk;
+    models.RenstraTabelTujuan.update = originalUpdate;
+  }
+});
+
+await test('update RenstraTabelTujuan — caller OPD SAMA dengan target (non-SUPER_ADMIN) -> boundary MENGIZINKAN, tidak diblokir 403', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_tabelTujuanController')];
+
+  const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+  const originalTransaction = models.sequelize.transaction;
+  const originalFindByPk = models.RenstraTabelTujuan.findByPk;
+  models.sequelize.transaction = async () => fakeT;
+  models.RenstraTabelTujuan.findByPk = async (id, options) => {
+    if (options && options.include) {
+      return { id: 99, opd_id: 1, opd: { id: 1, nama_opd: 'Dinas Uji Coba A' } };
+    }
+    return { id: 99, opd_id: 1 };
+  };
+
+  try {
+    const controller = require('../controllers/renstra_tabelTujuanController');
+    const req = {
+      params: { id: '99' },
+      body: {},
+      user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+    };
+    const res = fakeRes();
+    await controller.update(req, res);
+
+    assert.notStrictEqual(res.statusCode, 403, `boundary TIDAK BOLEH menolak ketika caller dan target berada di OPD yang sama, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.notStrictEqual(res.body?.code, 'RENSTRA_TABEL_TUJUAN_OPD_FORBIDDEN');
+  } finally {
+    models.sequelize.transaction = originalTransaction;
+    models.RenstraTabelTujuan.findByPk = originalFindByPk;
+  }
+});
+
+await test('update RenstraTabelTujuan — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide, AD-S4-02)', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_tabelTujuanController')];
+
+  const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+  const originalTransaction = models.sequelize.transaction;
+  const originalFindByPk = models.RenstraTabelTujuan.findByPk;
+  models.sequelize.transaction = async () => fakeT;
+  models.RenstraTabelTujuan.findByPk = async (id, options) => {
+    if (options && options.include) {
+      return { id: 99, opd_id: 2, opd: { id: 2, nama_opd: 'Dinas Uji Coba B' } };
+    }
+    return { id: 99, opd_id: 2 };
+  };
+
+  try {
+    const controller = require('../controllers/renstra_tabelTujuanController');
+    const req = {
+      params: { id: '99' },
+      body: {},
+      user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+    };
+    const res = fakeRes();
+    await controller.update(req, res);
+
+    assert.notStrictEqual(res.statusCode, 403, `SUPER_ADMIN tidak boleh diblokir boundary OPD, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.notStrictEqual(res.body?.code, 'RENSTRA_TABEL_TUJUAN_OPD_FORBIDDEN');
+  } finally {
+    models.sequelize.transaction = originalTransaction;
+    models.RenstraTabelTujuan.findByPk = originalFindByPk;
+  }
+});
+
+await test('update RenstraTabelTujuan — resolusi kepemilikan gagal (error internal) -> FAIL CLOSED 503, RenstraTabelTujuan.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_tabelTujuanController')];
+
+  const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+  let updateCalled = false;
+  const originalTransaction = models.sequelize.transaction;
+  const originalFindByPk = models.RenstraTabelTujuan.findByPk;
+  const originalUpdate = models.RenstraTabelTujuan.update;
+  models.sequelize.transaction = async () => fakeT;
+  models.RenstraTabelTujuan.findByPk = async (id, options) => {
+    if (options && options.include) {
+      throw new Error('simulated DB error saat resolusi kepemilikan OPD');
+    }
+    return { id: 99, opd_id: 2 };
+  };
+  models.RenstraTabelTujuan.update = async () => {
+    updateCalled = true;
+  };
+
+  try {
+    const controller = require('../controllers/renstra_tabelTujuanController');
+    const req = {
+      params: { id: '99' },
+      body: {},
+      user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+    };
+    const res = fakeRes();
+    await controller.update(req, res);
+
+    assert.strictEqual(res.statusCode, 503, `harus fail-closed 503, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.strictEqual(res.body?.code, 'RENSTRA_TABEL_TUJUAN_OPD_BOUNDARY_UNAVAILABLE');
+    assert.strictEqual(updateCalled, false, 'RenstraTabelTujuan.update() TIDAK BOLEH dipanggil ketika resolusi kepemilikan gagal (fail-closed)');
+  } finally {
+    models.sequelize.transaction = originalTransaction;
+    models.RenstraTabelTujuan.findByPk = originalFindByPk;
+    models.RenstraTabelTujuan.update = originalUpdate;
+  }
+});
+
+console.log('\n=== S4-01/S4-DISC-002: renstra_tabelTujuanController.revisi — boundary OPD ===');
+
+await test('revisi RenstraTabelTujuan — caller OPD BEDA dari target -> DITOLAK 403, row.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_tabelTujuanController')];
+
+  const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+  let rowUpdateCalled = false;
+  const originalTransaction = models.sequelize.transaction;
+  const originalFindByPk = models.RenstraTabelTujuan.findByPk;
+  models.sequelize.transaction = async () => fakeT;
+  models.RenstraTabelTujuan.findByPk = async (id, options) => {
+    if (options && options.include) {
+      return { id: 99, opd_id: 2, opd: { id: 2, nama_opd: 'Dinas Uji Coba B' } };
+    }
+    return {
+      id: 99,
+      opd_id: 2,
+      versi: 1,
+      toJSON() {
+        return { id: 99, opd_id: 2, versi: 1 };
+      },
+      async update() {
+        rowUpdateCalled = true;
+      },
+    };
+  };
+
+  try {
+    const controller = require('../controllers/renstra_tabelTujuanController');
+    const req = {
+      params: { id: '99' },
+      body: { alasan_revisi: 'Uji coba revisi' },
+      user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+    };
+    const res = fakeRes();
+    await controller.revisi(req, res);
+
+    assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.strictEqual(res.body?.code, 'RENSTRA_TABEL_TUJUAN_OPD_FORBIDDEN');
+    assert.strictEqual(rowUpdateCalled, false, 'row.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+  } finally {
+    models.sequelize.transaction = originalTransaction;
+    models.RenstraTabelTujuan.findByPk = originalFindByPk;
+  }
+});
+
+await test('revisi RenstraTabelTujuan — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide, AD-S4-02)', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_tabelTujuanController')];
+
+  const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+  const originalTransaction = models.sequelize.transaction;
+  const originalFindByPk = models.RenstraTabelTujuan.findByPk;
+  models.sequelize.transaction = async () => fakeT;
+  models.RenstraTabelTujuan.findByPk = async (id, options) => {
+    if (options && options.include) {
+      return { id: 99, opd_id: 2, opd: { id: 2, nama_opd: 'Dinas Uji Coba B' } };
+    }
+    return {
+      id: 99,
+      opd_id: 2,
+      versi: 1,
+      toJSON() {
+        return { id: 99, opd_id: 2, versi: 1 };
+      },
+      async update() {},
+    };
+  };
+
+  try {
+    const controller = require('../controllers/renstra_tabelTujuanController');
+    const req = {
+      params: { id: '99' },
+      body: { alasan_revisi: 'Uji coba revisi' },
+      user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+    };
+    const res = fakeRes();
+    await controller.revisi(req, res);
+
+    assert.notStrictEqual(res.statusCode, 403, `SUPER_ADMIN tidak boleh diblokir boundary OPD, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.notStrictEqual(res.body?.code, 'RENSTRA_TABEL_TUJUAN_OPD_FORBIDDEN');
+  } finally {
+    models.sequelize.transaction = originalTransaction;
+    models.RenstraTabelTujuan.findByPk = originalFindByPk;
+  }
+});
+
+console.log('\n=== S4-01/S4-DISC-004: renstra_tabelTujuanController — boundary OPD pada 3 jalur mutasi history ===');
+
+await test('verifikasiHistory — caller OPD BEDA dari target parent -> DITOLAK 403, UPDATE history TIDAK dijalankan', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_tabelTujuanController')];
+
+  const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+  let updateQueryRan = false;
+  const originalTransaction = models.sequelize.transaction;
+  const originalQuery = models.sequelize.query;
+  const originalFindByPk = models.RenstraTabelTujuan.findByPk;
+  models.sequelize.transaction = async () => fakeT;
+  models.sequelize.query = async (sql) => {
+    if (/SELECT renstra_tabel_tujuan_id FROM renstra_tabel_tujuan_history/.test(sql)) {
+      return [[{ renstra_tabel_tujuan_id: 99 }]];
+    }
+    if (/UPDATE renstra_tabel_tujuan_history/.test(sql)) {
+      updateQueryRan = true;
+      return [];
+    }
+    throw new Error(`Unexpected query in test: ${sql}`);
+  };
+  models.RenstraTabelTujuan.findByPk = async (id, options) => {
+    if (options && options.include) {
+      return { id: 99, opd_id: 2, opd: { id: 2, nama_opd: 'Dinas Uji Coba B' } };
+    }
+    return { id: 99, opd_id: 2 };
+  };
+
+  try {
+    const controller = require('../controllers/renstra_tabelTujuanController');
+    const req = {
+      params: { history_id: '7' },
+      body: {},
+      user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+    };
+    const res = fakeRes();
+    await controller.verifikasiHistory(req, res);
+
+    assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.strictEqual(res.body?.code, 'RENSTRA_TABEL_TUJUAN_OPD_FORBIDDEN');
+    assert.strictEqual(updateQueryRan, false, 'UPDATE renstra_tabel_tujuan_history TIDAK BOLEH dijalankan ketika boundary OPD menolak');
+  } finally {
+    models.sequelize.transaction = originalTransaction;
+    models.sequelize.query = originalQuery;
+    models.RenstraTabelTujuan.findByPk = originalFindByPk;
+  }
+});
+
+await test('verifikasiHistory — caller OPD SAMA dengan target parent (non-SUPER_ADMIN) -> boundary MENGIZINKAN, tidak diblokir 403', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_tabelTujuanController')];
+
+  const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+  const originalTransaction = models.sequelize.transaction;
+  const originalQuery = models.sequelize.query;
+  const originalFindByPk = models.RenstraTabelTujuan.findByPk;
+  models.sequelize.transaction = async () => fakeT;
+  models.sequelize.query = async (sql) => {
+    if (/SELECT renstra_tabel_tujuan_id FROM renstra_tabel_tujuan_history/.test(sql)) {
+      return [[{ renstra_tabel_tujuan_id: 99 }]];
+    }
+    if (/UPDATE renstra_tabel_tujuan_history/.test(sql)) {
+      return [];
+    }
+    throw new Error(`Unexpected query in test: ${sql}`);
+  };
+  models.RenstraTabelTujuan.findByPk = async (id, options) => {
+    if (options && options.include) {
+      return { id: 99, opd_id: 1, opd: { id: 1, nama_opd: 'Dinas Uji Coba A' } };
+    }
+    return { id: 99, opd_id: 1 };
+  };
+
+  try {
+    const controller = require('../controllers/renstra_tabelTujuanController');
+    const req = {
+      params: { history_id: '7' },
+      body: {},
+      user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+    };
+    const res = fakeRes();
+    await controller.verifikasiHistory(req, res);
+
+    assert.notStrictEqual(res.statusCode, 403, `boundary TIDAK BOLEH menolak ketika caller dan target parent berada di OPD yang sama, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.notStrictEqual(res.body?.code, 'RENSTRA_TABEL_TUJUAN_OPD_FORBIDDEN');
+  } finally {
+    models.sequelize.transaction = originalTransaction;
+    models.sequelize.query = originalQuery;
+    models.RenstraTabelTujuan.findByPk = originalFindByPk;
+  }
+});
+
+await test('approveHistory — caller OPD BEDA dari target parent -> DITOLAK 403, UPDATE history & RenstraTabelTujuan.update TIDAK dijalankan', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_tabelTujuanController')];
+
+  const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+  let updateQueryRan = false;
+  let parentUpdateCalled = false;
+  const originalTransaction = models.sequelize.transaction;
+  const originalQuery = models.sequelize.query;
+  const originalFindByPk = models.RenstraTabelTujuan.findByPk;
+  const originalUpdate = models.RenstraTabelTujuan.update;
+  models.sequelize.transaction = async () => fakeT;
+  models.sequelize.query = async (sql) => {
+    if (/SELECT \*\s*\n\s*FROM renstra_tabel_tujuan_history/.test(sql)) {
+      return [[{ id: 7, renstra_tabel_tujuan_id: 99, status_revisi: 'verifikasi' }]];
+    }
+    if (/UPDATE renstra_tabel_tujuan_history/.test(sql)) {
+      updateQueryRan = true;
+      return [];
+    }
+    throw new Error(`Unexpected query in test: ${sql}`);
+  };
+  models.RenstraTabelTujuan.findByPk = async (id, options) => {
+    if (options && options.include) {
+      return { id: 99, opd_id: 2, opd: { id: 2, nama_opd: 'Dinas Uji Coba B' } };
+    }
+    return { id: 99, opd_id: 2 };
+  };
+  models.RenstraTabelTujuan.update = async () => {
+    parentUpdateCalled = true;
+  };
+
+  try {
+    const controller = require('../controllers/renstra_tabelTujuanController');
+    const req = {
+      params: { history_id: '7' },
+      body: {},
+      user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+    };
+    const res = fakeRes();
+    await controller.approveHistory(req, res);
+
+    assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.strictEqual(res.body?.code, 'RENSTRA_TABEL_TUJUAN_OPD_FORBIDDEN');
+    assert.strictEqual(updateQueryRan, false, 'UPDATE renstra_tabel_tujuan_history TIDAK BOLEH dijalankan ketika boundary OPD menolak');
+    assert.strictEqual(parentUpdateCalled, false, 'RenstraTabelTujuan.update() (sinkronisasi status_revisi parent) TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+  } finally {
+    models.sequelize.transaction = originalTransaction;
+    models.sequelize.query = originalQuery;
+    models.RenstraTabelTujuan.findByPk = originalFindByPk;
+    models.RenstraTabelTujuan.update = originalUpdate;
+  }
+});
+
+await test('tolakHistory — caller OPD BEDA dari target parent -> DITOLAK 403, UPDATE history TIDAK dijalankan', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_tabelTujuanController')];
+
+  const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+  let updateQueryRan = false;
+  const originalTransaction = models.sequelize.transaction;
+  const originalQuery = models.sequelize.query;
+  const originalFindByPk = models.RenstraTabelTujuan.findByPk;
+  models.sequelize.transaction = async () => fakeT;
+  models.sequelize.query = async (sql) => {
+    if (/SELECT renstra_tabel_tujuan_id FROM renstra_tabel_tujuan_history/.test(sql)) {
+      return [[{ renstra_tabel_tujuan_id: 99 }]];
+    }
+    if (/UPDATE renstra_tabel_tujuan_history/.test(sql)) {
+      updateQueryRan = true;
+      return [];
+    }
+    throw new Error(`Unexpected query in test: ${sql}`);
+  };
+  models.RenstraTabelTujuan.findByPk = async (id, options) => {
+    if (options && options.include) {
+      return { id: 99, opd_id: 2, opd: { id: 2, nama_opd: 'Dinas Uji Coba B' } };
+    }
+    return { id: 99, opd_id: 2 };
+  };
+
+  try {
+    const controller = require('../controllers/renstra_tabelTujuanController');
+    const req = {
+      params: { history_id: '7' },
+      body: {},
+      user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+    };
+    const res = fakeRes();
+    await controller.tolakHistory(req, res);
+
+    assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.strictEqual(res.body?.code, 'RENSTRA_TABEL_TUJUAN_OPD_FORBIDDEN');
+    assert.strictEqual(updateQueryRan, false, 'UPDATE renstra_tabel_tujuan_history TIDAK BOLEH dijalankan ketika boundary OPD menolak');
+  } finally {
+    models.sequelize.transaction = originalTransaction;
+    models.sequelize.query = originalQuery;
+    models.RenstraTabelTujuan.findByPk = originalFindByPk;
+  }
+});
+
+console.log('\n=== S4-02: dpaPergeseranController.js — boundary OPD pada Pergeseran/Perubahan ===');
+
+await test('createPergeseran — caller OPD BEDA dari Dpa sumber -> DITOLAK 403, DpaPergeseran.create TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/dpaPergeseranController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/dpaPergeseranController');
+
+      let createCalled = false;
+      const originalDpaFindByPk = models.Dpa.findByPk;
+      const originalCreate = models.DpaPergeseran.create;
+      models.Dpa.findByPk = async () => ({ id: 5, opd_id: 2 });
+      models.DpaPergeseran.create = async () => {
+        createCalled = true;
+        return { id: 1 };
+      };
+
+      try {
+        const req = {
+          params: { dpa_id: '5' },
+          body: {
+            tanggal: '2026-01-01',
+            alasan: 'Uji coba pergeseran',
+            items: [{ jenis: 'KURANG', jumlah_pergeseran: 100, kode_rekening: '5.1.01' }],
+          },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.createPergeseran(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'DPA_PERGESERAN_OPD_FORBIDDEN');
+        assert.strictEqual(createCalled, false, 'DpaPergeseran.create() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.Dpa.findByPk = originalDpaFindByPk;
+        models.DpaPergeseran.create = originalCreate;
+      }
+    }
+  );
+});
+
+await test('createPergeseran — caller OPD SAMA dengan Dpa sumber (non-SUPER_ADMIN) -> boundary MENGIZINKAN, tidak diblokir 403', async () => {
+  delete require.cache[require.resolve('../controllers/dpaPergeseranController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/dpaPergeseranController');
+
+      const originalDpaFindByPk = models.Dpa.findByPk;
+      const originalCount = models.DpaPergeseran.count;
+      const originalCreate = models.DpaPergeseran.create;
+      const originalBulkCreate = models.DpaPergeseranItem.bulkCreate;
+      models.Dpa.findByPk = async () => ({ id: 5, opd_id: 1 });
+      models.DpaPergeseran.count = async () => 0;
+      models.DpaPergeseran.create = async () => ({ id: 1 });
+      models.DpaPergeseranItem.bulkCreate = async () => [];
+
+      try {
+        const req = {
+          params: { dpa_id: '5' },
+          body: {
+            tanggal: '2026-01-01',
+            alasan: 'Uji coba pergeseran',
+            items: [{ jenis: 'KURANG', jumlah_pergeseran: 100, kode_rekening: '5.1.01' }],
+          },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.createPergeseran(req, res);
+
+        assert.notStrictEqual(res.statusCode, 403, `boundary TIDAK BOLEH menolak ketika caller dan Dpa sumber berada di OPD yang sama, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.notStrictEqual(res.body?.code, 'DPA_PERGESERAN_OPD_FORBIDDEN');
+      } finally {
+        models.Dpa.findByPk = originalDpaFindByPk;
+        models.DpaPergeseran.count = originalCount;
+        models.DpaPergeseran.create = originalCreate;
+        models.DpaPergeseranItem.bulkCreate = originalBulkCreate;
+      }
+    }
+  );
+});
+
+await test('setujuiPergeseran — caller OPD BEDA -> DITOLAK 403, pergeseran.update TIDAK dipanggil, sinkronisasi pagu TIDAK jalan', async () => {
+  delete require.cache[require.resolve('../controllers/dpaPergeseranController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/dpaPergeseranController');
+
+      let pergeseranUpdateCalled = false;
+      const originalDpaFindByPk = models.Dpa.findByPk;
+      const originalPergeseranFindByPk = models.DpaPergeseran.findByPk;
+      models.Dpa.findByPk = async () => ({ id: 5, opd_id: 2 });
+      models.DpaPergeseran.findByPk = async () => ({
+        id: 10,
+        dpa_id: 5,
+        status: 'DRAFT',
+        items: [],
+        async update() {
+          pergeseranUpdateCalled = true;
+        },
+      });
+
+      try {
+        const req = {
+          params: { id: '10' },
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.setujuiPergeseran(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'DPA_PERGESERAN_OPD_FORBIDDEN');
+        assert.strictEqual(pergeseranUpdateCalled, false, 'pergeseran.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak (approval & sinkronisasi pagu tidak boleh jalan)');
+      } finally {
+        models.Dpa.findByPk = originalDpaFindByPk;
+        models.DpaPergeseran.findByPk = originalPergeseranFindByPk;
+      }
+    }
+  );
+});
+
+await test('setujuiPergeseran — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide, AD-S4-02)', async () => {
+  delete require.cache[require.resolve('../controllers/dpaPergeseranController')];
+
+  const controller = require('../controllers/dpaPergeseranController');
+  const originalDpaFindByPk = models.Dpa.findByPk;
+  const originalPergeseranFindByPk = models.DpaPergeseran.findByPk;
+  models.Dpa.findByPk = async () => ({ id: 5, opd_id: 2 });
+  models.DpaPergeseran.findByPk = async () => ({
+    id: 10,
+    dpa_id: 5,
+    status: 'DRAFT',
+    items: [],
+    async update() {},
+  });
+
+  try {
+    const req = {
+      params: { id: '10' },
+      body: {},
+      user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+    };
+    const res = fakeRes();
+    await controller.setujuiPergeseran(req, res);
+
+    assert.notStrictEqual(res.statusCode, 403, `SUPER_ADMIN tidak boleh diblokir boundary OPD, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.notStrictEqual(res.body?.code, 'DPA_PERGESERAN_OPD_FORBIDDEN');
+  } finally {
+    models.Dpa.findByPk = originalDpaFindByPk;
+    models.DpaPergeseran.findByPk = originalPergeseranFindByPk;
+  }
+});
+
+await test('deletePergeseran — caller OPD BEDA -> DITOLAK 403, item destroy DAN parent destroy TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/dpaPergeseranController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/dpaPergeseranController');
+
+      let parentDestroyCalled = false;
+      let itemDestroyCalled = false;
+      const originalDpaFindByPk = models.Dpa.findByPk;
+      const originalPergeseranFindByPk = models.DpaPergeseran.findByPk;
+      const originalItemDestroy = models.DpaPergeseranItem.destroy;
+      models.Dpa.findByPk = async () => ({ id: 5, opd_id: 2 });
+      models.DpaPergeseran.findByPk = async () => ({
+        id: 10,
+        dpa_id: 5,
+        status: 'DRAFT',
+        async destroy() {
+          parentDestroyCalled = true;
+        },
+      });
+      models.DpaPergeseranItem.destroy = async () => {
+        itemDestroyCalled = true;
+      };
+
+      try {
+        const req = {
+          params: { id: '10' },
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.deletePergeseran(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'DPA_PERGESERAN_OPD_FORBIDDEN');
+        assert.strictEqual(itemDestroyCalled, false, 'DpaPergeseranItem.destroy() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+        assert.strictEqual(parentDestroyCalled, false, 'pergeseran.destroy() (parent) TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.Dpa.findByPk = originalDpaFindByPk;
+        models.DpaPergeseran.findByPk = originalPergeseranFindByPk;
+        models.DpaPergeseranItem.destroy = originalItemDestroy;
+      }
+    }
+  );
+});
+
+await test('savePerubahan — caller OPD BEDA dari Dpa (row yang sudah di-load) -> DITOLAK 403, DpaPerubahan.create/findOne TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/dpaPergeseranController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/dpaPergeseranController');
+
+      let perubahanFindOneCalled = false;
+      let perubahanCreateCalled = false;
+      const originalDpaFindByPk = models.Dpa.findByPk;
+      const originalFindOne = models.DpaPerubahan.findOne;
+      const originalCreate = models.DpaPerubahan.create;
+      models.Dpa.findByPk = async () => ({ id: 5, opd_id: 2, anggaran: 1000 });
+      models.DpaPerubahan.findOne = async () => {
+        perubahanFindOneCalled = true;
+        return null;
+      };
+      models.DpaPerubahan.create = async () => {
+        perubahanCreateCalled = true;
+        return { id: 1 };
+      };
+
+      try {
+        const req = {
+          params: { dpa_id: '5' },
+          body: { tanggal: '2026-01-01', alasan: 'Uji coba perubahan', pagu_menjadi: 1000 },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.savePerubahan(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'DPA_PERGESERAN_OPD_FORBIDDEN');
+        assert.strictEqual(perubahanFindOneCalled, false, 'DpaPerubahan.findOne() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+        assert.strictEqual(perubahanCreateCalled, false, 'DpaPerubahan.create() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.Dpa.findByPk = originalDpaFindByPk;
+        models.DpaPerubahan.findOne = originalFindOne;
+        models.DpaPerubahan.create = originalCreate;
+      }
+    }
+  );
+});
+
+await test('setujuiPerubahan — caller OPD BEDA (via DpaPerubahan.dpa_id -> Dpa.opd_id) -> DITOLAK 403, perubahan.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/dpaPergeseranController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/dpaPergeseranController');
+
+      let perubahanUpdateCalled = false;
+      const originalDpaFindByPk = models.Dpa.findByPk;
+      const originalPerubahanFindByPk = models.DpaPerubahan.findByPk;
+      models.Dpa.findByPk = async () => ({ id: 5, opd_id: 2 });
+      models.DpaPerubahan.findByPk = async () => ({
+        id: 20,
+        dpa_id: 5,
+        status: 'DRAFT',
+        async update() {
+          perubahanUpdateCalled = true;
+        },
+      });
+
+      try {
+        const req = {
+          params: { id: '20' },
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.setujuiPerubahan(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'DPA_PERGESERAN_OPD_FORBIDDEN');
+        assert.strictEqual(perubahanUpdateCalled, false, 'perubahan.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.Dpa.findByPk = originalDpaFindByPk;
+        models.DpaPerubahan.findByPk = originalPerubahanFindByPk;
+      }
+    }
+  );
+});
+
+await test('boundary OPD Pergeseran/Perubahan — resolusi kepemilikan gagal (error internal pada OpdPenanggungJawab.findOne) -> FAIL CLOSED 503, tidak ada mutation yang jalan', async () => {
+  delete require.cache[require.resolve('../controllers/dpaPergeseranController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      throw new Error('simulated DB error saat resolusi kepemilikan OPD');
+    }]],
+    async () => {
+      const controller = require('../controllers/dpaPergeseranController');
+
+      let pergeseranUpdateCalled = false;
+      const originalDpaFindByPk = models.Dpa.findByPk;
+      const originalPergeseranFindByPk = models.DpaPergeseran.findByPk;
+      models.Dpa.findByPk = async () => ({ id: 5, opd_id: 2 });
+      models.DpaPergeseran.findByPk = async () => ({
+        id: 10,
+        dpa_id: 5,
+        status: 'DRAFT',
+        items: [],
+        async update() {
+          pergeseranUpdateCalled = true;
+        },
+      });
+
+      try {
+        const req = {
+          params: { id: '10' },
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.setujuiPergeseran(req, res);
+
+        assert.strictEqual(res.statusCode, 503, `harus fail-closed 503, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'DPA_PERGESERAN_OPD_BOUNDARY_UNAVAILABLE');
+        assert.strictEqual(pergeseranUpdateCalled, false, 'pergeseran.update() TIDAK BOLEH dipanggil ketika resolusi kepemilikan gagal (fail-closed)');
+      } finally {
+        models.Dpa.findByPk = originalDpaFindByPk;
+        models.DpaPergeseran.findByPk = originalPergeseranFindByPk;
+      }
+    }
+  );
+});
+
 } // end runAllTests
 
 runAllTests().then(() => {
