@@ -1,0 +1,110 @@
+# CI generik Sprint 2 (S2-3) — install dependencies -> lint -> backend test
+# yang DB-independent -> frontend build -> governance checks.
+#
+# TIDAK MENGGANTIKAN atau menggabungkan planning-audit-verify.yml maupun
+# workflow-compliance-verify.yml (keduanya tetap berjalan terpisah, sudah
+# substantif). Workflow ini murni melengkapi cakupan CI dengan check umum
+# yang belum ada: lint, build frontend, dan test backend yang tidak butuh
+# MySQL.
+#
+# TIDAK menjalankan test yang butuh koneksi MySQL lokal Owner (mis.
+# test:renja-integration, test:renja-status-migration-integration,
+# db:restore:verify) — sesuai instruksi eksplisit: CI tidak boleh terhubung
+# ke database Owner atau menjalankan backup database aplikasi. Backup/restore
+# database adalah operational control di environment aplikasi, bukan
+# CI artifact.
+name: ci-generic
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+# Sprint 2, S2-03 (2026-08-16): minimum GITHUB_TOKEN permission. Kedua job
+# di bawah hanya melakukan checkout (read) + menjalankan command lokal
+# (lint/test/build) — tidak pernah menulis ke repo, tidak comment PR, tidak
+# membuat release/artifact GitHub. contents: read cukup dan aman; TIDAK ada
+# job yang genuinely butuh permission lebih luas.
+permissions:
+  contents: read
+
+jobs:
+  backend-lint-and-db-independent-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Backend lint mendelegasikan ke instalasi ESLint milik frontend
+      # (lihat backend/package.json "lint" script) - frontend deps wajib
+      # terinstal dulu sebelum backend lint bisa jalan.
+      - name: Install frontend dependencies (dibutuhkan backend lint)
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Backend lint
+        working-directory: backend
+        run: npm run lint
+
+      - name: Backend test - Sprint 1 Renja status sync (unit, DB-independent)
+        working-directory: backend
+        run: npm run test:renja-status-sync
+
+      - name: Backend test - Sprint 1 role authorization regression (unit, DB-independent)
+        working-directory: backend
+        run: npm run test:allow-roles-regression
+
+      - name: Backend test - Sprint 2 backup/restore engine (unit, DB-independent)
+        working-directory: backend
+        run: npm run db:backup:test
+
+      - name: Backend test - Sprint 2 uploads backup/restore engine (unit, DB-independent, synthetic fixtures only)
+        working-directory: backend
+        run: npm run db:backup:uploads:test
+
+      # CATATAN: workflowComplianceValidationSelfTest.js SENGAJA tidak
+      # melakukan full repo scan (lihat docstring file tsb - butuh daftar
+      # model eksplisit sebagai argumen, bukan --all/flag scan-semua yang
+      # tidak ada). Governance check untuk model baru sudah dicakup terpisah
+      # oleh .github/workflows/workflow-compliance-verify.yml (existing,
+      # tidak diubah) - tidak diduplikasi di sini.
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Frontend test (vitest, DB-independent)
+        working-directory: frontend
+        run: npm run test
+
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build

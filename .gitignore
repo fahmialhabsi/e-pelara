@@ -48,3 +48,20 @@ e-pelara/
 *.pdf
 *.docx
 ~$*
+
+# Sprint 2 — Automated Database Backup artifacts (Owner, 2026-08-08).
+# Direktori khusus untuk databaseBackup.js/databaseRestoreVerify.js — berisi
+# dump .sql, manifest .manifest.json, dan log terstruktur .log.jsonl.
+# Diignore sebagai SATU DIREKTORI (bukan hanya pola ekstensi *.sql di atas)
+# supaya manifest/log yang berisi informasi operasional (walau sudah
+# diredaksi dari credential) tidak pernah ter-commit tidak sengaja.
+backups/database/
+
+# Sprint 2 — Uploads (Filesystem) Backup artifacts, S2-01C (Owner decision
+# S2-D01, 2026-08-16). Direktori khusus untuk databaseBackupUploads.js/
+# uploadsRestoreVerify.js — berisi archive .tar.gz, manifest .manifest.json,
+# dan log .log.jsonl. Diignore sebagai SATU DIREKTORI, sibling dari
+# backups/database/ di atas, dengan alasan identik: mencegah archive berisi
+# dokumen pemerintah persisten (walau metadata manifest sudah bebas nama
+# file individual/kredensial) ter-commit tidak sengaja.
+backups/uploads/
