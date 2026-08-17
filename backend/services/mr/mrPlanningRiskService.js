@@ -31,7 +31,80 @@ const {
   MrPlanningContextItem,
   MrReferenceItem,
   MrRiskMatrix,
+  OpdPenanggungJawab,
 } = db;
+
+// Sprint 7 — S7R: MR Planning Risk OPD authorization boundary.
+// Risk-bounded reusable helper (bukan generic MR-family framework) —
+// dipakai oleh mrRiskService.js, mrApprovalService.js,
+// mrPlanningRiskService.js (file ini), dan mrPlanningRiskRecallService.js.
+// Semua empat file beroperasi pada model MrPlanningRisk/RiskModel yang
+// SAMA (lihat mr_planningRiskController.js REQUIRED_MODELS.RiskModel =
+// "MrPlanningRisk"), jadi satu resolusi opd_id numerik lewat
+// OpdPenanggungJawab (konvensi existing dari rkaController/rkpdController)
+// cukup dan tidak menimbulkan duplikasi logic tambahan.
+// SUPER_ADMIN dikecualikan (otoritas tenant-wide, S4-DISC-003 precedent).
+// Fail closed jika resolusi kepemilikan gagal karena error internal.
+async function resolveMrPlanningRiskOpdBoundary({ user, targetOpdId }) {
+  if (user?.role === 'SUPER_ADMIN') {
+    return { ok: true, superAdmin: true, callerOpdId: null };
+  }
+
+  if (targetOpdId === null || targetOpdId === undefined) {
+    // Target belum/tidak punya opd_id — biarkan alur existing (404/422)
+    // yang menangani, bukan boundary check ini.
+    return { ok: true, superAdmin: false, callerOpdId: null };
+  }
+
+  const opdName = user?.opd;
+  if (!opdName) {
+    return {
+      ok: false,
+      status: 403,
+      error: {
+        message: 'Anda tidak berwenang melakukan aksi ini pada MR Planning Risk milik OPD lain.',
+        code: 'MR_PLANNING_RISK_OPD_FORBIDDEN',
+      },
+    };
+  }
+
+  let callerOpdId = null;
+  try {
+    const opdRow = await OpdPenanggungJawab.findOne({ where: { nama_opd: opdName } });
+    callerOpdId = opdRow?.id ?? null;
+  } catch (err) {
+    return {
+      ok: false,
+      status: 503,
+      error: {
+        message: 'Batas kewenangan OPD untuk MR Planning Risk tidak dapat diverifikasi saat ini. Aksi ditolak sementara demi keamanan data — silakan coba lagi.',
+        code: 'MR_PLANNING_RISK_OPD_BOUNDARY_UNAVAILABLE',
+      },
+    };
+  }
+
+  if (callerOpdId === null || callerOpdId !== targetOpdId) {
+    return {
+      ok: false,
+      status: 403,
+      error: {
+        message: 'Anda tidak berwenang melakukan aksi ini pada MR Planning Risk milik OPD lain.',
+        code: 'MR_PLANNING_RISK_OPD_FORBIDDEN',
+      },
+    };
+  }
+
+  return { ok: true, superAdmin: false, callerOpdId };
+}
+
+// Melempar ServiceError yang konsisten dengan pola error existing di file
+// ini (lihat class ServiceError di bawah) dari hasil
+// resolveMrPlanningRiskOpdBoundary yang ok:false.
+function throwMrPlanningRiskOpdBoundaryError(boundaryResult) {
+  throw new ServiceError(boundaryResult.error.message, boundaryResult.status, {
+    code: boundaryResult.error.code,
+  });
+}
 
 const USER_INPUT_FIELDS = [
   'nama_risiko',
@@ -1085,8 +1158,14 @@ const repairPlaceholderRiskSources = async ({
       updated_context_item: null,
     };
 
-    let contextItem = null;
+    // S7R: kebijakan CEA — FAIL WHOLE REQUEST, NO PARTIAL MUTATION.
+    // Fase 1 (VALIDASI): resolve & authorize SEMUA target (context item +
+    // setiap risk di riskIds[]) TERLEBIH DAHULU. Jika ADA satu saja target
+    // di luar OPD pemanggil (non-SUPER_ADMIN), seluruh request DITOLAK dan
+    // NOL mutasi terjadi — tidak ada mutasi sebagian sebelum penolakan
+    // belakangan (dilarang eksplisit oleh mandat Sprint 7 §7).
 
+    let contextItem = null;
     if (Number.isInteger(normalizedContextItemId) && normalizedContextItemId > 0) {
       contextItem = await MrPlanningContextItem.findByPk(normalizedContextItemId, {
         transaction,
@@ -1098,6 +1177,40 @@ const repairPlaceholderRiskSources = async ({
         });
       }
 
+      const boundaryContextItem = await resolveMrPlanningRiskOpdBoundary({
+        user,
+        targetOpdId: contextItem?.opd_id ?? null,
+      });
+      if (!boundaryContextItem.ok) {
+        throwMrPlanningRiskOpdBoundaryError(boundaryContextItem);
+      }
+    }
+
+    const loadedRisks = [];
+    for (const rawRiskId of normalizedRiskIds) {
+      const risk = await MrPlanningRisk.findByPk(rawRiskId, { transaction });
+
+      if (!risk) {
+        continue;
+      }
+
+      const boundaryRisk = await resolveMrPlanningRiskOpdBoundary({
+        user,
+        targetOpdId: risk?.opd_id ?? null,
+      });
+      if (!boundaryRisk.ok) {
+        // Satu target di luar OPD pemanggil -> TOLAK SELURUH request.
+        // Belum ada mutasi apa pun yang terjadi sampai titik ini.
+        throwMrPlanningRiskOpdBoundaryError(boundaryRisk);
+      }
+
+      loadedRisks.push({ id: rawRiskId, risk });
+    }
+
+    // Fase 2 (MUTASI): semua target sudah divalidasi berwenang — baru
+    // sekarang mutasi dijalankan.
+
+    if (contextItem) {
       const itemPlain = toPlain(contextItem);
       const currentMetadata = itemPlain.metadata_json || {};
       const nextMetadata = buildMetadata(currentMetadata, payload.metadata_json, {
@@ -1154,13 +1267,7 @@ const repairPlaceholderRiskSources = async ({
       result.updated_context_item = toPlain(contextItem);
     }
 
-    for (const rawRiskId of normalizedRiskIds) {
-      const risk = await MrPlanningRisk.findByPk(rawRiskId, { transaction });
-
-      if (!risk) {
-        continue;
-      }
-
+    for (const { id: rawRiskId, risk } of loadedRisks) {
       const beforeJson = clonePlain(risk);
       const nextPayload = {};
 
@@ -2072,6 +2179,18 @@ const createRiskFromContext = async ({ contextId, body = {}, user = null }) => {
   return sequelize.transaction(async (transaction) => {
     const context = await findPlanningContext(contextId, transaction);
 
+    // S7R-006: caller HARUS berwenang atas OPD pemilik context yang dipilih
+    // SEBELUM Risk dibuat dari context tersebut — mencegah OPD-scoped
+    // ADMINISTRATOR membuat Risk di bawah context milik OPD lain sekadar
+    // dengan menebak/mengirim contextId OPD lain.
+    const boundaryCreateFromContext = await resolveMrPlanningRiskOpdBoundary({
+      user,
+      targetOpdId: context?.opd_id ?? null,
+    });
+    if (!boundaryCreateFromContext.ok) {
+      throwMrPlanningRiskOpdBoundaryError(boundaryCreateFromContext);
+    }
+
     const contextItem = await resolveContextItemForRiskCreate({
       contextId,
       body,
@@ -2150,6 +2269,22 @@ const createProposalIntake = async ({ body = {}, user = null }) => {
   }
 
   assertRequired(payload, getRequiredFieldsByProposalSource(sourceRef));
+
+  // S7R: cabang non-Renstra membuat MrPlanningContext BARU memakai
+  // payload.opd_id yang berasal langsung dari request body
+  // (PROPOSAL_INTAKE_ALLOWED_FIELDS mencakup opd_id). body.opd_id BUKAN
+  // bukti otorisasi — caller OPD-scoped harus divalidasi terhadap OPD-nya
+  // sendiri SEBELUM context/Risk baru dibuat. Tidak menulis ulang
+  // (silently rewrite) opd_id yang tidak berwenang — permintaan yang tidak
+  // cocok DITOLAK, bukan diam-diam diarahkan ke OPD caller.
+  const intendedOpdId = toPositiveIntOrNull(payload.opd_id);
+  const boundaryProposalIntake = await resolveMrPlanningRiskOpdBoundary({
+    user,
+    targetOpdId: intendedOpdId,
+  });
+  if (!boundaryProposalIntake.ok) {
+    throwMrPlanningRiskOpdBoundaryError(boundaryProposalIntake);
+  }
 
   return sequelize.transaction(async (transaction) => {
     const context = await ensureProposalContext({
@@ -2235,6 +2370,16 @@ const updateDraftRisk = async ({ riskId, body = {}, user = null }) => {
     const risk = await MrPlanningRisk.findByPk(riskId, { transaction });
 
     ensureDraftEditable(risk);
+
+    // S7R-004: caller HARUS berwenang atas OPD pemilik Risk existing
+    // sebelum draft diubah.
+    const boundaryUpdateDraft = await resolveMrPlanningRiskOpdBoundary({
+      user,
+      targetOpdId: risk?.opd_id ?? null,
+    });
+    if (!boundaryUpdateDraft.ok) {
+      throwMrPlanningRiskOpdBoundaryError(boundaryUpdateDraft);
+    }
 
     const beforeJson = toPlain(risk);
     const allowedPayload = pickAllowedFields(body);
@@ -2369,6 +2514,16 @@ const submitRiskForVerification = async ({ riskId, user = null }) => {
 
     ensureDraftEditable(risk);
 
+    // S7R: caller HARUS berwenang atas OPD pemilik Risk existing sebelum
+    // diajukan untuk verifikasi.
+    const boundarySubmit = await resolveMrPlanningRiskOpdBoundary({
+      user,
+      targetOpdId: risk?.opd_id ?? null,
+    });
+    if (!boundarySubmit.ok) {
+      throwMrPlanningRiskOpdBoundaryError(boundarySubmit);
+    }
+
     const beforeJson = toPlain(risk);
 
     await risk.update(
@@ -2410,6 +2565,16 @@ const verifyRisk = async ({ riskId, user = null }) => {
 
     if (!risk) {
       throw new ServiceError('Risk tidak ditemukan.', 404);
+    }
+
+    // S7R: caller HARUS berwenang atas OPD pemilik Risk existing sebelum
+    // diverifikasi.
+    const boundaryVerify = await resolveMrPlanningRiskOpdBoundary({
+      user,
+      targetOpdId: risk?.opd_id ?? null,
+    });
+    if (!boundaryVerify.ok) {
+      throwMrPlanningRiskOpdBoundaryError(boundaryVerify);
     }
 
     const plain = toPlain(risk);
@@ -2569,6 +2734,18 @@ const createRevisionFromApprovedRisk = async ({ riskId, body = {}, user = null }
     const risk = await MrPlanningRisk.findByPk(riskId, { transaction });
 
     ensureApprovedRevisable(risk);
+
+    // S7R: caller HARUS berwenang atas OPD pemilik Risk existing sebelum
+    // revisi dari approved dibuat. USER_INPUT_FIELDS tidak mengekspos
+    // opd_id, jadi tidak ada guard reassignment terpisah yang diperlukan
+    // di sini (lihat Pre-Sprint 7 evidence).
+    const boundaryRevisionApproved = await resolveMrPlanningRiskOpdBoundary({
+      user,
+      targetOpdId: risk?.opd_id ?? null,
+    });
+    if (!boundaryRevisionApproved.ok) {
+      throwMrPlanningRiskOpdBoundaryError(boundaryRevisionApproved);
+    }
 
     const beforeJson = clonePlain(risk);
     assertFinalReportNotOverwrite({
@@ -2869,6 +3046,13 @@ module.exports = {
   USER_INPUT_FIELDS,
   TECHNICAL_BLOCKED_FIELDS,
   WORKFLOW_STATUS,
+
+  // Sprint 7 — S7R: Risk-bounded OPD authorization boundary helper, dipakai
+  // ulang oleh mrRiskService.js, mrApprovalService.js, dan
+  // mrPlanningRiskRecallService.js (SEMUA beroperasi pada model
+  // MrPlanningRisk yang sama).
+  resolveMrPlanningRiskOpdBoundary,
+  throwMrPlanningRiskOpdBoundaryError,
 
   createProposalIntake,
   createRiskFromContext,

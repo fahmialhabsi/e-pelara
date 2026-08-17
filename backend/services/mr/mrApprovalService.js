@@ -41,6 +41,30 @@ const {
   buildAndWriteAuditLog,
 } = require("../../helpers/mr/mrAuditHelper");
 
+// Sprint 7 — S7R-003: mrApprovalService.verifikasiHistory HANYA dipanggil
+// oleh mr_planningRiskController.js (confirmed — tidak ada controller lain
+// yang memakai mrApprovalService), jadi menerapkan boundary Risk-bounded
+// di sini aman dan tidak memengaruhi entity MR lain.
+const {
+  resolveMrPlanningRiskOpdBoundary,
+} = require("./mrPlanningRiskService");
+
+async function assertMrApprovalOpdBoundaryOrThrow({ request, targetOpdId }) {
+  const boundaryResult = await resolveMrPlanningRiskOpdBoundary({
+    user: request?.user ?? null,
+    targetOpdId,
+  });
+  if (!boundaryResult.ok) {
+    throw createGovernanceError({
+      message: boundaryResult.error.message,
+      status: boundaryResult.status,
+      code: boundaryResult.error.code,
+      auditMode: true,
+    });
+  }
+  return boundaryResult;
+}
+
 const DEFAULT_APPROVAL_BLOCKED_ACTIVE_FIELDS = Object.freeze([
   "id",
   "created_at",
@@ -165,6 +189,13 @@ const verifikasiHistory = async ({
       history,
       historyForeignKey,
       transaction,
+    });
+
+    // S7R-003: caller HARUS berwenang atas OPD pemilik active Risk record
+    // SEBELUM verifikasi history dijalankan.
+    await assertMrApprovalOpdBoundaryOrThrow({
+      request,
+      targetOpdId: activeRecord?.opd_id ?? null,
     });
 
     const beforeHistoryJson = getPlainJson(history);

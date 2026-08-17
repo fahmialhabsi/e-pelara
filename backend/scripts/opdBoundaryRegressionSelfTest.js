@@ -2582,6 +2582,2010 @@ await test('renstra_subkegiatanController.delete tidak dimodifikasi Sprint 6 —
   assert.strictEqual(typeof controller.delete, 'function', 'exports.delete harus tetap ada dan tidak diubah Sprint 6');
 });
 
+
+console.log('\n=== S7-R001/002: mrRiskService.updateRisk — boundary OPD (Risk-bounded, S7R helper reuse) ===');
+
+await test('mrRiskService.updateRisk — caller OPD BEDA dari target -> DITOLAK 403, record.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrRiskService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const mrRiskService = require('../services/mr/mrRiskService');
+
+      const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async () => fakeT;
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 2, // target milik OPD id=2
+        status_revisi: 'draft',
+        versi: 1,
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        await mrRiskService.updateRisk({
+          sequelize: models.sequelize,
+          RiskModel: models.MrPlanningRisk,
+          RiskHistoryModel: models.MrPlanningRiskHistory,
+          models,
+          id: 5,
+          body: { nama_risiko: 'Updated' },
+          userId: 5,
+          request: { user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } }, // resolves opd_id=1
+        });
+        assert.fail('updateRisk seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.status, 403, `harus 403, didapat ${error.status}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'record.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrRiskService.updateRisk — caller OPD SAMA dengan target -> boundary MENGIZINKAN (error lanjutan, jika ada, BUKAN kode boundary)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrRiskService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const mrRiskService = require('../services/mr/mrRiskService');
+
+      const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async () => fakeT;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 1, // target JUGA milik OPD id=1
+        status_revisi: 'draft',
+        versi: 1,
+        update: async () => {},
+      });
+
+      try {
+        await mrRiskService.updateRisk({
+          sequelize: models.sequelize,
+          RiskModel: models.MrPlanningRisk,
+          RiskHistoryModel: models.MrPlanningRiskHistory,
+          models,
+          id: 5,
+          body: { nama_risiko: 'Updated' },
+          userId: 5,
+          request: { user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } },
+        });
+      } catch (error) {
+        assert.notStrictEqual(
+          error.code,
+          'MR_PLANNING_RISK_OPD_FORBIDDEN',
+          'boundary TIDAK BOLEH menolak ketika caller dan target berada di OPD yang sama'
+        );
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrRiskService.updateRisk — reassignment via body.opd_id ke OPD lain -> DITOLAK 403, record.update TIDAK dipanggil (ownership reassignment bypass guard)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrRiskService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const mrRiskService = require('../services/mr/mrRiskService');
+
+      const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async () => fakeT;
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 1, // record milik caller sendiri
+        status_revisi: 'draft',
+        versi: 1,
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        await mrRiskService.updateRisk({
+          sequelize: models.sequelize,
+          RiskModel: models.MrPlanningRisk,
+          RiskHistoryModel: models.MrPlanningRiskHistory,
+          models,
+          id: 5,
+          body: { opd_id: 99 }, // mencoba memindahkan Risk ke OPD lain
+          userId: 5,
+          request: { user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } },
+        });
+        assert.fail('updateRisk seharusnya melempar error reassignment, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.status, 403, `harus 403, didapat ${error.status}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_PLANNING_RISK_OPD_REASSIGN_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'record.update() TIDAK BOLEH dipanggil ketika reassignment ditolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrRiskService.updateRisk — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrRiskService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      opdLookupCalled = true;
+      return null;
+    }]],
+    async () => {
+      const mrRiskService = require('../services/mr/mrRiskService');
+
+      const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async () => fakeT;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 2,
+        status_revisi: 'draft',
+        versi: 1,
+        update: async () => {},
+      });
+
+      try {
+        await mrRiskService.updateRisk({
+          sequelize: models.sequelize,
+          RiskModel: models.MrPlanningRisk,
+          RiskHistoryModel: models.MrPlanningRiskHistory,
+          models,
+          id: 5,
+          body: { opd_id: 3 }, // SUPER_ADMIN boleh reassign
+          userId: 5,
+          request: { user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' } },
+        });
+      } catch (error) {
+        assert.notStrictEqual(error.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', 'SUPER_ADMIN tidak boleh diblokir boundary OPD');
+        assert.notStrictEqual(error.code, 'MR_PLANNING_RISK_OPD_REASSIGN_FORBIDDEN', 'SUPER_ADMIN tidak boleh diblokir guard reassignment');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+      }
+      assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup OpdPenanggungJawab sama sekali');
+    }
+  );
+});
+
+await test('mrRiskService.updateRisk — resolusi kepemilikan OPD gagal (error internal) -> FAIL CLOSED 503, record.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrRiskService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      throw new Error('simulated DB error saat resolusi kepemilikan OPD');
+    }]],
+    async () => {
+      const mrRiskService = require('../services/mr/mrRiskService');
+
+      const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async () => fakeT;
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 2,
+        status_revisi: 'draft',
+        versi: 1,
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        await mrRiskService.updateRisk({
+          sequelize: models.sequelize,
+          RiskModel: models.MrPlanningRisk,
+          RiskHistoryModel: models.MrPlanningRiskHistory,
+          models,
+          id: 5,
+          body: {},
+          userId: 5,
+          request: { user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } },
+        });
+        assert.fail('updateRisk seharusnya melempar error fail-closed, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.status, 503, `harus fail-closed 503, didapat ${error.status}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_PLANNING_RISK_OPD_BOUNDARY_UNAVAILABLE');
+        assert.strictEqual(updateCalled, false, 'record.update() TIDAK BOLEH dipanggil ketika resolusi kepemilikan gagal (fail-closed)');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+console.log('\n=== S7-R002: mrRiskService.createRevisi — boundary OPD ===');
+
+await test('mrRiskService.createRevisi — caller OPD BEDA dari target -> DITOLAK 403, record.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrRiskService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const mrRiskService = require('../services/mr/mrRiskService');
+
+      const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async () => fakeT;
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 2,
+        status_revisi: 'approved',
+        versi: 1,
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        await mrRiskService.createRevisi({
+          sequelize: models.sequelize,
+          RiskModel: models.MrPlanningRisk,
+          RiskHistoryModel: models.MrPlanningRiskHistory,
+          models,
+          id: 5,
+          body: {},
+          userId: 5,
+          request: { user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } },
+        });
+        assert.fail('createRevisi seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.status, 403, `harus 403, didapat ${error.status}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'record.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrRiskService.createRevisi — caller OPD SAMA dengan target -> boundary MENGIZINKAN (error lanjutan, jika ada, BUKAN kode boundary)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrRiskService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const mrRiskService = require('../services/mr/mrRiskService');
+
+      const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async () => fakeT;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 1,
+        status_revisi: 'approved',
+        versi: 1,
+        update: async () => {},
+      });
+
+      try {
+        await mrRiskService.createRevisi({
+          sequelize: models.sequelize,
+          RiskModel: models.MrPlanningRisk,
+          RiskHistoryModel: models.MrPlanningRiskHistory,
+          models,
+          id: 5,
+          body: {},
+          userId: 5,
+          request: { user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } },
+        });
+      } catch (error) {
+        assert.notStrictEqual(
+          error.code,
+          'MR_PLANNING_RISK_OPD_FORBIDDEN',
+          'boundary TIDAK BOLEH menolak ketika caller dan target berada di OPD yang sama'
+        );
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrRiskService.createRevisi — reassignment via body.opd_id ke OPD lain -> DITOLAK 403, record.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrRiskService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const mrRiskService = require('../services/mr/mrRiskService');
+
+      const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async () => fakeT;
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 1,
+        status_revisi: 'approved',
+        versi: 1,
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        await mrRiskService.createRevisi({
+          sequelize: models.sequelize,
+          RiskModel: models.MrPlanningRisk,
+          RiskHistoryModel: models.MrPlanningRiskHistory,
+          models,
+          id: 5,
+          body: { opd_id: 99 },
+          userId: 5,
+          request: { user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } },
+        });
+        assert.fail('createRevisi seharusnya melempar error reassignment, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.status, 403, `harus 403, didapat ${error.status}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_PLANNING_RISK_OPD_REASSIGN_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'record.update() TIDAK BOLEH dipanggil ketika reassignment ditolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrRiskService.createRevisi — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrRiskService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      opdLookupCalled = true;
+      return null;
+    }]],
+    async () => {
+      const mrRiskService = require('../services/mr/mrRiskService');
+
+      const fakeT = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async () => fakeT;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 2,
+        status_revisi: 'approved',
+        versi: 1,
+        update: async () => {},
+      });
+
+      try {
+        await mrRiskService.createRevisi({
+          sequelize: models.sequelize,
+          RiskModel: models.MrPlanningRisk,
+          RiskHistoryModel: models.MrPlanningRiskHistory,
+          models,
+          id: 5,
+          body: {},
+          userId: 5,
+          request: { user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' } },
+        });
+      } catch (error) {
+        assert.notStrictEqual(error.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', 'SUPER_ADMIN tidak boleh diblokir boundary OPD');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+      }
+      assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup OpdPenanggungJawab sama sekali');
+    }
+  );
+});
+
+console.log('\n=== S7-R005: mrRiskService.createRisk — boundary OPD (payload.opd_id bukan bukti otorisasi) ===');
+
+await test('mrRiskService.createRisk — payload.opd_id milik OPD LAIN -> DITOLAK 403, RiskModel.create TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrRiskService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const mrRiskService = require('../services/mr/mrRiskService');
+
+      const fakeT = { commit: async () => {}, rollback: async () => {} };
+      const originalTransaction = models.sequelize.transaction;
+      const originalCreate = models.MrPlanningRisk.create;
+      models.sequelize.transaction = async () => fakeT;
+
+      let createCalled = false;
+      models.MrPlanningRisk.create = async () => {
+        createCalled = true;
+        return {};
+      };
+
+      try {
+        await mrRiskService.createRisk({
+          sequelize: models.sequelize,
+          RiskModel: models.MrPlanningRisk,
+          RiskHistoryModel: models.MrPlanningRiskHistory,
+          models,
+          body: {
+            renstra_id: 1,
+            indikator_id: 1,
+            stage: 'tujuan',
+            ref_id: 1,
+            nama_risiko: 'Uji coba risiko',
+            opd_id: 2, // OPD lain, bukan OPD caller
+          },
+          userId: 5,
+          request: { user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } }, // resolves opd_id=1
+        });
+        assert.fail('createRisk seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.status, 403, `harus 403, didapat ${error.status}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN');
+        assert.strictEqual(createCalled, false, 'RiskModel.create() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.create = originalCreate;
+      }
+    }
+  );
+});
+
+await test('mrRiskService.createRisk — payload.opd_id milik OPD SENDIRI -> boundary MENGIZINKAN (error lanjutan, jika ada, BUKAN kode boundary)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrRiskService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const mrRiskService = require('../services/mr/mrRiskService');
+
+      const fakeT = { commit: async () => {}, rollback: async () => {} };
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeT;
+
+      try {
+        await mrRiskService.createRisk({
+          sequelize: models.sequelize,
+          RiskModel: models.MrPlanningRisk,
+          RiskHistoryModel: models.MrPlanningRiskHistory,
+          models,
+          body: {
+            renstra_id: 1,
+            indikator_id: 1,
+            stage: 'tujuan',
+            ref_id: 1,
+            nama_risiko: 'Uji coba risiko',
+            opd_id: 1, // OPD SENDIRI
+          },
+          userId: 5,
+          request: { user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } },
+        });
+      } catch (error) {
+        assert.notStrictEqual(
+          error.code,
+          'MR_PLANNING_RISK_OPD_FORBIDDEN',
+          'boundary TIDAK BOLEH menolak ketika payload.opd_id adalah OPD caller sendiri'
+        );
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+      }
+    }
+  );
+});
+
+await test('mrRiskService.createRisk — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrRiskService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      opdLookupCalled = true;
+      return null;
+    }]],
+    async () => {
+      const mrRiskService = require('../services/mr/mrRiskService');
+
+      const fakeT = { commit: async () => {}, rollback: async () => {} };
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeT;
+
+      try {
+        await mrRiskService.createRisk({
+          sequelize: models.sequelize,
+          RiskModel: models.MrPlanningRisk,
+          RiskHistoryModel: models.MrPlanningRiskHistory,
+          models,
+          body: {
+            renstra_id: 1,
+            indikator_id: 1,
+            stage: 'tujuan',
+            ref_id: 1,
+            nama_risiko: 'Uji coba risiko',
+            opd_id: 2, // OPD manapun, SUPER_ADMIN tidak dibatasi
+          },
+          userId: 5,
+          request: { user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' } },
+        });
+      } catch (error) {
+        assert.notStrictEqual(error.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', 'SUPER_ADMIN tidak boleh diblokir boundary OPD');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+      }
+      assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup OpdPenanggungJawab sama sekali');
+    }
+  );
+});
+
+console.log('\n=== S7-R003: mrApprovalService.verifikasiHistory — boundary OPD (Risk-bounded, dipakai HANYA oleh mr_planningRiskController) ===');
+
+await test('mrApprovalService.verifikasiHistory — caller OPD BEDA dari active Risk pemilik history -> DITOLAK 403, activeRecord.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrApprovalService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const mrApprovalService = require('../services/mr/mrApprovalService');
+
+      const fakeT = { commit: async () => {}, rollback: async () => {} };
+      let activeUpdateCalled = false;
+      const HistoryModel = {
+        findByPk: async () => ({ id: 7, mr_planning_risk_id: 5, status_revisi: 'draft' }),
+      };
+      const ActiveModel = {
+        findByPk: async () => ({
+          id: 5,
+          opd_id: 2, // target milik OPD id=2
+          update: async () => {
+            activeUpdateCalled = true;
+          },
+        }),
+      };
+
+      try {
+        await mrApprovalService.verifikasiHistory({
+          sequelize: { transaction: async () => fakeT },
+          ActiveModel,
+          HistoryModel,
+          historyId: 7,
+          userId: 5,
+          request: { user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } }, // resolves opd_id=1
+        });
+        assert.fail('verifikasiHistory seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.status, 403, `harus 403, didapat ${error.status}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN');
+        assert.strictEqual(activeUpdateCalled, false, 'activeRecord.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      }
+    }
+  );
+});
+
+await test('mrApprovalService.verifikasiHistory — caller OPD SAMA dengan active Risk pemilik history -> boundary MENGIZINKAN, verifikasi berhasil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrApprovalService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const mrApprovalService = require('../services/mr/mrApprovalService');
+
+      const fakeT = { commit: async () => {}, rollback: async () => {} };
+      let activeUpdateCalled = false;
+      let historyUpdateCalled = false;
+      const HistoryModel = {
+        findByPk: async () => ({
+          id: 7,
+          mr_planning_risk_id: 5,
+          status_revisi: 'draft',
+          update: async () => {
+            historyUpdateCalled = true;
+          },
+        }),
+      };
+      const ActiveModel = {
+        findByPk: async () => ({
+          id: 5,
+          opd_id: 1, // target JUGA milik OPD id=1
+          update: async () => {
+            activeUpdateCalled = true;
+          },
+        }),
+      };
+      const AuditModel = null;
+
+      const result = await mrApprovalService.verifikasiHistory({
+        sequelize: { transaction: async () => fakeT },
+        ActiveModel,
+        HistoryModel,
+        AuditModel,
+        historyId: 7,
+        userId: 5,
+        request: { user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } },
+      });
+
+      assert.ok(result, 'verifikasiHistory harus berhasil ketika caller dan target berada di OPD yang sama');
+      assert.strictEqual(activeUpdateCalled, true, 'activeRecord.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      assert.strictEqual(historyUpdateCalled, true, 'history.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+    }
+  );
+});
+
+await test('mrApprovalService.verifikasiHistory — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrApprovalService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      opdLookupCalled = true;
+      return null;
+    }]],
+    async () => {
+      const mrApprovalService = require('../services/mr/mrApprovalService');
+
+      const fakeT = { commit: async () => {}, rollback: async () => {} };
+      let activeUpdateCalled = false;
+      const HistoryModel = {
+        findByPk: async () => ({
+          id: 7,
+          mr_planning_risk_id: 5,
+          status_revisi: 'draft',
+          update: async () => {},
+        }),
+      };
+      const ActiveModel = {
+        findByPk: async () => ({
+          id: 5,
+          opd_id: 2,
+          update: async () => {
+            activeUpdateCalled = true;
+          },
+        }),
+      };
+
+      const result = await mrApprovalService.verifikasiHistory({
+        sequelize: { transaction: async () => fakeT },
+        ActiveModel,
+        HistoryModel,
+        historyId: 7,
+        userId: 5,
+        request: { user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' } },
+      });
+
+      assert.ok(result, 'verifikasiHistory harus berhasil untuk SUPER_ADMIN');
+      assert.strictEqual(activeUpdateCalled, true, 'activeRecord.update() HARUS dipanggil untuk SUPER_ADMIN');
+      assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup OpdPenanggungJawab sama sekali');
+    }
+  );
+});
+
+await test('mrApprovalService.verifikasiHistory — resolusi kepemilikan OPD gagal (error internal) -> FAIL CLOSED 503, activeRecord.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrApprovalService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      throw new Error('simulated DB error saat resolusi kepemilikan OPD');
+    }]],
+    async () => {
+      const mrApprovalService = require('../services/mr/mrApprovalService');
+
+      const fakeT = { commit: async () => {}, rollback: async () => {} };
+      let activeUpdateCalled = false;
+      const HistoryModel = {
+        findByPk: async () => ({ id: 7, mr_planning_risk_id: 5, status_revisi: 'draft' }),
+      };
+      const ActiveModel = {
+        findByPk: async () => ({
+          id: 5,
+          opd_id: 2,
+          update: async () => {
+            activeUpdateCalled = true;
+          },
+        }),
+      };
+
+      try {
+        await mrApprovalService.verifikasiHistory({
+          sequelize: { transaction: async () => fakeT },
+          ActiveModel,
+          HistoryModel,
+          historyId: 7,
+          userId: 5,
+          request: { user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } },
+        });
+        assert.fail('verifikasiHistory seharusnya melempar error fail-closed, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.status, 503, `harus fail-closed 503, didapat ${error.status}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_PLANNING_RISK_OPD_BOUNDARY_UNAVAILABLE');
+        assert.strictEqual(activeUpdateCalled, false, 'activeRecord.update() TIDAK BOLEH dipanggil ketika resolusi kepemilikan gagal (fail-closed)');
+      }
+    }
+  );
+});
+
+console.log('\n=== S7-R004: mrPlanningRiskService.updateDraftRisk — boundary OPD ===');
+
+await test('mrPlanningRiskService.updateDraftRisk — caller OPD BEDA dari target -> DITOLAK 403, risk.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 2,
+        status_revisi: 'draft',
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        await svc.updateDraftRisk({
+          riskId: 5,
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('updateDraftRisk seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'risk.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningRiskService.updateDraftRisk — caller OPD SAMA dengan target -> boundary MENGIZINKAN, draft berhasil diperbarui', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      const originalHistoryCreate = models.MrPlanningRiskHistory.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningRiskHistory.create = async () => ({ id: 99 });
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 1,
+        status_revisi: 'draft',
+        context_id: null,
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        const result = await svc.updateDraftRisk({
+          riskId: 5,
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result?.success, 'updateDraftRisk harus berhasil ketika caller dan target berada di OPD yang sama');
+        assert.strictEqual(updateCalled, true, 'risk.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+        models.MrPlanningRiskHistory.create = originalHistoryCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningRiskService.updateDraftRisk — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      opdLookupCalled = true;
+      return null;
+    }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      const originalHistoryCreate = models.MrPlanningRiskHistory.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningRiskHistory.create = async () => ({ id: 99 });
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 2,
+        status_revisi: 'draft',
+        context_id: null,
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        const result = await svc.updateDraftRisk({
+          riskId: 5,
+          body: {},
+          user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+        });
+        assert.ok(result?.success, 'updateDraftRisk harus berhasil untuk SUPER_ADMIN');
+        assert.strictEqual(updateCalled, true, 'risk.update() HARUS dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup OpdPenanggungJawab sama sekali');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+        models.MrPlanningRiskHistory.create = originalHistoryCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningRiskService.updateDraftRisk — resolusi kepemilikan OPD gagal (error internal) -> FAIL CLOSED, risk.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      throw new Error('simulated DB error saat resolusi kepemilikan OPD');
+    }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 2,
+        status_revisi: 'draft',
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        await svc.updateDraftRisk({
+          riskId: 5,
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('updateDraftRisk seharusnya melempar error fail-closed, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 503, `harus fail-closed 503, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_BOUNDARY_UNAVAILABLE');
+        assert.strictEqual(updateCalled, false, 'risk.update() TIDAK BOLEH dipanggil ketika resolusi kepemilikan gagal (fail-closed)');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+console.log('\n=== S7-R: mrPlanningRiskService.submitRiskForVerification — boundary OPD ===');
+
+await test('mrPlanningRiskService.submitRiskForVerification — caller OPD BEDA dari target -> DITOLAK, risk.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 2,
+        status_revisi: 'draft',
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        await svc.submitRiskForVerification({
+          riskId: 5,
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('submitRiskForVerification seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'risk.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningRiskService.submitRiskForVerification — caller OPD SAMA dengan target -> boundary MENGIZINKAN, risk berhasil diajukan verifikasi', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      const originalHistoryCreate = models.MrPlanningRiskHistory.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningRiskHistory.create = async () => ({ id: 99 });
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 1,
+        status_revisi: 'draft',
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        const result = await svc.submitRiskForVerification({
+          riskId: 5,
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result?.success, 'submitRiskForVerification harus berhasil ketika caller dan target berada di OPD yang sama');
+        assert.strictEqual(updateCalled, true, 'risk.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+        models.MrPlanningRiskHistory.create = originalHistoryCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningRiskService.submitRiskForVerification — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      opdLookupCalled = true;
+      return null;
+    }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      const originalHistoryCreate = models.MrPlanningRiskHistory.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningRiskHistory.create = async () => ({ id: 99 });
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 2,
+        status_revisi: 'draft',
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        const result = await svc.submitRiskForVerification({
+          riskId: 5,
+          user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+        });
+        assert.ok(result?.success, 'submitRiskForVerification harus berhasil untuk SUPER_ADMIN');
+        assert.strictEqual(updateCalled, true, 'risk.update() HARUS dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup OpdPenanggungJawab sama sekali');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+        models.MrPlanningRiskHistory.create = originalHistoryCreate;
+      }
+    }
+  );
+});
+
+console.log('\n=== S7-R: mrPlanningRiskService.verifyRisk — boundary OPD ===');
+
+await test('mrPlanningRiskService.verifyRisk — caller OPD BEDA dari target -> DITOLAK, risk.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 2,
+        status_revisi: 'verifikasi',
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        await svc.verifyRisk({
+          riskId: 5,
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('verifyRisk seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'risk.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningRiskService.verifyRisk — caller OPD SAMA dengan target -> boundary MENGIZINKAN, risk berhasil diverifikasi', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      const originalHistoryCreate = models.MrPlanningRiskHistory.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningRiskHistory.create = async () => ({ id: 99 });
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 1,
+        status_revisi: 'verifikasi',
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        const result = await svc.verifyRisk({
+          riskId: 5,
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result?.success, 'verifyRisk harus berhasil ketika caller dan target berada di OPD yang sama');
+        assert.strictEqual(updateCalled, true, 'risk.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+        models.MrPlanningRiskHistory.create = originalHistoryCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningRiskService.verifyRisk — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      opdLookupCalled = true;
+      return null;
+    }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      const originalHistoryCreate = models.MrPlanningRiskHistory.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningRiskHistory.create = async () => ({ id: 99 });
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 2,
+        status_revisi: 'verifikasi',
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        const result = await svc.verifyRisk({
+          riskId: 5,
+          user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+        });
+        assert.ok(result?.success, 'verifyRisk harus berhasil untuk SUPER_ADMIN');
+        assert.strictEqual(updateCalled, true, 'risk.update() HARUS dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup OpdPenanggungJawab sama sekali');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+        models.MrPlanningRiskHistory.create = originalHistoryCreate;
+      }
+    }
+  );
+});
+
+console.log('\n=== S7-R: mrPlanningRiskService.createRevisionFromApprovedRisk — boundary OPD ===');
+
+await test('mrPlanningRiskService.createRevisionFromApprovedRisk — caller OPD BEDA dari target -> DITOLAK, risk.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 2,
+        status_revisi: 'approved',
+        versi: 1,
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        await svc.createRevisionFromApprovedRisk({
+          riskId: 5,
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('createRevisionFromApprovedRisk seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'risk.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningRiskService.createRevisionFromApprovedRisk — caller OPD SAMA dengan target -> boundary MENGIZINKAN, revisi draft berhasil dibuat', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      const originalHistoryCreate = models.MrPlanningRiskHistory.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningRiskHistory.create = async () => ({ id: 99 });
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 1,
+        status_revisi: 'approved',
+        versi: 1,
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        const result = await svc.createRevisionFromApprovedRisk({
+          riskId: 5,
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result?.success, 'createRevisionFromApprovedRisk harus berhasil ketika caller dan target berada di OPD yang sama');
+        assert.strictEqual(updateCalled, true, 'risk.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+        models.MrPlanningRiskHistory.create = originalHistoryCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningRiskService.createRevisionFromApprovedRisk — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      opdLookupCalled = true;
+      return null;
+    }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningRisk.findByPk;
+      const originalHistoryCreate = models.MrPlanningRiskHistory.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningRiskHistory.create = async () => ({ id: 99 });
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 5,
+        opd_id: 2,
+        status_revisi: 'approved',
+        versi: 1,
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        const result = await svc.createRevisionFromApprovedRisk({
+          riskId: 5,
+          body: {},
+          user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+        });
+        assert.ok(result?.success, 'createRevisionFromApprovedRisk harus berhasil untuk SUPER_ADMIN');
+        assert.strictEqual(updateCalled, true, 'risk.update() HARUS dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup OpdPenanggungJawab sama sekali');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalFindByPk;
+        models.MrPlanningRiskHistory.create = originalHistoryCreate;
+      }
+    }
+  );
+});
+
+console.log('\n=== S7-R006: mrPlanningRiskService.createRiskFromContext — boundary OPD (target = context yang dipilih) ===');
+
+await test('mrPlanningRiskService.createRiskFromContext — context milik OPD LAIN -> DITOLAK, MrPlanningRisk.create TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalContextFindOne = models.MrPlanningContext.findOne;
+      const originalCreate = models.MrPlanningRisk.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningContext.findOne = async () => ({ id: 3, opd_id: 2, is_active: true });
+
+      let createCalled = false;
+      models.MrPlanningRisk.create = async () => {
+        createCalled = true;
+        return {};
+      };
+
+      try {
+        await svc.createRiskFromContext({
+          contextId: 3,
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('createRiskFromContext seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN');
+        assert.strictEqual(createCalled, false, 'MrPlanningRisk.create() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningContext.findOne = originalContextFindOne;
+        models.MrPlanningRisk.create = originalCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningRiskService.createRiskFromContext — context milik OPD SENDIRI -> boundary MENGIZINKAN (error lanjutan, jika ada, BUKAN kode boundary)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalContextFindOne = models.MrPlanningContext.findOne;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningContext.findOne = async () => ({ id: 3, opd_id: 1, is_active: true });
+
+      try {
+        await svc.createRiskFromContext({
+          contextId: 3,
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+      } catch (error) {
+        assert.notStrictEqual(
+          error.details?.code,
+          'MR_PLANNING_RISK_OPD_FORBIDDEN',
+          'boundary TIDAK BOLEH menolak ketika context dan caller berada di OPD yang sama'
+        );
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningContext.findOne = originalContextFindOne;
+      }
+    }
+  );
+});
+
+await test('mrPlanningRiskService.createRiskFromContext — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      opdLookupCalled = true;
+      return null;
+    }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalContextFindOne = models.MrPlanningContext.findOne;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningContext.findOne = async () => ({ id: 3, opd_id: 2, is_active: true });
+
+      try {
+        await svc.createRiskFromContext({
+          contextId: 3,
+          body: {},
+          user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+        });
+      } catch (error) {
+        assert.notStrictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', 'SUPER_ADMIN tidak boleh diblokir boundary OPD');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningContext.findOne = originalContextFindOne;
+      }
+      assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup OpdPenanggungJawab sama sekali');
+    }
+  );
+});
+
+console.log('\n=== S7-R: mrPlanningRiskService.createProposalIntake — boundary OPD (jalur delegasi Renstra & jalur context baru) ===');
+
+await test('createProposalIntake — jalur Renstra (delegasi createRiskFromContext), context milik OPD SAMA -> boundary MENGIZINKAN (error lanjutan, jika ada, BUKAN kode boundary)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [
+      [models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })],
+      [models.sequelize, 'query', async () => [[{ id: 1, group_id: 1, kode_item: 'RENSTRA', nama_item: 'Renstra', nilai_text: 'renstra', urutan: 1 }]]],
+    ],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalContextFindOne = models.MrPlanningContext.findOne;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningContext.findOne = async () => ({ id: 3, opd_id: 1, is_active: true });
+
+      try {
+        await svc.createProposalIntake({
+          body: { proposal_source_type: 'RENSTRA', context_id: 3 },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+      } catch (error) {
+        assert.notStrictEqual(
+          error.details?.code,
+          'MR_PLANNING_RISK_OPD_FORBIDDEN',
+          'boundary TIDAK BOLEH menolak ketika context dan caller berada di OPD yang sama (jalur delegasi Renstra)'
+        );
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningContext.findOne = originalContextFindOne;
+      }
+    }
+  );
+});
+
+await test('createProposalIntake — jalur context baru (non-Renstra), payload.opd_id milik OPD SAMA -> boundary MENGIZINKAN (error lanjutan, jika ada, BUKAN kode boundary)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [
+      [models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })],
+      [models.sequelize, 'query', async () => [[{ id: 2, group_id: 1, kode_item: 'MANUAL_ADHOC', nama_item: 'Manual', nilai_text: 'manual_adhoc', urutan: 1 }]]],
+    ],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+
+      try {
+        await svc.createProposalIntake({
+          body: {
+            proposal_source_type: 'MANUAL_ADHOC',
+            tahun: 2026,
+            periode_type: 'tahunan',
+            opd_id: 1, // OPD SENDIRI
+            objek_risiko: 'Objek Uji Coba',
+            nama_risiko: 'Risiko Uji Coba',
+            kemungkinan_ref_id: 1,
+            dampak_ref_id: 1,
+          },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+      } catch (error) {
+        assert.notStrictEqual(
+          error.details?.code,
+          'MR_PLANNING_RISK_OPD_FORBIDDEN',
+          'boundary TIDAK BOLEH menolak ketika payload.opd_id adalah OPD caller sendiri (jalur context baru)'
+        );
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+      }
+    }
+  );
+});
+
+await test('createProposalIntake — jalur context baru (non-Renstra), payload.opd_id milik OPD LAIN -> DITOLAK, NOL context/risk dibuat', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [
+      [models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })],
+      [models.sequelize, 'query', async () => [[{ id: 2, group_id: 1, kode_item: 'MANUAL_ADHOC', nama_item: 'Manual', nilai_text: 'manual_adhoc', urutan: 1 }]]],
+    ],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalContextCreate = models.MrPlanningContext.create;
+      const originalRiskCreate = models.MrPlanningRisk.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+
+      let contextCreateCalled = false;
+      let riskCreateCalled = false;
+      models.MrPlanningContext.create = async () => {
+        contextCreateCalled = true;
+        return {};
+      };
+      models.MrPlanningRisk.create = async () => {
+        riskCreateCalled = true;
+        return {};
+      };
+
+      try {
+        await svc.createProposalIntake({
+          body: {
+            proposal_source_type: 'MANUAL_ADHOC',
+            tahun: 2026,
+            periode_type: 'tahunan',
+            opd_id: 2, // OPD LAIN
+            objek_risiko: 'Objek Uji Coba',
+            nama_risiko: 'Risiko Uji Coba',
+            kemungkinan_ref_id: 1,
+            dampak_ref_id: 1,
+          },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('createProposalIntake seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN');
+        assert.strictEqual(contextCreateCalled, false, 'MrPlanningContext.create() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+        assert.strictEqual(riskCreateCalled, false, 'MrPlanningRisk.create() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningContext.create = originalContextCreate;
+        models.MrPlanningRisk.create = originalRiskCreate;
+      }
+    }
+  );
+});
+
+await test('createProposalIntake — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide, jalur context baru)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [
+      [models.OpdPenanggungJawab, 'findOne', async () => {
+        opdLookupCalled = true;
+        return null;
+      }],
+      [models.sequelize, 'query', async () => [[{ id: 2, group_id: 1, kode_item: 'MANUAL_ADHOC', nama_item: 'Manual', nilai_text: 'manual_adhoc', urutan: 1 }]]],
+    ],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+
+      try {
+        await svc.createProposalIntake({
+          body: {
+            proposal_source_type: 'MANUAL_ADHOC',
+            tahun: 2026,
+            periode_type: 'tahunan',
+            opd_id: 2, // OPD manapun, SUPER_ADMIN tidak dibatasi
+            objek_risiko: 'Objek Uji Coba',
+            nama_risiko: 'Risiko Uji Coba',
+            kemungkinan_ref_id: 1,
+            dampak_ref_id: 1,
+          },
+          user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+        });
+      } catch (error) {
+        assert.notStrictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', 'SUPER_ADMIN tidak boleh diblokir boundary OPD');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+      }
+      assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup OpdPenanggungJawab sama sekali');
+    }
+  );
+});
+
+console.log('\n=== S7-R: mrPlanningRiskService.repairPlaceholderRiskSources — boundary OPD (kebijakan CEA: validasi SEMUA target dulu, baru mutasi) ===');
+
+await test('repairPlaceholderRiskSources — SEMUA target (risks + context item) milik OPD SAMA -> boundary MENGIZINKAN, SEMUA target dimutasi', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalRiskFindByPk = models.MrPlanningRisk.findByPk;
+      const originalContextItemFindByPk = models.MrPlanningContextItem.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+
+      let riskAUpdateCalled = false;
+      let riskBUpdateCalled = false;
+      let contextItemUpdateCalled = false;
+      const risks = {
+        10: { id: 10, opd_id: 1, metadata_json: {}, update: async () => { riskAUpdateCalled = true; } },
+        11: { id: 11, opd_id: 1, metadata_json: {}, update: async () => { riskBUpdateCalled = true; } },
+      };
+      models.MrPlanningRisk.findByPk = async (id) => risks[id] || null;
+      models.MrPlanningContextItem.findByPk = async () => ({
+        id: 5,
+        opd_id: 1,
+        metadata_json: {},
+        update: async () => {
+          contextItemUpdateCalled = true;
+        },
+      });
+
+      try {
+        const result = await svc.repairPlaceholderRiskSources({
+          riskIds: [10, 11],
+          contextItemId: 5,
+          payload: { objek_risiko: 'Perbaikan Uji Coba' },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+
+        assert.ok(result?.success, 'repairPlaceholderRiskSources harus berhasil ketika SEMUA target berada di OPD yang sama dengan caller');
+        assert.strictEqual(riskAUpdateCalled, true, 'risk 10.update() HARUS dipanggil ketika seluruh target berwenang');
+        assert.strictEqual(riskBUpdateCalled, true, 'risk 11.update() HARUS dipanggil ketika seluruh target berwenang');
+        assert.strictEqual(contextItemUpdateCalled, true, 'contextItem.update() HARUS dipanggil ketika seluruh target berwenang');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalRiskFindByPk;
+        models.MrPlanningContextItem.findByPk = originalContextItemFindByPk;
+      }
+    }
+  );
+});
+
+await test('repairPlaceholderRiskSources — SATU Risk di riskIds[] milik OPD LAIN -> DITOLAK, risk.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalRiskFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 20,
+        opd_id: 2, // OPD lain
+        metadata_json: {},
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        await svc.repairPlaceholderRiskSources({
+          riskIds: [20],
+          payload: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('repairPlaceholderRiskSources seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'risk.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalRiskFindByPk;
+      }
+    }
+  );
+});
+
+await test('repairPlaceholderRiskSources — contextItemId milik OPD LAIN -> DITOLAK, contextItem.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalContextItemFindByPk = models.MrPlanningContextItem.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+
+      let contextItemUpdateCalled = false;
+      models.MrPlanningContextItem.findByPk = async () => ({
+        id: 5,
+        opd_id: 2, // OPD lain
+        metadata_json: {},
+        update: async () => {
+          contextItemUpdateCalled = true;
+        },
+      });
+
+      try {
+        await svc.repairPlaceholderRiskSources({
+          contextItemId: 5,
+          payload: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('repairPlaceholderRiskSources seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN');
+        assert.strictEqual(contextItemUpdateCalled, false, 'contextItem.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningContextItem.findByPk = originalContextItemFindByPk;
+      }
+    }
+  );
+});
+
+await test('repairPlaceholderRiskSources — riskIds[] CAMPURAN (1 same-OPD + 1 cross-OPD) -> SELURUH REQUEST DITOLAK, NOL mutasi pada target MANA PUN (bukti kebijakan atomik CEA)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalRiskFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+
+      let sameOpdRiskUpdateCalled = false;
+      let crossOpdRiskUpdateCalled = false;
+      const risks = {
+        // Risk pertama (same-OPD) dimuat & divalidasi LEBIH DULU dalam array —
+        // membuktikan bahwa lolos validasi individual TIDAK cukup untuk memicu
+        // mutasi sebelum SELURUH target selesai divalidasi.
+        30: {
+          id: 30,
+          opd_id: 1, // OPD SAMA dengan caller
+          metadata_json: {},
+          update: async () => {
+            sameOpdRiskUpdateCalled = true;
+          },
+        },
+        31: {
+          id: 31,
+          opd_id: 2, // OPD LAIN — memicu penolakan seluruh request
+          metadata_json: {},
+          update: async () => {
+            crossOpdRiskUpdateCalled = true;
+          },
+        },
+      };
+      models.MrPlanningRisk.findByPk = async (id) => risks[id] || null;
+
+      try {
+        await svc.repairPlaceholderRiskSources({
+          riskIds: [30, 31],
+          payload: { objek_risiko: 'Perbaikan Uji Coba' },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('repairPlaceholderRiskSources seharusnya melempar error boundary OPD untuk SELURUH request, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN');
+        assert.strictEqual(
+          sameOpdRiskUpdateCalled,
+          false,
+          'risk 30 (same-OPD, valid secara individual) TIDAK BOLEH ikut termutasi — kebijakan CEA melarang mutasi sebagian sebelum SEMUA target divalidasi'
+        );
+        assert.strictEqual(crossOpdRiskUpdateCalled, false, 'risk 31 (cross-OPD) TIDAK BOLEH dimutasi ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalRiskFindByPk;
+      }
+    }
+  );
+});
+
+await test('repairPlaceholderRiskSources — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      opdLookupCalled = true;
+      return null;
+    }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningRiskService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalRiskFindByPk = models.MrPlanningRisk.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+
+      let updateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 40,
+        opd_id: 2,
+        metadata_json: {},
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+
+      try {
+        const result = await svc.repairPlaceholderRiskSources({
+          riskIds: [40],
+          payload: {},
+          user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+        });
+        assert.ok(result?.success, 'repairPlaceholderRiskSources harus berhasil untuk SUPER_ADMIN');
+        assert.strictEqual(updateCalled, true, 'risk.update() HARUS dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup OpdPenanggungJawab sama sekali');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningRisk.findByPk = originalRiskFindByPk;
+      }
+    }
+  );
+});
+
+console.log('\n=== S7-R009: mrPlanningRiskRecallService.recallRiskDariTemuan — boundary OPD ===');
+
+await test('recallRiskDariTemuan — caller OPD BEDA dari target Risk -> DITOLAK, risk.update TIDAK dipanggil (boundary sebelum jalur mutasi manapun)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskRecallService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const recallService = require('../services/mr/mrPlanningRiskRecallService');
+
+      const originalRiskFindByPk = models.MrPlanningRisk.findByPk;
+      const originalTemuanFindOne = models.MrPlanningTemuan.findOne;
+
+      let riskUpdateCalled = false;
+      let temuanFindOneCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 9,
+        opd_id: 2, // target milik OPD lain
+        status_revisi: 'draft',
+        update: async () => {
+          riskUpdateCalled = true;
+        },
+      });
+      models.MrPlanningTemuan.findOne = async () => {
+        temuanFindOneCalled = true;
+        return null;
+      };
+
+      try {
+        await recallService.recallRiskDariTemuan(9, {
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('recallRiskDariTemuan seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(riskUpdateCalled, false, 'risk.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+        assert.strictEqual(
+          temuanFindOneCalled,
+          false,
+          'MrPlanningTemuan.findOne() TIDAK BOLEH dipanggil — boundary dievaluasi SEBELUM jalur mutasi manapun bercabang'
+        );
+      } finally {
+        models.MrPlanningRisk.findByPk = originalRiskFindByPk;
+        models.MrPlanningTemuan.findOne = originalTemuanFindOne;
+      }
+    }
+  );
+});
+
+await test('recallRiskDariTemuan — caller OPD SAMA dengan target Risk -> boundary MENGIZINKAN, recall berhasil dievaluasi', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskRecallService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const recallService = require('../services/mr/mrPlanningRiskRecallService');
+
+      const originalRiskFindByPk = models.MrPlanningRisk.findByPk;
+      const originalTemuanFindOne = models.MrPlanningTemuan.findOne;
+
+      let riskUpdateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 9,
+        opd_id: 1, // target JUGA milik OPD caller
+        status_revisi: 'draft',
+        nama_risiko: 'sama',
+        uraian_risiko: 'sama',
+        penyebab_risiko: 'sama',
+        dampak_risiko: 'sama',
+        update: async () => {
+          riskUpdateCalled = true;
+        },
+      });
+      models.MrPlanningTemuan.findOne = async () => ({
+        id: 55,
+        kode_temuan: 'T1',
+        judul_temuan: 'sama',
+        uraian_temuan: 'sama',
+        sebab: 'sama',
+        akibat: 'sama',
+      });
+
+      try {
+        const laporan = await recallService.recallRiskDariTemuan(9, {
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(laporan, 'recallRiskDariTemuan harus berhasil ketika caller dan target berada di OPD yang sama');
+        assert.strictEqual(riskUpdateCalled, true, 'risk.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.MrPlanningRisk.findByPk = originalRiskFindByPk;
+        models.MrPlanningTemuan.findOne = originalTemuanFindOne;
+      }
+    }
+  );
+});
+
+await test('recallRiskDariTemuan — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskRecallService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      opdLookupCalled = true;
+      return null;
+    }]],
+    async () => {
+      const recallService = require('../services/mr/mrPlanningRiskRecallService');
+
+      const originalRiskFindByPk = models.MrPlanningRisk.findByPk;
+      const originalTemuanFindOne = models.MrPlanningTemuan.findOne;
+
+      let riskUpdateCalled = false;
+      models.MrPlanningRisk.findByPk = async () => ({
+        id: 9,
+        opd_id: 2,
+        status_revisi: 'draft',
+        nama_risiko: 'sama',
+        uraian_risiko: 'sama',
+        penyebab_risiko: 'sama',
+        dampak_risiko: 'sama',
+        update: async () => {
+          riskUpdateCalled = true;
+        },
+      });
+      models.MrPlanningTemuan.findOne = async () => ({
+        id: 55,
+        kode_temuan: 'T1',
+        judul_temuan: 'sama',
+        uraian_temuan: 'sama',
+        sebab: 'sama',
+        akibat: 'sama',
+      });
+
+      try {
+        const laporan = await recallService.recallRiskDariTemuan(9, {
+          user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+        });
+        assert.ok(laporan, 'recallRiskDariTemuan harus berhasil untuk SUPER_ADMIN');
+        assert.strictEqual(riskUpdateCalled, true, 'risk.update() HARUS dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup OpdPenanggungJawab sama sekali');
+      } finally {
+        models.MrPlanningRisk.findByPk = originalRiskFindByPk;
+        models.MrPlanningTemuan.findOne = originalTemuanFindOne;
+      }
+    }
+  );
+});
+
 } // end runAllTests
 
 runAllTests().then(() => {

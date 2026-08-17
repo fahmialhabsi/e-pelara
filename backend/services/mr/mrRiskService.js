@@ -28,6 +28,7 @@ const {
   ensureNotApprovedForDirectUpdate,
   ensureActionAllowedForRecord,
   buildActiveRevisionPayload,
+  createGovernanceError,
 } = require("../../helpers/mr/mrApprovalHelper");
 
 const {
@@ -48,6 +49,33 @@ const {
   validatePlanningMasterReferences,
   validateOwnerMasterReferences,
 } = require("../../helpers/mr/mrValidationHelper");
+
+// Sprint 7 — S7R-001/S7R-002/S7R-005: reuse Risk-bounded OPD authorization
+// boundary helper dari mrPlanningRiskService.js (bukan duplikasi logic —
+// file ini dan mrPlanningRiskService.js beroperasi pada model
+// MrPlanningRisk yang sama, lihat mr_planningRiskController.js
+// REQUIRED_MODELS.RiskModel = "MrPlanningRisk"). createGovernanceError
+// dipakai agar error konsisten dengan konvensi existing file ini
+// (error.status/error.code langsung, bukan wrapping class baru).
+const {
+  resolveMrPlanningRiskOpdBoundary,
+} = require("./mrPlanningRiskService");
+
+async function assertMrRiskOpdBoundaryOrThrow({ request, targetOpdId }) {
+  const boundaryResult = await resolveMrPlanningRiskOpdBoundary({
+    user: request?.user ?? null,
+    targetOpdId,
+  });
+  if (!boundaryResult.ok) {
+    throw createGovernanceError({
+      message: boundaryResult.error.message,
+      status: boundaryResult.status,
+      code: boundaryResult.error.code,
+      auditMode: true,
+    });
+  }
+  return boundaryResult;
+}
 
 const MR_RISK_TABLE_NAME = "mr_planning_risk";
 const MR_RISK_ENTITY_NAME = "mr_planning_risk";
@@ -335,6 +363,15 @@ const createRisk = async ({
 
     validateRiskCreatePayload(payload);
 
+    // S7R-005: body.opd_id BUKAN bukti otorisasi. Caller OPD-scoped harus
+    // divalidasi terhadap opd_id yang diminta SEBELUM Risk dibuat. Tidak
+    // menulis ulang (silently rewrite) opd_id yang tidak berwenang ke OPD
+    // caller — permintaan yang tidak cocok DITOLAK.
+    await assertMrRiskOpdBoundaryOrThrow({
+      request,
+      targetOpdId: payload?.opd_id ?? null,
+    });
+
     await validateRiskMasterReferences({
       models,
       payload,
@@ -418,6 +455,15 @@ const updateRisk = async ({
     const record = await RiskModel.findByPk(id, { transaction });
 
     ensureRecordExists(record, "Data MR planning risk tidak ditemukan.");
+
+    // S7R-001: caller HARUS berwenang atas OPD pemilik Risk existing
+    // (record.opd_id, kepemilikan tersimpan) SEBELUM mutasi apa pun —
+    // resolusi otorisasi TIDAK PERNAH memakai body.opd_id.
+    await assertMrRiskOpdBoundaryOrThrow({
+      request,
+      targetOpdId: record?.opd_id ?? null,
+    });
+
     ensureNotApprovedForDirectUpdate(record);
     ensureActionAllowedForRecord({
       record,
@@ -433,6 +479,23 @@ const updateRisk = async ({
       allowedFields: MR_RISK_ALLOWED_FIELDS,
       label: "MR planning risk update",
     });
+
+    // S7R-001: cegah OPD-scoped caller memindahkan (reassign) Risk ke
+    // opd_id OPD lain lewat body.opd_id — ownership reassignment tidak
+    // boleh menjadi bypass otorisasi pasca-load. SUPER_ADMIN tetap boleh
+    // melakukan reassignment (perilaku existing, tenant-wide).
+    if (
+      request?.user?.role !== "SUPER_ADMIN" &&
+      Object.prototype.hasOwnProperty.call(payload, "opd_id") &&
+      payload.opd_id !== record.opd_id
+    ) {
+      throw createGovernanceError({
+        message: "Anda tidak berwenang memindahkan MR planning risk ini ke OPD lain.",
+        status: 403,
+        code: "MR_PLANNING_RISK_OPD_REASSIGN_FORBIDDEN",
+        auditMode: true,
+      });
+    }
 
     const beforeJson = getPlainJson(record);
     const nextVersi = Number(beforeJson.versi || 0) + 1;
@@ -531,6 +594,14 @@ const createRevisi = async ({
     const record = await RiskModel.findByPk(id, { transaction });
 
     ensureRecordExists(record, "Data MR planning risk tidak ditemukan.");
+
+    // S7R-002: caller HARUS berwenang atas OPD pemilik Risk existing
+    // SEBELUM revisi dibuat.
+    await assertMrRiskOpdBoundaryOrThrow({
+      request,
+      targetOpdId: record?.opd_id ?? null,
+    });
+
     ensureActionAllowedForRecord({
       record,
       action: MR_ACTION.REVISI,
@@ -545,6 +616,21 @@ const createRevisi = async ({
       allowedFields: MR_RISK_ALLOWED_FIELDS,
       label: "MR planning risk revisi",
     });
+
+    // S7R-002: cegah OPD-scoped caller memindahkan (reassign) Risk ke
+    // opd_id OPD lain lewat body.opd_id, sama seperti updateRisk.
+    if (
+      request?.user?.role !== "SUPER_ADMIN" &&
+      Object.prototype.hasOwnProperty.call(payload, "opd_id") &&
+      payload.opd_id !== record.opd_id
+    ) {
+      throw createGovernanceError({
+        message: "Anda tidak berwenang memindahkan MR planning risk ini ke OPD lain.",
+        status: 403,
+        code: "MR_PLANNING_RISK_OPD_REASSIGN_FORBIDDEN",
+        auditMode: true,
+      });
+    }
 
     const beforeJson = getPlainJson(record);
     const nextVersi = Number(beforeJson.versi || 0) + 1;

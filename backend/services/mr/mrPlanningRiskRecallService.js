@@ -37,6 +37,17 @@ async function recallRiskDariTemuan(riskId, { user = null } = {}) {
     throw err;
   }
 
+  // Sprint 7 — S7R-009: recall menyentuh risk.update(...) langsung di dua
+  // jalur (tidak-ada-selisih & sesudah delegasi ke updateDraftRisk), jadi
+  // boundary check dipasang di sini, sebelum jalur mutasi manapun bercabang.
+  const boundaryRecall = await mrPlanningRiskService.resolveMrPlanningRiskOpdBoundary({
+    user,
+    targetOpdId: risk?.opd_id ?? null,
+  });
+  if (!boundaryRecall.ok) {
+    mrPlanningRiskService.throwMrPlanningRiskOpdBoundaryError(boundaryRecall);
+  }
+
   const temuan = await MrPlanningTemuan.findOne({ where: { mr_planning_risk_id: riskId } });
   if (!temuan) {
     const err = new Error("Risk ini tidak berasal dari eskalasi Temuan TLHP — recall tidak berlaku.");
