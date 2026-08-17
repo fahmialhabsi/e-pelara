@@ -1,11 +1,61 @@
 'use strict';
 
-const { IndikatorRenstra, RealisasiIndikatorRenstra, Lakip } = require('../models');
+const { IndikatorRenstra, RealisasiIndikatorRenstra, Lakip, RenstraOPD } = require('../models');
 const { Op } = require('sequelize');
 const {
   buildRealisasiIndikatorHierarchy,
 } = require('../services/realisasiIndikatorRenstraHierarchyService');
 const { flagNeedsRecallAman } = require('../services/recallDataService');
+
+// Sprint 5 — S5-05 (S4-DISC-011): upsert() sebelumnya menerima
+// indikator_renstra_id dari req.body tanpa constraint opd_id apa pun.
+// Kepemilikan diresolusi lewat rantai yang SAMA PERSIS dengan AD-S4-01:
+// IndikatorRenstra.renstra_id -> RenstraOPD.id -> RenstraOPD.nama_opd,
+// dibandingkan langsung terhadap req.user.opd (TIDAK ada hop kedua lewat
+// OpdPenanggungJawab, konsisten dengan konvensi yang sudah ditetapkan di
+// controllers/renstra_tabelTujuanController.js Sprint 4). SUPER_ADMIN
+// dikecualikan (otoritas tenant-wide, S4-DISC-003 precedent). Fail closed
+// (503) bila resolusi kepemilikan gagal karena error internal.
+async function assertRealisasiIndikatorRenstraOpdBoundary(req, indikatorRenstraId) {
+  if (req.user?.role === 'SUPER_ADMIN') return { ok: true };
+
+  let indikator;
+  try {
+    indikator = await IndikatorRenstra.findByPk(indikatorRenstraId, {
+      include: [{ model: RenstraOPD, as: 'renstra' }],
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      status: 503,
+      body: {
+        error: 'Batas kewenangan OPD untuk indikator ini tidak dapat diverifikasi saat ini. Aksi ditolak sementara demi keamanan data — silakan coba lagi.',
+        code: 'REALISASI_INDIKATOR_RENSTRA_OPD_BOUNDARY_UNAVAILABLE',
+      },
+    };
+  }
+
+  const targetOpdName = indikator?.renstra?.nama_opd ?? null;
+  if (targetOpdName === null || targetOpdName === undefined) {
+    // Indikator/relasi OPD tidak ditemukan — biarkan alur existing (404/422
+    // via findOrCreate) yang menangani, bukan boundary check ini.
+    return { ok: true };
+  }
+
+  const callerOpdName = req.user?.opd;
+  if (!callerOpdName || callerOpdName !== targetOpdName) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        error: 'Anda tidak berwenang mengubah realisasi indikator Renstra milik OPD lain.',
+        code: 'REALISASI_INDIKATOR_RENSTRA_OPD_FORBIDDEN',
+      },
+    };
+  }
+
+  return { ok: true };
+}
 
 // CRUD manual untuk realisasi capaian indikator Renstra stage sasaran/program/kegiatan.
 // Beda dari pengkegRealisasiSyncService.js yang otomatis dari Pengkeg (stage sub_kegiatan);
@@ -79,6 +129,17 @@ module.exports = {
       const { indikator_renstra_id, tahun, nilai_realisasi, keterangan } = req.body;
       if (!indikator_renstra_id || !tahun) {
         return res.status(400).json({ error: 'indikator_renstra_id dan tahun wajib diisi' });
+      }
+
+      // S5-05: OPD A tidak boleh create/update realisasi terhadap indikator
+      // milik pohon Renstra OPD B. Validasi HARUS selesai sebelum
+      // findOrCreate/update dijalankan.
+      const boundaryUpsert = await assertRealisasiIndikatorRenstraOpdBoundary(
+        req,
+        indikator_renstra_id,
+      );
+      if (!boundaryUpsert.ok) {
+        return res.status(boundaryUpsert.status).json(boundaryUpsert.body);
       }
 
       const [row] = await RealisasiIndikatorRenstra.findOrCreate({

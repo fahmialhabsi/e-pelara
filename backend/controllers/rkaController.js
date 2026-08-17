@@ -1,6 +1,69 @@
 // File: controllers/rkaController.js
-const { Rka, RkaRincianBelanja, PeriodeRpjmd, RPJMD, Dpa } = require('../models');
+const { Rka, RkaRincianBelanja, PeriodeRpjmd, RPJMD, Dpa, OpdPenanggungJawab } = require('../models');
 const { flagNeedsRecallAman } = require('../services/recallDataService');
+
+// Sprint 5 — S5-01/S5-02: update/destroy/pemicuRevisi RKA sebelumnya hanya
+// loadRka(id) tanpa constraint opd_id, meski rkaModel.js punya kolom
+// opd_id. Boundary di bawah mengikuti PERSIS pola assertDpaOpdBoundary di
+// controllers/dpaController.js (S3-04) — resolusi nama OPD -> id lewat
+// OpdPenanggungJawab, server-derived dari req.user.opd (TIDAK PERNAH dari
+// req.body/req.query/req.params). SUPER_ADMIN dikecualikan (otoritas
+// tenant-wide, S4-DISC-003 precedent). Fail closed (503) bila resolusi
+// kepemilikan gagal karena error internal. Menerima row Rka yang SUDAH
+// di-load (loadRka(id)) untuk menghindari query duplikat.
+async function assertRkaOpdBoundary(req, rkaRow) {
+  if (req.user?.role === 'SUPER_ADMIN') return { ok: true };
+
+  const targetOpdId = rkaRow?.opd_id ?? null;
+  if (targetOpdId === null || targetOpdId === undefined) {
+    // Dokumen tidak ditemukan / belum punya opd_id — biarkan validasi
+    // normal (404/422 existing) yang menangani, bukan boundary check ini.
+    return { ok: true };
+  }
+
+  const opdName = req.user?.opd;
+  if (!opdName) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        success: false,
+        error: 'Anda tidak berwenang melakukan aksi ini pada dokumen RKA milik OPD lain.',
+        code: 'RKA_OPD_FORBIDDEN',
+      },
+    };
+  }
+
+  let callerOpdId = null;
+  try {
+    const opdRow = await OpdPenanggungJawab.findOne({ where: { nama_opd: opdName } });
+    callerOpdId = opdRow?.id ?? null;
+  } catch (err) {
+    return {
+      ok: false,
+      status: 503,
+      body: {
+        success: false,
+        error: 'Batas kewenangan OPD tidak dapat diverifikasi saat ini. Aksi ditolak sementara demi keamanan data — silakan coba lagi.',
+        code: 'RKA_OPD_BOUNDARY_UNAVAILABLE',
+      },
+    };
+  }
+
+  if (callerOpdId === null || callerOpdId !== targetOpdId) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        success: false,
+        error: 'Anda tidak berwenang melakukan aksi ini pada dokumen RKA milik OPD lain.',
+        code: 'RKA_OPD_FORBIDDEN',
+      },
+    };
+  }
+
+  return { ok: true };
+}
 const { splitPlanningBody } = require('../helpers/planningDocumentMutation');
 const {
   writePlanningAudit,
@@ -163,6 +226,12 @@ module.exports = {
       if (!oldRow)
         return res.status(404).json({ success: false, error: 'Dokumen RKA tidak ditemukan.' });
 
+      // S5-01: ADMINISTRATOR OPD-scoped tidak boleh mengubah RKA milik OPD lain.
+      const boundaryUpdate = await assertRkaOpdBoundary(req, oldRow);
+      if (!boundaryUpdate.ok) {
+        return res.status(boundaryUpdate.status).json(boundaryUpdate.body);
+      }
+
       await budgetCascadeValidator.enforceBudgetLocking(id, req);
 
       const hasRincianBelanja = Object.prototype.hasOwnProperty.call(
@@ -252,6 +321,15 @@ module.exports = {
       }
 
       const oldRow = await loadRka(id);
+
+      // S5-02: ADMINISTRATOR OPD-scoped tidak boleh memicu revisi RKA milik
+      // OPD lain. Validasi HARUS terjadi sebelum cloneRkaToNextTahapan
+      // dipanggil.
+      const boundaryRevisi = await assertRkaOpdBoundary(req, oldRow);
+      if (!boundaryRevisi.ok) {
+        return res.status(boundaryRevisi.status).json(boundaryRevisi.body);
+      }
+
       const result = await rkaRevisiService.cloneRkaToNextTahapan({
         rkaId: Number(id),
         tahapanTujuan: tahapan_tujuan,
@@ -304,6 +382,12 @@ module.exports = {
       const { id } = req.params;
       const oldRow = await loadRka(id);
       if (!oldRow) return res.status(404).json({ success: false, error: 'Data tidak ditemukan.' });
+
+      // S5-01: ADMINISTRATOR OPD-scoped tidak boleh menghapus RKA milik OPD lain.
+      const boundaryDestroy = await assertRkaOpdBoundary(req, oldRow);
+      if (!boundaryDestroy.ok) {
+        return res.status(boundaryDestroy.status).json(boundaryDestroy.body);
+      }
 
       const uid = req.user?.id ?? req.user?.userId ?? null;
       const { old_value } = auditValuesFromRows(oldRow, null);

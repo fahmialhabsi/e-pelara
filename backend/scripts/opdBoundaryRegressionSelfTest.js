@@ -1338,6 +1338,558 @@ await test('boundary OPD Pergeseran/Perubahan — resolusi kepemilikan gagal (er
   );
 });
 
+
+console.log('\n=== S5-01/S5-02: rkaController.js — boundary OPD pada update/destroy/pemicuRevisi ===');
+
+await test('rkaController.update — caller OPD BEDA dari target -> DITOLAK 403, Rka.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/rkaController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/rkaController');
+
+      let updateCalled = false;
+      const originalFindByPk = models.Rka.findByPk;
+      const originalUpdate = models.Rka.update;
+      models.Rka.findByPk = async () => ({ id: 42, opd_id: 2, version: 1 });
+      models.Rka.update = async () => {
+        updateCalled = true;
+      };
+
+      try {
+        const req = {
+          params: { id: '42' },
+          body: { payload: {} },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.update(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RKA_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'Rka.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.Rka.findByPk = originalFindByPk;
+        models.Rka.update = originalUpdate;
+      }
+    }
+  );
+});
+
+await test('rkaController.update — caller OPD SAMA dengan target (non-SUPER_ADMIN) -> boundary MENGIZINKAN, tidak diblokir 403', async () => {
+  delete require.cache[require.resolve('../controllers/rkaController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/rkaController');
+
+      const originalFindByPk = models.Rka.findByPk;
+      models.Rka.findByPk = async () => ({ id: 42, opd_id: 1, version: 1 });
+
+      try {
+        const req = {
+          params: { id: '42' },
+          body: { payload: {} },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.update(req, res);
+
+        assert.notStrictEqual(res.statusCode, 403, `boundary TIDAK BOLEH menolak ketika caller dan target berada di OPD yang sama, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.notStrictEqual(res.body?.code, 'RKA_OPD_FORBIDDEN');
+      } finally {
+        models.Rka.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('rkaController.update — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../controllers/rkaController')];
+
+  const controller = require('../controllers/rkaController');
+  const originalFindByPk = models.Rka.findByPk;
+  models.Rka.findByPk = async () => ({ id: 42, opd_id: 2, version: 1 });
+
+  try {
+    const req = {
+      params: { id: '42' },
+      body: { payload: {} },
+      user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+    };
+    const res = fakeRes();
+    await controller.update(req, res);
+
+    assert.notStrictEqual(res.statusCode, 403, `SUPER_ADMIN tidak boleh diblokir boundary OPD, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.notStrictEqual(res.body?.code, 'RKA_OPD_FORBIDDEN');
+  } finally {
+    models.Rka.findByPk = originalFindByPk;
+  }
+});
+
+await test('rkaController.destroy — caller OPD BEDA -> DITOLAK 403, Rka.destroy TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/rkaController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/rkaController');
+
+      let destroyCalled = false;
+      const originalFindByPk = models.Rka.findByPk;
+      const originalDestroy = models.Rka.destroy;
+      models.Rka.findByPk = async () => ({ id: 42, opd_id: 2, version: 1 });
+      models.Rka.destroy = async () => {
+        destroyCalled = true;
+      };
+
+      try {
+        const req = {
+          params: { id: '42' },
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.destroy(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RKA_OPD_FORBIDDEN');
+        assert.strictEqual(destroyCalled, false, 'Rka.destroy() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.Rka.findByPk = originalFindByPk;
+        models.Rka.destroy = originalDestroy;
+      }
+    }
+  );
+});
+
+await test('rkaController.pemicuRevisi — caller OPD BEDA -> DITOLAK 403, cloneRkaToNextTahapan TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/rkaController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/rkaController');
+      const rkaRevisiService = require('../services/rkaRevisiService');
+
+      let cloneCalled = false;
+      const originalFindByPk = models.Rka.findByPk;
+      const originalClone = rkaRevisiService.cloneRkaToNextTahapan;
+      models.Rka.findByPk = async () => ({ id: 42, opd_id: 2, version: 1 });
+      rkaRevisiService.cloneRkaToNextTahapan = async () => {
+        cloneCalled = true;
+        return { data: { new_rka_id: 99 } };
+      };
+
+      try {
+        const req = {
+          params: { id: '42' },
+          body: { tahapan_tujuan: 'PERGESERAN_1' },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.pemicuRevisi(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RKA_OPD_FORBIDDEN');
+        assert.strictEqual(cloneCalled, false, 'cloneRkaToNextTahapan() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.Rka.findByPk = originalFindByPk;
+        rkaRevisiService.cloneRkaToNextTahapan = originalClone;
+      }
+    }
+  );
+});
+
+await test('boundary OPD RKA — resolusi kepemilikan gagal (error internal) -> FAIL CLOSED 503, Rka.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/rkaController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      throw new Error('simulated DB error saat resolusi kepemilikan OPD');
+    }]],
+    async () => {
+      const controller = require('../controllers/rkaController');
+
+      let updateCalled = false;
+      const originalFindByPk = models.Rka.findByPk;
+      const originalUpdate = models.Rka.update;
+      models.Rka.findByPk = async () => ({ id: 42, opd_id: 2, version: 1 });
+      models.Rka.update = async () => {
+        updateCalled = true;
+      };
+
+      try {
+        const req = {
+          params: { id: '42' },
+          body: { payload: {} },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.update(req, res);
+
+        assert.strictEqual(res.statusCode, 503, `harus fail-closed 503, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RKA_OPD_BOUNDARY_UNAVAILABLE');
+        assert.strictEqual(updateCalled, false, 'Rka.update() TIDAK BOLEH dipanggil ketika resolusi kepemilikan gagal (fail-closed)');
+      } finally {
+        models.Rka.findByPk = originalFindByPk;
+        models.Rka.update = originalUpdate;
+      }
+    }
+  );
+});
+
+console.log('\n=== S5-03/S5-04: rkpdController.js — boundary OPD pada update/remove/workflow-transition ===');
+
+await test('rkpdController.update — caller OPD BEDA -> DITOLAK 403, row.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/rkpdController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/rkpdController');
+
+      let rowUpdateCalled = false;
+      const originalFindByPk = models.Rkpd.findByPk;
+      models.Rkpd.findByPk = async () => ({
+        id: 42,
+        opd_id: 2,
+        version: 1,
+        async update() {
+          rowUpdateCalled = true;
+        },
+      });
+
+      try {
+        const req = {
+          params: { id: '42' },
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.update(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RKPD_OPD_FORBIDDEN');
+        assert.strictEqual(rowUpdateCalled, false, 'row.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.Rkpd.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('rkpdController.update — caller OPD SAMA dengan target (non-SUPER_ADMIN) -> boundary MENGIZINKAN, tidak diblokir 403', async () => {
+  delete require.cache[require.resolve('../controllers/rkpdController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/rkpdController');
+
+      const originalFindByPk = models.Rkpd.findByPk;
+      models.Rkpd.findByPk = async () => ({
+        id: 42,
+        opd_id: 1,
+        version: 1,
+        async update() {},
+      });
+
+      try {
+        const req = {
+          params: { id: '42' },
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.update(req, res);
+
+        assert.notStrictEqual(res.statusCode, 403, `boundary TIDAK BOLEH menolak ketika caller dan target berada di OPD yang sama, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.notStrictEqual(res.body?.code, 'RKPD_OPD_FORBIDDEN');
+      } finally {
+        models.Rkpd.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('rkpdController.remove — caller OPD BEDA -> DITOLAK 403', async () => {
+  delete require.cache[require.resolve('../controllers/rkpdController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/rkpdController');
+
+      const originalFindByPk = models.Rkpd.findByPk;
+      models.Rkpd.findByPk = async () => ({ id: 42, opd_id: 2, version: 1 });
+
+      try {
+        const req = {
+          params: { id: '42' },
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.remove(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RKPD_OPD_FORBIDDEN');
+      } finally {
+        models.Rkpd.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('rkpdController.updateStatus — caller OPD BEDA -> DITOLAK 403 (jalur processStatusTransition via updateStatus)', async () => {
+  delete require.cache[require.resolve('../controllers/rkpdController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/rkpdController');
+
+      const originalFindByPk = models.Rkpd.findByPk;
+      models.Rkpd.findByPk = async () => ({ id: 42, opd_id: 2, status: 'DRAFT', version: 1 });
+
+      try {
+        const req = {
+          params: { id: '42' },
+          body: { action: 'submit', change_reason_text: 'uji coba' },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.updateStatus(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RKPD_OPD_FORBIDDEN');
+      } finally {
+        models.Rkpd.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('rkpdController.runStatusAction — caller OPD BEDA -> DITOLAK 403 (membuktikan common enforcement point processStatusTransition juga menutup jalur shortcut action)', async () => {
+  delete require.cache[require.resolve('../controllers/rkpdController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/rkpdController');
+
+      const originalFindByPk = models.Rkpd.findByPk;
+      models.Rkpd.findByPk = async () => ({ id: 42, opd_id: 2, status: 'DRAFT', version: 1 });
+
+      try {
+        const req = {
+          params: { id: '42', action: 'submit' },
+          body: { change_reason_text: 'uji coba' },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.runStatusAction(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RKPD_OPD_FORBIDDEN');
+      } finally {
+        models.Rkpd.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('rkpdController — SUPER_ADMIN dikecualikan dari boundary OPD workflow transition (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../controllers/rkpdController')];
+
+  const controller = require('../controllers/rkpdController');
+  const originalFindByPk = models.Rkpd.findByPk;
+  models.Rkpd.findByPk = async () => ({ id: 42, opd_id: 2, status: 'DRAFT', version: 1 });
+
+  try {
+    const req = {
+      params: { id: '42' },
+      body: { action: 'submit', change_reason_text: 'uji coba' },
+      user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+    };
+    const res = fakeRes();
+    await controller.updateStatus(req, res);
+
+    assert.notStrictEqual(res.statusCode, 403, `SUPER_ADMIN tidak boleh diblokir boundary OPD, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.notStrictEqual(res.body?.code, 'RKPD_OPD_FORBIDDEN');
+  } finally {
+    models.Rkpd.findByPk = originalFindByPk;
+  }
+});
+
+await test('boundary OPD RKPD — resolusi kepemilikan gagal (error internal) -> FAIL CLOSED 503', async () => {
+  delete require.cache[require.resolve('../controllers/rkpdController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => {
+      throw new Error('simulated DB error saat resolusi kepemilikan OPD');
+    }]],
+    async () => {
+      const controller = require('../controllers/rkpdController');
+
+      const originalFindByPk = models.Rkpd.findByPk;
+      models.Rkpd.findByPk = async () => ({ id: 42, opd_id: 2, status: 'DRAFT', version: 1 });
+
+      try {
+        const req = {
+          params: { id: '42' },
+          body: { action: 'submit', change_reason_text: 'uji coba' },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.updateStatus(req, res);
+
+        assert.strictEqual(res.statusCode, 503, `harus fail-closed 503, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RKPD_OPD_BOUNDARY_UNAVAILABLE');
+      } finally {
+        models.Rkpd.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+console.log('\n=== S5-05: realisasiIndikatorRenstraController.js — boundary OPD pada upsert ===');
+
+await test('upsert — caller OPD BEDA dari target indikator -> DITOLAK 403, RealisasiIndikatorRenstra.findOrCreate TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/realisasiIndikatorRenstraController')];
+
+  const controller = require('../controllers/realisasiIndikatorRenstraController');
+
+  let findOrCreateCalled = false;
+  const originalIndikatorFindByPk = models.IndikatorRenstra.findByPk;
+  const originalFindOrCreate = models.RealisasiIndikatorRenstra.findOrCreate;
+  models.IndikatorRenstra.findByPk = async () => ({
+    id: 7,
+    renstra_id: 2,
+    renstra: { id: 2, nama_opd: 'Dinas Uji Coba B' },
+  });
+  models.RealisasiIndikatorRenstra.findOrCreate = async () => {
+    findOrCreateCalled = true;
+    return [{ id: 1, async update() {} }];
+  };
+
+  try {
+    const req = {
+      body: { indikator_renstra_id: 7, tahun: '2026', nilai_realisasi: 88.5 },
+      user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+    };
+    const res = fakeRes();
+    await controller.upsert(req, res);
+
+    assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.strictEqual(res.body?.code, 'REALISASI_INDIKATOR_RENSTRA_OPD_FORBIDDEN');
+    assert.strictEqual(findOrCreateCalled, false, 'RealisasiIndikatorRenstra.findOrCreate() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+  } finally {
+    models.IndikatorRenstra.findByPk = originalIndikatorFindByPk;
+    models.RealisasiIndikatorRenstra.findOrCreate = originalFindOrCreate;
+  }
+});
+
+await test('upsert — caller OPD SAMA dengan target indikator (non-SUPER_ADMIN) -> boundary MENGIZINKAN, tidak diblokir 403', async () => {
+  delete require.cache[require.resolve('../controllers/realisasiIndikatorRenstraController')];
+
+  const controller = require('../controllers/realisasiIndikatorRenstraController');
+
+  const originalIndikatorFindByPk = models.IndikatorRenstra.findByPk;
+  const originalFindOrCreate = models.RealisasiIndikatorRenstra.findOrCreate;
+  models.IndikatorRenstra.findByPk = async () => ({
+    id: 7,
+    renstra_id: 1,
+    renstra: { id: 1, nama_opd: 'Dinas Uji Coba A' },
+  });
+  models.RealisasiIndikatorRenstra.findOrCreate = async () => [
+    { id: 1, async update() {} },
+  ];
+
+  try {
+    const req = {
+      body: { indikator_renstra_id: 7, tahun: '2026', nilai_realisasi: 88.5 },
+      user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+    };
+    const res = fakeRes();
+    await controller.upsert(req, res);
+
+    assert.notStrictEqual(res.statusCode, 403, `boundary TIDAK BOLEH menolak ketika caller dan target indikator berada di OPD yang sama, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.notStrictEqual(res.body?.code, 'REALISASI_INDIKATOR_RENSTRA_OPD_FORBIDDEN');
+  } finally {
+    models.IndikatorRenstra.findByPk = originalIndikatorFindByPk;
+    models.RealisasiIndikatorRenstra.findOrCreate = originalFindOrCreate;
+  }
+});
+
+await test('upsert — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../controllers/realisasiIndikatorRenstraController')];
+
+  const controller = require('../controllers/realisasiIndikatorRenstraController');
+
+  const originalIndikatorFindByPk = models.IndikatorRenstra.findByPk;
+  const originalFindOrCreate = models.RealisasiIndikatorRenstra.findOrCreate;
+  models.IndikatorRenstra.findByPk = async () => ({
+    id: 7,
+    renstra_id: 2,
+    renstra: { id: 2, nama_opd: 'Dinas Uji Coba B' },
+  });
+  models.RealisasiIndikatorRenstra.findOrCreate = async () => [
+    { id: 1, async update() {} },
+  ];
+
+  try {
+    const req = {
+      body: { indikator_renstra_id: 7, tahun: '2026', nilai_realisasi: 88.5 },
+      user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+    };
+    const res = fakeRes();
+    await controller.upsert(req, res);
+
+    assert.notStrictEqual(res.statusCode, 403, `SUPER_ADMIN tidak boleh diblokir boundary OPD, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.notStrictEqual(res.body?.code, 'REALISASI_INDIKATOR_RENSTRA_OPD_FORBIDDEN');
+  } finally {
+    models.IndikatorRenstra.findByPk = originalIndikatorFindByPk;
+    models.RealisasiIndikatorRenstra.findOrCreate = originalFindOrCreate;
+  }
+});
+
+await test('upsert — resolusi kepemilikan gagal (error internal) -> FAIL CLOSED 503, RealisasiIndikatorRenstra.findOrCreate TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/realisasiIndikatorRenstraController')];
+
+  const controller = require('../controllers/realisasiIndikatorRenstraController');
+
+  let findOrCreateCalled = false;
+  const originalIndikatorFindByPk = models.IndikatorRenstra.findByPk;
+  const originalFindOrCreate = models.RealisasiIndikatorRenstra.findOrCreate;
+  models.IndikatorRenstra.findByPk = async () => {
+    throw new Error('simulated DB error saat resolusi kepemilikan OPD');
+  };
+  models.RealisasiIndikatorRenstra.findOrCreate = async () => {
+    findOrCreateCalled = true;
+    return [{ id: 1, async update() {} }];
+  };
+
+  try {
+    const req = {
+      body: { indikator_renstra_id: 7, tahun: '2026', nilai_realisasi: 88.5 },
+      user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+    };
+    const res = fakeRes();
+    await controller.upsert(req, res);
+
+    assert.strictEqual(res.statusCode, 503, `harus fail-closed 503, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.strictEqual(res.body?.code, 'REALISASI_INDIKATOR_RENSTRA_OPD_BOUNDARY_UNAVAILABLE');
+    assert.strictEqual(findOrCreateCalled, false, 'RealisasiIndikatorRenstra.findOrCreate() TIDAK BOLEH dipanggil ketika resolusi kepemilikan gagal (fail-closed)');
+  } finally {
+    models.IndikatorRenstra.findByPk = originalIndikatorFindByPk;
+    models.RealisasiIndikatorRenstra.findOrCreate = originalFindOrCreate;
+  }
+});
+
 } // end runAllTests
 
 runAllTests().then(() => {

@@ -8,8 +8,73 @@ const {
   RPJMD,
   PlanningAuditEvent,
   sequelize,
+  OpdPenanggungJawab,
 } = require("../models");
 const ePelara = require("../services/ePelaraService");
+
+// Sprint 5 — S5-03/S5-04: update/remove/processStatusTransition RKPD
+// sebelumnya hanya Rkpd.findByPk(id) tanpa constraint opd_id, meski
+// rkpdModel.js punya kolom opd_id. Boundary di bawah mengikuti PERSIS pola
+// assertDpaOpdBoundary di controllers/dpaController.js (S3-04) — resolusi
+// nama OPD -> id lewat OpdPenanggungJawab, server-derived dari
+// req.user.opd (TIDAK PERNAH dari req.body/req.query/req.params).
+// SUPER_ADMIN dikecualikan (otoritas tenant-wide, S4-DISC-003 precedent).
+// Fail closed (503) bila resolusi kepemilikan gagal karena error
+// internal. Diterapkan pada processStatusTransition() sebagai SATU titik
+// enforcement bersama untuk updateStatus/runStatusAction dan seluruh
+// shortcut route workflow yang mendelegasikan ke fungsi ini — bukan
+// diduplikasi per-route.
+async function assertRkpdOpdBoundary(req, rkpdRow) {
+  if (req.user?.role === "SUPER_ADMIN") return { ok: true };
+
+  const targetOpdId = rkpdRow?.opd_id ?? null;
+  if (targetOpdId === null || targetOpdId === undefined) {
+    return { ok: true };
+  }
+
+  const opdName = req.user?.opd;
+  if (!opdName) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        success: false,
+        message: "Anda tidak berwenang melakukan aksi ini pada dokumen RKPD milik OPD lain.",
+        code: "RKPD_OPD_FORBIDDEN",
+      },
+    };
+  }
+
+  let callerOpdId = null;
+  try {
+    const opdRow = await OpdPenanggungJawab.findOne({ where: { nama_opd: opdName } });
+    callerOpdId = opdRow?.id ?? null;
+  } catch (err) {
+    return {
+      ok: false,
+      status: 503,
+      body: {
+        success: false,
+        message: "Batas kewenangan OPD tidak dapat diverifikasi saat ini. Aksi ditolak sementara demi keamanan data — silakan coba lagi.",
+        code: "RKPD_OPD_BOUNDARY_UNAVAILABLE",
+      },
+    };
+  }
+
+  if (callerOpdId === null || callerOpdId !== targetOpdId) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        success: false,
+        message: "Anda tidak berwenang melakukan aksi ini pada dokumen RKPD milik OPD lain.",
+        code: "RKPD_OPD_FORBIDDEN",
+      },
+    };
+  }
+
+  return { ok: true };
+}
 const { logPlanning, logStatusChange, toPlain } = require("../services/planningAuditService");
 const { splitPlanningBody } = require("../helpers/planningDocumentMutation");
 const {
@@ -611,6 +676,12 @@ const update = async (req, res) => {
       return res.status(404).json({ success: false, message: "RKPD tidak ditemukan" });
     }
 
+    // S5-03: ADMINISTRATOR OPD-scoped tidak boleh mengubah RKPD milik OPD lain.
+    const boundaryUpdate = await assertRkpdOpdBoundary(req, row);
+    if (!boundaryUpdate.ok) {
+      return res.status(boundaryUpdate.status).json(boundaryUpdate.body);
+    }
+
     const { payload: bodyRest, change_reason_text, change_reason_file, rpjmd_id } =
       splitPlanningBody(req.body);
     const rp = await assertRpjmdId(rpjmd_id);
@@ -679,6 +750,12 @@ const remove = async (req, res) => {
       return res.status(404).json({ success: false, message: "RKPD tidak ditemukan" });
     }
 
+    // S5-03: ADMINISTRATOR OPD-scoped tidak boleh menghapus RKPD milik OPD lain.
+    const boundaryRemove = await assertRkpdOpdBoundary(req, row);
+    if (!boundaryRemove.ok) {
+      return res.status(boundaryRemove.status).json(boundaryRemove.body);
+    }
+
     const { change_reason_text, change_reason_file } = splitPlanningBody(req.body);
     const before = toPlain(row);
     const uid = req.user?.id ?? req.user?.userId ?? null;
@@ -722,6 +799,18 @@ async function processStatusTransition(req, res, forcedAction = null) {
     const row = await Rkpd.findByPk(req.params.id);
     if (!row) {
       return res.status(404).json({ success: false, message: "RKPD tidak ditemukan" });
+    }
+
+    // S5-04: satu titik enforcement bersama untuk updateStatus/runStatusAction
+    // dan seluruh shortcut route workflow (lihat WORKFLOW_ACTIONS di
+    // routes/rkpdRoutes.js) yang mendelegasikan ke fungsi ini — ADMINISTRATOR
+    // OPD-scoped tidak boleh approve/reject/advance/revise RKPD milik OPD
+    // lain. Ini TIDAK bergantung pada proteksi terpisah di
+    // approvalController.js — jalur workflow RKPD langsung ini menegakkan
+    // boundary kepemilikannya sendiri.
+    const boundaryTransition = await assertRkpdOpdBoundary(req, row);
+    if (!boundaryTransition.ok) {
+      return res.status(boundaryTransition.status).json(boundaryTransition.body);
     }
 
     const { change_reason_text, change_reason_file } = splitPlanningBody(req.body || {});
