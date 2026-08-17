@@ -1890,6 +1890,698 @@ await test('upsert — resolusi kepemilikan gagal (error internal) -> FAIL CLOSE
   }
 });
 
+
+
+console.log('\n=== S6-01: renstra_opdController.js — boundary OPD pada update/setAktif/recall ===');
+
+await test('renstra_opdController.update — caller OPD BEDA dari target -> DITOLAK 403, RenstraOPD.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_opdController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/renstra_opdController');
+
+      let updateCalled = false;
+      const originalFindByPk = models.RenstraOPD.findByPk;
+      const originalUpdate = models.RenstraOPD.update;
+      models.RenstraOPD.findByPk = async () => ({ id: 7, opd_id: 2, is_aktif: false });
+      models.RenstraOPD.update = async () => {
+        updateCalled = true;
+        return [1];
+      };
+
+      try {
+        const req = {
+          params: { id: '7' },
+          body: { opd_id: 2 },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.update(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RENSTRA_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'RenstraOPD.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.RenstraOPD.findByPk = originalFindByPk;
+        models.RenstraOPD.update = originalUpdate;
+      }
+    }
+  );
+});
+
+await test('renstra_opdController.update — caller OPD SAMA dengan target (non-SUPER_ADMIN) -> boundary MENGIZINKAN, tidak diblokir 403', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_opdController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })],
+     [models.OpdPenanggungJawab, 'findByPk', async () => ({ id: 1, nama_opd: 'Dinas Uji Coba A' })]],
+    async () => {
+      const controller = require('../controllers/renstra_opdController');
+
+      const originalFindByPk = models.RenstraOPD.findByPk;
+      const originalUpdate = models.RenstraOPD.update;
+      models.RenstraOPD.findByPk = async () => ({ id: 7, opd_id: 1, is_aktif: false });
+      models.RenstraOPD.update = async () => [1];
+
+      try {
+        const req = {
+          params: { id: '7' },
+          body: { opd_id: 1 },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.update(req, res);
+
+        assert.notStrictEqual(res.statusCode, 403, `boundary TIDAK BOLEH menolak ketika caller dan target berada di OPD yang sama, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.notStrictEqual(res.body?.code, 'RENSTRA_OPD_FORBIDDEN');
+        assert.notStrictEqual(res.body?.code, 'RENSTRA_OPD_REASSIGN_FORBIDDEN');
+      } finally {
+        models.RenstraOPD.findByPk = originalFindByPk;
+        models.RenstraOPD.update = originalUpdate;
+      }
+    }
+  );
+});
+
+await test('renstra_opdController.update — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_opdController')];
+
+  const controller = require('../controllers/renstra_opdController');
+  const originalFindByPk = models.RenstraOPD.findByPk;
+  const originalUpdate = models.RenstraOPD.update;
+  const originalOpdFindByPk = models.OpdPenanggungJawab.findByPk;
+  models.RenstraOPD.findByPk = async () => ({ id: 7, opd_id: 2, is_aktif: false });
+  models.RenstraOPD.update = async () => [1];
+  models.OpdPenanggungJawab.findByPk = async () => ({ id: 9, nama_opd: 'Dinas Manapun' });
+
+  try {
+    const req = {
+      params: { id: '7' },
+      body: { opd_id: 9 },
+      user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+    };
+    const res = fakeRes();
+    await controller.update(req, res);
+
+    assert.notStrictEqual(res.statusCode, 403, `SUPER_ADMIN tidak boleh diblokir boundary OPD, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.notStrictEqual(res.body?.code, 'RENSTRA_OPD_FORBIDDEN');
+    assert.notStrictEqual(res.body?.code, 'RENSTRA_OPD_REASSIGN_FORBIDDEN');
+  } finally {
+    models.RenstraOPD.findByPk = originalFindByPk;
+    models.RenstraOPD.update = originalUpdate;
+    models.OpdPenanggungJawab.findByPk = originalOpdFindByPk;
+  }
+});
+
+await test('renstra_opdController.update — OPD-scoped ADMINISTRATOR pada record miliknya SENDIRI mencoba reassign opd_id ke OPD lain -> DITOLAK 403, RenstraOPD.update TIDAK dipanggil (ownership reassignment bypass guard)', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_opdController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/renstra_opdController');
+
+      let updateCalled = false;
+      const originalFindByPk = models.RenstraOPD.findByPk;
+      const originalUpdate = models.RenstraOPD.update;
+      // Target record MILIK caller sendiri (opd_id: 1) -> boundary check LOLOS,
+      // tapi req.body mencoba memindahkan ke opd_id: 99 (OPD lain).
+      models.RenstraOPD.findByPk = async () => ({ id: 7, opd_id: 1, is_aktif: false });
+      models.RenstraOPD.update = async () => {
+        updateCalled = true;
+        return [1];
+      };
+
+      try {
+        const req = {
+          params: { id: '7' },
+          body: { opd_id: 99 },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.update(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RENSTRA_OPD_REASSIGN_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'RenstraOPD.update() TIDAK BOLEH dipanggil ketika reassignment ditolak — ownership reassignment tidak boleh menjadi bypass otorisasi');
+      } finally {
+        models.RenstraOPD.findByPk = originalFindByPk;
+        models.RenstraOPD.update = originalUpdate;
+      }
+    }
+  );
+});
+
+await test('renstra_opdController.update — resolusi kepemilikan gagal (error internal) -> FAIL CLOSED 503, RenstraOPD.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_opdController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => { throw new Error('Simulated transient DB error'); }]],
+    async () => {
+      const controller = require('../controllers/renstra_opdController');
+
+      let updateCalled = false;
+      const originalFindByPk = models.RenstraOPD.findByPk;
+      const originalUpdate = models.RenstraOPD.update;
+      models.RenstraOPD.findByPk = async () => ({ id: 7, opd_id: 2, is_aktif: false });
+      models.RenstraOPD.update = async () => {
+        updateCalled = true;
+      };
+
+      try {
+        const req = {
+          params: { id: '7' },
+          body: { opd_id: 2 },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.update(req, res);
+
+        assert.strictEqual(res.statusCode, 503, `harus fail-closed 503, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RENSTRA_OPD_BOUNDARY_UNAVAILABLE');
+        assert.strictEqual(updateCalled, false, 'RenstraOPD.update() TIDAK BOLEH dipanggil ketika resolusi kepemilikan gagal (fail-closed)');
+      } finally {
+        models.RenstraOPD.findByPk = originalFindByPk;
+        models.RenstraOPD.update = originalUpdate;
+      }
+    }
+  );
+});
+
+await test('renstra_opdController.setAktif — caller OPD BEDA dari target -> DITOLAK 403, tidak ada mutasi is_aktif yang jalan', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_opdController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/renstra_opdController');
+
+      let updateCalled = false;
+      const originalFindByPk = models.RenstraOPD.findByPk;
+      const originalUpdate = models.RenstraOPD.update;
+      models.RenstraOPD.findByPk = async () => ({ id: 7, opd_id: 2, is_aktif: false });
+      models.RenstraOPD.update = async () => {
+        updateCalled = true;
+      };
+
+      try {
+        const req = {
+          params: { id: '7' },
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.setAktif(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RENSTRA_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'RenstraOPD.update() (deaktivasi maupun aktivasi) TIDAK BOLEH dipanggil ketika target milik OPD lain');
+      } finally {
+        models.RenstraOPD.findByPk = originalFindByPk;
+        models.RenstraOPD.update = originalUpdate;
+      }
+    }
+  );
+});
+
+await test('renstra_opdController.setAktif — caller OPD SAMA dengan target (non-SUPER_ADMIN) -> boundary MENGIZINKAN aktivasi berjalan', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_opdController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/renstra_opdController');
+
+      let activateCalled = false;
+      const originalFindByPk = models.RenstraOPD.findByPk;
+      const originalUpdate = models.RenstraOPD.update;
+      models.RenstraOPD.findByPk = async () => ({ id: 7, opd_id: 1, is_aktif: false });
+      models.RenstraOPD.update = async (payload) => {
+        if (payload.is_aktif === true) activateCalled = true;
+        return [1];
+      };
+
+      try {
+        const req = {
+          params: { id: '7' },
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.setAktif(req, res);
+
+        assert.notStrictEqual(res.statusCode, 403, `boundary TIDAK BOLEH menolak ketika caller dan target berada di OPD yang sama, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(activateCalled, true, 'aktivasi (is_aktif:true) HARUS tetap berjalan untuk same-OPD ADMINISTRATOR yang berwenang');
+      } finally {
+        models.RenstraOPD.findByPk = originalFindByPk;
+        models.RenstraOPD.update = originalUpdate;
+      }
+    }
+  );
+});
+
+await test('renstra_opdController.setAktif — OPD-scoped ADMINISTRATOR: deaktivasi massal HARUS di-scope ke opd_id milik caller (bukan tenant-wide {where:{}})', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_opdController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const controller = require('../controllers/renstra_opdController');
+
+      let deactivateWhereCaptured = null;
+      const originalFindByPk = models.RenstraOPD.findByPk;
+      const originalUpdate = models.RenstraOPD.update;
+      models.RenstraOPD.findByPk = async () => ({ id: 7, opd_id: 1, is_aktif: false });
+      models.RenstraOPD.update = async (payload, options) => {
+        if (payload.is_aktif === false) deactivateWhereCaptured = options.where;
+        return [1];
+      };
+
+      try {
+        const req = {
+          params: { id: '7' },
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.setAktif(req, res);
+
+        assert.notStrictEqual(deactivateWhereCaptured, null, 'query deaktivasi harus tertangkap');
+        assert.deepStrictEqual(
+          deactivateWhereCaptured,
+          { opd_id: 1 },
+          `deaktivasi massal HARUS di-scope ke opd_id milik caller (opd_id:1), bukan tenant-wide {where:{}} — didapat ${JSON.stringify(deactivateWhereCaptured)}. Ini mencegah ADMINISTRATOR OPD lain terdampak saat OPD-scoped admin mengaktifkan Renstra miliknya sendiri.`
+        );
+      } finally {
+        models.RenstraOPD.findByPk = originalFindByPk;
+        models.RenstraOPD.update = originalUpdate;
+      }
+    }
+  );
+});
+
+await test('renstra_opdController.setAktif — SUPER_ADMIN dikecualikan dari boundary OPD, deaktivasi tetap tenant-wide {where:{}} (perilaku existing dipertahankan)', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_opdController')];
+
+  const controller = require('../controllers/renstra_opdController');
+
+  let deactivateWhereCaptured = 'NOT_CALLED';
+  const originalFindByPk = models.RenstraOPD.findByPk;
+  const originalUpdate = models.RenstraOPD.update;
+  models.RenstraOPD.findByPk = async () => ({ id: 7, opd_id: 2, is_aktif: false });
+  models.RenstraOPD.update = async (payload, options) => {
+    if (payload.is_aktif === false) deactivateWhereCaptured = options.where;
+    return [1];
+  };
+
+  try {
+    const req = {
+      params: { id: '7' },
+      body: {},
+      user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+    };
+    const res = fakeRes();
+    await controller.setAktif(req, res);
+
+    assert.notStrictEqual(res.statusCode, 403, `SUPER_ADMIN tidak boleh diblokir boundary OPD, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.deepStrictEqual(
+      deactivateWhereCaptured,
+      {},
+      `SUPER_ADMIN HARUS mempertahankan perilaku deaktivasi tenant-wide existing ({where:{}}), didapat ${JSON.stringify(deactivateWhereCaptured)}`
+    );
+  } finally {
+    models.RenstraOPD.findByPk = originalFindByPk;
+    models.RenstraOPD.update = originalUpdate;
+  }
+});
+
+await test('renstra_opdController.setAktif — resolusi kepemilikan gagal (error internal) -> FAIL CLOSED 503, tidak ada mutasi is_aktif yang jalan', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_opdController')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => { throw new Error('Simulated transient DB error'); }]],
+    async () => {
+      const controller = require('../controllers/renstra_opdController');
+
+      let updateCalled = false;
+      const originalFindByPk = models.RenstraOPD.findByPk;
+      const originalUpdate = models.RenstraOPD.update;
+      models.RenstraOPD.findByPk = async () => ({ id: 7, opd_id: 2, is_aktif: false });
+      models.RenstraOPD.update = async () => {
+        updateCalled = true;
+      };
+
+      try {
+        const req = {
+          params: { id: '7' },
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.setAktif(req, res);
+
+        assert.strictEqual(res.statusCode, 503, `harus fail-closed 503, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RENSTRA_OPD_BOUNDARY_UNAVAILABLE');
+        assert.strictEqual(updateCalled, false, 'RenstraOPD.update() TIDAK BOLEH dipanggil ketika resolusi kepemilikan gagal (fail-closed)');
+      } finally {
+        models.RenstraOPD.findByPk = originalFindByPk;
+        models.RenstraOPD.update = originalUpdate;
+      }
+    }
+  );
+});
+
+await test('renstra_opdController.recall — caller OPD BEDA dari target -> DITOLAK 403, recallRenstraOpd TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_opdController')];
+  delete require.cache[require.resolve('../services/renstraOpdRecallService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const recallService = require('../services/renstraOpdRecallService');
+      const originalRecall = recallService.recallRenstraOpd;
+      let recallCalled = false;
+      recallService.recallRenstraOpd = async () => {
+        recallCalled = true;
+        return {};
+      };
+
+      const controller = require('../controllers/renstra_opdController');
+
+      const originalFindByPk = models.RenstraOPD.findByPk;
+      models.RenstraOPD.findByPk = async () => ({ id: 7, opd_id: 2, is_aktif: false });
+
+      try {
+        const req = {
+          params: { id: '7' },
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.recall(req, res);
+
+        assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RENSTRA_OPD_FORBIDDEN');
+        assert.strictEqual(recallCalled, false, 'recallRenstraOpd() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.RenstraOPD.findByPk = originalFindByPk;
+        recallService.recallRenstraOpd = originalRecall;
+      }
+    }
+  );
+});
+
+await test('renstra_opdController.recall — caller OPD SAMA dengan target (non-SUPER_ADMIN) -> boundary MENGIZINKAN, recallRenstraOpd dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_opdController')];
+  delete require.cache[require.resolve('../services/renstraOpdRecallService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const recallService = require('../services/renstraOpdRecallService');
+      const originalRecall = recallService.recallRenstraOpd;
+      let recallCalled = false;
+      recallService.recallRenstraOpd = async () => {
+        recallCalled = true;
+        return { ok: true };
+      };
+
+      const controller = require('../controllers/renstra_opdController');
+
+      const originalFindByPk = models.RenstraOPD.findByPk;
+      models.RenstraOPD.findByPk = async () => ({ id: 7, opd_id: 1, is_aktif: false });
+
+      try {
+        const req = {
+          params: { id: '7' },
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.recall(req, res);
+
+        assert.notStrictEqual(res.statusCode, 403, `boundary TIDAK BOLEH menolak ketika caller dan target berada di OPD yang sama, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(recallCalled, true, 'recallRenstraOpd() HARUS tetap dipanggil untuk same-OPD ADMINISTRATOR yang berwenang');
+      } finally {
+        models.RenstraOPD.findByPk = originalFindByPk;
+        recallService.recallRenstraOpd = originalRecall;
+      }
+    }
+  );
+});
+
+await test('renstra_opdController.recall — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide)', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_opdController')];
+  delete require.cache[require.resolve('../services/renstraOpdRecallService')];
+
+  const recallService = require('../services/renstraOpdRecallService');
+  const originalRecall = recallService.recallRenstraOpd;
+  let recallCalled = false;
+  recallService.recallRenstraOpd = async () => {
+    recallCalled = true;
+    return { ok: true };
+  };
+
+  const controller = require('../controllers/renstra_opdController');
+  const originalFindByPk = models.RenstraOPD.findByPk;
+  models.RenstraOPD.findByPk = async () => ({ id: 7, opd_id: 2, is_aktif: false });
+
+  try {
+    const req = {
+      params: { id: '7' },
+      body: {},
+      user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+    };
+    const res = fakeRes();
+    await controller.recall(req, res);
+
+    assert.notStrictEqual(res.statusCode, 403, `SUPER_ADMIN tidak boleh diblokir boundary OPD, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.strictEqual(recallCalled, true, 'recallRenstraOpd() HARUS tetap dipanggil untuk SUPER_ADMIN (tenant-wide)');
+  } finally {
+    models.RenstraOPD.findByPk = originalFindByPk;
+    recallService.recallRenstraOpd = originalRecall;
+  }
+});
+
+await test('renstra_opdController.recall — resolusi kepemilikan gagal (error internal) -> FAIL CLOSED 503, recallRenstraOpd TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_opdController')];
+  delete require.cache[require.resolve('../services/renstraOpdRecallService')];
+
+  await withStubs(
+    [[models.OpdPenanggungJawab, 'findOne', async () => { throw new Error('Simulated transient DB error'); }]],
+    async () => {
+      const recallService = require('../services/renstraOpdRecallService');
+      const originalRecall = recallService.recallRenstraOpd;
+      let recallCalled = false;
+      recallService.recallRenstraOpd = async () => {
+        recallCalled = true;
+        return {};
+      };
+
+      const controller = require('../controllers/renstra_opdController');
+      const originalFindByPk = models.RenstraOPD.findByPk;
+      models.RenstraOPD.findByPk = async () => ({ id: 7, opd_id: 2, is_aktif: false });
+
+      try {
+        const req = {
+          params: { id: '7' },
+          body: {},
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.recall(req, res);
+
+        assert.strictEqual(res.statusCode, 503, `harus fail-closed 503, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(res.body?.code, 'RENSTRA_OPD_BOUNDARY_UNAVAILABLE');
+        assert.strictEqual(recallCalled, false, 'recallRenstraOpd() TIDAK BOLEH dipanggil ketika resolusi kepemilikan gagal (fail-closed)');
+      } finally {
+        models.RenstraOPD.findByPk = originalFindByPk;
+        recallService.recallRenstraOpd = originalRecall;
+      }
+    }
+  );
+});
+
+console.log('\n=== S6-02: renstra_subkegiatanController.js — boundary OPD pada update ===');
+
+await test('renstra_subkegiatanController.update — caller OPD BEDA dari target -> DITOLAK 403, existing.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_subkegiatanController')];
+
+  const controller = require('../controllers/renstra_subkegiatanController');
+
+  let updateCalled = false;
+  const originalFindByPk = models.RenstraSubkegiatan.findByPk;
+  models.RenstraSubkegiatan.findByPk = async () => ({
+    id: 12,
+    nama_opd: 'Dinas Uji Coba B',
+    renstra_program_id: 1,
+    kegiatan_id: 1,
+    sub_kegiatan_id: 1,
+    update: async () => {
+      updateCalled = true;
+    },
+  });
+
+  try {
+    const req = {
+      params: { id: '12' },
+      body: {},
+      user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+    };
+    const res = fakeRes();
+    await controller.update(req, res);
+
+    assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.strictEqual(res.body?.code, 'RENSTRA_SUBKEGIATAN_OPD_FORBIDDEN');
+    assert.strictEqual(updateCalled, false, 'existing.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+  } finally {
+    models.RenstraSubkegiatan.findByPk = originalFindByPk;
+  }
+});
+
+await test('renstra_subkegiatanController.update — caller OPD SAMA dengan target (non-SUPER_ADMIN) -> boundary MENGIZINKAN, existing.update dipanggil', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_subkegiatanController')];
+
+  await withStubs(
+    [
+      [models.RenstraProgram, 'findByPk', async () => ({ id: 1 })],
+      [models.RenstraKegiatan, 'findByPk', async () => ({ id: 1, program_id: 1, rpjmd_kegiatan_id: 1 })],
+      [models.SubKegiatan, 'findByPk', async () => ({ id: 1, kegiatan_id: 1, kode_sub_kegiatan: 'X', nama_sub_kegiatan: 'Y' })],
+    ],
+    async () => {
+      const controller = require('../controllers/renstra_subkegiatanController');
+
+      let updateCalled = false;
+      const originalFindByPk = models.RenstraSubkegiatan.findByPk;
+      const originalFindOne = models.RenstraSubkegiatan.findOne;
+      models.RenstraSubkegiatan.findByPk = async () => ({
+        id: 12,
+        nama_opd: 'Dinas Uji Coba A',
+        renstra_program_id: 1,
+        kegiatan_id: 1,
+        sub_kegiatan_id: 1,
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+      models.RenstraSubkegiatan.findOne = async () => null;
+
+      try {
+        const req = {
+          params: { id: '12' },
+          body: { renstra_program_id: 1, kegiatan_id: 1, sub_kegiatan_id: 1 },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        };
+        const res = fakeRes();
+        await controller.update(req, res);
+
+        assert.notStrictEqual(res.statusCode, 403, `boundary TIDAK BOLEH menolak ketika caller dan target berada di OPD yang sama, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(updateCalled, true, 'existing.update() HARUS tetap dipanggil untuk same-OPD ADMINISTRATOR yang berwenang');
+      } finally {
+        models.RenstraSubkegiatan.findByPk = originalFindByPk;
+        models.RenstraSubkegiatan.findOne = originalFindOne;
+      }
+    }
+  );
+});
+
+await test('renstra_subkegiatanController.update — OPD-scoped ADMINISTRATOR pada record miliknya SENDIRI mencoba reassign nama_opd ke OPD lain -> DITOLAK 403, existing.update TIDAK dipanggil (ownership reassignment bypass guard)', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_subkegiatanController')];
+
+  const controller = require('../controllers/renstra_subkegiatanController');
+
+  let updateCalled = false;
+  const originalFindByPk = models.RenstraSubkegiatan.findByPk;
+  models.RenstraSubkegiatan.findByPk = async () => ({
+    id: 12,
+    nama_opd: 'Dinas Uji Coba A',
+    renstra_program_id: 1,
+    kegiatan_id: 1,
+    sub_kegiatan_id: 1,
+    update: async () => {
+      updateCalled = true;
+    },
+  });
+
+  try {
+    const req = {
+      params: { id: '12' },
+      body: { nama_opd: 'Dinas Uji Coba LAIN' },
+      user: { role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+    };
+    const res = fakeRes();
+    await controller.update(req, res);
+
+    assert.strictEqual(res.statusCode, 403, `harus 403, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+    assert.strictEqual(res.body?.code, 'RENSTRA_SUBKEGIATAN_REASSIGN_FORBIDDEN');
+    assert.strictEqual(updateCalled, false, 'existing.update() TIDAK BOLEH dipanggil ketika reassignment ditolak — ownership reassignment tidak boleh menjadi bypass otorisasi');
+  } finally {
+    models.RenstraSubkegiatan.findByPk = originalFindByPk;
+  }
+});
+
+await test('renstra_subkegiatanController.update — SUPER_ADMIN dikecualikan dari boundary OPD (otoritas tenant-wide), termasuk reassignment nama_opd', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_subkegiatanController')];
+
+  await withStubs(
+    [
+      [models.RenstraProgram, 'findByPk', async () => ({ id: 1 })],
+      [models.RenstraKegiatan, 'findByPk', async () => ({ id: 1, program_id: 1, rpjmd_kegiatan_id: 1 })],
+      [models.SubKegiatan, 'findByPk', async () => ({ id: 1, kegiatan_id: 1, kode_sub_kegiatan: 'X', nama_sub_kegiatan: 'Y' })],
+    ],
+    async () => {
+      const controller = require('../controllers/renstra_subkegiatanController');
+
+      let updateCalled = false;
+      const originalFindByPk = models.RenstraSubkegiatan.findByPk;
+      const originalFindOne = models.RenstraSubkegiatan.findOne;
+      models.RenstraSubkegiatan.findByPk = async () => ({
+        id: 12,
+        nama_opd: 'Dinas Uji Coba B',
+        renstra_program_id: 1,
+        kegiatan_id: 1,
+        sub_kegiatan_id: 1,
+        update: async () => {
+          updateCalled = true;
+        },
+      });
+      models.RenstraSubkegiatan.findOne = async () => null;
+
+      try {
+        const req = {
+          params: { id: '12' },
+          body: { renstra_program_id: 1, kegiatan_id: 1, sub_kegiatan_id: 1, nama_opd: 'Dinas Lain' },
+          user: { role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+        };
+        const res = fakeRes();
+        await controller.update(req, res);
+
+        assert.notStrictEqual(res.statusCode, 403, `SUPER_ADMIN tidak boleh diblokir boundary OPD, didapat ${res.statusCode}, body=${JSON.stringify(res.body)}`);
+        assert.strictEqual(updateCalled, true, 'existing.update() HARUS tetap dipanggil untuk SUPER_ADMIN (termasuk reassignment nama_opd)');
+      } finally {
+        models.RenstraSubkegiatan.findByPk = originalFindByPk;
+        models.RenstraSubkegiatan.findOne = originalFindOne;
+      }
+    }
+  );
+});
+
+console.log('\n=== S6 — renstra_opdController.delete & renstra_subkegiatanController.delete: NO_CHANGE_REQUIRED (SUPER_ADMIN-only route, bukan OPD-isolation defect) ===');
+
+await test('renstra_opdController.delete tidak dimodifikasi Sprint 6 — route DELETE /:id tetap SUPER_ADMIN-only (tenant-wide by design, bukan celah isolasi OPD)', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_opdController')];
+  const controller = require('../controllers/renstra_opdController');
+  assert.strictEqual(typeof controller.delete, 'function', 'exports.delete harus tetap ada dan tidak diubah Sprint 6');
+});
+
+await test('renstra_subkegiatanController.delete tidak dimodifikasi Sprint 6 — route DELETE /:id tetap SUPER_ADMIN-only (tenant-wide by design, bukan celah isolasi OPD)', async () => {
+  delete require.cache[require.resolve('../controllers/renstra_subkegiatanController')];
+  const controller = require('../controllers/renstra_subkegiatanController');
+  assert.strictEqual(typeof controller.delete, 'function', 'exports.delete harus tetap ada dan tidak diubah Sprint 6');
+});
+
 } // end runAllTests
 
 runAllTests().then(() => {

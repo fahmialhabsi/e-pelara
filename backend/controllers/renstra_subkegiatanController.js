@@ -14,6 +14,44 @@ const { programWhereForRenstraOpdQuery } = require('../helpers/renstraOpdProgram
 const { sortByKodeNatural } = require('../utils/kodeNaturalSort');
 const { flagNeedsRecallAman } = require('../services/recallDataService');
 
+// Sprint 6 — S6-02: update RenstraSubkegiatan sebelumnya hanya
+// findByPk(id) tanpa constraint kepemilikan OPD, meski row RenstraSubkegiatan
+// punya field nama_opd langsung (tidak ada opd_id numerik pada tabel ini —
+// lihat models/renstra_subkegiatanModel.js). Boundary di bawah mengikuti
+// PERSIS konvensi direct-string AD-S4-01 (sama seperti
+// controllers/renstra_tabelTujuanController.js Sprint 4 dan
+// controllers/realisasiIndikatorRenstraController.js Sprint 5) —
+// perbandingan langsung req.user.opd terhadap nama_opd row TANPA hop kedua
+// lewat OpdPenanggungJawab. SUPER_ADMIN dikecualikan (otoritas tenant-wide,
+// S4-DISC-003 precedent). Fail closed bukan diperlukan di sini karena tidak
+// ada query async tambahan untuk resolusi kepemilikan (nama_opd sudah ada
+// langsung pada row yang di-load) — namun tetap disediakan sebagai guard
+// masa depan bila resolusi berubah menjadi async.
+function assertRenstraSubkegiatanOpdBoundary(req, existingRow) {
+  if (req.user?.role === 'SUPER_ADMIN') return { ok: true };
+
+  const targetOpdName = existingRow?.nama_opd ?? null;
+  if (targetOpdName === null || targetOpdName === undefined || targetOpdName === '') {
+    // Row belum punya nama_opd — biarkan alur existing yang menangani,
+    // bukan boundary check ini.
+    return { ok: true };
+  }
+
+  const callerOpdName = req.user?.opd;
+  if (!callerOpdName || callerOpdName !== targetOpdName) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        message: 'Anda tidak berwenang melakukan aksi ini pada Sub Kegiatan Renstra milik OPD lain.',
+        code: 'RENSTRA_SUBKEGIATAN_OPD_FORBIDDEN',
+      },
+    };
+  }
+
+  return { ok: true };
+}
+
 /**
  * Tandai dokumen Renja yang menyalin data dari Sub Kegiatan Renstra ini
  * (`renja_item.source_renstra_subkegiatan_id`) sebagai perlu di-recall.
@@ -436,6 +474,14 @@ exports.update = async (req, res) => {
       return res.status(404).json({ message: 'Data tidak ditemukan' });
     }
 
+    // S6-02: resolusi kepemilikan HARUS berdasarkan nama_opd row existing
+    // (data lama), bukan req.body.nama_opd — mencegah request body
+    // menggantikan nilai kepemilikan yang dipakai untuk otorisasi.
+    const boundaryUpdate = assertRenstraSubkegiatanOpdBoundary(req, existing);
+    if (!boundaryUpdate.ok) {
+      return res.status(boundaryUpdate.status).json(boundaryUpdate.body);
+    }
+
     const data = {
       renstra_program_id: toInt(req.body.renstra_program_id) ?? existing.renstra_program_id,
       kegiatan_id: toInt(req.body.kegiatan_id) ?? existing.kegiatan_id,
@@ -444,6 +490,25 @@ exports.update = async (req, res) => {
       nama_opd: req.body.nama_opd ?? existing.nama_opd,
       nama_bidang_opd: req.body.nama_bidang_opd ?? existing.nama_bidang_opd,
     };
+
+    // S6-02: cegah OPD-scoped ADMINISTRATOR memindahkan (reassign)
+    // kepemilikan Sub Kegiatan Renstra ke OPD lain lewat req.body.nama_opd —
+    // ownership reassignment tidak boleh menjadi bypass otorisasi
+    // pasca-load. SUPER_ADMIN tetap boleh melakukan reassignment (perilaku
+    // existing, tenant-wide).
+    if (req.user?.role !== 'SUPER_ADMIN') {
+      const existingNamaOpd = existing.nama_opd ?? null;
+      if (
+        existingNamaOpd !== null &&
+        req.body.nama_opd != null &&
+        req.body.nama_opd !== existingNamaOpd
+      ) {
+        return res.status(403).json({
+          message: 'Anda tidak berwenang memindahkan Sub Kegiatan Renstra ini ke OPD lain.',
+          code: 'RENSTRA_SUBKEGIATAN_REASSIGN_FORBIDDEN',
+        });
+      }
+    }
 
     const chain = await validateSubkegiatanChain(data);
 
