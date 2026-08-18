@@ -26,6 +26,14 @@ const mrApprovalService = require("./mrApprovalService");
 const mrHistoryService = require("./mrHistoryService");
 const { buildHistoryPayload, createHistory, getPlainJson } = require("../../helpers/mr/mrHistoryHelper");
 const mrPlanningTemuanService = require("./mrPlanningTemuanService");
+// Sprint 9 -- S9: reuse the already-accepted Sprint 8 LHP/Temuan OPD boundary
+// decision (RenstraOPD.id namespace) for TindakLanjut, whose opd_id is
+// inherited transitively via Temuan.opd_id. Do NOT modify these Sprint 8
+// helpers -- reuse unchanged, per CEA Sprint 9 mandate S9-05.
+const {
+  resolveMrPlanningLhpOpdBoundary,
+  throwMrPlanningLhpOpdBoundaryError,
+} = require("./mrPlanningLhpService");
 
 const ALLOWED_CREATE_UPDATE_FIELDS = new Set([
   "periode_pemantauan_type",
@@ -69,6 +77,21 @@ const throwValidation = (message, details = {}, code = "MR_TINDAK_LANJUT_VALIDAT
 };
 
 const getActorId = (user) => user?.id || user?.user_id || user?.userId || null;
+
+// Sprint 9 -- S9-05: minimum-necessary target-OPD resolver for TindakLanjut.
+// Authoritative ownership is Temuan.opd_id (itself inherited from LHP.opd_id,
+// see mrPlanningTemuanService.js createTemuanFromLhp). TindakLanjut carries
+// mr_planning_temuan_id directly (no need to traverse Rekomendasi/LHP again).
+// This function performs NO authorization decision itself -- it only resolves
+// the authoritative targetOpdId input consumed by the unmodified Sprint 8
+// resolveMrPlanningLhpOpdBoundary() helper.
+async function resolveTindakLanjutTargetOpdId(mrPlanningTemuanId, { transaction } = {}) {
+  if (mrPlanningTemuanId === null || mrPlanningTemuanId === undefined) {
+    return null;
+  }
+  const temuan = await mrPlanningTemuanService.findTemuanOrFail(mrPlanningTemuanId, { transaction });
+  return temuan?.opd_id ?? null;
+}
 
 const pickAllowedFields = (body = {}) => {
   const payload = {};
@@ -180,6 +203,16 @@ const createTindakLanjutFromRekomendasi = async ({ rekomendasiId, body = {}, use
   return sequelize.transaction(async (transaction) => {
     const rekomendasi = await findRekomendasiOrFail(rekomendasiId, { transaction });
 
+    // Sprint 9 -- S9-06: authorize BEFORE any mutation. Authoritative target
+    // OPD is resolved from the parent Rekomendasi's mr_planning_temuan_id ->
+    // Temuan.opd_id (never from caller-supplied input -- Rekomendasi/TindakLanjut
+    // do not accept an opd_id from the request body at all).
+    const createTargetOpdId = await resolveTindakLanjutTargetOpdId(rekomendasi.mr_planning_temuan_id, { transaction });
+    const createBoundary = await resolveMrPlanningLhpOpdBoundary({ user, targetOpdId: createTargetOpdId });
+    if (!createBoundary.ok) {
+      throwMrPlanningLhpOpdBoundaryError(createBoundary);
+    }
+
     if (!rekomendasi.is_active) {
       throwValidation("Rekomendasi ini sudah dibatalkan.", {}, "MR_TEMUAN_REKOMENDASI_CANCELLED");
     }
@@ -259,6 +292,15 @@ const updateDraftTindakLanjut = async ({ tindakLanjutId, body = {}, user } = {})
   return sequelize.transaction(async (transaction) => {
     const tindakLanjut = await findTindakLanjutOrFail(tindakLanjutId, { transaction });
 
+    // Sprint 9 -- S9-06: stored TindakLanjut.mr_planning_temuan_id is
+    // authoritative -- never trust any replacement/request-supplied ownership.
+    // Authorize BEFORE any mutation.
+    const updateTargetOpdId = await resolveTindakLanjutTargetOpdId(tindakLanjut.mr_planning_temuan_id, { transaction });
+    const updateBoundary = await resolveMrPlanningLhpOpdBoundary({ user, targetOpdId: updateTargetOpdId });
+    if (!updateBoundary.ok) {
+      throwMrPlanningLhpOpdBoundaryError(updateBoundary);
+    }
+
     ensureDraftOrRejected(tindakLanjut);
 
     let statusLabel = tindakLanjut.status_tindak_lanjut;
@@ -322,6 +364,13 @@ const submitTindakLanjutForVerification = async ({ tindakLanjutId, user, note } 
   return sequelize.transaction(async (transaction) => {
     const tindakLanjut = await findTindakLanjutOrFail(tindakLanjutId, { transaction });
 
+    // Sprint 9 -- S9-06: authorize BEFORE any mutation/transition.
+    const submitTargetOpdId = await resolveTindakLanjutTargetOpdId(tindakLanjut.mr_planning_temuan_id, { transaction });
+    const submitBoundary = await resolveMrPlanningLhpOpdBoundary({ user, targetOpdId: submitTargetOpdId });
+    if (!submitBoundary.ok) {
+      throwMrPlanningLhpOpdBoundaryError(submitBoundary);
+    }
+
     ensureDraftOrRejected(tindakLanjut);
 
     const beforeJson = getPlainJson(tindakLanjut);
@@ -353,8 +402,35 @@ const submitTindakLanjutForVerification = async ({ tindakLanjutId, user, note } 
   });
 };
 
-const verifikasiHistory = ({ historyId, userId, note, request }) =>
-  mrApprovalService.verifikasiHistory({
+// Sprint 9 -- S9-07: mrApprovalService's shared boundary check reads
+// activeRecord.opd_id, a field MrPlanningTindakLanjut does not have --
+// making that check silently ineffective for this model (it always resolves
+// targetOpdId to null and short-circuits to ok:true). Per CEA decision, do
+// NOT modify mrApprovalService.js. Instead resolve the active TindakLanjut
+// and authorize HERE, in isolation, BEFORE delegating to the unmodified
+// shared approval engine. On DENY, mrApprovalService.verifikasiHistory is
+// never invoked -- zero mutation.
+const verifikasiHistory = async ({ historyId, userId, note, request }) => {
+  const history = await mrApprovalService.findHistoryById({
+    HistoryModel: MrPlanningTindakLanjutHistory,
+    historyId,
+  });
+  const activeTindakLanjut = await mrApprovalService.findActiveByHistory({
+    ActiveModel: MrPlanningTindakLanjut,
+    history,
+    historyForeignKey: "mr_planning_tindak_lanjut_id",
+  });
+
+  const verifikasiTargetOpdId = await resolveTindakLanjutTargetOpdId(activeTindakLanjut?.mr_planning_temuan_id ?? null);
+  const verifikasiBoundary = await resolveMrPlanningLhpOpdBoundary({
+    user: request?.user ?? null,
+    targetOpdId: verifikasiTargetOpdId,
+  });
+  if (!verifikasiBoundary.ok) {
+    throwMrPlanningLhpOpdBoundaryError(verifikasiBoundary);
+  }
+
+  return mrApprovalService.verifikasiHistory({
     sequelize,
     ActiveModel: MrPlanningTindakLanjut,
     HistoryModel: MrPlanningTindakLanjutHistory,
@@ -364,6 +440,7 @@ const verifikasiHistory = ({ historyId, userId, note, request }) =>
     historyForeignKey: "mr_planning_tindak_lanjut_id",
     request,
   });
+};
 
 const approveHistory = ({ historyId, userId, note, request }) =>
   mrApprovalService.approveHistory({
@@ -417,6 +494,7 @@ const getTindakLanjutDetail = async (tindakLanjutId) => {
 module.exports = {
   MrPlanningTindakLanjutServiceError,
   ALLOWED_CREATE_UPDATE_FIELDS,
+  resolveTindakLanjutTargetOpdId,
   createTindakLanjutFromRekomendasi,
   updateDraftTindakLanjut,
   submitTindakLanjutForVerification,

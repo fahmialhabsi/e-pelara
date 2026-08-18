@@ -37,7 +37,9 @@ const uploadTindakLanjutDocument = async (req, res) => {
 
 const getTindakLanjutDocuments = async (req, res) => {
   try {
-    const data = await documentService.listDocumentsByTindakLanjut({ tindakLanjutId: req.params.id });
+    // Sprint 9 -- S9-12: pass authenticated context so the service can
+    // enforce the OPD boundary before metadata disclosure.
+    const data = await documentService.listDocumentsByTindakLanjut({ tindakLanjutId: req.params.id, user: req.user });
     return sendSuccess(res, 200, "Daftar bukti dukung Tindak Lanjut berhasil dimuat.", data);
   } catch (error) {
     return sendError(res, error, "Daftar bukti dukung Tindak Lanjut belum dapat dimuat.");
@@ -46,7 +48,9 @@ const getTindakLanjutDocuments = async (req, res) => {
 
 const getTindakLanjutDocumentDetail = async (req, res) => {
   try {
-    const data = await documentService.getDocumentDetail({ documentId: req.params.documentId });
+    // Sprint 9 -- S9-12: pass authenticated context so the service can
+    // enforce the OPD boundary before metadata disclosure.
+    const data = await documentService.getDocumentDetail({ documentId: req.params.documentId, user: req.user });
     return sendSuccess(res, 200, "Detail bukti dukung Tindak Lanjut berhasil dimuat.", data);
   } catch (error) {
     return sendError(res, error, "Detail bukti dukung Tindak Lanjut belum dapat dimuat.");
@@ -68,8 +72,11 @@ const cancelTindakLanjutDocument = async (req, res) => {
 
 const downloadTindakLanjutDocument = async (req, res) => {
   try {
+    // Sprint 9 -- S9-11/S9-12 CRITICAL: pass authenticated context so the
+    // service enforces the OPD boundary BEFORE any file-stream side effect.
     const { absolutePath, originalFileName, mimeType } = await documentService.getDocumentForDownload({
       documentId: req.params.documentId,
+      user: req.user,
     });
 
     const dispositionType = req.query.mode === "view" ? "inline" : "attachment";

@@ -6328,6 +6328,1132 @@ await test('escalateToRisk — SUPER_ADMIN dikecualikan dari boundary OPD (looku
 });
 
 
+// =============================================================================
+// SPRINT 9 — MR TINDAK LANJUT (TLHP) + DOCUMENT OPD AUTHORIZATION &
+// INFORMATION-DISCLOSURE BOUNDARY HARDENING
+// =============================================================================
+// Reuses the unmodified Sprint 8 resolveMrPlanningLhpOpdBoundary /
+// throwMrPlanningLhpOpdBoundaryError helper (RenstraOPD.id namespace).
+// TindakLanjut/Document ownership resolves via mr_planning_temuan_id ->
+// Temuan.opd_id (never caller-supplied). mrApprovalService.js is untouched --
+// verifikasiHistory's boundary check happens in mrPlanningTindakLanjutService
+// BEFORE delegating to the unmodified shared approval engine.
+
+await test('mrPlanningTindakLanjutService.createTindakLanjutFromRekomendasi — Rekomendasi induk (via Temuan) milik OPD LAIN -> DITOLAK 403, MrPlanningTindakLanjut.create TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalRekFindByPk = models.MrPlanningTemuanRekomendasi.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalCreate = models.MrPlanningTindakLanjut.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuanRekomendasi.findByPk = async () => ({
+        id: 7,
+        is_active: true,
+        mr_planning_temuan_id: 55,
+        mr_planning_lhp_id: 3,
+        context_id: 1,
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        nama_opd: 'Dinas Lain',
+      });
+      let createCalled = false;
+      models.MrPlanningTindakLanjut.create = async () => {
+        createCalled = true;
+        return {};
+      };
+
+      try {
+        await svc.createTindakLanjutFromRekomendasi({
+          rekomendasiId: 7,
+          body: {
+            status_tindak_lanjut_ref_id: 1,
+            uraian_tindak_lanjut: 'Uji uraian',
+            tanggal_pemantauan: '2026-08-18',
+          },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('createTindakLanjutFromRekomendasi seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(createCalled, false, 'MrPlanningTindakLanjut.create() TIDAK BOLEH dipanggil ketika Rekomendasi induk milik OPD lain');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuanRekomendasi.findByPk = originalRekFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.MrPlanningTindakLanjut.create = originalCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutService.createTindakLanjutFromRekomendasi — Rekomendasi induk (via Temuan) milik OPD SENDIRI -> boundary MENGIZINKAN, MrPlanningTindakLanjut.create dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalRekFindByPk = models.MrPlanningTemuanRekomendasi.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalCreate = models.MrPlanningTindakLanjut.create;
+      const originalUpdate = models.MrPlanningTindakLanjut.update;
+      const originalStatusRefFindByPk = models.MrReferenceItem.findByPk;
+      const originalHistoryCreate = models.MrPlanningTindakLanjutHistory.create;
+      const originalRekUpdate = models.MrPlanningTemuanRekomendasi.update;
+
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuanRekomendasi.findByPk = async () => ({
+        id: 7,
+        is_active: true,
+        mr_planning_temuan_id: 55,
+        mr_planning_lhp_id: 3,
+        context_id: 1,
+        update: async () => {},
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 1,
+        nama_opd: 'Dinas Uji Coba A',
+      });
+      models.MrPlanningTindakLanjut.update = async () => [0];
+      models.MrReferenceItem.findByPk = async () => ({
+        id: 1,
+        kode_item: 'DALAM_PROSES',
+        nama_item: 'Dalam Proses',
+        is_active: true,
+        group: { kode_group: 'MR_TLHP_STATUS_TINDAK_LANJUT' },
+      });
+      models.MrPlanningTindakLanjutHistory.create = async () => ({ id: 1 });
+
+      let createCalled = false;
+      models.MrPlanningTindakLanjut.create = async (payload) => {
+        createCalled = true;
+        return { id: 99, ...payload, get: () => ({ id: 99, ...payload }) };
+      };
+
+      // recomputeTemuanRollup is called after create -- stub it out via the
+      // already-loaded mrPlanningTemuanService singleton to avoid touching
+      // unrelated rollup internals.
+      const mrPlanningTemuanService = require('../services/mr/mrPlanningTemuanService');
+      const originalRecompute = mrPlanningTemuanService.recomputeTemuanRollup;
+      mrPlanningTemuanService.recomputeTemuanRollup = async () => {};
+
+      try {
+        const result = await svc.createTindakLanjutFromRekomendasi({
+          rekomendasiId: 7,
+          body: {
+            status_tindak_lanjut_ref_id: 1,
+            uraian_tindak_lanjut: 'Uji uraian',
+            tanggal_pemantauan: '2026-08-18',
+          },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result, 'createTindakLanjutFromRekomendasi harus berhasil ketika Rekomendasi induk milik OPD caller sendiri');
+        assert.strictEqual(createCalled, true, 'MrPlanningTindakLanjut.create() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuanRekomendasi.findByPk = originalRekFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.MrPlanningTindakLanjut.create = originalCreate;
+        models.MrPlanningTindakLanjut.update = originalUpdate;
+        models.MrReferenceItem.findByPk = originalStatusRefFindByPk;
+        models.MrPlanningTindakLanjutHistory.create = originalHistoryCreate;
+        models.MrPlanningTemuanRekomendasi.update = originalRekUpdate;
+        mrPlanningTemuanService.recomputeTemuanRollup = originalRecompute;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutService.createTindakLanjutFromRekomendasi — SUPER_ADMIN dikecualikan dari boundary OPD (lookup RenstraOPD.findOne TIDAK dipicu)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async () => { opdLookupCalled = true; return null; }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalRekFindByPk = models.MrPlanningTemuanRekomendasi.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalCreate = models.MrPlanningTindakLanjut.create;
+      const originalUpdate = models.MrPlanningTindakLanjut.update;
+      const originalStatusRefFindByPk = models.MrReferenceItem.findByPk;
+      const originalHistoryCreate = models.MrPlanningTindakLanjutHistory.create;
+
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuanRekomendasi.findByPk = async () => ({
+        id: 7,
+        is_active: true,
+        mr_planning_temuan_id: 55,
+        mr_planning_lhp_id: 3,
+        context_id: 1,
+        update: async () => {},
+      });
+      // Deliberately MISMATCHED opd_id (2) vs caller's own OPD (which would
+      // resolve to a different id if the lookup ran) -- proves genuine
+      // SUPER_ADMIN short-circuit rather than a coincidental match.
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        nama_opd: 'Dinas Lain Sama Sekali',
+      });
+      models.MrPlanningTindakLanjut.update = async () => [0];
+      models.MrReferenceItem.findByPk = async () => ({
+        id: 1,
+        kode_item: 'DALAM_PROSES',
+        nama_item: 'Dalam Proses',
+        is_active: true,
+        group: { kode_group: 'MR_TLHP_STATUS_TINDAK_LANJUT' },
+      });
+      models.MrPlanningTindakLanjutHistory.create = async () => ({ id: 1 });
+
+      let createCalled = false;
+      models.MrPlanningTindakLanjut.create = async (payload) => {
+        createCalled = true;
+        return { id: 99, ...payload, get: () => ({ id: 99, ...payload }) };
+      };
+
+      const mrPlanningTemuanService = require('../services/mr/mrPlanningTemuanService');
+      const originalRecompute = mrPlanningTemuanService.recomputeTemuanRollup;
+      mrPlanningTemuanService.recomputeTemuanRollup = async () => {};
+
+      try {
+        const result = await svc.createTindakLanjutFromRekomendasi({
+          rekomendasiId: 7,
+          body: {
+            status_tindak_lanjut_ref_id: 1,
+            uraian_tindak_lanjut: 'Uji uraian',
+            tanggal_pemantauan: '2026-08-18',
+          },
+          user: { id: 1, role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+        });
+        assert.ok(result, 'createTindakLanjutFromRekomendasi harus berhasil untuk SUPER_ADMIN');
+        assert.strictEqual(createCalled, true, 'MrPlanningTindakLanjut.create() HARUS dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup RenstraOPD.findOne sama sekali');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuanRekomendasi.findByPk = originalRekFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.MrPlanningTindakLanjut.create = originalCreate;
+        models.MrPlanningTindakLanjut.update = originalUpdate;
+        models.MrReferenceItem.findByPk = originalStatusRefFindByPk;
+        models.MrPlanningTindakLanjutHistory.create = originalHistoryCreate;
+        mrPlanningTemuanService.recomputeTemuanRollup = originalRecompute;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutService.createTindakLanjutFromRekomendasi — resolusi kepemilikan OPD gagal (error internal) -> FAIL CLOSED 503, MrPlanningTindakLanjut.create TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async () => { throw new Error('DB unavailable (simulated)'); }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalRekFindByPk = models.MrPlanningTemuanRekomendasi.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalCreate = models.MrPlanningTindakLanjut.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuanRekomendasi.findByPk = async () => ({
+        id: 7,
+        is_active: true,
+        mr_planning_temuan_id: 55,
+        mr_planning_lhp_id: 3,
+        context_id: 1,
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        nama_opd: 'Dinas Lain',
+      });
+      let createCalled = false;
+      models.MrPlanningTindakLanjut.create = async () => {
+        createCalled = true;
+        return {};
+      };
+
+      try {
+        await svc.createTindakLanjutFromRekomendasi({
+          rekomendasiId: 7,
+          body: {
+            status_tindak_lanjut_ref_id: 1,
+            uraian_tindak_lanjut: 'Uji uraian',
+            tanggal_pemantauan: '2026-08-18',
+          },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('createTindakLanjutFromRekomendasi seharusnya melempar error FAIL CLOSED, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 503, `harus 503 (fail closed), didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_BOUNDARY_UNAVAILABLE');
+        assert.strictEqual(createCalled, false, 'MrPlanningTindakLanjut.create() TIDAK BOLEH dipanggil ketika resolusi kepemilikan OPD gagal');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuanRekomendasi.findByPk = originalRekFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.MrPlanningTindakLanjut.create = originalCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutService.updateDraftTindakLanjut — TindakLanjut (via Temuan) milik OPD LAIN -> DITOLAK 403, tindakLanjut.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalTLFindByPk = models.MrPlanningTindakLanjut.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+
+      let updateCalled = false;
+      models.MrPlanningTindakLanjut.findByPk = async () => ({
+        id: 99,
+        status_revisi: 'draft',
+        mr_planning_temuan_id: 55,
+        mr_planning_temuan_rekomendasi_id: 7,
+        update: async () => { updateCalled = true; },
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        nama_opd: 'Dinas Lain',
+      });
+
+      try {
+        await svc.updateDraftTindakLanjut({
+          tindakLanjutId: 99,
+          body: { uraian_tindak_lanjut: 'Uji ubah uraian' },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('updateDraftTindakLanjut seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'tindakLanjut.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTindakLanjut.findByPk = originalTLFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutService.updateDraftTindakLanjut — TindakLanjut (via Temuan) milik OPD SENDIRI -> boundary MENGIZINKAN, tindakLanjut.update dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalTLFindByPk = models.MrPlanningTindakLanjut.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalHistoryCreate = models.MrPlanningTindakLanjutHistory.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTindakLanjutHistory.create = async () => ({ id: 1 });
+
+      let updateCalled = false;
+      models.MrPlanningTindakLanjut.findByPk = async () => ({
+        id: 99,
+        status_revisi: 'draft',
+        status_tindak_lanjut: 'Dalam Proses',
+        mr_planning_temuan_id: 55,
+        mr_planning_temuan_rekomendasi_id: 7,
+        context_id: 1,
+        is_latest: false, // avoid rollup side effects for this boundary-focused test
+        update: async () => { updateCalled = true; },
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 1,
+        nama_opd: 'Dinas Uji Coba A',
+      });
+
+      try {
+        const result = await svc.updateDraftTindakLanjut({
+          tindakLanjutId: 99,
+          body: { uraian_tindak_lanjut: 'Uji ubah uraian' },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result, 'updateDraftTindakLanjut harus berhasil ketika TindakLanjut milik OPD caller sendiri');
+        assert.strictEqual(updateCalled, true, 'tindakLanjut.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTindakLanjut.findByPk = originalTLFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.MrPlanningTindakLanjutHistory.create = originalHistoryCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutService.submitTindakLanjutForVerification — TindakLanjut (via Temuan) milik OPD LAIN -> DITOLAK 403, tindakLanjut.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalTLFindByPk = models.MrPlanningTindakLanjut.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+
+      let updateCalled = false;
+      models.MrPlanningTindakLanjut.findByPk = async () => ({
+        id: 99,
+        status_revisi: 'draft',
+        mr_planning_temuan_id: 55,
+        update: async () => { updateCalled = true; },
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        nama_opd: 'Dinas Lain',
+      });
+
+      try {
+        await svc.submitTindakLanjutForVerification({
+          tindakLanjutId: 99,
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+          note: null,
+        });
+        assert.fail('submitTindakLanjutForVerification seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'tindakLanjut.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTindakLanjut.findByPk = originalTLFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutService.submitTindakLanjutForVerification — TindakLanjut (via Temuan) milik OPD SENDIRI -> boundary MENGIZINKAN, tindakLanjut.update dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalTLFindByPk = models.MrPlanningTindakLanjut.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalHistoryCreate = models.MrPlanningTindakLanjutHistory.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTindakLanjutHistory.create = async () => ({ id: 1 });
+
+      let updateCalled = false;
+      models.MrPlanningTindakLanjut.findByPk = async () => ({
+        id: 99,
+        status_revisi: 'draft',
+        context_id: 1,
+        mr_planning_temuan_id: 55,
+        update: async () => { updateCalled = true; },
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 1,
+        nama_opd: 'Dinas Uji Coba A',
+      });
+
+      try {
+        const result = await svc.submitTindakLanjutForVerification({
+          tindakLanjutId: 99,
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+          note: null,
+        });
+        assert.ok(result, 'submitTindakLanjutForVerification harus berhasil ketika TindakLanjut milik OPD caller sendiri');
+        assert.strictEqual(updateCalled, true, 'tindakLanjut.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTindakLanjut.findByPk = originalTLFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.MrPlanningTindakLanjutHistory.create = originalHistoryCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutService.verifikasiHistory — TindakLanjut aktif (via Temuan) milik OPD LAIN -> DITOLAK 403, mrApprovalService.verifikasiHistory (transaction) TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutService');
+
+      const originalHistoryFindByPk = models.MrPlanningTindakLanjutHistory.findByPk;
+      const originalTLFindByPk = models.MrPlanningTindakLanjut.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalTransaction = models.sequelize.transaction;
+
+      let transactionCalled = false;
+      models.sequelize.transaction = async (cb) => { transactionCalled = true; return cb({ fake: true }); };
+      models.MrPlanningTindakLanjutHistory.findByPk = async () => ({
+        id: 501,
+        mr_planning_tindak_lanjut_id: 99,
+        status_revisi: 'draft',
+      });
+      models.MrPlanningTindakLanjut.findByPk = async () => ({
+        id: 99,
+        mr_planning_temuan_id: 55,
+        status_revisi: 'draft',
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        nama_opd: 'Dinas Lain',
+      });
+
+      const req = { user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } };
+
+      try {
+        await svc.verifikasiHistory({
+          historyId: 501,
+          userId: 5,
+          note: null,
+          request: req,
+        });
+        assert.fail('verifikasiHistory seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(transactionCalled, false, 'mrApprovalService.verifikasiHistory (dan transaksinya) TIDAK BOLEH dipanggil ketika boundary OPD menolak -- ini membuktikan silent-bypass sebelumnya sudah ditutup');
+      } finally {
+        models.MrPlanningTindakLanjutHistory.findByPk = originalHistoryFindByPk;
+        models.MrPlanningTindakLanjut.findByPk = originalTLFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.sequelize.transaction = originalTransaction;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutService.verifikasiHistory — SUPER_ADMIN dikecualikan dari boundary OPD (lookup RenstraOPD.findOne TIDAK dipicu, delegasi ke mrApprovalService TETAP terjadi)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async () => { opdLookupCalled = true; return null; }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutService');
+
+      const originalHistoryFindByPk = models.MrPlanningTindakLanjutHistory.findByPk;
+      const originalTLFindByPk = models.MrPlanningTindakLanjut.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalTransaction = models.sequelize.transaction;
+      const originalUpdateHistoryWorkflow = models.MrPlanningTindakLanjutHistory.update;
+      const originalTLUpdate = models.MrPlanningTindakLanjut.update;
+
+      let transactionCalled = false;
+      // mrApprovalService.verifikasiHistory uses the no-callback Sequelize
+      // form: `const transaction = await sequelize.transaction();` followed
+      // by manual commit/rollback -- NOT the callback form used elsewhere in
+      // this file's own service-layer stubs. Return a fake transaction object.
+      models.sequelize.transaction = async () => {
+        transactionCalled = true;
+        return { commit: async () => {}, rollback: async () => {}, fake: true };
+      };
+      models.MrPlanningTindakLanjutHistory.findByPk = async () => ({
+        id: 501,
+        mr_planning_tindak_lanjut_id: 99,
+        status_revisi: 'draft',
+        update: async () => {},
+        get: function (opts) { const { update, get, ...rest } = this; return rest; },
+      });
+      // Deliberately MISMATCHED opd_id vs caller -- proves genuine SUPER_ADMIN
+      // short-circuit rather than a coincidental match.
+      models.MrPlanningTindakLanjut.findByPk = async () => ({
+        id: 99,
+        mr_planning_temuan_id: 55,
+        status_revisi: 'draft',
+        update: async () => {},
+        get: function (opts) { const { update, get, ...rest } = this; return rest; },
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        nama_opd: 'Dinas Lain Sama Sekali',
+      });
+
+      const req = { user: { id: 1, role: 'SUPER_ADMIN', opd: 'Dinas Manapun' } };
+
+      try {
+        await svc.verifikasiHistory({
+          historyId: 501,
+          userId: 1,
+          note: null,
+          request: req,
+        });
+        assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup RenstraOPD.findOne sama sekali');
+        assert.strictEqual(transactionCalled, true, 'mrApprovalService.verifikasiHistory HARUS tetap dipanggil (delegasi) untuk SUPER_ADMIN setelah boundary mengizinkan');
+      } finally {
+        models.MrPlanningTindakLanjutHistory.findByPk = originalHistoryFindByPk;
+        models.MrPlanningTindakLanjut.findByPk = originalTLFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTindakLanjutHistory.update = originalUpdateHistoryWorkflow;
+        models.MrPlanningTindakLanjut.update = originalTLUpdate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutService.createTindakLanjutFromRekomendasi — caller tanpa user.opd (missing/unresolvable) -> DITOLAK 403 FORBIDDEN, MrPlanningTindakLanjut.create TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async () => { opdLookupCalled = true; return null; }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalRekFindByPk = models.MrPlanningTemuanRekomendasi.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalCreate = models.MrPlanningTindakLanjut.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuanRekomendasi.findByPk = async () => ({
+        id: 7,
+        is_active: true,
+        mr_planning_temuan_id: 55,
+        mr_planning_lhp_id: 3,
+        context_id: 1,
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        nama_opd: 'Dinas Lain',
+      });
+      let createCalled = false;
+      models.MrPlanningTindakLanjut.create = async () => {
+        createCalled = true;
+        return {};
+      };
+
+      try {
+        await svc.createTindakLanjutFromRekomendasi({
+          rekomendasiId: 7,
+          body: {
+            status_tindak_lanjut_ref_id: 1,
+            uraian_tindak_lanjut: 'Uji uraian',
+            tanggal_pemantauan: '2026-08-18',
+          },
+          // ADMINISTRATOR tanpa user.opd sama sekali -- caller OPD tidak dapat diresolusi.
+          user: { id: 5, role: 'ADMINISTRATOR', opd: null },
+        });
+        assert.fail('createTindakLanjutFromRekomendasi seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(opdLookupCalled, false, 'RenstraOPD.findOne TIDAK BOLEH dipanggil ketika user.opd sendiri sudah kosong/tidak dapat diresolusi (fail closed sebelum lookup)');
+        assert.strictEqual(createCalled, false, 'MrPlanningTindakLanjut.create() TIDAK BOLEH dipanggil ketika caller OPD tidak dapat diresolusi');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuanRekomendasi.findByPk = originalRekFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.MrPlanningTindakLanjut.create = originalCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutDocumentService.createDocument — TindakLanjut induk (via Temuan) milik OPD LAIN -> DITOLAK 403, MrPlanningTindakLanjutDocument.create TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutDocumentService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutDocumentService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalTLFindOne = models.MrPlanningTindakLanjut.findOne;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalDocCreate = models.MrPlanningTindakLanjutDocument.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTindakLanjut.findOne = async () => ({
+        id: 99,
+        is_active: true,
+        mr_planning_temuan_id: 55,
+        mr_planning_temuan_rekomendasi_id: 7,
+        context_id: 1,
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        nama_opd: 'Dinas Lain',
+      });
+      let createCalled = false;
+      models.MrPlanningTindakLanjutDocument.create = async () => {
+        createCalled = true;
+        return {};
+      };
+
+      try {
+        await svc.createDocument({
+          tindakLanjutId: 99,
+          body: { document_type: 'BUKTI_SETORAN', document_title: 'Bukti Setoran Uji' },
+          file: { filename: 'a.pdf', path: '/tmp/a.pdf', originalname: 'a.pdf', mimetype: 'application/pdf', size: 10 },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('createDocument seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(createCalled, false, 'MrPlanningTindakLanjutDocument.create() TIDAK BOLEH dipanggil ketika TindakLanjut induk milik OPD lain');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTindakLanjut.findOne = originalTLFindOne;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.MrPlanningTindakLanjutDocument.create = originalDocCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutDocumentService.createDocument — TindakLanjut induk (via Temuan) milik OPD SENDIRI -> boundary MENGIZINKAN, MrPlanningTindakLanjutDocument.create dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutDocumentService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutDocumentService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalTLFindOne = models.MrPlanningTindakLanjut.findOne;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalDocCreate = models.MrPlanningTindakLanjutDocument.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTindakLanjut.findOne = async () => ({
+        id: 99,
+        is_active: true,
+        mr_planning_temuan_id: 55,
+        mr_planning_temuan_rekomendasi_id: 7,
+        context_id: 1,
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 1,
+        nama_opd: 'Dinas Uji Coba A',
+      });
+      let createCalled = false;
+      models.MrPlanningTindakLanjutDocument.create = async (payload) => {
+        createCalled = true;
+        return { ...payload, get: function (opts) { const { get, ...rest } = this; return rest; } };
+      };
+
+      try {
+        const result = await svc.createDocument({
+          tindakLanjutId: 99,
+          body: { document_type: 'BUKTI_SETORAN', document_title: 'Bukti Setoran Uji' },
+          file: { filename: 'a.pdf', path: '/tmp/a.pdf', originalname: 'a.pdf', mimetype: 'application/pdf', size: 10 },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result, 'createDocument harus berhasil ketika TindakLanjut induk milik OPD caller sendiri');
+        assert.strictEqual(createCalled, true, 'MrPlanningTindakLanjutDocument.create() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTindakLanjut.findOne = originalTLFindOne;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.MrPlanningTindakLanjutDocument.create = originalDocCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutDocumentService.cancelDocument — Document (via Temuan) milik OPD LAIN -> DITOLAK 403, document.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutDocumentService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutDocumentService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalDocFindOne = models.MrPlanningTindakLanjutDocument.findOne;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ LOCK: { UPDATE: 'UPDATE' }, fake: true });
+
+      let updateCalled = false;
+      models.MrPlanningTindakLanjutDocument.findOne = async () => ({
+        id: 300,
+        is_active: true,
+        status_dokumen: 'aktif',
+        mr_planning_temuan_id: 55,
+        update: async () => { updateCalled = true; },
+        get: function (opts) { const { update, get, ...rest } = this; return rest; },
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        nama_opd: 'Dinas Lain',
+      });
+
+      try {
+        await svc.cancelDocument({
+          documentId: 300,
+          body: { cancel_reason: 'Uji pembatalan' },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('cancelDocument seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'document.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTindakLanjutDocument.findOne = originalDocFindOne;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutDocumentService.cancelDocument — Document (via Temuan) milik OPD SENDIRI -> boundary MENGIZINKAN, document.update dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutDocumentService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutDocumentService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalDocFindOne = models.MrPlanningTindakLanjutDocument.findOne;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ LOCK: { UPDATE: 'UPDATE' }, fake: true });
+
+      let updateCalled = false;
+      models.MrPlanningTindakLanjutDocument.findOne = async () => ({
+        id: 300,
+        is_active: true,
+        status_dokumen: 'aktif',
+        mr_planning_temuan_id: 55,
+        update: async () => { updateCalled = true; },
+        get: function (opts) { const { update, get, ...rest } = this; return rest; },
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 1,
+        nama_opd: 'Dinas Uji Coba A',
+      });
+
+      try {
+        const result = await svc.cancelDocument({
+          documentId: 300,
+          body: { cancel_reason: 'Uji pembatalan' },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result, 'cancelDocument harus berhasil ketika Document milik OPD caller sendiri');
+        assert.strictEqual(updateCalled, true, 'document.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTindakLanjutDocument.findOne = originalDocFindOne;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutDocumentService.listDocumentsByTindakLanjut — TindakLanjut induk (via Temuan) milik OPD LAIN -> DITOLAK 403, MrPlanningTindakLanjutDocument.findAll TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutDocumentService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutDocumentService');
+
+      const originalTLFindOne = models.MrPlanningTindakLanjut.findOne;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalDocFindAll = models.MrPlanningTindakLanjutDocument.findAll;
+      models.MrPlanningTindakLanjut.findOne = async () => ({
+        id: 99,
+        is_active: true,
+        mr_planning_temuan_id: 55,
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        nama_opd: 'Dinas Lain',
+      });
+      let findAllCalled = false;
+      models.MrPlanningTindakLanjutDocument.findAll = async () => {
+        findAllCalled = true;
+        return [];
+      };
+
+      try {
+        await svc.listDocumentsByTindakLanjut({
+          tindakLanjutId: 99,
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('listDocumentsByTindakLanjut seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(findAllCalled, false, 'MrPlanningTindakLanjutDocument.findAll() TIDAK BOLEH dipanggil (disclosure metadata) ketika boundary OPD menolak');
+      } finally {
+        models.MrPlanningTindakLanjut.findOne = originalTLFindOne;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.MrPlanningTindakLanjutDocument.findAll = originalDocFindAll;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutDocumentService.listDocumentsByTindakLanjut — TindakLanjut induk (via Temuan) milik OPD SENDIRI -> boundary MENGIZINKAN, MrPlanningTindakLanjutDocument.findAll dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutDocumentService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutDocumentService');
+
+      const originalTLFindOne = models.MrPlanningTindakLanjut.findOne;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalDocFindAll = models.MrPlanningTindakLanjutDocument.findAll;
+      models.MrPlanningTindakLanjut.findOne = async () => ({
+        id: 99,
+        is_active: true,
+        mr_planning_temuan_id: 55,
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 1,
+        nama_opd: 'Dinas Uji Coba A',
+      });
+      let findAllCalled = false;
+      models.MrPlanningTindakLanjutDocument.findAll = async () => {
+        findAllCalled = true;
+        return [];
+      };
+
+      try {
+        const result = await svc.listDocumentsByTindakLanjut({
+          tindakLanjutId: 99,
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(Array.isArray(result), 'listDocumentsByTindakLanjut harus berhasil ketika TindakLanjut milik OPD caller sendiri');
+        assert.strictEqual(findAllCalled, true, 'MrPlanningTindakLanjutDocument.findAll() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.MrPlanningTindakLanjut.findOne = originalTLFindOne;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.MrPlanningTindakLanjutDocument.findAll = originalDocFindAll;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutDocumentService.getDocumentDetail — Document (via Temuan) milik OPD LAIN -> DITOLAK 403, dokumen TIDAK dikembalikan', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutDocumentService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTindakLanjutDocumentService');
+
+      const originalDocFindOne = models.MrPlanningTindakLanjutDocument.findOne;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      models.MrPlanningTindakLanjutDocument.findOne = async () => ({
+        id: 300,
+        is_active: true,
+        mr_planning_temuan_id: 55,
+        document_title: 'Rahasia OPD Lain',
+        get: function (opts) { const { get, ...rest } = this; return rest; },
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        nama_opd: 'Dinas Lain',
+      });
+
+      try {
+        await svc.getDocumentDetail({
+          documentId: 300,
+          user: { id: 5, role: 'PELAKSANA', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('getDocumentDetail seharusnya melempar error boundary OPD, bukan sukses (mengungkap metadata milik OPD lain)');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+      } finally {
+        models.MrPlanningTindakLanjutDocument.findOne = originalDocFindOne;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutDocumentService.getDocumentForDownload — Document (via Temuan) milik OPD LAIN -> DITOLAK 403 SEBELUM fs.existsSync/file-stream side effect (zero disclosure), PELAKSANA-role tetap ditolak', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutDocumentService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const fs = require('fs');
+      const svc = require('../services/mr/mrPlanningTindakLanjutDocumentService');
+
+      const originalDocFindOne = models.MrPlanningTindakLanjutDocument.findOne;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalExistsSync = fs.existsSync;
+
+      let fsExistsSyncCalledForDocument = false;
+      fs.existsSync = (p) => {
+        if (typeof p === 'string' && p.includes('rahasia-opd-lain')) {
+          fsExistsSyncCalledForDocument = true;
+        }
+        return originalExistsSync(p);
+      };
+
+      models.MrPlanningTindakLanjutDocument.findOne = async () => ({
+        id: 300,
+        is_active: true,
+        mr_planning_temuan_id: 55,
+        file_path: '/uploads/rahasia-opd-lain.pdf',
+        file_name: 'rahasia-opd-lain.pdf',
+        original_file_name: 'Bukti Setoran Rahasia.pdf',
+        mime_type: 'application/pdf',
+        get: function (opts) { const { get, ...rest } = this; return rest; },
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        nama_opd: 'Dinas Lain',
+      });
+
+      try {
+        await svc.getDocumentForDownload({
+          documentId: 300,
+          user: { id: 5, role: 'PELAKSANA', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('getDocumentForDownload seharusnya melempar error boundary OPD, bukan sukses -- ini akan membocorkan dokumen OPD lain');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(fsExistsSyncCalledForDocument, false, 'fs.existsSync() untuk file dokumen TIDAK BOLEH dipanggil ketika boundary OPD menolak -- membuktikan ZERO file-disclosure side effect pada penolakan');
+      } finally {
+        models.MrPlanningTindakLanjutDocument.findOne = originalDocFindOne;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        fs.existsSync = originalExistsSync;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTindakLanjutDocumentService.getDocumentForDownload — Document (via Temuan) milik OPD SENDIRI -> boundary MENGIZINKAN, resolusi berkas dilanjutkan', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTindakLanjutDocumentService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const fs = require('fs');
+      const svc = require('../services/mr/mrPlanningTindakLanjutDocumentService');
+
+      const originalDocFindOne = models.MrPlanningTindakLanjutDocument.findOne;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalExistsSync = fs.existsSync;
+      fs.existsSync = () => true;
+
+      models.MrPlanningTindakLanjutDocument.findOne = async () => ({
+        id: 300,
+        is_active: true,
+        mr_planning_temuan_id: 55,
+        file_path: '/uploads/milik-sendiri.pdf',
+        file_name: 'milik-sendiri.pdf',
+        original_file_name: 'Bukti Setoran Sendiri.pdf',
+        mime_type: 'application/pdf',
+        get: function (opts) { const { get, ...rest } = this; return rest; },
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 1,
+        nama_opd: 'Dinas Uji Coba A',
+      });
+
+      try {
+        const result = await svc.getDocumentForDownload({
+          documentId: 300,
+          user: { id: 5, role: 'PELAKSANA', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result?.absolutePath, 'getDocumentForDownload harus berhasil dan mengembalikan absolutePath ketika Document milik OPD caller sendiri');
+      } finally {
+        models.MrPlanningTindakLanjutDocument.findOne = originalDocFindOne;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        fs.existsSync = originalExistsSync;
+      }
+    }
+  );
+});
+
+
 } // end runAllTests
 
 runAllTests().then(() => {

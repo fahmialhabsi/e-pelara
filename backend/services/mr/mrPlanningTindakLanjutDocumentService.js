@@ -17,6 +17,16 @@ const {
   MrPlanningTindakLanjutDocument,
 } = require("../../models");
 
+// Sprint 9 -- S9: reuse the already-accepted Sprint 8 LHP/Temuan OPD boundary
+// decision (RenstraOPD.id namespace) unchanged. Document ownership resolves
+// via its own mr_planning_temuan_id (denormalized directly onto the Document
+// record at creation) -> Temuan.opd_id -- authoritative, never caller-supplied.
+const mrPlanningTemuanService = require("./mrPlanningTemuanService");
+const {
+  resolveMrPlanningLhpOpdBoundary,
+  throwMrPlanningLhpOpdBoundaryError,
+} = require("./mrPlanningLhpService");
+
 const DOCUMENT_TYPES = Object.freeze({
   BUKTI_SETORAN: "BUKTI_SETORAN",
   SURAT_PERTANGGUNGJAWABAN: "SURAT_PERTANGGUNGJAWABAN",
@@ -36,6 +46,19 @@ const DOCUMENT_TYPE_LABELS = Object.freeze({
 const ACTIVE_STATUSES = Object.freeze(["draft", "aktif"]);
 
 const getActorId = (user = {}) => user.id || user.user_id || user.userId || user.sub || null;
+
+// Sprint 9 -- S9-10: resolve authoritative target OPD for a TindakLanjut
+// Document record. Prefers the FK already denormalized on the Document
+// itself (mr_planning_temuan_id, set at createDocument time) -- falls back
+// to the supplied TindakLanjut's mr_planning_temuan_id when no Document FK
+// is available yet (create path, before the Document row exists).
+async function resolveTindakLanjutDocumentTargetOpdId(mrPlanningTemuanId, { transaction } = {}) {
+  if (mrPlanningTemuanId === null || mrPlanningTemuanId === undefined) {
+    return null;
+  }
+  const temuan = await mrPlanningTemuanService.findTemuanOrFail(mrPlanningTemuanId, { transaction });
+  return temuan?.opd_id ?? null;
+}
 
 const toIntegerId = (value, label = "ID") => {
   const id = Number(value);
@@ -165,6 +188,15 @@ const createDocument = async ({ tindakLanjutId, body = {}, file, user }) => {
     return await sequelize.transaction(async (transaction) => {
       const tindakLanjut = await findTindakLanjutOrFail(tindakLanjutId, { transaction });
 
+      // Sprint 9 -- S9-10/S9-11: authorize BEFORE upload/create. Authoritative
+      // target OPD resolved from the parent TindakLanjut's stored
+      // mr_planning_temuan_id -> Temuan.opd_id.
+      const createDocTargetOpdId = await resolveTindakLanjutDocumentTargetOpdId(tindakLanjut.mr_planning_temuan_id, { transaction });
+      const createDocBoundary = await resolveMrPlanningLhpOpdBoundary({ user, targetOpdId: createDocTargetOpdId });
+      if (!createDocBoundary.ok) {
+        throwMrPlanningLhpOpdBoundaryError(createDocBoundary);
+      }
+
       const documentType = assertDocumentType(body.document_type);
       const documentTitle = assertRequiredText(body.document_title, "Judul dokumen wajib diisi.");
 
@@ -212,8 +244,15 @@ const createDocument = async ({ tindakLanjutId, body = {}, file, user }) => {
   }
 };
 
-const listDocumentsByTindakLanjut = async ({ tindakLanjutId }) => {
+const listDocumentsByTindakLanjut = async ({ tindakLanjutId, user }) => {
   const tindakLanjut = await findTindakLanjutOrFail(tindakLanjutId);
+
+  // Sprint 9 -- S9-10/S9-11: authorize BEFORE metadata disclosure.
+  const listDocTargetOpdId = await resolveTindakLanjutDocumentTargetOpdId(tindakLanjut.mr_planning_temuan_id);
+  const listDocBoundary = await resolveMrPlanningLhpOpdBoundary({ user, targetOpdId: listDocTargetOpdId });
+  if (!listDocBoundary.ok) {
+    throwMrPlanningLhpOpdBoundaryError(listDocBoundary);
+  }
 
   const documents = await MrPlanningTindakLanjutDocument.findAll({
     where: {
@@ -230,7 +269,7 @@ const listDocumentsByTindakLanjut = async ({ tindakLanjutId }) => {
   return documents.map(formatDocument);
 };
 
-const getDocumentDetail = async ({ documentId }) => {
+const getDocumentDetail = async ({ documentId, user }) => {
   const id = toIntegerId(documentId, "ID Dokumen");
 
   const document = await MrPlanningTindakLanjutDocument.findOne({
@@ -242,6 +281,15 @@ const getDocumentDetail = async ({ documentId }) => {
     error.status = 404;
     error.code = "MR_TINDAK_LANJUT_DOCUMENT_NOT_FOUND";
     throw error;
+  }
+
+  // Sprint 9 -- S9-10/S9-11: authorize BEFORE metadata disclosure. Document
+  // already carries mr_planning_temuan_id denormalized at creation -- no
+  // need to re-load the parent TindakLanjut.
+  const detailTargetOpdId = await resolveTindakLanjutDocumentTargetOpdId(document.mr_planning_temuan_id);
+  const detailBoundary = await resolveMrPlanningLhpOpdBoundary({ user, targetOpdId: detailTargetOpdId });
+  if (!detailBoundary.ok) {
+    throwMrPlanningLhpOpdBoundaryError(detailBoundary);
   }
 
   return formatDocument(document);
@@ -264,6 +312,14 @@ const cancelDocument = async ({ documentId, body = {}, user }) => {
       error.status = 404;
       error.code = "MR_TINDAK_LANJUT_DOCUMENT_NOT_FOUND";
       throw error;
+    }
+
+    // Sprint 9 -- S9-10/S9-11: authorize BEFORE mutation (cancel). Document
+    // already carries mr_planning_temuan_id denormalized at creation.
+    const cancelDocTargetOpdId = await resolveTindakLanjutDocumentTargetOpdId(document.mr_planning_temuan_id, { transaction });
+    const cancelDocBoundary = await resolveMrPlanningLhpOpdBoundary({ user, targetOpdId: cancelDocTargetOpdId });
+    if (!cancelDocBoundary.ok) {
+      throwMrPlanningLhpOpdBoundaryError(cancelDocBoundary);
     }
 
     if (!document.is_active || document.status_dokumen === "dibatalkan") {
@@ -289,8 +345,12 @@ const cancelDocument = async ({ documentId, body = {}, user }) => {
   });
 };
 
-const getDocumentForDownload = async ({ documentId }) => {
-  const document = await getDocumentDetail({ documentId });
+const getDocumentForDownload = async ({ documentId, user }) => {
+  // Sprint 9 -- S9-11 CRITICAL: getDocumentDetail() performs the OPD boundary
+  // check BEFORE returning. On DENY it throws here, before any fs.existsSync
+  // check or res.sendFile/file-stream side effect below is ever reached --
+  // zero file disclosure on denial.
+  const document = await getDocumentDetail({ documentId, user });
 
   if (!document?.file_path) {
     const error = new Error("Berkas dokumen tidak ditemukan.");
@@ -319,6 +379,7 @@ const getDocumentForDownload = async ({ documentId }) => {
 module.exports = {
   DOCUMENT_TYPES,
   DOCUMENT_TYPE_LABELS,
+  resolveTindakLanjutDocumentTargetOpdId,
   createDocument,
   listDocumentsByTindakLanjut,
   getDocumentDetail,

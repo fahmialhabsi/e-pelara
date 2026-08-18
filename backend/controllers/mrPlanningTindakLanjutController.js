@@ -14,7 +14,16 @@ const {
 const getUserId = (req) =>
   req.user?.id || req.user?.user_id || req.user?.userId || req.auth?.id || null;
 
-const getUser = (req) => ({ id: getUserId(req) });
+// Sprint 9 -- S9-12: broaden authenticated context reaching the service for
+// createFromRekomendasi/update/submit -- previously only {id} was passed,
+// stripping role/opd and blinding any boundary check even in principle.
+// Mirrors the established getUserForContextService pattern used elsewhere
+// in this codebase (e.g. mr_planningRiskController.js). Does NOT synthesize
+// user.opd -- uses only authenticated middleware context (req.user/req.auth).
+const getUser = (req) => ({
+  ...(req.user || req.auth || req.authUser || req.currentUser || {}),
+  id: getUserId(req),
+});
 
 const findByRekomendasi = async (req, res) => {
   try {
