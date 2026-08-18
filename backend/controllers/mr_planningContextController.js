@@ -45,6 +45,16 @@ const getUserId = (req) => {
   return req?.user?.id || req?.user?.user_id || req?.user?.userId || req?.auth?.id || null;
 };
 
+// Sprint 11 -- S11-06: broaden authenticated context reaching the service for
+// submitContext/verifyContext/approveContext/rejectContext/syncRenstraToContext
+// -- previously only a bare userId was passed, stripping role/opd and
+// blinding any boundary check even in principle. Uses ONLY authenticated
+// middleware context (req.user/req.auth) -- never synthesizes user.opd.
+const getUser = (req) => ({
+  ...(req.user || req.auth || {}),
+  id: getUserId(req),
+});
+
 const getContextDetail = async (req, res) => {
   try {
     const result = await mrPlanningContextService.getContextDetail(req.params.id);
@@ -112,6 +122,7 @@ const submitContext = async (req, res) => {
   try {
     const result = await mrPlanningContextService.submitContext(req.params.id, {
       userId: getUserId(req),
+      user: getUser(req),
       note: req.body?.note || req.body?.alasan || null,
     });
 
@@ -129,6 +140,7 @@ const verifyContext = async (req, res) => {
   try {
     const result = await mrPlanningContextService.verifyContext(req.params.id, {
       userId: getUserId(req),
+      user: getUser(req),
       note: req.body?.note || req.body?.catatan_verifikasi || null,
     });
 
@@ -146,6 +158,7 @@ const approveContext = async (req, res) => {
   try {
     const result = await mrPlanningContextService.approveContext(req.params.id, {
       userId: getUserId(req),
+      user: getUser(req),
       note: req.body?.note || req.body?.catatan_persetujuan || null,
     });
 
@@ -163,6 +176,7 @@ const rejectContext = async (req, res) => {
   try {
     const result = await mrPlanningContextService.rejectContext(req.params.id, {
       userId: getUserId(req),
+      user: getUser(req),
       reason: req.body?.reason || req.body?.alasan_penolakan || req.body?.note || null,
     });
 
@@ -198,6 +212,7 @@ const syncRenstraToContext = async (req, res) => {
   try {
     const result = await mrPlanningContextService.syncRenstraToContext(req.params.id, {
       userId: getUserId(req),
+      user: getUser(req),
     });
     return successResponse({
       res,

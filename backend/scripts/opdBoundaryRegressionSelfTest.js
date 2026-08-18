@@ -7959,6 +7959,312 @@ console.log('=== SPRINT 10 -- MR Deviation OPD Boundary Hardening (createDeviati
   );
 }
 
+console.log('=== SPRINT 11 -- MR Planning Context Workflow-Transition OPD Boundary Hardening (submitContext/verifyContext/approveContext/rejectContext/syncRenstraToContext) ===');
+
+{
+  const contextServicePath = require.resolve('../services/mr/mrPlanningContextService');
+  const riskServicePath = require.resolve('../services/mr/mrPlanningRiskService');
+
+  const freshServices = () => {
+    delete require.cache[riskServicePath];
+    delete require.cache[contextServicePath];
+    return require('../services/mr/mrPlanningContextService');
+  };
+
+  const fakeTransaction = () => ({
+    LOCK: { UPDATE: 'UPDATE' },
+    commit: async () => {},
+    rollback: async () => {},
+  });
+
+  const SENTINEL_UPDATE = Symbol('SENTINEL_S11_UPDATE_REACHED');
+
+  const fakeContext = ({ opdId, status, extra = {} }) => {
+    const data = {
+      id: 9,
+      opd_id: opdId,
+      status_revisi: status,
+      metadata_json: null,
+      ...extra,
+    };
+    return {
+      ...data,
+      get(opts) { return { ...data }; },
+      update: async () => { throw SENTINEL_UPDATE; },
+    };
+  };
+
+  const CASES = [
+    {
+      fn: 'submitContext',
+      call: (svc, user) => svc.submitContext(9, { userId: 10, user, note: 'x' }),
+      context: (opdId) => fakeContext({ opdId, status: 'draft' }),
+    },
+    {
+      fn: 'verifyContext',
+      call: (svc, user) => svc.verifyContext(9, { userId: 10, user, note: 'x' }),
+      context: (opdId) => fakeContext({ opdId, status: 'verifikasi' }),
+    },
+    {
+      fn: 'approveContext',
+      call: (svc, user) => svc.approveContext(9, { userId: 10, user, note: 'x' }),
+      context: (opdId) => fakeContext({
+        opdId,
+        status: 'verifikasi',
+        extra: { diverifikasi_oleh: 10, diverifikasi_pada: new Date(), is_locked: false, is_final: false },
+      }),
+    },
+    {
+      fn: 'rejectContext',
+      call: (svc, user) => svc.rejectContext(9, { userId: 10, user, reason: 'alasan uji' }),
+      context: (opdId) => fakeContext({ opdId, status: 'verifikasi' }),
+    },
+  ];
+
+  for (const testCase of CASES) {
+    await test(
+      `mrPlanningContextService.${testCase.fn} -- Context tersimpan milik OPD LAIN -> DITOLAK 403, context.update TIDAK dipanggil`,
+      async () => {
+        let updateCalled = false;
+        const originalTransaction = models.sequelize.transaction;
+        models.sequelize.transaction = async (cb) => cb(fakeTransaction());
+
+        await withStubs(
+          [
+            [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+            [models.MrPlanningContext, 'findByPk', async () => {
+              const ctx = testCase.context(42);
+              ctx.update = async () => { updateCalled = true; throw SENTINEL_UPDATE; };
+              return ctx;
+            }],
+          ],
+          async () => {
+            const svc = freshServices();
+            try {
+              await testCase.call(svc, { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' });
+              assert.fail('Seharusnya melempar error boundary OPD, bukan berhasil');
+            } catch (error) {
+              assert.strictEqual(error.statusCode, 403, `Expected statusCode 403, got ${error.statusCode}`);
+              assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', `Expected code MR_PLANNING_RISK_OPD_FORBIDDEN, got ${error.details?.code}`);
+            }
+          }
+        );
+
+        models.sequelize.transaction = originalTransaction;
+        assert.strictEqual(updateCalled, false, `${testCase.fn}: context.update TIDAK BOLEH dipanggil ketika boundary OPD menolak`);
+      }
+    );
+
+    await test(
+      `mrPlanningContextService.${testCase.fn} -- Context tersimpan milik OPD SENDIRI -> boundary MENGIZINKAN, context.update dipanggil`,
+      async () => {
+        let updateCalled = false;
+        const originalTransaction = models.sequelize.transaction;
+        models.sequelize.transaction = async (cb) => cb(fakeTransaction());
+
+        await withStubs(
+          [
+            [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+            [models.MrPlanningContext, 'findByPk', async () => {
+              const ctx = testCase.context(42);
+              ctx.update = async () => { updateCalled = true; throw SENTINEL_UPDATE; };
+              return ctx;
+            }],
+          ],
+          async () => {
+            const svc = freshServices();
+            try {
+              await testCase.call(svc, { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' });
+              assert.fail('Seharusnya melempar SENTINEL_UPDATE (update tercapai), bukan resolve sukses');
+            } catch (error) {
+              assert.strictEqual(error, SENTINEL_UPDATE, `${testCase.fn}: update() harus tercapai (boundary OPD mengizinkan) sebelum error lain muncul`);
+            }
+          }
+        );
+
+        models.sequelize.transaction = originalTransaction;
+        assert.strictEqual(updateCalled, true, `${testCase.fn}: context.update HARUS dipanggil ketika boundary OPD mengizinkan (own-OPD)`);
+      }
+    );
+
+    await test(
+      `mrPlanningContextService.${testCase.fn} -- SUPER_ADMIN dikecualikan dari boundary OPD (lookup OpdPenanggungJawab.findOne TIDAK dipicu)`,
+      async () => {
+        let updateCalled = false;
+        let findOneCalled = false;
+        const originalTransaction = models.sequelize.transaction;
+        models.sequelize.transaction = async (cb) => cb(fakeTransaction());
+
+        await withStubs(
+          [
+            [models.OpdPenanggungJawab, 'findOne', async () => { findOneCalled = true; return { id: 999 }; }],
+            [models.MrPlanningContext, 'findByPk', async () => {
+              const ctx = testCase.context(42); // deliberately mismatched vs caller's own OPD
+              ctx.update = async () => { updateCalled = true; throw SENTINEL_UPDATE; };
+              return ctx;
+            }],
+          ],
+          async () => {
+            const svc = freshServices();
+            try {
+              await testCase.call(svc, { id: 10, role: 'SUPER_ADMIN', opd: 'OPD LAIN SAMA SEKALI' });
+              assert.fail('Seharusnya melempar SENTINEL_UPDATE (update tercapai)');
+            } catch (error) {
+              assert.strictEqual(error, SENTINEL_UPDATE, `${testCase.fn}: update() harus tercapai untuk SUPER_ADMIN meski Context milik OPD lain`);
+            }
+          }
+        );
+
+        models.sequelize.transaction = originalTransaction;
+        assert.strictEqual(findOneCalled, false, `${testCase.fn}: OpdPenanggungJawab.findOne TIDAK BOLEH dipicu untuk SUPER_ADMIN (short-circuit sebelum resolusi OPD)`);
+        assert.strictEqual(updateCalled, true, `${testCase.fn}: context.update HARUS dipanggil untuk SUPER_ADMIN lintas-OPD`);
+      }
+    );
+
+    await test(
+      `mrPlanningContextService.${testCase.fn} -- resolusi kepemilikan OPD gagal (error internal) -> FAIL CLOSED 503, context.update TIDAK dipanggil`,
+      async () => {
+        let updateCalled = false;
+        const originalTransaction = models.sequelize.transaction;
+        models.sequelize.transaction = async (cb) => cb(fakeTransaction());
+
+        await withStubs(
+          [
+            [models.OpdPenanggungJawab, 'findOne', async () => { throw new Error('DB unavailable (simulasi)'); }],
+            [models.MrPlanningContext, 'findByPk', async () => {
+              const ctx = testCase.context(42);
+              ctx.update = async () => { updateCalled = true; return ctx; };
+              return ctx;
+            }],
+          ],
+          async () => {
+            const svc = freshServices();
+            try {
+              await testCase.call(svc, { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' });
+              assert.fail('Seharusnya melempar error fail-closed 503, bukan berhasil');
+            } catch (error) {
+              assert.strictEqual(error.statusCode, 503, `Expected statusCode 503 (fail closed), got ${error.statusCode}`);
+              assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_BOUNDARY_UNAVAILABLE', `Expected code MR_PLANNING_RISK_OPD_BOUNDARY_UNAVAILABLE, got ${error.details?.code}`);
+            }
+          }
+        );
+
+        models.sequelize.transaction = originalTransaction;
+        assert.strictEqual(updateCalled, false, `${testCase.fn}: context.update TIDAK BOLEH dipanggil ketika resolusi OPD gagal (fail closed)`);
+      }
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // syncRenstraToContext -- different shape: no sequelize.transaction wrapper,
+  // direct MrPlanningContext.update({...}, {where}) instead of instance.update().
+  // ---------------------------------------------------------------------
+
+  await test(
+    'mrPlanningContextService.syncRenstraToContext -- Context tersimpan milik OPD LAIN -> DITOLAK 403, MrPlanningContext.update (static) TIDAK dipanggil',
+    async () => {
+      let updateCalled = false;
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningContext, 'findByPk', async () => fakeContext({ opdId: 42, status: 'draft', extra: { renstra_id: null } })],
+          [models.MrPlanningContext, 'update', async () => { updateCalled = true; return [1]; }],
+        ],
+        async () => {
+          const svc = freshServices();
+          try {
+            await svc.syncRenstraToContext(9, { userId: 10, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' } });
+            assert.fail('Seharusnya melempar error boundary OPD, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected statusCode 403, got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', `Expected code MR_PLANNING_RISK_OPD_FORBIDDEN, got ${error.details?.code}`);
+          }
+        }
+      );
+
+      assert.strictEqual(updateCalled, false, 'syncRenstraToContext: MrPlanningContext.update TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+    }
+  );
+
+  await test(
+    'mrPlanningContextService.syncRenstraToContext -- Context tersimpan milik OPD SENDIRI -> boundary MENGIZINKAN (error lanjutan, jika ada, BUKAN kode boundary)',
+    async () => {
+      const originalFindOne = models.OpdPenanggungJawab.findOne;
+      const originalFindByPk = models.MrPlanningContext.findByPk;
+      models.OpdPenanggungJawab.findOne = async () => ({ id: 42 });
+      models.MrPlanningContext.findByPk = async () => fakeContext({ opdId: 42, status: 'draft', extra: { renstra_id: 1 } });
+
+      try {
+        const svc = freshServices();
+        try {
+          await svc.syncRenstraToContext(9, { userId: 10, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+          // If it resolves without throwing, that's also acceptable -- means boundary allowed and
+          // downstream generateContextItems happened to succeed against stubs; not asserting further.
+        } catch (error) {
+          assert.notStrictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', `Boundary TIDAK BOLEH menolak untuk own-OPD, didapat code=${error.details?.code}, message=${error.message}`);
+          assert.notStrictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_BOUNDARY_UNAVAILABLE', `Boundary TIDAK BOLEH fail-closed untuk own-OPD, didapat code=${error.details?.code}`);
+        }
+      } finally {
+        models.OpdPenanggungJawab.findOne = originalFindOne;
+        models.MrPlanningContext.findByPk = originalFindByPk;
+      }
+    }
+  );
+
+  await test(
+    'mrPlanningContextService.syncRenstraToContext -- SUPER_ADMIN dikecualikan dari boundary OPD (lookup OpdPenanggungJawab.findOne TIDAK dipicu)',
+    async () => {
+      let findOneCalled = false;
+      const originalFindOne = models.OpdPenanggungJawab.findOne;
+      const originalFindByPk = models.MrPlanningContext.findByPk;
+      models.OpdPenanggungJawab.findOne = async () => { findOneCalled = true; return { id: 999 }; };
+      models.MrPlanningContext.findByPk = async () => fakeContext({ opdId: 42, status: 'draft', extra: { renstra_id: 1 } }); // deliberately mismatched
+
+      try {
+        const svc = freshServices();
+        try {
+          await svc.syncRenstraToContext(9, { userId: 10, user: { id: 10, role: 'SUPER_ADMIN', opd: 'OPD LAIN SAMA SEKALI' } });
+        } catch (error) {
+          assert.notStrictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', `SUPER_ADMIN TIDAK BOLEH ditolak boundary OPD, didapat code=${error.details?.code}`);
+        }
+      } finally {
+        models.OpdPenanggungJawab.findOne = originalFindOne;
+        models.MrPlanningContext.findByPk = originalFindByPk;
+      }
+
+      assert.strictEqual(findOneCalled, false, 'syncRenstraToContext: OpdPenanggungJawab.findOne TIDAK BOLEH dipicu untuk SUPER_ADMIN (short-circuit sebelum resolusi OPD)');
+    }
+  );
+
+  await test(
+    'mrPlanningContextService.syncRenstraToContext -- resolusi kepemilikan OPD gagal (error internal) -> FAIL CLOSED 503, MrPlanningContext.update (static) TIDAK dipanggil',
+    async () => {
+      let updateCalled = false;
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { throw new Error('DB unavailable (simulasi)'); }],
+          [models.MrPlanningContext, 'findByPk', async () => fakeContext({ opdId: 42, status: 'draft', extra: { renstra_id: null } })],
+          [models.MrPlanningContext, 'update', async () => { updateCalled = true; return [1]; }],
+        ],
+        async () => {
+          const svc = freshServices();
+          try {
+            await svc.syncRenstraToContext(9, { userId: 10, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+            assert.fail('Seharusnya melempar error fail-closed 503, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 503, `Expected statusCode 503 (fail closed), got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_BOUNDARY_UNAVAILABLE', `Expected code MR_PLANNING_RISK_OPD_BOUNDARY_UNAVAILABLE, got ${error.details?.code}`);
+          }
+        }
+      );
+
+      assert.strictEqual(updateCalled, false, 'syncRenstraToContext: MrPlanningContext.update TIDAK BOLEH dipanggil ketika resolusi OPD gagal (fail closed)');
+    }
+  );
+}
+
 } // end runAllTests
 
 runAllTests().then(() => {

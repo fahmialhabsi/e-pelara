@@ -18,6 +18,16 @@
 const db = require('../../models');
 const { assertFinalReportNotOverwrite } = require('./mrPolicyEngineService');
 
+// Sprint 11 -- S11: reuse the already-accepted Sprint 7 MR Risk OPD boundary
+// helper unchanged (OpdPenanggungJawab.id namespace). MrPlanningContext.opd_id
+// is the same namespace Risk.opd_id derives from (Context is the anchor
+// object for the Risk/Deviation family). Do NOT modify
+// mrPlanningRiskService.js -- reuse unchanged, per CEA Sprint 11 mandate S9.
+const {
+  resolveMrPlanningRiskOpdBoundary,
+  throwMrPlanningRiskOpdBoundaryError,
+} = require('./mrPlanningRiskService');
+
 const {
   sequelize,
   Sequelize,
@@ -876,6 +886,16 @@ const submitContext = async (contextId, options = {}) => {
       lock: transaction.LOCK.UPDATE,
     });
 
+    // Sprint 11 -- S11-01: authorize BEFORE any mutation. Authoritative
+    // target OPD is the stored Context.opd_id (never caller-supplied).
+    const submitBoundary = await resolveMrPlanningRiskOpdBoundary({
+      user: options.user,
+      targetOpdId: context?.opd_id ?? null,
+    });
+    if (!submitBoundary.ok) {
+      throwMrPlanningRiskOpdBoundaryError(submitBoundary);
+    }
+
     assertContextWorkflowStatus({
       context,
       allowedStatuses: [CONTEXT_STATUS.DRAFT, CONTEXT_STATUS.DITOLAK],
@@ -929,6 +949,16 @@ const verifyContext = async (contextId, options = {}) => {
       lock: transaction.LOCK.UPDATE,
     });
 
+    // Sprint 11 -- S11-02: authorize BEFORE any mutation. Authoritative
+    // target OPD is the stored Context.opd_id (never caller-supplied).
+    const verifyBoundary = await resolveMrPlanningRiskOpdBoundary({
+      user: options.user,
+      targetOpdId: context?.opd_id ?? null,
+    });
+    if (!verifyBoundary.ok) {
+      throwMrPlanningRiskOpdBoundaryError(verifyBoundary);
+    }
+
     assertContextWorkflowStatus({
       context,
       allowedStatuses: [CONTEXT_STATUS.VERIFIKASI],
@@ -979,6 +1009,16 @@ const approveContext = async (contextId, options = {}) => {
       transaction,
       lock: transaction.LOCK.UPDATE,
     });
+
+    // Sprint 11 -- S11-03: authorize BEFORE any mutation. Authoritative
+    // target OPD is the stored Context.opd_id (never caller-supplied).
+    const approveBoundary = await resolveMrPlanningRiskOpdBoundary({
+      user: options.user,
+      targetOpdId: context?.opd_id ?? null,
+    });
+    if (!approveBoundary.ok) {
+      throwMrPlanningRiskOpdBoundaryError(approveBoundary);
+    }
 
     assertContextWorkflowStatus({
       context,
@@ -1053,6 +1093,16 @@ const rejectContext = async (contextId, options = {}) => {
       transaction,
       lock: transaction.LOCK.UPDATE,
     });
+
+    // Sprint 11 -- S11-04: authorize BEFORE any mutation. Authoritative
+    // target OPD is the stored Context.opd_id (never caller-supplied).
+    const rejectBoundary = await resolveMrPlanningRiskOpdBoundary({
+      user: options.user,
+      targetOpdId: context?.opd_id ?? null,
+    });
+    if (!rejectBoundary.ok) {
+      throwMrPlanningRiskOpdBoundaryError(rejectBoundary);
+    }
 
     assertContextWorkflowStatus({
       context,
@@ -1224,6 +1274,18 @@ const syncRenstraToContext = async (contextId, options = {}) => {
   // Cek apakah renstra_id sudah ada
   const context = await getContextOrThrow(parsedContextId, {});
   const contextPlain = normalizePlain(context);
+
+  // Sprint 11 -- S11-05: authorize BEFORE any mutation (the direct
+  // MrPlanningContext.update below, and before delegating into
+  // generateContextItems). Authoritative target OPD is the stored
+  // Context.opd_id (never caller-supplied).
+  const syncBoundary = await resolveMrPlanningRiskOpdBoundary({
+    user: options.user,
+    targetOpdId: contextPlain?.opd_id ?? null,
+  });
+  if (!syncBoundary.ok) {
+    throwMrPlanningRiskOpdBoundaryError(syncBoundary);
+  }
 
   // Jika renstra_id sudah ada, langsung generate items
   if (!parsePositiveInt(contextPlain.renstra_id)) {
