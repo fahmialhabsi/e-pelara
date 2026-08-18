@@ -25,6 +25,91 @@ const {
   RenstraOPD,
 } = require("../../models");
 
+// Sprint 8 -- S8: LHP/Temuan OPD authorization boundary.
+// LHP/Temuan-specific helper (BUKAN reuse/generalisasi dari
+// resolveMrPlanningRiskOpdBoundary di mrPlanningRiskService.js -- kode
+// Sprint 7 yang sudah accepted TIDAK disentuh) karena namespace opd_id di
+// keluarga LHP/Temuan BERBEDA dari keluarga Risk: LHP/Temuan.opd_id memakai
+// RenstraOPD.id (lihat komentar resolveLabelsForPayload di bawah), sedangkan
+// Risk memakai OpdPenanggungJawab.id lewat OpdPenanggungJawab.findOne. Caller
+// identity (user.opd) tetap string nama OPD yang sama pada kedua keluarga
+// (konvensi existing di seluruh aplikasi) -- hanya tabel resolusi targetnya
+// yang beda, jadi resolusi caller di sini memakai RenstraOPD.findOne({where:
+// {nama_opd: user.opd}}), pola name-based matching yang SUDAH established
+// dipakai lintas modul MR (lihat mrAutoFillAggregatorService.js
+// resolveRenstraOpdNamaOpd/resolveOpdPenanggungJawabIds) untuk masalah
+// id-space yang sama persis. SUPER_ADMIN tetap tenant-wide. Fail closed
+// kalau resolusi caller gagal karena error internal.
+async function resolveMrPlanningLhpOpdBoundary({ user, targetOpdId }) {
+  if (user?.role === "SUPER_ADMIN") {
+    return { ok: true, superAdmin: true, callerOpdId: null };
+  }
+
+  if (targetOpdId === null || targetOpdId === undefined) {
+    // Target belum/tidak punya opd_id -- biarkan alur existing (404/422)
+    // yang menangani, bukan boundary check ini.
+    return { ok: true, superAdmin: false, callerOpdId: null };
+  }
+
+  const opdName = user?.opd;
+  if (!opdName) {
+    return {
+      ok: false,
+      status: 403,
+      error: {
+        message: "Anda tidak berwenang melakukan aksi ini pada LHP/Temuan milik OPD lain.",
+        code: "MR_LHP_TEMUAN_OPD_FORBIDDEN",
+      },
+    };
+  }
+
+  let callerOpdId = null;
+  try {
+    const renstraOpdRow = await RenstraOPD.findOne({ where: { nama_opd: opdName } });
+    callerOpdId = renstraOpdRow?.id ?? null;
+  } catch (err) {
+    return {
+      ok: false,
+      status: 503,
+      error: {
+        message: "Batas kewenangan OPD untuk LHP/Temuan tidak dapat diverifikasi saat ini. Aksi ditolak sementara demi keamanan data -- silakan coba lagi.",
+        code: "MR_LHP_TEMUAN_OPD_BOUNDARY_UNAVAILABLE",
+      },
+    };
+  }
+
+  if (callerOpdId === null || callerOpdId !== targetOpdId) {
+    return {
+      ok: false,
+      status: 403,
+      error: {
+        message: "Anda tidak berwenang melakukan aksi ini pada LHP/Temuan milik OPD lain.",
+        code: "MR_LHP_TEMUAN_OPD_FORBIDDEN",
+      },
+    };
+  }
+
+  return { ok: true, superAdmin: false, callerOpdId };
+}
+
+// Melempar MrPlanningLhpServiceError yang konsisten dengan pola error
+// existing di file ini dari hasil resolveMrPlanningLhpOpdBoundary yang
+// ok:false. Didefinisikan sebelum class MrPlanningLhpServiceError secara
+// tekstual, tapi aman dipanggil di sini karena hanya direferensikan di
+// dalam fungsi (tidak dieksekusi saat module load) -- class declaration
+// di bawah sudah ter-hoist pada saat fungsi ini benar-benar dipanggil.
+function throwMrPlanningLhpOpdBoundaryError(boundaryResult) {
+  throw new MrPlanningLhpServiceError(boundaryResult.error.message, {
+    status: boundaryResult.status,
+    code: boundaryResult.error.code,
+  });
+}
+
+const toPositiveIntOrNull = (value) => {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
 const ALLOWED_CREATE_UPDATE_FIELDS = new Set([
   "entitas_pemeriksa_ref_id",
   "jenis_pemeriksaan_ref_id",
@@ -186,6 +271,19 @@ const createLhp = async ({ body = {}, user } = {}) => {
     });
   }
 
+  // Sprint 8 -- S8L-001: payload.opd_id bukan bukti otorisasi -- caller
+  // OPD-scoped harus divalidasi terhadap OPD-nya sendiri SEBELUM LHP baru
+  // dibuat. Tidak menulis ulang (silently rewrite) opd_id yang tidak
+  // berwenang -- permintaan yang tidak cocok DITOLAK sebelum create.
+  const intendedOpdIdLhp = toPositiveIntOrNull(allowedPayload.opd_id);
+  const boundaryCreateLhp = await resolveMrPlanningLhpOpdBoundary({
+    user,
+    targetOpdId: intendedOpdIdLhp,
+  });
+  if (!boundaryCreateLhp.ok) {
+    throwMrPlanningLhpOpdBoundaryError(boundaryCreateLhp);
+  }
+
   const labelPayload = await resolveLabelsForPayload(allowedPayload);
 
   return MrPlanningLhp.create({
@@ -203,6 +301,18 @@ const createLhp = async ({ body = {}, user } = {}) => {
 const updateDraftLhp = async ({ lhpId, body = {}, user } = {}) => {
   const userId = getActorId(user);
   const lhp = await findLhpOrFail(lhpId);
+
+  // Sprint 8 -- S8L-002: otorisasi terhadap stored lhp.opd_id SEBELUM
+  // mutasi apa pun -- ditempatkan sebelum guard status_dokumen supaya
+  // caller yang tidak berwenang tidak mendapat informasi status LHP milik
+  // OPD lain sama sekali.
+  const boundaryUpdateLhp = await resolveMrPlanningLhpOpdBoundary({
+    user,
+    targetOpdId: lhp?.opd_id ?? null,
+  });
+  if (!boundaryUpdateLhp.ok) {
+    throwMrPlanningLhpOpdBoundaryError(boundaryUpdateLhp);
+  }
 
   if (lhp.status_dokumen !== "draft") {
     throw new MrPlanningLhpServiceError(
@@ -232,6 +342,15 @@ const activateLhp = async ({ lhpId, user } = {}) => {
   const userId = getActorId(user);
   const lhp = await findLhpOrFail(lhpId);
 
+  // Sprint 8 -- S8L-003
+  const boundaryActivateLhp = await resolveMrPlanningLhpOpdBoundary({
+    user,
+    targetOpdId: lhp?.opd_id ?? null,
+  });
+  if (!boundaryActivateLhp.ok) {
+    throwMrPlanningLhpOpdBoundaryError(boundaryActivateLhp);
+  }
+
   if (lhp.status_dokumen !== "draft") {
     throw new MrPlanningLhpServiceError(
       "Hanya LHP berstatus Draft yang bisa diaktifkan.",
@@ -260,6 +379,15 @@ const activateLhp = async ({ lhpId, user } = {}) => {
 const archiveLhp = async ({ lhpId, user } = {}) => {
   const userId = getActorId(user);
   const lhp = await findLhpOrFail(lhpId);
+
+  // Sprint 8 -- S8L-004
+  const boundaryArchiveLhp = await resolveMrPlanningLhpOpdBoundary({
+    user,
+    targetOpdId: lhp?.opd_id ?? null,
+  });
+  if (!boundaryArchiveLhp.ok) {
+    throwMrPlanningLhpOpdBoundaryError(boundaryArchiveLhp);
+  }
 
   if (lhp.status_dokumen !== "aktif") {
     throw new MrPlanningLhpServiceError(
@@ -303,6 +431,15 @@ const uploadLhpFile = async ({ lhpId, file, user } = {}) => {
   const userId = getActorId(user);
   const lhp = await findLhpOrFail(lhpId);
 
+  // Sprint 8 -- S8L-005
+  const boundaryUploadLhp = await resolveMrPlanningLhpOpdBoundary({
+    user,
+    targetOpdId: lhp?.opd_id ?? null,
+  });
+  if (!boundaryUploadLhp.ok) {
+    throwMrPlanningLhpOpdBoundaryError(boundaryUploadLhp);
+  }
+
   await lhp.update({
     file_name: file.filename,
     original_file_name: file.originalname || file.filename,
@@ -312,6 +449,123 @@ const uploadLhpFile = async ({ lhpId, file, user } = {}) => {
     file_size: file.size || 0,
     storage_provider: "local",
     checksum: getFileChecksum(file.path),
+    last_revised_at: new Date(),
+    last_revised_by: userId,
+    updated_by: userId,
+  });
+
+  return lhp;
+};
+
+// =====================================================
+// B01-F01 — METADATA COMPLETION UNTUK LHP AKTIF/DIARSIPKAN (IMPORT)
+// =====================================================
+// Latar belakang (Wave 2 Operational UAT finding B01-F01):
+// mrPlanningTlhpImportService.js.findOrCreateLhp() membuat LHP dari import
+// PDF Matriks Pemantauan TLHP BPK dengan nomor_lhp placeholder
+// ("IMPORT-BPK-{tahun}-{stamp}") dan ringkasan_lhp yang secara eksplisit
+// meminta user melengkapi Nomor LHP/Surat Tugas/Surat Pengantar yang
+// sebenarnya — lalu LANGSUNG mengaktifkan LHP tersebut (findOrCreateLhp
+// selalu memanggil activateLhp setelah createLhp, karena Temuan hanya bisa
+// dibuat di bawah LHP aktif). Akibatnya updateDraftLhp() yang men-guard
+// status_dokumen==="draft" TIDAK PERNAH bisa dipakai untuk melengkapi field
+// administratif tersebut pada LHP hasil import — user terkunci permanen
+// dari mengoreksi typo/melengkapi provenance dokumen resmi.
+//
+// Guard (sesuai mandat §Wave 2 B01-F01 — TIDAK membuka LHP aktif menjadi
+// full-editable secara umum):
+// - Field yang diizinkan HANYA metadata administratif/provenance dokumen
+//   (nomor surat, tanggal surat, ringkasan, tanggal terima) — field yang
+//   secara desain import ditinggalkan sebagai placeholder/tidak lengkap.
+// - TIDAK termasuk: status_dokumen, is_locked, jumlah_temuan,
+//   jumlah_rekomendasi (counter bisnis turunan dari Temuan — lihat
+//   mrPlanningTemuanService.js), context_id, opd_id/entitas_pemeriksa_ref_id/
+//   jenis_pemeriksaan_ref_id (mengubah field ini akan merusak label
+//   denormalisasi yang sudah diwariskan ke Temuan turunan — lihat
+//   resolveLabelsForPayload/createTemuan).
+// - Diizinkan pada status_dokumen IN (aktif, diarsipkan) — draft sudah
+//   dilayani updateDraftLhp() yang jauh lebih permisif.
+// - alasan_revisi WAJIB diisi (jejak audit minimal: siapa mengubah apa,
+//   kenapa) — LHP tidak memakai history table terpisah (lihat komentar
+//   modul di atas), sehingga alasan_revisi + last_revised_at/by pada baris
+//   aktif adalah satu-satunya jejak yang tersedia untuk operasi ini,
+//   konsisten dengan pola field yang sudah ada di model (tidak menambah
+//   tabel/migrasi baru).
+const METADATA_COMPLETION_ALLOWED_FIELDS = Object.freeze([
+  "nomor_lhp",
+  "judul_lhp",
+  "tanggal_lhp",
+  "surat_tugas_nomor",
+  "surat_tugas_tanggal",
+  "nomor_surat_pengantar",
+  "tanggal_surat_pengantar",
+  "perihal_surat_pengantar",
+  "tanggal_terima_lhp",
+  "ringkasan_lhp",
+]);
+
+const completeLhpMetadata = async ({ lhpId, body = {}, user } = {}) => {
+  const userId = getActorId(user);
+  const lhp = await findLhpOrFail(lhpId);
+
+  // Sprint 8 -- S8L-006
+  const boundaryCompleteLhp = await resolveMrPlanningLhpOpdBoundary({
+    user,
+    targetOpdId: lhp?.opd_id ?? null,
+  });
+  if (!boundaryCompleteLhp.ok) {
+    throwMrPlanningLhpOpdBoundaryError(boundaryCompleteLhp);
+  }
+
+  if (!["aktif", "diarsipkan"].includes(lhp.status_dokumen)) {
+    throw new MrPlanningLhpServiceError(
+      "Pelengkapan metadata ini hanya berlaku untuk LHP berstatus Aktif atau Diarsipkan. LHP berstatus Draft dapat diedit langsung melalui endpoint update biasa.",
+      { status: 400, code: "MR_LHP_METADATA_COMPLETION_WRONG_STATUS", details: { status_dokumen: lhp.status_dokumen } },
+    );
+  }
+
+  // alasan_revisi bukan bagian dari METADATA_COMPLETION_ALLOWED_FIELDS (field
+  // itu daftar field METADATA yang boleh diubah), tapi WAJIB dikirim di body
+  // dan divalidasi terpisah di bawah — dikecualikan di sini supaya tidak
+  // salah ditolak sebagai "field tidak diperbolehkan" (bug ditemukan oleh
+  // fresh regression B01-T04c, root-caused sebelum diperbaiki).
+  const requestedKeys = Object.keys(body || {}).filter((key) => key !== "alasan_revisi");
+  const blockedKeys = requestedKeys.filter((key) => !METADATA_COMPLETION_ALLOWED_FIELDS.includes(key));
+
+  if (blockedKeys.length > 0) {
+    throwValidation(
+      "Field tidak diperbolehkan untuk pelengkapan metadata LHP aktif/diarsipkan.",
+      { fields: blockedKeys, allowed_fields: [...METADATA_COMPLETION_ALLOWED_FIELDS] },
+      "MR_LHP_METADATA_COMPLETION_BLOCKED_FIELDS",
+    );
+  }
+
+  const allowedPayload = {};
+  METADATA_COMPLETION_ALLOWED_FIELDS.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(body, key)) {
+      allowedPayload[key] = body[key];
+    }
+  });
+
+  if (Object.keys(allowedPayload).length === 0) {
+    throwValidation(
+      "Tidak ada field metadata yang dikirim untuk dilengkapi.",
+      {},
+      "MR_LHP_METADATA_COMPLETION_EMPTY",
+    );
+  }
+
+  if (!body.alasan_revisi || !String(body.alasan_revisi).trim()) {
+    throwValidation(
+      "Alasan pelengkapan/perubahan metadata wajib diisi untuk menjaga jejak audit.",
+      {},
+      "MR_LHP_METADATA_COMPLETION_REASON_REQUIRED",
+    );
+  }
+
+  await lhp.update({
+    ...allowedPayload,
+    alasan_revisi: body.alasan_revisi,
     last_revised_at: new Date(),
     last_revised_by: userId,
     updated_by: userId,
@@ -349,8 +603,17 @@ const listLhp = async ({ tahun, entitas_pemeriksa_ref_id, opd_id, status_dokumen
 module.exports = {
   MrPlanningLhpServiceError,
   ALLOWED_CREATE_UPDATE_FIELDS,
+  METADATA_COMPLETION_ALLOWED_FIELDS,
+
+  // Sprint 8 -- S8: LHP/Temuan-specific OPD authorization boundary helper,
+  // dipakai ulang oleh mrPlanningTemuanService.js (SEMUA beroperasi pada
+  // namespace opd_id RenstraOPD.id yang sama).
+  resolveMrPlanningLhpOpdBoundary,
+  throwMrPlanningLhpOpdBoundaryError,
+
   createLhp,
   updateDraftLhp,
+  completeLhpMetadata,
   activateLhp,
   archiveLhp,
   uploadLhpFile,

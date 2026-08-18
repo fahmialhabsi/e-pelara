@@ -13,6 +13,17 @@ const {
 const getUserId = (req) =>
   req.user?.id || req.user?.user_id || req.user?.userId || req.auth?.id || null;
 
+// Sprint 8 -- context propagation only (no new role semantics, no
+// synthesized user.opd): mengikuti pola established getUserForContextService
+// di mr_planningRiskController.js -- service layer perlu melihat user.role
+// dan user.opd (bukan cuma id) supaya boundary check Sprint 8 punya data
+// untuk diperiksa. req.user tetap datang apa adanya dari verifyToken/auth
+// middleware (TIDAK diubah).
+const getUserForBoundaryCheck = (req) => ({
+  ...(req.user || req.auth || req.authUser || req.currentUser || {}),
+  id: getUserId(req),
+});
+
 const findAll = async (req, res) => {
   try {
     const data = await lhpService.listLhp(req.query);
@@ -33,7 +44,7 @@ const findById = async (req, res) => {
 
 const create = async (req, res) => {
   try {
-    const data = await lhpService.createLhp({ body: req.body, user: { id: getUserId(req) } });
+    const data = await lhpService.createLhp({ body: req.body, user: getUserForBoundaryCheck(req) });
     return createdResponse({ res, message: "LHP berhasil dibuat.", data });
   } catch (error) {
     return errorResponse({ res, error });
@@ -45,7 +56,7 @@ const update = async (req, res) => {
     const data = await lhpService.updateDraftLhp({
       lhpId: req.params.id,
       body: req.body,
-      user: { id: getUserId(req) },
+      user: getUserForBoundaryCheck(req),
     });
     return successResponse({ res, message: "LHP berhasil diperbarui.", data });
   } catch (error) {
@@ -55,7 +66,7 @@ const update = async (req, res) => {
 
 const activate = async (req, res) => {
   try {
-    const data = await lhpService.activateLhp({ lhpId: req.params.id, user: { id: getUserId(req) } });
+    const data = await lhpService.activateLhp({ lhpId: req.params.id, user: getUserForBoundaryCheck(req) });
     return successResponse({ res, message: "LHP berhasil diaktifkan.", data });
   } catch (error) {
     return errorResponse({ res, error });
@@ -64,7 +75,7 @@ const activate = async (req, res) => {
 
 const archive = async (req, res) => {
   try {
-    const data = await lhpService.archiveLhp({ lhpId: req.params.id, user: { id: getUserId(req) } });
+    const data = await lhpService.archiveLhp({ lhpId: req.params.id, user: getUserForBoundaryCheck(req) });
     return successResponse({ res, message: "LHP berhasil diarsipkan.", data });
   } catch (error) {
     return errorResponse({ res, error });
@@ -76,7 +87,7 @@ const uploadDocument = async (req, res) => {
     const data = await lhpService.uploadLhpFile({
       lhpId: req.params.id,
       file: req.file,
-      user: { id: getUserId(req) },
+      user: getUserForBoundaryCheck(req),
     });
     return successResponse({ res, message: "Berkas LHP berhasil diunggah.", data });
   } catch (error) {

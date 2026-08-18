@@ -14,7 +14,16 @@ const {
 const getUserId = (req) =>
   req.user?.id || req.user?.user_id || req.user?.userId || req.auth?.id || null;
 
-const getUser = (req) => ({ id: getUserId(req) });
+// Sprint 8 -- context propagation only (no new role semantics, no
+// synthesized user.opd): mengikuti pola established getUserForContextService
+// di mr_planningRiskController.js -- service layer perlu melihat user.role
+// dan user.opd (bukan cuma id) supaya boundary check Sprint 8 punya data
+// untuk diperiksa. req.user tetap datang apa adanya dari verifyToken/auth
+// middleware (TIDAK diubah).
+const getUser = (req) => ({
+  ...(req.user || req.auth || req.authUser || req.currentUser || {}),
+  id: getUserId(req),
+});
 
 const findByLhp = async (req, res) => {
   try {

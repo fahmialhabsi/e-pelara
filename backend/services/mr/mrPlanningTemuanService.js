@@ -28,6 +28,16 @@ const {
 } = require("../../models");
 
 const mrApprovalService = require("./mrApprovalService");
+
+// Sprint 8 -- S8: reuse LHP/Temuan-specific OPD authorization boundary
+// helper (didefinisikan di mrPlanningLhpService.js, namespace RenstraOPD.id
+// yang sama dipakai LHP & Temuan -- Temuan.opd_id diwarisi langsung dari
+// LHP induknya, lihat createTemuanFromLhp).
+const mrPlanningLhpService = require("./mrPlanningLhpService");
+const {
+  resolveMrPlanningLhpOpdBoundary,
+  throwMrPlanningLhpOpdBoundaryError,
+} = mrPlanningLhpService;
 const mrHistoryService = require("./mrHistoryService");
 const { buildHistoryPayload, createHistory, getPlainJson } = require("../../helpers/mr/mrHistoryHelper");
 const mrPlanningRiskService = require("./mrPlanningRiskService");
@@ -278,6 +288,18 @@ const createTemuanFromLhp = async ({ lhpId, body = {}, user } = {}) => {
   return sequelize.transaction(async (transaction) => {
     const lhp = await findLhpOrFail(lhpId, { transaction });
 
+    // Sprint 8 -- S8T-001: Temuan.opd_id diwarisi dari lhp.opd_id (authoritative
+    // stored, BUKAN request-controlled) -- karena itu otorisasi caller harus
+    // diperiksa terhadap LHP INDUK di sini, sebelum Temuan baru dibuat.
+    // Foreign LHP -> DITOLAK, nol Temuan dibuat.
+    const boundaryCreateTemuan = await resolveMrPlanningLhpOpdBoundary({
+      user,
+      targetOpdId: lhp?.opd_id ?? null,
+    });
+    if (!boundaryCreateTemuan.ok) {
+      throwMrPlanningLhpOpdBoundaryError(boundaryCreateTemuan);
+    }
+
     if (lhp.status_dokumen !== "aktif") {
       throwValidation(
         "Temuan hanya bisa dibuat di bawah LHP berstatus Aktif.",
@@ -359,6 +381,15 @@ const updateDraftTemuan = async ({ temuanId, body = {}, user } = {}) => {
   return sequelize.transaction(async (transaction) => {
     const temuan = await findTemuanOrFail(temuanId, { transaction });
 
+    // Sprint 8 -- S8T-002
+    const boundaryUpdateTemuan = await resolveMrPlanningLhpOpdBoundary({
+      user,
+      targetOpdId: temuan?.opd_id ?? null,
+    });
+    if (!boundaryUpdateTemuan.ok) {
+      throwMrPlanningLhpOpdBoundaryError(boundaryUpdateTemuan);
+    }
+
     ensureDraftOrRejected(temuan);
 
     const merged = { ...temuan.get({ plain: true }), ...allowedPayload };
@@ -403,6 +434,15 @@ const submitTemuanForVerification = async ({ temuanId, user, note } = {}) => {
   return sequelize.transaction(async (transaction) => {
     const temuan = await findTemuanOrFail(temuanId, { transaction });
 
+    // Sprint 8 -- S8T-003
+    const boundarySubmitTemuan = await resolveMrPlanningLhpOpdBoundary({
+      user,
+      targetOpdId: temuan?.opd_id ?? null,
+    });
+    if (!boundarySubmitTemuan.ok) {
+      throwMrPlanningLhpOpdBoundaryError(boundarySubmitTemuan);
+    }
+
     ensureDraftOrRejected(temuan);
 
     const beforeJson = getPlainJson(temuan);
@@ -442,6 +482,15 @@ const createRevisionFromApprovedTemuan = async ({ temuanId, body = {}, user } = 
 
   const temuan = await sequelize.transaction(async (transaction) => {
     const temuan = await findTemuanOrFail(temuanId, { transaction });
+
+    // Sprint 8 -- S8T-004
+    const boundaryRevisiTemuan = await resolveMrPlanningLhpOpdBoundary({
+      user,
+      targetOpdId: temuan?.opd_id ?? null,
+    });
+    if (!boundaryRevisiTemuan.ok) {
+      throwMrPlanningLhpOpdBoundaryError(boundaryRevisiTemuan);
+    }
 
     if (temuan.status_revisi !== "approved") {
       throwValidation(
@@ -584,6 +633,16 @@ const createRekomendasi = async ({ temuanId, body = {}, user } = {}) => {
   return sequelize.transaction(async (transaction) => {
     const temuan = await findTemuanOrFail(temuanId, { transaction });
 
+    // Sprint 8 -- S8T-006: Rekomendasi mengikuti ownership Temuan induknya
+    // (Rekomendasi tidak punya opd_id sendiri).
+    const boundaryCreateRekomendasi = await resolveMrPlanningLhpOpdBoundary({
+      user,
+      targetOpdId: temuan?.opd_id ?? null,
+    });
+    if (!boundaryCreateRekomendasi.ok) {
+      throwMrPlanningLhpOpdBoundaryError(boundaryCreateRekomendasi);
+    }
+
     const rekomendasi = await MrPlanningTemuanRekomendasi.create(
       {
         ...allowedPayload,
@@ -614,6 +673,18 @@ const updateDraftRekomendasi = async ({ rekomendasiId, body = {}, user } = {}) =
 
   return sequelize.transaction(async (transaction) => {
     const rekomendasi = await findRekomendasiOrFail(rekomendasiId, { transaction });
+
+    // Sprint 8 -- S8T-007: Rekomendasi -> Temuan induk -> stored
+    // temuan.opd_id authoritative (parent-derived ownership, Rekomendasi
+    // sendiri tidak punya opd_id).
+    const parentTemuanUpdateRek = await findTemuanOrFail(rekomendasi.mr_planning_temuan_id, { transaction });
+    const boundaryUpdateRekomendasi = await resolveMrPlanningLhpOpdBoundary({
+      user,
+      targetOpdId: parentTemuanUpdateRek?.opd_id ?? null,
+    });
+    if (!boundaryUpdateRekomendasi.ok) {
+      throwMrPlanningLhpOpdBoundaryError(boundaryUpdateRekomendasi);
+    }
 
     if (rekomendasi.is_locked) {
       throwValidation(
@@ -647,6 +718,16 @@ const cancelRekomendasi = async ({ rekomendasiId, body = {}, user } = {}) => {
 
   return sequelize.transaction(async (transaction) => {
     const rekomendasi = await findRekomendasiOrFail(rekomendasiId, { transaction });
+
+    // Sprint 8 -- S8T-008
+    const parentTemuanCancelRek = await findTemuanOrFail(rekomendasi.mr_planning_temuan_id, { transaction });
+    const boundaryCancelRekomendasi = await resolveMrPlanningLhpOpdBoundary({
+      user,
+      targetOpdId: parentTemuanCancelRek?.opd_id ?? null,
+    });
+    if (!boundaryCancelRekomendasi.ok) {
+      throwMrPlanningLhpOpdBoundaryError(boundaryCancelRekomendasi);
+    }
 
     if (rekomendasi.is_locked) {
       throwValidation(
@@ -756,6 +837,27 @@ const escalateToRisk = async ({ temuanId, body = {}, user } = {}) => {
     include: [{ model: MrReferenceItem, as: "entitas_pemeriksa_ref", required: false }],
   });
 
+  // Sprint 8 -- S8T-005 (CRITICAL): kasus prioritas tertinggi Sprint 8.
+  // Sebelumnya proposalPayload.opd_id = body.opd_id || temuan.opd_id
+  // mengizinkan caller melewati boundary createProposalIntake (Sprint 7)
+  // dengan menyamarkan body.opd_id ke OPD-nya SENDIRI -- Risk baru lolos
+  // dibuat di bawah OPD caller, TAPI temuan (milik OPD lain) di bawah tetap
+  // termutasi (risk_escalation_status, mr_planning_risk_id, cross-link) --
+  // confused-deputy: fungsi Sprint 7 yang sudah benar dipakai untuk
+  // "mencuci" data Temuan asing. Diperbaiki di sumbernya: otorisasi caller
+  // terhadap stored temuan.opd_id di sini, SEBELUM Risk dibuat/Temuan
+  // dimutasi/cross-link dibuat, dan body.opd_id TIDAK LAGI dipakai untuk
+  // menentukan ownership Risk hasil eskalasi (lihat proposalPayload di
+  // bawah -- opd_id sekarang SELALU temuan.opd_id, tidak ada fallback ke
+  // body.opd_id).
+  const boundaryEscalate = await resolveMrPlanningLhpOpdBoundary({
+    user,
+    targetOpdId: temuan?.opd_id ?? null,
+  });
+  if (!boundaryEscalate.ok) {
+    throwMrPlanningLhpOpdBoundaryError(boundaryEscalate);
+  }
+
   if (temuan.status_revisi !== "approved") {
     throwValidation(
       "Temuan harus berstatus Disetujui sebelum bisa dieskalasi ke Risk Register.",
@@ -796,7 +898,10 @@ const escalateToRisk = async ({ temuanId, body = {}, user } = {}) => {
     proposal_source_type: proposalSourceType,
     tahun: String(body.tahun || temuan.entitas_pemeriksa_ref?.tahun_berlaku || new Date().getFullYear()),
     periode_type: body.periode_type || "tahunan",
-    opd_id: body.opd_id || temuan.opd_id,
+    // Sprint 8 -- S8T-005: opd_id Risk hasil eskalasi HARUS mengikuti
+    // ownership Temuan yang sudah diotorisasi di atas -- body.opd_id TIDAK
+    // BOLEH menggantikan ownership Temuan yang dieskalasi.
+    opd_id: temuan.opd_id,
     nama_opd: temuan.nama_opd,
     nomor_temuan: temuan.nomor_temuan,
     judul_temuan: temuan.judul_temuan,

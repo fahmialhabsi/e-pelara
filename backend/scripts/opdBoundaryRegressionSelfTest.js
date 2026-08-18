@@ -4586,6 +4586,1748 @@ await test('recallRiskDariTemuan — SUPER_ADMIN dikecualikan dari boundary OPD 
   );
 });
 
+
+console.log('\n=== S8-LHP: mrPlanningLhpService — boundary OPD (RenstraOPD.findOne, LHP/Temuan namespace) ===');
+
+await test('mrPlanningLhpService.createLhp — payload.opd_id milik OPD LAIN -> DITOLAK 403, MrPlanningLhp.create TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalCreate = models.MrPlanningLhp.create;
+      let createCalled = false;
+      models.MrPlanningLhp.create = async () => {
+        createCalled = true;
+        return {};
+      };
+
+      try {
+        await svc.createLhp({
+          body: { nomor_lhp: 'LHP-001', judul_lhp: 'Uji Coba LHP', opd_id: 2 },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('createLhp seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(createCalled, false, 'MrPlanningLhp.create() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.MrPlanningLhp.create = originalCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningLhpService.createLhp — payload.opd_id milik OPD SENDIRI -> boundary MENGIZINKAN, MrPlanningLhp.create dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalCreate = models.MrPlanningLhp.create;
+      const originalFindByPk = models.RenstraOPD.findByPk;
+      models.RenstraOPD.findByPk = async () => ({ id: 1, nama_opd: 'Dinas Uji Coba A' });
+      let createCalled = false;
+      models.MrPlanningLhp.create = async (payload) => {
+        createCalled = true;
+        return { id: 10, ...payload };
+      };
+
+      try {
+        const result = await svc.createLhp({
+          body: { nomor_lhp: 'LHP-001', judul_lhp: 'Uji Coba LHP', opd_id: 1 },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result, 'createLhp harus berhasil ketika payload.opd_id adalah OPD caller sendiri');
+        assert.strictEqual(createCalled, true, 'MrPlanningLhp.create() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.MrPlanningLhp.create = originalCreate;
+        models.RenstraOPD.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningLhpService.createLhp — SUPER_ADMIN dikecualikan dari boundary OPD (lookup RenstraOPD.findOne TIDAK dipicu)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async () => {
+      opdLookupCalled = true;
+      return null;
+    }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalCreate = models.MrPlanningLhp.create;
+      const originalFindByPk = models.RenstraOPD.findByPk;
+      models.RenstraOPD.findByPk = async () => ({ id: 2, nama_opd: 'Dinas Lain' });
+      let createCalled = false;
+      models.MrPlanningLhp.create = async (payload) => {
+        createCalled = true;
+        return { id: 10, ...payload };
+      };
+
+      try {
+        const result = await svc.createLhp({
+          body: { nomor_lhp: 'LHP-001', judul_lhp: 'Uji Coba LHP', opd_id: 2 },
+          user: { id: 9, role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+        });
+        assert.ok(result, 'createLhp harus berhasil untuk SUPER_ADMIN');
+        assert.strictEqual(createCalled, true, 'MrPlanningLhp.create() HARUS dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup RenstraOPD.findOne sama sekali');
+      } finally {
+        models.MrPlanningLhp.create = originalCreate;
+        models.RenstraOPD.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningLhpService.createLhp — resolusi kepemilikan OPD gagal (error internal) -> FAIL CLOSED 503, MrPlanningLhp.create TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async () => {
+      throw new Error('simulated DB error saat resolusi kepemilikan OPD');
+    }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalCreate = models.MrPlanningLhp.create;
+      let createCalled = false;
+      models.MrPlanningLhp.create = async () => {
+        createCalled = true;
+        return {};
+      };
+
+      try {
+        await svc.createLhp({
+          body: { nomor_lhp: 'LHP-001', judul_lhp: 'Uji Coba LHP', opd_id: 2 },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('createLhp seharusnya melempar error fail-closed, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 503, `harus fail-closed 503, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_BOUNDARY_UNAVAILABLE');
+        assert.strictEqual(createCalled, false, 'MrPlanningLhp.create() TIDAK BOLEH dipanggil ketika resolusi kepemilikan gagal (fail-closed)');
+      } finally {
+        models.MrPlanningLhp.create = originalCreate;
+      }
+    }
+  );
+});
+
+// Helper generik untuk 5 fungsi existing-record LHP (updateDraftLhp,
+// activateLhp, archiveLhp, uploadLhpFile, completeLhpMetadata) — semua
+// memakai findLhpOrFail(lhpId) lalu boundary check terhadap lhp.opd_id
+// SEBELUM mutasi apa pun. Di-drive lewat parameter supaya tiap fungsi tetap
+// punya assertion sendiri (bukan disembunyikan di satu loop generik).
+
+await test('mrPlanningLhpService.updateDraftLhp — caller OPD BEDA dari target -> DITOLAK 403, lhp.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalFindByPk = models.MrPlanningLhp.findByPk;
+      let updateCalled = false;
+      models.MrPlanningLhp.findByPk = async () => ({
+        id: 7,
+        opd_id: 2,
+        status_dokumen: 'draft',
+        get: function (opts) { return opts && opts.plain ? { id: this.id, opd_id: this.opd_id, status_dokumen: this.status_dokumen } : this; },
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        await svc.updateDraftLhp({ lhpId: 7, body: {}, user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } });
+        assert.fail('updateDraftLhp seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'lhp.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.MrPlanningLhp.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningLhpService.updateDraftLhp — caller OPD SAMA dengan target -> boundary MENGIZINKAN, lhp.update dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalFindByPk = models.MrPlanningLhp.findByPk;
+      let updateCalled = false;
+      models.MrPlanningLhp.findByPk = async () => ({
+        id: 7,
+        opd_id: 1,
+        status_dokumen: 'draft',
+        get: function (opts) { return opts && opts.plain ? { id: this.id, opd_id: this.opd_id, status_dokumen: this.status_dokumen } : this; },
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        const result = await svc.updateDraftLhp({ lhpId: 7, body: {}, user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } });
+        assert.ok(result, 'updateDraftLhp harus berhasil ketika caller dan target OPD sama');
+        assert.strictEqual(updateCalled, true, 'lhp.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.MrPlanningLhp.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningLhpService.updateDraftLhp — SUPER_ADMIN dikecualikan dari boundary OPD (lookup RenstraOPD.findOne TIDAK dipicu)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  // Catatan: RenstraOPD.findByPk (dipakai resolveLabelsForPayload untuk
+  // resolusi label nama_opd dari payload.opd_id -- TIDAK terkait boundary
+  // check) secara internal Sequelize mendelegasikan ke findOne({where:{id}}).
+  // opdLookupCalled di sini HANYA menghitung findOne dengan bentuk where
+  // boundary check (where.nama_opd), supaya tidak salah positif akibat
+  // delegasi internal findByPk yang tidak terkait SUPER_ADMIN bypass sama
+  // sekali.
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where } = {}) => {
+      if (where && Object.prototype.hasOwnProperty.call(where, 'nama_opd')) {
+        opdLookupCalled = true;
+      }
+      return null;
+    }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalFindByPk = models.MrPlanningLhp.findByPk;
+      let updateCalled = false;
+      models.MrPlanningLhp.findByPk = async () => ({
+        id: 7,
+        opd_id: 2,
+        status_dokumen: 'draft',
+        get: function (opts) { return opts && opts.plain ? { id: this.id, opd_id: this.opd_id, status_dokumen: this.status_dokumen } : this; },
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        const result = await svc.updateDraftLhp({ lhpId: 7, body: {}, user: { id: 9, role: 'SUPER_ADMIN', opd: 'Dinas Manapun' } });
+        assert.ok(result, 'updateDraftLhp harus berhasil untuk SUPER_ADMIN');
+        assert.strictEqual(updateCalled, true, 'lhp.update() HARUS dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup boundary RenstraOPD.findOne (where.nama_opd) sama sekali');
+      } finally {
+        models.MrPlanningLhp.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningLhpService.activateLhp — caller OPD BEDA dari target -> DITOLAK 403, lhp.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalFindByPk = models.MrPlanningLhp.findByPk;
+      let updateCalled = false;
+      models.MrPlanningLhp.findByPk = async () => ({
+        id: 7,
+        opd_id: 2,
+        status_dokumen: 'draft',
+        get: function (opts) { return opts && opts.plain ? { id: this.id, opd_id: this.opd_id, status_dokumen: this.status_dokumen, tanggal_terima_lhp: null } : this; },
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        await svc.activateLhp({ lhpId: 7, user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } });
+        assert.fail('activateLhp seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'lhp.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.MrPlanningLhp.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningLhpService.activateLhp — caller OPD SAMA dengan target -> boundary MENGIZINKAN, lhp.update dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalFindByPk = models.MrPlanningLhp.findByPk;
+      let updateCalled = false;
+      models.MrPlanningLhp.findByPk = async () => ({
+        id: 7,
+        opd_id: 1,
+        status_dokumen: 'draft',
+        get: function (opts) { return opts && opts.plain ? { id: this.id, opd_id: this.opd_id, status_dokumen: this.status_dokumen, tanggal_terima_lhp: null } : this; },
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        const result = await svc.activateLhp({ lhpId: 7, user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } });
+        assert.ok(result, 'activateLhp harus berhasil ketika caller dan target OPD sama');
+        assert.strictEqual(updateCalled, true, 'lhp.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.MrPlanningLhp.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningLhpService.archiveLhp — caller OPD BEDA dari target -> DITOLAK 403, lhp.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalFindByPk = models.MrPlanningLhp.findByPk;
+      let updateCalled = false;
+      models.MrPlanningLhp.findByPk = async () => ({
+        id: 7,
+        opd_id: 2,
+        status_dokumen: 'aktif',
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        await svc.archiveLhp({ lhpId: 7, user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } });
+        assert.fail('archiveLhp seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'lhp.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.MrPlanningLhp.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningLhpService.archiveLhp — caller OPD SAMA dengan target -> boundary MENGIZINKAN, lhp.update dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalFindByPk = models.MrPlanningLhp.findByPk;
+      let updateCalled = false;
+      models.MrPlanningLhp.findByPk = async () => ({
+        id: 7,
+        opd_id: 1,
+        status_dokumen: 'aktif',
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        const result = await svc.archiveLhp({ lhpId: 7, user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } });
+        assert.ok(result, 'archiveLhp harus berhasil ketika caller dan target OPD sama');
+        assert.strictEqual(updateCalled, true, 'lhp.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.MrPlanningLhp.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningLhpService.uploadLhpFile — caller OPD BEDA dari target -> DITOLAK 403, lhp.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalFindByPk = models.MrPlanningLhp.findByPk;
+      let updateCalled = false;
+      models.MrPlanningLhp.findByPk = async () => ({
+        id: 7,
+        opd_id: 2,
+        status_dokumen: 'aktif',
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        await svc.uploadLhpFile({
+          lhpId: 7,
+          file: { filename: 'a.pdf', path: '/tmp/uploads/a.pdf', originalname: 'a.pdf', mimetype: 'application/pdf', size: 10 },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('uploadLhpFile seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'lhp.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.MrPlanningLhp.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningLhpService.uploadLhpFile — caller OPD SAMA dengan target -> boundary MENGIZINKAN, lhp.update dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalFindByPk = models.MrPlanningLhp.findByPk;
+      let updateCalled = false;
+      models.MrPlanningLhp.findByPk = async () => ({
+        id: 7,
+        opd_id: 1,
+        status_dokumen: 'aktif',
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        const result = await svc.uploadLhpFile({
+          lhpId: 7,
+          file: { filename: 'a.pdf', path: '/tmp/uploads/a.pdf', originalname: 'a.pdf', mimetype: 'application/pdf', size: 10 },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result, 'uploadLhpFile harus berhasil ketika caller dan target OPD sama');
+        assert.strictEqual(updateCalled, true, 'lhp.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.MrPlanningLhp.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningLhpService.completeLhpMetadata — caller OPD BEDA dari target -> DITOLAK 403, lhp.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalFindByPk = models.MrPlanningLhp.findByPk;
+      let updateCalled = false;
+      models.MrPlanningLhp.findByPk = async () => ({
+        id: 7,
+        opd_id: 2,
+        status_dokumen: 'aktif',
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        await svc.completeLhpMetadata({
+          lhpId: 7,
+          body: { nomor_lhp: 'LHP-002', alasan_revisi: 'Koreksi nomor.' },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('completeLhpMetadata seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'lhp.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.MrPlanningLhp.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningLhpService.completeLhpMetadata — caller OPD SAMA dengan target -> boundary MENGIZINKAN, lhp.update dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalFindByPk = models.MrPlanningLhp.findByPk;
+      let updateCalled = false;
+      models.MrPlanningLhp.findByPk = async () => ({
+        id: 7,
+        opd_id: 1,
+        status_dokumen: 'aktif',
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        const result = await svc.completeLhpMetadata({
+          lhpId: 7,
+          body: { nomor_lhp: 'LHP-002', alasan_revisi: 'Koreksi nomor.' },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result, 'completeLhpMetadata harus berhasil ketika caller dan target OPD sama');
+        assert.strictEqual(updateCalled, true, 'lhp.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.MrPlanningLhp.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningLhpService.completeLhpMetadata — resolusi kepemilikan OPD gagal (error internal) -> FAIL CLOSED 503, lhp.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async () => { throw new Error('simulated DB error saat resolusi kepemilikan OPD'); }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningLhpService');
+
+      const originalFindByPk = models.MrPlanningLhp.findByPk;
+      let updateCalled = false;
+      models.MrPlanningLhp.findByPk = async () => ({
+        id: 7,
+        opd_id: 2,
+        status_dokumen: 'aktif',
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        await svc.completeLhpMetadata({
+          lhpId: 7,
+          body: { nomor_lhp: 'LHP-002', alasan_revisi: 'Koreksi nomor.' },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('completeLhpMetadata seharusnya melempar error fail-closed, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 503, `harus fail-closed 503, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_BOUNDARY_UNAVAILABLE');
+        assert.strictEqual(updateCalled, false, 'lhp.update() TIDAK BOLEH dipanggil ketika resolusi kepemilikan gagal (fail-closed)');
+      } finally {
+        models.MrPlanningLhp.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+
+console.log('\n=== S8-TEMUAN: mrPlanningTemuanService.createTemuanFromLhp — boundary OPD (parent LHP-derived ownership) ===');
+
+await test('mrPlanningTemuanService.createTemuanFromLhp — LHP induk milik OPD LAIN -> DITOLAK 403, MrPlanningTemuan.create TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningLhp.findByPk;
+      const originalCreate = models.MrPlanningTemuan.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningLhp.findByPk = async () => ({
+        id: 3,
+        opd_id: 2,
+        status_dokumen: 'aktif',
+        tahun_lhp: 2026,
+        context_id: 1,
+        entitas_pemeriksa_ref_id: null,
+        entitas_pemeriksa: null,
+        nama_opd: 'Dinas Lain',
+        jumlah_temuan: 0,
+        update: async () => {},
+      });
+      let createCalled = false;
+      models.MrPlanningTemuan.create = async () => {
+        createCalled = true;
+        return {};
+      };
+
+      try {
+        await svc.createTemuanFromLhp({
+          lhpId: 3,
+          body: { nomor_temuan: 'T-001', judul_temuan: 'Uji Temuan', uraian_temuan: 'Uraian' },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('createTemuanFromLhp seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(createCalled, false, 'MrPlanningTemuan.create() TIDAK BOLEH dipanggil ketika LHP induk milik OPD lain');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningLhp.findByPk = originalFindByPk;
+        models.MrPlanningTemuan.create = originalCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.createTemuanFromLhp — LHP induk milik OPD SENDIRI -> boundary MENGIZINKAN, MrPlanningTemuan.create dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningLhp.findByPk;
+      const originalCreate = models.MrPlanningTemuan.create;
+      const originalHistoryCreate = models.MrPlanningTemuanHistory.create;
+      const originalCount = models.MrPlanningTemuan.count;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuan.count = async () => 0;
+      models.MrPlanningTemuanHistory.create = async () => ({ id: 1 });
+      models.MrPlanningLhp.findByPk = async () => ({
+        id: 3,
+        opd_id: 1,
+        status_dokumen: 'aktif',
+        tahun_lhp: 2026,
+        context_id: 1,
+        entitas_pemeriksa_ref_id: null,
+        entitas_pemeriksa: null,
+        nama_opd: 'Dinas Uji Coba A',
+        jumlah_temuan: 0,
+        update: async () => {},
+      });
+      let createCalled = false;
+      models.MrPlanningTemuan.create = async (payload) => {
+        createCalled = true;
+        return { id: 55, get: () => ({ id: 55, ...payload }), ...payload };
+      };
+
+      try {
+        const result = await svc.createTemuanFromLhp({
+          lhpId: 3,
+          body: { nomor_temuan: 'T-001', judul_temuan: 'Uji Temuan', uraian_temuan: 'Uraian' },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result, 'createTemuanFromLhp harus berhasil ketika LHP induk milik OPD caller sendiri');
+        assert.strictEqual(createCalled, true, 'MrPlanningTemuan.create() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningLhp.findByPk = originalFindByPk;
+        models.MrPlanningTemuan.create = originalCreate;
+        models.MrPlanningTemuanHistory.create = originalHistoryCreate;
+        models.MrPlanningTemuan.count = originalCount;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.createTemuanFromLhp — SUPER_ADMIN dikecualikan dari boundary OPD (lookup RenstraOPD.findOne TIDAK dipicu)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async () => { opdLookupCalled = true; return null; }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningLhp.findByPk;
+      const originalCreate = models.MrPlanningTemuan.create;
+      const originalHistoryCreate = models.MrPlanningTemuanHistory.create;
+      const originalCount = models.MrPlanningTemuan.count;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuan.count = async () => 0;
+      models.MrPlanningTemuanHistory.create = async () => ({ id: 1 });
+      models.MrPlanningLhp.findByPk = async () => ({
+        id: 3,
+        opd_id: 2,
+        status_dokumen: 'aktif',
+        tahun_lhp: 2026,
+        context_id: 1,
+        entitas_pemeriksa_ref_id: null,
+        entitas_pemeriksa: null,
+        nama_opd: 'Dinas Lain',
+        jumlah_temuan: 0,
+        update: async () => {},
+      });
+      let createCalled = false;
+      models.MrPlanningTemuan.create = async (payload) => {
+        createCalled = true;
+        return { id: 55, get: () => ({ id: 55, ...payload }), ...payload };
+      };
+
+      try {
+        const result = await svc.createTemuanFromLhp({
+          lhpId: 3,
+          body: { nomor_temuan: 'T-001', judul_temuan: 'Uji Temuan', uraian_temuan: 'Uraian' },
+          user: { id: 9, role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+        });
+        assert.ok(result, 'createTemuanFromLhp harus berhasil untuk SUPER_ADMIN');
+        assert.strictEqual(createCalled, true, 'MrPlanningTemuan.create() HARUS dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup RenstraOPD.findOne sama sekali');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningLhp.findByPk = originalFindByPk;
+        models.MrPlanningTemuan.create = originalCreate;
+        models.MrPlanningTemuanHistory.create = originalHistoryCreate;
+        models.MrPlanningTemuan.count = originalCount;
+      }
+    }
+  );
+});
+
+
+console.log('\n=== S8-TEMUAN: updateDraftTemuan / submitTemuanForVerification / createRevisionFromApprovedTemuan — boundary OPD ===');
+
+await test('mrPlanningTemuanService.updateDraftTemuan — caller OPD BEDA dari target -> DITOLAK 403, temuan.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningTemuan.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      let updateCalled = false;
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        status_revisi: 'draft',
+        get: function (opts) { return opts && opts.plain ? { id: this.id, opd_id: this.opd_id, status_revisi: this.status_revisi } : this; },
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        await svc.updateDraftTemuan({ temuanId: 55, body: {}, user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } });
+        assert.fail('updateDraftTemuan seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'temuan.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuan.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.updateDraftTemuan — caller OPD SAMA dengan target -> boundary MENGIZINKAN, temuan.update dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalHistoryCreate = models.MrPlanningTemuanHistory.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuanHistory.create = async () => ({ id: 1 });
+      let updateCalled = false;
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 1,
+        status_revisi: 'draft',
+        context_id: 1,
+        get: function (opts) { return opts && opts.plain ? { id: this.id, opd_id: this.opd_id, status_revisi: this.status_revisi, context_id: this.context_id } : this; },
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        const result = await svc.updateDraftTemuan({ temuanId: 55, body: {}, user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } });
+        assert.ok(result, 'updateDraftTemuan harus berhasil ketika caller dan target OPD sama');
+        assert.strictEqual(updateCalled, true, 'temuan.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuan.findByPk = originalFindByPk;
+        models.MrPlanningTemuanHistory.create = originalHistoryCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.updateDraftTemuan — SUPER_ADMIN dikecualikan dari boundary OPD (lookup RenstraOPD.findOne TIDAK dipicu)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async () => { opdLookupCalled = true; return null; }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalHistoryCreate = models.MrPlanningTemuanHistory.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuanHistory.create = async () => ({ id: 1 });
+      let updateCalled = false;
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        status_revisi: 'draft',
+        context_id: 1,
+        get: function (opts) { return opts && opts.plain ? { id: this.id, opd_id: this.opd_id, status_revisi: this.status_revisi, context_id: this.context_id } : this; },
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        const result = await svc.updateDraftTemuan({ temuanId: 55, body: {}, user: { id: 9, role: 'SUPER_ADMIN', opd: 'Dinas Manapun' } });
+        assert.ok(result, 'updateDraftTemuan harus berhasil untuk SUPER_ADMIN');
+        assert.strictEqual(updateCalled, true, 'temuan.update() HARUS dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup RenstraOPD.findOne sama sekali');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuan.findByPk = originalFindByPk;
+        models.MrPlanningTemuanHistory.create = originalHistoryCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.submitTemuanForVerification — caller OPD BEDA dari target -> DITOLAK 403, temuan.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningTemuan.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      let updateCalled = false;
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        status_revisi: 'draft',
+        context_id: 1,
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        await svc.submitTemuanForVerification({ temuanId: 55, user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } });
+        assert.fail('submitTemuanForVerification seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'temuan.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuan.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.submitTemuanForVerification — caller OPD SAMA dengan target -> boundary MENGIZINKAN, temuan.update dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalHistoryCreate = models.MrPlanningTemuanHistory.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuanHistory.create = async () => ({ id: 1 });
+      let updateCalled = false;
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 1,
+        status_revisi: 'draft',
+        context_id: 1,
+        get: function (opts) { return opts && opts.plain ? { id: this.id, opd_id: this.opd_id, status_revisi: this.status_revisi, context_id: this.context_id } : this; },
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        const result = await svc.submitTemuanForVerification({ temuanId: 55, user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } });
+        assert.ok(result, 'submitTemuanForVerification harus berhasil ketika caller dan target OPD sama');
+        assert.strictEqual(updateCalled, true, 'temuan.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuan.findByPk = originalFindByPk;
+        models.MrPlanningTemuanHistory.create = originalHistoryCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.submitTemuanForVerification — SUPER_ADMIN dikecualikan dari boundary OPD (lookup RenstraOPD.findOne TIDAK dipicu)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async () => { opdLookupCalled = true; return null; }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalHistoryCreate = models.MrPlanningTemuanHistory.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuanHistory.create = async () => ({ id: 1 });
+      let updateCalled = false;
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        status_revisi: 'draft',
+        context_id: 1,
+        get: function (opts) { return opts && opts.plain ? { id: this.id, opd_id: this.opd_id, status_revisi: this.status_revisi, context_id: this.context_id } : this; },
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        const result = await svc.submitTemuanForVerification({ temuanId: 55, user: { id: 9, role: 'SUPER_ADMIN', opd: 'Dinas Manapun' } });
+        assert.ok(result, 'submitTemuanForVerification harus berhasil untuk SUPER_ADMIN');
+        assert.strictEqual(updateCalled, true, 'temuan.update() HARUS dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup RenstraOPD.findOne sama sekali');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuan.findByPk = originalFindByPk;
+        models.MrPlanningTemuanHistory.create = originalHistoryCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.createRevisionFromApprovedTemuan — caller OPD BEDA dari target -> DITOLAK 403, temuan.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningTemuan.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      let updateCalled = false;
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        status_revisi: 'approved',
+        versi: 1,
+        get: function (opts) { return opts && opts.plain ? { id: this.id, opd_id: this.opd_id, status_revisi: this.status_revisi, versi: this.versi } : this; },
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        await svc.createRevisionFromApprovedTemuan({ temuanId: 55, body: {}, user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } });
+        assert.fail('createRevisionFromApprovedTemuan seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'temuan.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuan.findByPk = originalFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.createRevisionFromApprovedTemuan — caller OPD SAMA dengan target -> boundary MENGIZINKAN, temuan.update dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalHistoryCreate = models.MrPlanningTemuanHistory.create;
+      const originalRekomendasiUpdate = models.MrPlanningTemuanRekomendasi.update;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuanHistory.create = async () => ({ id: 1 });
+      models.MrPlanningTemuanRekomendasi.update = async () => [0];
+      let updateCalled = false;
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 1,
+        status_revisi: 'approved',
+        versi: 1,
+        context_id: 1,
+        risk_escalation_status: null,
+        mr_planning_risk_id: null,
+        get: function (opts) { return opts && opts.plain ? { id: this.id, opd_id: this.opd_id, status_revisi: this.status_revisi, versi: this.versi, context_id: this.context_id } : this; },
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        const result = await svc.createRevisionFromApprovedTemuan({ temuanId: 55, body: {}, user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' } });
+        assert.ok(result, 'createRevisionFromApprovedTemuan harus berhasil ketika caller dan target OPD sama');
+        assert.strictEqual(updateCalled, true, 'temuan.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuan.findByPk = originalFindByPk;
+        models.MrPlanningTemuanHistory.create = originalHistoryCreate;
+        models.MrPlanningTemuanRekomendasi.update = originalRekomendasiUpdate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.createRevisionFromApprovedTemuan — SUPER_ADMIN dikecualikan dari boundary OPD (lookup RenstraOPD.findOne TIDAK dipicu)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async () => { opdLookupCalled = true; return null; }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalHistoryCreate = models.MrPlanningTemuanHistory.create;
+      const originalRekomendasiUpdate = models.MrPlanningTemuanRekomendasi.update;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuanHistory.create = async () => ({ id: 1 });
+      models.MrPlanningTemuanRekomendasi.update = async () => [0];
+      let updateCalled = false;
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        status_revisi: 'approved',
+        versi: 1,
+        context_id: 1,
+        risk_escalation_status: null,
+        mr_planning_risk_id: null,
+        get: function (opts) { return opts && opts.plain ? { id: this.id, opd_id: this.opd_id, status_revisi: this.status_revisi, versi: this.versi, context_id: this.context_id } : this; },
+        update: async () => { updateCalled = true; },
+      });
+
+      try {
+        const result = await svc.createRevisionFromApprovedTemuan({ temuanId: 55, body: {}, user: { id: 9, role: 'SUPER_ADMIN', opd: 'Dinas Manapun' } });
+        assert.ok(result, 'createRevisionFromApprovedTemuan harus berhasil untuk SUPER_ADMIN');
+        assert.strictEqual(updateCalled, true, 'temuan.update() HARUS dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup RenstraOPD.findOne sama sekali');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuan.findByPk = originalFindByPk;
+        models.MrPlanningTemuanHistory.create = originalHistoryCreate;
+        models.MrPlanningTemuanRekomendasi.update = originalRekomendasiUpdate;
+      }
+    }
+  );
+});
+
+
+console.log('\n=== S8-TEMUAN: createRekomendasi / updateDraftRekomendasi / cancelRekomendasi — boundary OPD (parent Temuan-derived ownership) ===');
+
+await test('mrPlanningTemuanService.createRekomendasi — Temuan induk milik OPD LAIN -> DITOLAK 403, MrPlanningTemuanRekomendasi.create TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalCreate = models.MrPlanningTemuanRekomendasi.create;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        status_revisi: 'draft',
+        kode_temuan: 'T1',
+        mr_planning_lhp_id: 3,
+        context_id: 1,
+      });
+      let createCalled = false;
+      models.MrPlanningTemuanRekomendasi.create = async () => {
+        createCalled = true;
+        return {};
+      };
+
+      try {
+        await svc.createRekomendasi({
+          temuanId: 55,
+          body: { nomor_rekomendasi: '1', uraian_rekomendasi: 'Uji rekomendasi' },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('createRekomendasi seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(createCalled, false, 'MrPlanningTemuanRekomendasi.create() TIDAK BOLEH dipanggil ketika Temuan induk milik OPD lain');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuan.findByPk = originalFindByPk;
+        models.MrPlanningTemuanRekomendasi.create = originalCreate;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.createRekomendasi — Temuan induk milik OPD SENDIRI -> boundary MENGIZINKAN, MrPlanningTemuanRekomendasi.create dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalCreate = models.MrPlanningTemuanRekomendasi.create;
+      const originalRekomendasiFindAll = models.MrPlanningTemuanRekomendasi.findAll;
+      const originalTemuanUpdate = models.MrPlanningTemuan.update;
+      const originalLhpUpdate = models.MrPlanningLhp.update;
+      const originalTemuanSum = models.MrPlanningTemuan.sum;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuanRekomendasi.findAll = async () => [];
+      models.MrPlanningTemuan.update = async () => [1];
+      models.MrPlanningLhp.update = async () => [1];
+      models.MrPlanningTemuan.sum = async () => 0;
+      models.MrPlanningTemuan.findByPk = async (id, opts) => {
+        if (opts && opts.attributes) return { mr_planning_lhp_id: 3 };
+        return {
+          id: 55,
+          opd_id: 1,
+          status_revisi: 'draft',
+          kode_temuan: 'T1',
+          mr_planning_lhp_id: 3,
+          context_id: 1,
+        };
+      };
+      let createCalled = false;
+      models.MrPlanningTemuanRekomendasi.create = async (payload) => {
+        createCalled = true;
+        return { id: 1, ...payload };
+      };
+
+      try {
+        const result = await svc.createRekomendasi({
+          temuanId: 55,
+          body: { nomor_rekomendasi: '1', uraian_rekomendasi: 'Uji rekomendasi' },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result, 'createRekomendasi harus berhasil ketika Temuan induk milik OPD caller sendiri');
+        assert.strictEqual(createCalled, true, 'MrPlanningTemuanRekomendasi.create() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuan.findByPk = originalFindByPk;
+        models.MrPlanningTemuanRekomendasi.create = originalCreate;
+        models.MrPlanningTemuanRekomendasi.findAll = originalRekomendasiFindAll;
+        models.MrPlanningTemuan.update = originalTemuanUpdate;
+        models.MrPlanningLhp.update = originalLhpUpdate;
+        models.MrPlanningTemuan.sum = originalTemuanSum;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.updateDraftRekomendasi — parent Temuan milik OPD LAIN -> DITOLAK 403, rekomendasi.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalRekFindByPk = models.MrPlanningTemuanRekomendasi.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      let updateCalled = false;
+      models.MrPlanningTemuanRekomendasi.findByPk = async () => ({
+        id: 1,
+        mr_planning_temuan_id: 55,
+        is_locked: false,
+        update: async () => { updateCalled = true; },
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({ id: 55, opd_id: 2 });
+
+      try {
+        await svc.updateDraftRekomendasi({
+          rekomendasiId: 1,
+          body: { nomor_rekomendasi: '1', uraian_rekomendasi: 'Baru' },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('updateDraftRekomendasi seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'rekomendasi.update() TIDAK BOLEH dipanggil ketika Temuan induk milik OPD lain');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuanRekomendasi.findByPk = originalRekFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.updateDraftRekomendasi — parent Temuan milik OPD SENDIRI -> boundary MENGIZINKAN, rekomendasi.update dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalRekFindByPk = models.MrPlanningTemuanRekomendasi.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      let updateCalled = false;
+      models.MrPlanningTemuanRekomendasi.findByPk = async () => ({
+        id: 1,
+        mr_planning_temuan_id: 55,
+        is_locked: false,
+        update: async () => { updateCalled = true; },
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({ id: 55, opd_id: 1 });
+
+      try {
+        const result = await svc.updateDraftRekomendasi({
+          rekomendasiId: 1,
+          body: { nomor_rekomendasi: '1', uraian_rekomendasi: 'Baru' },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result, 'updateDraftRekomendasi harus berhasil ketika Temuan induk milik OPD caller sendiri');
+        assert.strictEqual(updateCalled, true, 'rekomendasi.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuanRekomendasi.findByPk = originalRekFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.cancelRekomendasi — parent Temuan milik OPD LAIN -> DITOLAK 403, rekomendasi.update TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalRekFindByPk = models.MrPlanningTemuanRekomendasi.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalTindakLanjutCount = models.MrPlanningTindakLanjut.count;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTindakLanjut.count = async () => 0;
+      let updateCalled = false;
+      models.MrPlanningTemuanRekomendasi.findByPk = async () => ({
+        id: 1,
+        mr_planning_temuan_id: 55,
+        is_locked: false,
+        update: async () => { updateCalled = true; },
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({ id: 55, opd_id: 2 });
+
+      try {
+        await svc.cancelRekomendasi({
+          rekomendasiId: 1,
+          body: { alasan_revisi: 'Dibatalkan.' },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.fail('cancelRekomendasi seharusnya melempar error boundary OPD, bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(updateCalled, false, 'rekomendasi.update() TIDAK BOLEH dipanggil ketika Temuan induk milik OPD lain');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuanRekomendasi.findByPk = originalRekFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.MrPlanningTindakLanjut.count = originalTindakLanjutCount;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.cancelRekomendasi — parent Temuan milik OPD SENDIRI -> boundary MENGIZINKAN, rekomendasi.update dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalRekFindByPk = models.MrPlanningTemuanRekomendasi.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalTindakLanjutCount = models.MrPlanningTindakLanjut.count;
+      const originalRekomendasiFindAll = models.MrPlanningTemuanRekomendasi.findAll;
+      const originalTemuanUpdate = models.MrPlanningTemuan.update;
+      const originalLhpUpdate = models.MrPlanningLhp.update;
+      const originalTemuanSum = models.MrPlanningTemuan.sum;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTindakLanjut.count = async () => 0;
+      models.MrPlanningTemuanRekomendasi.findAll = async () => [];
+      models.MrPlanningTemuan.update = async () => [1];
+      models.MrPlanningLhp.update = async () => [1];
+      models.MrPlanningTemuan.sum = async () => 0;
+      let updateCalled = false;
+      models.MrPlanningTemuanRekomendasi.findByPk = async () => ({
+        id: 1,
+        mr_planning_temuan_id: 55,
+        is_locked: false,
+        update: async () => { updateCalled = true; },
+      });
+      models.MrPlanningTemuan.findByPk = async (id, opts) => {
+        if (opts && opts.attributes) return { mr_planning_lhp_id: 3 };
+        return { id: 55, opd_id: 1 };
+      };
+
+      try {
+        const result = await svc.cancelRekomendasi({
+          rekomendasiId: 1,
+          body: { alasan_revisi: 'Dibatalkan.' },
+          user: { id: 5, role: 'ADMINISTRATOR', opd: 'Dinas Uji Coba A' },
+        });
+        assert.ok(result, 'cancelRekomendasi harus berhasil ketika Temuan induk milik OPD caller sendiri');
+        assert.strictEqual(updateCalled, true, 'rekomendasi.update() HARUS dipanggil ketika boundary OPD mengizinkan');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuanRekomendasi.findByPk = originalRekFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.MrPlanningTindakLanjut.count = originalTindakLanjutCount;
+        models.MrPlanningTemuanRekomendasi.findAll = originalRekomendasiFindAll;
+        models.MrPlanningTemuan.update = originalTemuanUpdate;
+        models.MrPlanningLhp.update = originalLhpUpdate;
+        models.MrPlanningTemuan.sum = originalTemuanSum;
+      }
+    }
+  );
+});
+
+
+await test('mrPlanningTemuanService.createRekomendasi — SUPER_ADMIN dikecualikan dari boundary OPD (lookup RenstraOPD.findOne TIDAK dipicu, opd Temuan induk berbeda dari caller)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  let renstraOpdLookupCalled = false;
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => {
+      renstraOpdLookupCalled = true;
+      return { id: 1, nama_opd: where.nama_opd };
+    }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalCreate = models.MrPlanningTemuanRekomendasi.create;
+      const originalRekomendasiFindAll = models.MrPlanningTemuanRekomendasi.findAll;
+      const originalTemuanUpdate = models.MrPlanningTemuan.update;
+      const originalLhpUpdate = models.MrPlanningLhp.update;
+      const originalTemuanSum = models.MrPlanningTemuan.sum;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuanRekomendasi.findAll = async () => [];
+      models.MrPlanningTemuan.update = async () => [1];
+      models.MrPlanningLhp.update = async () => [1];
+      models.MrPlanningTemuan.sum = async () => 0;
+      models.MrPlanningTemuan.findByPk = async (id, opts) => {
+        if (opts && opts.attributes) return { mr_planning_lhp_id: 3 };
+        return {
+          // opd_id SENGAJA berbeda dari OPD caller (caller tidak punya OPD
+          // sama sekali -- SUPER_ADMIN tidak dibatasi opd_id manapun) --
+          // membuktikan bypass genuine, bukan kecocokan kebetulan.
+          id: 55,
+          opd_id: 999,
+          status_revisi: 'draft',
+          kode_temuan: 'T1',
+          mr_planning_lhp_id: 3,
+          context_id: 1,
+        };
+      };
+      let createCalled = false;
+      models.MrPlanningTemuanRekomendasi.create = async (payload) => {
+        createCalled = true;
+        return { id: 1, ...payload };
+      };
+
+      try {
+        const result = await svc.createRekomendasi({
+          temuanId: 55,
+          body: { nomor_rekomendasi: '1', uraian_rekomendasi: 'Uji rekomendasi SUPER_ADMIN' },
+          user: { id: 9, role: 'SUPER_ADMIN', opd: null },
+        });
+        assert.ok(result, 'createRekomendasi harus berhasil untuk SUPER_ADMIN walau Temuan induk milik OPD lain');
+        assert.strictEqual(createCalled, true, 'MrPlanningTemuanRekomendasi.create() HARUS tetap dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(renstraOpdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup RenstraOPD.findOne sama sekali (short-circuit)');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuan.findByPk = originalFindByPk;
+        models.MrPlanningTemuanRekomendasi.create = originalCreate;
+        models.MrPlanningTemuanRekomendasi.findAll = originalRekomendasiFindAll;
+        models.MrPlanningTemuan.update = originalTemuanUpdate;
+        models.MrPlanningLhp.update = originalLhpUpdate;
+        models.MrPlanningTemuan.sum = originalTemuanSum;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.updateDraftRekomendasi — SUPER_ADMIN dikecualikan dari boundary OPD (lookup RenstraOPD.findOne TIDAK dipicu, opd Temuan induk berbeda dari caller)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  let renstraOpdLookupCalled = false;
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => {
+      renstraOpdLookupCalled = true;
+      return { id: 1, nama_opd: where.nama_opd };
+    }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalRekFindByPk = models.MrPlanningTemuanRekomendasi.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      let updateCalled = false;
+      models.MrPlanningTemuanRekomendasi.findByPk = async () => ({
+        id: 1,
+        mr_planning_temuan_id: 55,
+        is_locked: false,
+        update: async () => { updateCalled = true; },
+      });
+      models.MrPlanningTemuan.findByPk = async () => ({ id: 55, opd_id: 999 });
+
+      try {
+        const result = await svc.updateDraftRekomendasi({
+          rekomendasiId: 1,
+          body: { nomor_rekomendasi: '1', uraian_rekomendasi: 'Baru (SUPER_ADMIN)' },
+          user: { id: 9, role: 'SUPER_ADMIN', opd: null },
+        });
+        assert.ok(result, 'updateDraftRekomendasi harus berhasil untuk SUPER_ADMIN walau Temuan induk milik OPD lain');
+        assert.strictEqual(updateCalled, true, 'rekomendasi.update() HARUS tetap dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(renstraOpdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup RenstraOPD.findOne sama sekali (short-circuit)');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuanRekomendasi.findByPk = originalRekFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+      }
+    }
+  );
+});
+
+await test('mrPlanningTemuanService.cancelRekomendasi — SUPER_ADMIN dikecualikan dari boundary OPD (lookup RenstraOPD.findOne TIDAK dipicu, opd Temuan induk berbeda dari caller)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  let renstraOpdLookupCalled = false;
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => {
+      renstraOpdLookupCalled = true;
+      return { id: 1, nama_opd: where.nama_opd };
+    }]],
+    async () => {
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalTransaction = models.sequelize.transaction;
+      const originalRekFindByPk = models.MrPlanningTemuanRekomendasi.findByPk;
+      const originalTemuanFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalTindakLanjutCount = models.MrPlanningTindakLanjut.count;
+      const originalRekomendasiFindAll = models.MrPlanningTemuanRekomendasi.findAll;
+      const originalTemuanUpdate = models.MrPlanningTemuan.update;
+      const originalLhpUpdate = models.MrPlanningLhp.update;
+      const originalTemuanSum = models.MrPlanningTemuan.sum;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTindakLanjut.count = async () => 0;
+      models.MrPlanningTemuanRekomendasi.findAll = async () => [];
+      models.MrPlanningTemuan.update = async () => [1];
+      models.MrPlanningLhp.update = async () => [1];
+      models.MrPlanningTemuan.sum = async () => 0;
+      let updateCalled = false;
+      models.MrPlanningTemuanRekomendasi.findByPk = async () => ({
+        id: 1,
+        mr_planning_temuan_id: 55,
+        is_locked: false,
+        update: async () => { updateCalled = true; },
+      });
+      models.MrPlanningTemuan.findByPk = async (id, opts) => {
+        if (opts && opts.attributes) return { mr_planning_lhp_id: 3 };
+        return { id: 55, opd_id: 999 };
+      };
+
+      try {
+        const result = await svc.cancelRekomendasi({
+          rekomendasiId: 1,
+          body: { alasan_revisi: 'Dibatalkan (SUPER_ADMIN).' },
+          user: { id: 9, role: 'SUPER_ADMIN', opd: null },
+        });
+        assert.ok(result, 'cancelRekomendasi harus berhasil untuk SUPER_ADMIN walau Temuan induk milik OPD lain');
+        assert.strictEqual(updateCalled, true, 'rekomendasi.update() HARUS tetap dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(renstraOpdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup RenstraOPD.findOne sama sekali (short-circuit)');
+      } finally {
+        models.sequelize.transaction = originalTransaction;
+        models.MrPlanningTemuanRekomendasi.findByPk = originalRekFindByPk;
+        models.MrPlanningTemuan.findByPk = originalTemuanFindByPk;
+        models.MrPlanningTindakLanjut.count = originalTindakLanjutCount;
+        models.MrPlanningTemuanRekomendasi.findAll = originalRekomendasiFindAll;
+        models.MrPlanningTemuan.update = originalTemuanUpdate;
+        models.MrPlanningLhp.update = originalLhpUpdate;
+        models.MrPlanningTemuan.sum = originalTemuanSum;
+      }
+    }
+  );
+});
+
+console.log('\n=== S8-TEMUAN (CRITICAL): mrPlanningTemuanService.escalateToRisk — boundary OPD, confused-deputy spoof via body.opd_id ===');
+
+await test('escalateToRisk — caller OPD A, Temuan tersimpan milik OPD B, body.opd_id = OPD A (spoof) -> DITOLAK, createProposalIntake/temuan.update/MrCrossSystemLink.create TIDAK dipanggil', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const mrPlanningRiskService = require('../services/mr/mrPlanningRiskService');
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalCreateProposalIntake = mrPlanningRiskService.createProposalIntake;
+      const originalFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalCrossLinkCreate = models.MrCrossSystemLink.create;
+
+      let createProposalIntakeCalled = false;
+      let temuanUpdateCalled = false;
+      let crossLinkCreateCalled = false;
+
+      mrPlanningRiskService.createProposalIntake = async () => {
+        createProposalIntakeCalled = true;
+        return { data: { id: 999, context_id: 1 } };
+      };
+      models.MrCrossSystemLink.create = async () => {
+        crossLinkCreateCalled = true;
+        return { id: 1 };
+      };
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        // Stored ownership: OPD B (id=2) -- caller adalah OPD A (id=1 via stub).
+        opd_id: 2,
+        nama_opd: 'Dinas OPD B',
+        status_revisi: 'approved',
+        risk_escalation_status: null,
+        kode_temuan: 'T-B-1',
+        nomor_temuan: 'T-B-1',
+        judul_temuan: 'Temuan milik OPD B',
+        uraian_temuan: 'Uraian',
+        sebab: 'Sebab',
+        akibat: 'Akibat',
+        nilai_temuan_rupiah: 0,
+        entitas_pemeriksa: 'BPK',
+        entitas_pemeriksa_ref: { kode_item: 'BPK', tahun_berlaku: 2026 },
+        update: async () => { temuanUpdateCalled = true; },
+      });
+
+      try {
+        await svc.escalateToRisk({
+          temuanId: 55,
+          // body.opd_id = OPD A -- confused-deputy spoof attempt.
+          body: { opd_id: 1 },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas OPD A' },
+        });
+        assert.fail('escalateToRisk seharusnya melempar error boundary OPD (spoof via body.opd_id harus DITOLAK), bukan sukses');
+      } catch (error) {
+        assert.strictEqual(error.statusCode, 403, `harus 403, didapat ${error.statusCode}, message=${error.message}`);
+        assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+        assert.strictEqual(createProposalIntakeCalled, false, 'mrPlanningRiskService.createProposalIntake() TIDAK BOLEH dipanggil ketika boundary OPD menolak (confused-deputy spoof)');
+        assert.strictEqual(temuanUpdateCalled, false, 'temuan.update() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+        assert.strictEqual(crossLinkCreateCalled, false, 'MrCrossSystemLink.create() TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      } finally {
+        mrPlanningRiskService.createProposalIntake = originalCreateProposalIntake;
+        models.MrPlanningTemuan.findByPk = originalFindByPk;
+        models.MrCrossSystemLink.create = originalCrossLinkCreate;
+      }
+    }
+  );
+});
+
+await test('escalateToRisk — caller OPD SAMA dengan Temuan tersimpan -> boundary MENGIZINKAN, createProposalIntake dipanggil dengan opd_id = temuan.opd_id (bukan body.opd_id)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 1, nama_opd: where.nama_opd })]],
+    async () => {
+      const mrPlanningRiskService = require('../services/mr/mrPlanningRiskService');
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalCreateProposalIntake = mrPlanningRiskService.createProposalIntake;
+      const originalFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalRekFindAll = models.MrPlanningTemuanRekomendasi.findAll;
+      const originalCrossLinkCreate = models.MrCrossSystemLink.create;
+      const originalHistoryCreate = models.MrPlanningTemuanHistory.create;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuanRekomendasi.findAll = async () => [];
+      models.MrPlanningTemuanHistory.create = async () => ({ id: 1 });
+
+      let createProposalIntakeCalledWith = null;
+      let temuanUpdateCalled = false;
+      let crossLinkCreateCalled = false;
+
+      mrPlanningRiskService.createProposalIntake = async (args) => {
+        createProposalIntakeCalledWith = args;
+        return { data: { id: 999, context_id: 1 } };
+      };
+      models.MrCrossSystemLink.create = async () => {
+        crossLinkCreateCalled = true;
+        return { id: 1 };
+      };
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 1,
+        nama_opd: 'Dinas OPD A',
+        status_revisi: 'approved',
+        risk_escalation_status: null,
+        kode_temuan: 'T-A-1',
+        nomor_temuan: 'T-A-1',
+        judul_temuan: 'Temuan milik OPD A',
+        uraian_temuan: 'Uraian',
+        sebab: 'Sebab',
+        akibat: 'Akibat',
+        nilai_temuan_rupiah: 0,
+        versi: 1,
+        context_id: 1,
+        entitas_pemeriksa: 'BPK',
+        entitas_pemeriksa_ref: { kode_item: 'BPK', tahun_berlaku: 2026 },
+        update: async () => { temuanUpdateCalled = true; },
+      });
+
+      try {
+        const result = await svc.escalateToRisk({
+          temuanId: 55,
+          // body.opd_id sengaja diisi OPD LAIN untuk membuktikan TIDAK dipakai
+          // sama sekali -- opd_id hasil akhir harus tetap temuan.opd_id (1).
+          body: { opd_id: 999 },
+          user: { role: 'ADMINISTRATOR', opd: 'Dinas OPD A' },
+        });
+        assert.ok(result, 'escalateToRisk harus berhasil ketika caller dan Temuan tersimpan berada di OPD yang sama');
+        assert.ok(createProposalIntakeCalledWith, 'mrPlanningRiskService.createProposalIntake() HARUS dipanggil ketika boundary OPD mengizinkan');
+        assert.strictEqual(
+          createProposalIntakeCalledWith.body.opd_id,
+          1,
+          'proposalPayload.opd_id HARUS selalu temuan.opd_id (1), TIDAK BOLEH mengikuti body.opd_id (999)'
+        );
+        assert.strictEqual(temuanUpdateCalled, true, 'temuan.update() HARUS dipanggil setelah eskalasi berhasil');
+        assert.strictEqual(crossLinkCreateCalled, true, 'MrCrossSystemLink.create() HARUS dipanggil setelah eskalasi berhasil');
+      } finally {
+        mrPlanningRiskService.createProposalIntake = originalCreateProposalIntake;
+        models.MrPlanningTemuan.findByPk = originalFindByPk;
+        models.MrPlanningTemuanRekomendasi.findAll = originalRekFindAll;
+        models.MrCrossSystemLink.create = originalCrossLinkCreate;
+        models.MrPlanningTemuanHistory.create = originalHistoryCreate;
+        models.sequelize.transaction = originalTransaction;
+      }
+    }
+  );
+});
+
+await test('escalateToRisk — SUPER_ADMIN dikecualikan dari boundary OPD (lookup RenstraOPD.findOne TIDAK dipicu)', async () => {
+  delete require.cache[require.resolve('../services/mr/mrPlanningLhpService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningRiskService')];
+  delete require.cache[require.resolve('../services/mr/mrPlanningTemuanService')];
+
+  let opdLookupCalled = false;
+  await withStubs(
+    [[models.RenstraOPD, 'findOne', async () => { opdLookupCalled = true; return null; }]],
+    async () => {
+      const mrPlanningRiskService = require('../services/mr/mrPlanningRiskService');
+      const svc = require('../services/mr/mrPlanningTemuanService');
+
+      const originalCreateProposalIntake = mrPlanningRiskService.createProposalIntake;
+      const originalFindByPk = models.MrPlanningTemuan.findByPk;
+      const originalRekFindAll = models.MrPlanningTemuanRekomendasi.findAll;
+      const originalCrossLinkCreate = models.MrCrossSystemLink.create;
+      const originalHistoryCreate = models.MrPlanningTemuanHistory.create;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async (cb) => cb({ fake: true });
+      models.MrPlanningTemuanRekomendasi.findAll = async () => [];
+      models.MrPlanningTemuanHistory.create = async () => ({ id: 1 });
+
+      let createProposalIntakeCalled = false;
+      mrPlanningRiskService.createProposalIntake = async () => {
+        createProposalIntakeCalled = true;
+        return { data: { id: 999, context_id: 1 } };
+      };
+      models.MrCrossSystemLink.create = async () => ({ id: 1 });
+      models.MrPlanningTemuan.findByPk = async () => ({
+        id: 55,
+        opd_id: 2,
+        nama_opd: 'Dinas OPD B',
+        status_revisi: 'approved',
+        risk_escalation_status: null,
+        kode_temuan: 'T-B-1',
+        nomor_temuan: 'T-B-1',
+        judul_temuan: 'Temuan milik OPD B',
+        uraian_temuan: 'Uraian',
+        sebab: 'Sebab',
+        akibat: 'Akibat',
+        nilai_temuan_rupiah: 0,
+        versi: 1,
+        context_id: 1,
+        entitas_pemeriksa: 'BPK',
+        entitas_pemeriksa_ref: { kode_item: 'BPK', tahun_berlaku: 2026 },
+        update: async () => {},
+      });
+
+      try {
+        const result = await svc.escalateToRisk({
+          temuanId: 55,
+          body: {},
+          user: { id: 9, role: 'SUPER_ADMIN', opd: 'Dinas Manapun' },
+        });
+        assert.ok(result, 'escalateToRisk harus berhasil untuk SUPER_ADMIN');
+        assert.strictEqual(createProposalIntakeCalled, true, 'mrPlanningRiskService.createProposalIntake() HARUS dipanggil untuk SUPER_ADMIN');
+        assert.strictEqual(opdLookupCalled, false, 'SUPER_ADMIN tidak boleh memicu lookup RenstraOPD.findOne sama sekali');
+      } finally {
+        mrPlanningRiskService.createProposalIntake = originalCreateProposalIntake;
+        models.MrPlanningTemuan.findByPk = originalFindByPk;
+        models.MrPlanningTemuanRekomendasi.findAll = originalRekFindAll;
+        models.MrCrossSystemLink.create = originalCrossLinkCreate;
+        models.MrPlanningTemuanHistory.create = originalHistoryCreate;
+        models.sequelize.transaction = originalTransaction;
+      }
+    }
+  );
+});
+
+
 } // end runAllTests
 
 runAllTests().then(() => {
