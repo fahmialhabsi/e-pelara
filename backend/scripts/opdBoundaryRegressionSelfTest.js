@@ -7454,6 +7454,511 @@ await test('mrPlanningTindakLanjutDocumentService.getDocumentForDownload — Doc
 });
 
 
+console.log('=== SPRINT 10 -- MR Deviation OPD Boundary Hardening (createDeviationFromRisk/createDeviationFromMonitoring/updateDraftDeviation) ===');
+
+{
+  const deviationServicePath = require.resolve('../services/mr/mrPlanningDeviationService');
+  const riskServicePath = require.resolve('../services/mr/mrPlanningRiskService');
+
+  const freshServices = () => {
+    delete require.cache[riskServicePath];
+    delete require.cache[deviationServicePath];
+    return require('../services/mr/mrPlanningDeviationService');
+  };
+
+  const fakeTransaction = () => ({ commit: async () => {}, rollback: async () => {} });
+
+  const SENTINEL_CREATE = Symbol('SENTINEL_CREATE_REACHED');
+  const SENTINEL_UPDATE = Symbol('SENTINEL_UPDATE_REACHED');
+
+  // ---------------------------------------------------------------------
+  // createDeviationFromRisk
+  // ---------------------------------------------------------------------
+
+  await test(
+    'mrPlanningDeviationService.createDeviationFromRisk -- Risk induk milik OPD LAIN -> DITOLAK 403, MrPlanningDeviation.create TIDAK dipanggil',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRisk, 'findByPk', async () => ({
+            id: 1,
+            opd_id: 42,
+            get() { return { id: 1, opd_id: 42, indikator_id: 1, stage: 'kegiatan', ref_id: 1, renstra_id: 1, context: null }; },
+          })],
+          [models.MrPlanningDeviation, 'create', async () => { createCalled = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshServices();
+          try {
+            await svc.createDeviationFromRisk({
+              riskId: 1,
+              body: { deviation_type: 'x', deviation_source: 'x' },
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+            assert.fail('Seharusnya melempar error boundary OPD, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected statusCode 403, got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', `Expected code MR_PLANNING_RISK_OPD_FORBIDDEN, got ${error.details?.code}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, false, 'MrPlanningDeviation.create TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+    }
+  );
+
+  await test(
+    'mrPlanningDeviationService.createDeviationFromRisk -- Risk induk milik OPD SENDIRI -> boundary MENGIZINKAN, MrPlanningDeviation.create dipanggil',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => ({
+            id: 1,
+            opd_id: 42,
+            get() { return { id: 1, opd_id: 42, indikator_id: 1, stage: 'kegiatan', ref_id: 1, renstra_id: 1, context: null }; },
+          })],
+          [models.MrPlanningDeviation, 'create', async () => { createCalled = true; throw SENTINEL_CREATE; }],
+        ],
+        async () => {
+          const svc = freshServices();
+          try {
+            await svc.createDeviationFromRisk({
+              riskId: 1,
+              body: { deviation_type: 'x', deviation_source: 'x' },
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar SENTINEL_CREATE (create tercapai), bukan resolve sukses');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_CREATE, 'create() harus tercapai (boundary OPD mengizinkan) sebelum error lain muncul');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, true, 'MrPlanningDeviation.create HARUS dipanggil ketika boundary OPD mengizinkan (own-OPD)');
+    }
+  );
+
+  await test(
+    'mrPlanningDeviationService.createDeviationFromRisk -- SUPER_ADMIN dikecualikan dari boundary OPD (lookup OpdPenanggungJawab.findOne TIDAK dipicu)',
+    async () => {
+      let createCalled = false;
+      let findOneCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { findOneCalled = true; return { id: 999 }; }],
+          [models.MrPlanningRisk, 'findByPk', async () => ({
+            id: 1,
+            opd_id: 42, // deliberately mismatched vs caller's own OPD to prove genuine short-circuit
+            get() { return { id: 1, opd_id: 42, indikator_id: 1, stage: 'kegiatan', ref_id: 1, renstra_id: 1, context: null }; },
+          })],
+          [models.MrPlanningDeviation, 'create', async () => { createCalled = true; throw SENTINEL_CREATE; }],
+        ],
+        async () => {
+          const svc = freshServices();
+          try {
+            await svc.createDeviationFromRisk({
+              riskId: 1,
+              body: { deviation_type: 'x', deviation_source: 'x' },
+              userId: 10,
+              user: { id: 10, role: 'SUPER_ADMIN', opd: 'OPD LAIN SAMA SEKALI' },
+            });
+            assert.fail('Seharusnya melempar SENTINEL_CREATE (create tercapai)');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_CREATE, 'create() harus tercapai untuk SUPER_ADMIN meski Risk milik OPD lain');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(findOneCalled, false, 'OpdPenanggungJawab.findOne TIDAK BOLEH dipicu untuk SUPER_ADMIN (short-circuit sebelum resolusi OPD)');
+      assert.strictEqual(createCalled, true, 'MrPlanningDeviation.create HARUS dipanggil untuk SUPER_ADMIN lintas-OPD');
+    }
+  );
+
+  await test(
+    'mrPlanningDeviationService.createDeviationFromRisk -- resolusi kepemilikan OPD gagal (error internal) -> FAIL CLOSED 503, MrPlanningDeviation.create TIDAK dipanggil',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { throw new Error('DB unavailable (simulasi)'); }],
+          [models.MrPlanningRisk, 'findByPk', async () => ({
+            id: 1,
+            opd_id: 42,
+            get() { return { id: 1, opd_id: 42, indikator_id: 1, stage: 'kegiatan', ref_id: 1, renstra_id: 1, context: null }; },
+          })],
+          [models.MrPlanningDeviation, 'create', async () => { createCalled = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshServices();
+          try {
+            await svc.createDeviationFromRisk({
+              riskId: 1,
+              body: { deviation_type: 'x', deviation_source: 'x' },
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar error fail-closed 503, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 503, `Expected statusCode 503 (fail closed), got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_BOUNDARY_UNAVAILABLE', `Expected code MR_PLANNING_RISK_OPD_BOUNDARY_UNAVAILABLE, got ${error.details?.code}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, false, 'MrPlanningDeviation.create TIDAK BOLEH dipanggil ketika resolusi OPD gagal (fail closed)');
+    }
+  );
+
+  // ---------------------------------------------------------------------
+  // createDeviationFromMonitoring
+  // ---------------------------------------------------------------------
+
+  const fakeMonitoring = (opdId) => ({
+    id: 5,
+    mr_planning_risk_id: 1,
+    get({ plain } = {}) {
+      return {
+        id: 5,
+        mr_planning_risk_id: 1,
+        risk: {
+          id: 1,
+          opd_id: opdId,
+          indikator_id: 1,
+          stage: 'kegiatan',
+          ref_id: 1,
+          renstra_id: 1,
+          context: null,
+        },
+        context: null,
+      };
+    },
+  });
+
+  await test(
+    'mrPlanningDeviationService.createDeviationFromMonitoring -- Risk induk (via Monitoring) milik OPD LAIN -> DITOLAK 403, MrPlanningDeviation.create TIDAK dipanggil',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningMonitoring, 'findByPk', async () => fakeMonitoring(42)],
+          [models.MrPlanningDeviation, 'create', async () => { createCalled = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshServices();
+          try {
+            await svc.createDeviationFromMonitoring({
+              monitoringId: 5,
+              body: { deviation_type: 'x', deviation_source: 'x' },
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+            assert.fail('Seharusnya melempar error boundary OPD, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected statusCode 403, got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', `Expected code MR_PLANNING_RISK_OPD_FORBIDDEN, got ${error.details?.code}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, false, 'MrPlanningDeviation.create TIDAK BOLEH dipanggil ketika boundary OPD (via Monitoring->Risk) menolak');
+    }
+  );
+
+  await test(
+    'mrPlanningDeviationService.createDeviationFromMonitoring -- Risk induk (via Monitoring) milik OPD SENDIRI -> boundary MENGIZINKAN, MrPlanningDeviation.create dipanggil',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningMonitoring, 'findByPk', async () => fakeMonitoring(42)],
+          [models.MrPlanningDeviation, 'create', async () => { createCalled = true; throw SENTINEL_CREATE; }],
+        ],
+        async () => {
+          const svc = freshServices();
+          try {
+            await svc.createDeviationFromMonitoring({
+              monitoringId: 5,
+              body: { deviation_type: 'x', deviation_source: 'x' },
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar SENTINEL_CREATE (create tercapai), bukan resolve sukses');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_CREATE, 'create() harus tercapai (boundary OPD via Monitoring->Risk mengizinkan) sebelum error lain muncul');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, true, 'MrPlanningDeviation.create HARUS dipanggil ketika boundary OPD (via Monitoring->Risk) mengizinkan (own-OPD)');
+    }
+  );
+
+  await test(
+    'mrPlanningDeviationService.createDeviationFromMonitoring -- SUPER_ADMIN dikecualikan dari boundary OPD (lookup OpdPenanggungJawab.findOne TIDAK dipicu)',
+    async () => {
+      let createCalled = false;
+      let findOneCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { findOneCalled = true; return { id: 999 }; }],
+          [models.MrPlanningMonitoring, 'findByPk', async () => fakeMonitoring(42)], // deliberately mismatched vs caller's own OPD
+          [models.MrPlanningDeviation, 'create', async () => { createCalled = true; throw SENTINEL_CREATE; }],
+        ],
+        async () => {
+          const svc = freshServices();
+          try {
+            await svc.createDeviationFromMonitoring({
+              monitoringId: 5,
+              body: { deviation_type: 'x', deviation_source: 'x' },
+              userId: 10,
+              user: { id: 10, role: 'SUPER_ADMIN', opd: 'OPD LAIN SAMA SEKALI' },
+            });
+            assert.fail('Seharusnya melempar SENTINEL_CREATE (create tercapai)');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_CREATE, 'create() harus tercapai untuk SUPER_ADMIN meski Risk (via Monitoring) milik OPD lain');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(findOneCalled, false, 'OpdPenanggungJawab.findOne TIDAK BOLEH dipicu untuk SUPER_ADMIN (short-circuit sebelum resolusi OPD)');
+      assert.strictEqual(createCalled, true, 'MrPlanningDeviation.create HARUS dipanggil untuk SUPER_ADMIN lintas-OPD (via Monitoring)');
+    }
+  );
+
+  await test(
+    'mrPlanningDeviationService.createDeviationFromMonitoring -- resolusi kepemilikan OPD (via Monitoring->Risk) gagal (error internal) -> FAIL CLOSED 503, MrPlanningDeviation.create TIDAK dipanggil',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { throw new Error('DB unavailable (simulasi)'); }],
+          [models.MrPlanningMonitoring, 'findByPk', async () => fakeMonitoring(42)],
+          [models.MrPlanningDeviation, 'create', async () => { createCalled = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshServices();
+          try {
+            await svc.createDeviationFromMonitoring({
+              monitoringId: 5,
+              body: { deviation_type: 'x', deviation_source: 'x' },
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar error fail-closed 503, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 503, `Expected statusCode 503 (fail closed), got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_BOUNDARY_UNAVAILABLE', `Expected code MR_PLANNING_RISK_OPD_BOUNDARY_UNAVAILABLE, got ${error.details?.code}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, false, 'MrPlanningDeviation.create TIDAK BOLEH dipanggil ketika resolusi OPD (via Monitoring->Risk) gagal (fail closed)');
+    }
+  );
+
+  // ---------------------------------------------------------------------
+  // updateDraftDeviation
+  // ---------------------------------------------------------------------
+
+  const fakeDeviation = (opdId) => ({
+    id: 7,
+    opd_id: opdId,
+    update: async () => { throw SENTINEL_UPDATE; },
+  });
+
+  await test(
+    'mrPlanningDeviationService.updateDraftDeviation -- Deviation tersimpan milik OPD LAIN -> DITOLAK 403, deviation.update TIDAK dipanggil',
+    async () => {
+      let updateCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningDeviation, 'findByPk', async () => {
+            const dev = fakeDeviation(42);
+            dev.update = async () => { updateCalled = true; throw SENTINEL_UPDATE; };
+            return dev;
+          }],
+        ],
+        async () => {
+          const svc = freshServices();
+          try {
+            await svc.updateDraftDeviation({
+              id: 7,
+              body: { deviation_type: 'x' },
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+            assert.fail('Seharusnya melempar error boundary OPD, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected statusCode 403, got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', `Expected code MR_PLANNING_RISK_OPD_FORBIDDEN, got ${error.details?.code}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(updateCalled, false, 'deviation.update TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+    }
+  );
+
+  await test(
+    'mrPlanningDeviationService.updateDraftDeviation -- Deviation tersimpan milik OPD SENDIRI -> boundary MENGIZINKAN, deviation.update dipanggil',
+    async () => {
+      let updateCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningDeviation, 'findByPk', async () => {
+            const dev = fakeDeviation(42);
+            dev.update = async () => { updateCalled = true; throw SENTINEL_UPDATE; };
+            return dev;
+          }],
+        ],
+        async () => {
+          const svc = freshServices();
+          try {
+            await svc.updateDraftDeviation({
+              id: 7,
+              body: { deviation_type: 'x' },
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar SENTINEL_UPDATE (update tercapai), bukan resolve sukses');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_UPDATE, 'update() harus tercapai (boundary OPD mengizinkan) sebelum error lain muncul');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(updateCalled, true, 'deviation.update HARUS dipanggil ketika boundary OPD mengizinkan (own-OPD)');
+    }
+  );
+
+  await test(
+    'mrPlanningDeviationService.updateDraftDeviation -- SUPER_ADMIN dikecualikan dari boundary OPD (lookup OpdPenanggungJawab.findOne TIDAK dipicu)',
+    async () => {
+      let updateCalled = false;
+      let findOneCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { findOneCalled = true; return { id: 999 }; }],
+          [models.MrPlanningDeviation, 'findByPk', async () => {
+            const dev = fakeDeviation(42); // deliberately mismatched vs caller's own OPD
+            dev.update = async () => { updateCalled = true; throw SENTINEL_UPDATE; };
+            return dev;
+          }],
+        ],
+        async () => {
+          const svc = freshServices();
+          try {
+            await svc.updateDraftDeviation({
+              id: 7,
+              body: { deviation_type: 'x' },
+              userId: 10,
+              user: { id: 10, role: 'SUPER_ADMIN', opd: 'OPD LAIN SAMA SEKALI' },
+            });
+            assert.fail('Seharusnya melempar SENTINEL_UPDATE (update tercapai)');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_UPDATE, 'update() harus tercapai untuk SUPER_ADMIN meski Deviation milik OPD lain');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(findOneCalled, false, 'OpdPenanggungJawab.findOne TIDAK BOLEH dipicu untuk SUPER_ADMIN (short-circuit sebelum resolusi OPD)');
+      assert.strictEqual(updateCalled, true, 'deviation.update HARUS dipanggil untuk SUPER_ADMIN lintas-OPD');
+    }
+  );
+
+  await test(
+    'mrPlanningDeviationService.updateDraftDeviation -- resolusi kepemilikan OPD gagal (error internal) -> FAIL CLOSED 503, deviation.update TIDAK dipanggil',
+    async () => {
+      let updateCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { throw new Error('DB unavailable (simulasi)'); }],
+          [models.MrPlanningDeviation, 'findByPk', async () => {
+            const dev = fakeDeviation(42);
+            dev.update = async () => { updateCalled = true; return dev; };
+            return dev;
+          }],
+        ],
+        async () => {
+          const svc = freshServices();
+          try {
+            await svc.updateDraftDeviation({
+              id: 7,
+              body: { deviation_type: 'x' },
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar error fail-closed 503, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 503, `Expected statusCode 503 (fail closed), got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_BOUNDARY_UNAVAILABLE', `Expected code MR_PLANNING_RISK_OPD_BOUNDARY_UNAVAILABLE, got ${error.details?.code}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(updateCalled, false, 'deviation.update TIDAK BOLEH dipanggil ketika resolusi OPD gagal (fail closed)');
+    }
+  );
+}
+
 } // end runAllTests
 
 runAllTests().then(() => {

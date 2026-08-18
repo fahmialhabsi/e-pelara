@@ -33,6 +33,17 @@ const {
   MrReferenceGroup,
 } = require("../../models");
 
+// Sprint 10 -- S10: reuse the already-accepted Sprint 7 MR Risk OPD boundary
+// decision (OpdPenanggungJawab.id namespace) unchanged. Deviation.opd_id is
+// always derived from (and equal to) the parent Risk's opd_id -- see
+// buildSystemFieldsFromRisk below -- so the same namespace applies here.
+// Do NOT modify mrPlanningRiskService.js -- reuse unchanged, per CEA Sprint
+// 10 mandate S19.
+const {
+  resolveMrPlanningRiskOpdBoundary,
+  throwMrPlanningRiskOpdBoundaryError,
+} = require("./mrPlanningRiskService");
+
 const ERROR_CODE = "MR_DEVIATION_VALIDATION_ERROR";
 
 const VALID_PERIODE_TYPES = Object.freeze([
@@ -773,11 +784,22 @@ const deviationInclude = () => [
   },
 ];
 
-const createDeviationFromRisk = async ({ riskId, body, userId }) => {
+const createDeviationFromRisk = async ({ riskId, body, userId, user }) => {
   const transaction = await sequelize.transaction();
 
   try {
     const risk = await getRiskWithContext(riskId, transaction);
+
+    // Sprint 10 -- S10-14: authorize BEFORE any mutation. Authoritative
+    // target OPD is the parent Risk's stored opd_id (never caller-supplied --
+    // opd_id is in DEVIATION_BLOCKED_FIELDS, request body cannot set it).
+    const createFromRiskBoundary = await resolveMrPlanningRiskOpdBoundary({
+      user,
+      targetOpdId: risk?.opd_id ?? null,
+    });
+    if (!createFromRiskBoundary.ok) {
+      throwMrPlanningRiskOpdBoundaryError(createFromRiskBoundary);
+    }
 
     const payload = await buildCreatePayload({
       risk,
@@ -799,13 +821,25 @@ const createDeviationFromRisk = async ({ riskId, body, userId }) => {
   }
 };
 
-const createDeviationFromMonitoring = async ({ monitoringId, body, userId }) => {
+const createDeviationFromMonitoring = async ({ monitoringId, body, userId, user }) => {
   const transaction = await sequelize.transaction();
 
   try {
     const monitoring = await getMonitoringWithRisk(monitoringId, transaction);
     const plainMonitoring = toPlain(monitoring);
     const risk = plainMonitoring.risk;
+
+    // Sprint 10 -- S10-15: authorize BEFORE any mutation. Authoritative
+    // target OPD is resolved via Monitoring's proven belongsTo(Risk,
+    // {foreignKey:"mr_planning_risk_id", as:"risk"}) association -- the
+    // parent Risk's stored opd_id, never caller-supplied.
+    const createFromMonitoringBoundary = await resolveMrPlanningRiskOpdBoundary({
+      user,
+      targetOpdId: risk?.opd_id ?? null,
+    });
+    if (!createFromMonitoringBoundary.ok) {
+      throwMrPlanningRiskOpdBoundaryError(createFromMonitoringBoundary);
+    }
 
     const payload = await buildCreatePayload({
       risk,
@@ -828,7 +862,7 @@ const createDeviationFromMonitoring = async ({ monitoringId, body, userId }) => 
   }
 };
 
-const updateDraftDeviation = async ({ id, body, userId }) => {
+const updateDraftDeviation = async ({ id, body, userId, user }) => {
   const transaction = await sequelize.transaction();
 
   try {
@@ -840,6 +874,17 @@ const updateDraftDeviation = async ({ id, body, userId }) => {
       throw createNotFoundError("MR Planning Deviation tidak ditemukan.", {
         id,
       });
+    }
+
+    // Sprint 10 -- S10-16: stored Deviation.opd_id is authoritative -- never
+    // trust any replacement/request-supplied ownership. Authorize BEFORE
+    // any mutation.
+    const updateBoundary = await resolveMrPlanningRiskOpdBoundary({
+      user,
+      targetOpdId: deviation?.opd_id ?? null,
+    });
+    if (!updateBoundary.ok) {
+      throwMrPlanningRiskOpdBoundaryError(updateBoundary);
     }
 
     const payload = await buildUpdatePayload({

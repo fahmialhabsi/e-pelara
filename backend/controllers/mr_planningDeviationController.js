@@ -69,6 +69,16 @@ const getUserId = (req) => {
   return userId;
 };
 
+// Sprint 10 -- S10-20: broaden authenticated context reaching the service for
+// createDeviationFromRisk/createDeviationFromMonitoring/updateDraftDeviation
+// -- previously only a bare userId was passed, stripping role/opd and
+// blinding any boundary check even in principle. Uses ONLY authenticated
+// middleware context (req.user/req.auth) -- never synthesizes user.opd.
+const getUser = (req) => ({
+  ...(req.user || req.auth || {}),
+  id: getUserId(req),
+});
+
 /**
  * READ: Deviation by Risk
  * ---------------------------------------------------------------------------
@@ -194,6 +204,7 @@ const createDeviationFromRisk = async (req, res) => {
       riskId: req.params.riskId,
       body: req.body,
       userId,
+      user: getUser(req),
     });
 
     return createdResponse({
@@ -227,6 +238,7 @@ const createDeviationFromMonitoring = async (req, res) => {
         monitoringId: req.params.monitoringId,
         body: req.body,
         userId,
+        user: getUser(req),
       });
 
     return createdResponse({
@@ -258,6 +270,7 @@ const updateDraftDeviation = async (req, res) => {
       id: req.params.id,
       body: req.body,
       userId,
+      user: getUser(req),
     });
 
     return successResponse({
