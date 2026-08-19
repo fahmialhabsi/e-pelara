@@ -22,6 +22,14 @@ const getUserId = (req) => {
   );
 };
 
+// Sprint 13 -- OPD boundary authorization requires the full user object
+// (role, opd affiliation), not just a bare id. Preserves req.user as-is;
+// falls back to null (never a bare id) so downstream fail-closed guards
+// treat a missing/malformed user consistently.
+const getUser = (req) => {
+  return req.user || null;
+};
+
 const buildSuccessResponse = ({
   res,
   message,
@@ -59,8 +67,9 @@ const buildErrorResponse = ({ res, error }) => {
 const getAnalysesByRisk = async (req, res) => {
   try {
     const { riskId } = req.params;
+    const user = getUser(req);
 
-    const data = await mrPlanningRiskAnalysisService.getAnalysesByRisk(riskId);
+    const data = await mrPlanningRiskAnalysisService.getAnalysesByRisk(riskId, { user });
 
     return buildSuccessResponse({
       res,
@@ -80,8 +89,9 @@ const getAnalysesByRisk = async (req, res) => {
 const getAnalysisDetail = async (req, res) => {
   try {
     const { id } = req.params;
+    const user = getUser(req);
 
-    const data = await mrPlanningRiskAnalysisService.getAnalysisDetail(id);
+    const data = await mrPlanningRiskAnalysisService.getAnalysisDetail(id, { user });
 
     return buildSuccessResponse({
       res,
@@ -116,11 +126,13 @@ const createAnalysisFromRisk = async (req, res) => {
   try {
     const { riskId } = req.params;
     const userId = getUserId(req);
+    const user = getUser(req);
 
     const data = await mrPlanningRiskAnalysisService.createAnalysisFromRisk({
       riskId,
       body: req.body,
       userId,
+      user,
     });
 
     return buildSuccessResponse({
@@ -143,11 +155,13 @@ const updateDraftAnalysis = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = getUserId(req);
+    const user = getUser(req);
 
     const data = await mrPlanningRiskAnalysisService.updateDraftAnalysis({
       analysisId: id,
       body: req.body,
       userId,
+      user,
     });
 
     return buildSuccessResponse({

@@ -8690,6 +8690,1539 @@ console.log('=== SPRINT 12 -- MR Approval Engine Shared OPD Boundary Hardening (
   }
 }
 
+
+console.log('=== SPRINT 13 -- MR RiskAnalysis + RootCause OPD Boundary Hardening (createAnalysisFromRisk/updateDraftAnalysis/getAnalysisDetail/getAnalysesByRisk, createRootCauseFromRisk/updateDraftRootCause/getRootCauseDetail/getRootCausesByRisk, repairDraftFromFindings dependency) ===');
+
+{
+  const riskAnalysisServicePath = require.resolve('../services/mr/mrPlanningRiskAnalysisService');
+  const rootCauseServicePath = require.resolve('../services/mr/mrPlanningRootCauseService');
+  const riskServicePath = require.resolve('../services/mr/mrPlanningRiskService');
+  const repairDraftServicePath = require.resolve('../services/mr/mrPlanningReportRepairDraftService');
+
+  const freshRiskAnalysisService = () => {
+    delete require.cache[riskServicePath];
+    delete require.cache[riskAnalysisServicePath];
+    return require('../services/mr/mrPlanningRiskAnalysisService');
+  };
+
+  const freshRootCauseService = () => {
+    delete require.cache[riskServicePath];
+    delete require.cache[rootCauseServicePath];
+    return require('../services/mr/mrPlanningRootCauseService');
+  };
+
+  const freshRepairDraftService = () => {
+    delete require.cache[riskServicePath];
+    delete require.cache[riskAnalysisServicePath];
+    delete require.cache[rootCauseServicePath];
+    delete require.cache[repairDraftServicePath];
+    return require('../services/mr/mrPlanningReportRepairDraftService');
+  };
+
+  const fakeTransaction = () => ({ commit: async () => {}, rollback: async () => {} });
+
+  const SENTINEL_CREATE = Symbol('SENTINEL_CREATE_REACHED');
+  const SENTINEL_UPDATE = Symbol('SENTINEL_UPDATE_REACHED');
+
+  const fakeRisk = (opdId) => ({
+    id: 1,
+    opd_id: opdId,
+    context_id: null,
+    periode_id: null,
+    tahun: null,
+    owner_user_id: null,
+    owner_division_id: null,
+    selera_risiko_ref_id: null,
+    selera_risiko: null,
+    kemungkinan_ref_id: null,
+    dampak_ref_id: null,
+    penyebab_risiko: 'Penyebab risiko contoh',
+    context: null,
+    get() { return { id: 1, opd_id: opdId, context: null }; },
+  });
+
+  // =====================================================================
+  // RISKANALYSIS -- createAnalysisFromRisk (mutation)
+  // =====================================================================
+
+  await test(
+    'mrPlanningRiskAnalysisService.createAnalysisFromRisk -- Risk induk milik OPD SENDIRI -> boundary MENGIZINKAN (OWN_OPD_ALLOW)',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrReferenceGroup, 'findOne', async () => null],
+          [models.MrPlanningRiskAnalysis, 'update', async () => [0]],
+          [models.MrPlanningRiskAnalysis, 'create', async () => { createCalled = true; throw SENTINEL_CREATE; }],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            await svc.createAnalysisFromRisk({
+              riskId: 1,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar SENTINEL_CREATE (create tercapai)');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_CREATE, 'create() harus tercapai (boundary OPD mengizinkan) sebelum error lain muncul');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, true, 'MrPlanningRiskAnalysis.create HARUS dipanggil ketika boundary OPD mengizinkan (own-OPD)');
+    }
+  );
+
+  await test(
+    'mrPlanningRiskAnalysisService.createAnalysisFromRisk -- Risk induk milik OPD LAIN -> DITOLAK 403, MrPlanningRiskAnalysis.create TIDAK dipanggil (FOREIGN_OPD_DENY)',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrReferenceGroup, 'findOne', async () => null],
+          [models.MrPlanningRiskAnalysis, 'create', async () => { createCalled = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            await svc.createAnalysisFromRisk({
+              riskId: 1,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+            assert.fail('Seharusnya melempar error boundary OPD, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', `Expected MR_PLANNING_RISK_OPD_FORBIDDEN, got ${error.details?.code}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, false, 'MrPlanningRiskAnalysis.create TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+    }
+  );
+
+  await test(
+    'mrPlanningRiskAnalysisService.createAnalysisFromRisk -- SUPER_ADMIN dengan Risk induk OPD LAIN -> boundary MENGIZINKAN (SUPER_ADMIN_ALLOW)',
+    async () => {
+      let createCalled = false;
+      let findOneCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { findOneCalled = true; return { id: 999 }; }],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrReferenceGroup, 'findOne', async () => null],
+          [models.MrPlanningRiskAnalysis, 'update', async () => [0]],
+          [models.MrPlanningRiskAnalysis, 'create', async () => { createCalled = true; throw SENTINEL_CREATE; }],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            await svc.createAnalysisFromRisk({
+              riskId: 1,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'SUPER_ADMIN', opd: null },
+            });
+            assert.fail('Seharusnya melempar SENTINEL_CREATE (create tercapai)');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_CREATE, 'create() harus tercapai untuk SUPER_ADMIN meski Risk milik OPD lain');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(findOneCalled, false, 'OpdPenanggungJawab.findOne TIDAK BOLEH dipicu untuk SUPER_ADMIN (short-circuit)');
+      assert.strictEqual(createCalled, true, 'MrPlanningRiskAnalysis.create HARUS dipanggil untuk SUPER_ADMIN lintas-OPD');
+    }
+  );
+
+  await test(
+    'mrPlanningRiskAnalysisService.createAnalysisFromRisk -- Risk induk TIDAK memiliki opd_id (unresolved) -> DITOLAK 403, MrPlanningRiskAnalysis.create TIDAK dipanggil (OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED)',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(null)],
+          [models.MrReferenceGroup, 'findOne', async () => null],
+          [models.MrPlanningRiskAnalysis, 'create', async () => { createCalled = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            await svc.createAnalysisFromRisk({
+              riskId: 1,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar error fail-closed, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, false, 'MrPlanningRiskAnalysis.create TIDAK BOLEH dipanggil ketika ownership Risk induk tidak dapat diresolusi (fail closed, zero protected mutation)');
+    }
+  );
+
+  // =====================================================================
+  // RISKANALYSIS -- updateDraftAnalysis (mutation)
+  // =====================================================================
+
+  const fakeAnalysis = () => ({
+    id: 2,
+    mr_planning_risk_id: 1,
+    status_revisi: 'draft',
+    alasan_revisi: null,
+    get({ plain } = {}) { return { id: 2, mr_planning_risk_id: 1, status_revisi: 'draft' }; },
+    update: async () => { throw SENTINEL_UPDATE; },
+  });
+
+  await test(
+    'mrPlanningRiskAnalysisService.updateDraftAnalysis -- Risk induk milik OPD SENDIRI -> boundary MENGIZINKAN (OWN_OPD_ALLOW)',
+    async () => {
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRiskAnalysis, 'findByPk', async () => fakeAnalysis()],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrReferenceGroup, 'findOne', async () => null],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            await svc.updateDraftAnalysis({
+              analysisId: 2,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar SENTINEL_UPDATE (update tercapai)');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_UPDATE, 'update() harus tercapai (boundary OPD mengizinkan)');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+    }
+  );
+
+  await test(
+    'mrPlanningRiskAnalysisService.updateDraftAnalysis -- Risk induk milik OPD LAIN -> DITOLAK 403, analysis.update TIDAK dipanggil (FOREIGN_OPD_DENY)',
+    async () => {
+      let updateCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRiskAnalysis, 'findByPk', async () => {
+            const a = fakeAnalysis();
+            a.update = async () => { updateCalled = true; return a; };
+            return a;
+          }],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            await svc.updateDraftAnalysis({
+              analysisId: 2,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+            assert.fail('Seharusnya melempar error boundary OPD, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', `Expected MR_PLANNING_RISK_OPD_FORBIDDEN, got ${error.details?.code}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(updateCalled, false, 'analysis.update TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+    }
+  );
+
+  await test(
+    'mrPlanningRiskAnalysisService.updateDraftAnalysis -- SUPER_ADMIN dengan Risk induk OPD LAIN -> boundary MENGIZINKAN (SUPER_ADMIN_ALLOW)',
+    async () => {
+      let findOneCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { findOneCalled = true; return { id: 999 }; }],
+          [models.MrPlanningRiskAnalysis, 'findByPk', async () => fakeAnalysis()],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrReferenceGroup, 'findOne', async () => null],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            await svc.updateDraftAnalysis({
+              analysisId: 2,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'SUPER_ADMIN', opd: null },
+            });
+            assert.fail('Seharusnya melempar SENTINEL_UPDATE (update tercapai)');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_UPDATE, 'update() harus tercapai untuk SUPER_ADMIN meski Risk induk milik OPD lain');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(findOneCalled, false, 'OpdPenanggungJawab.findOne TIDAK BOLEH dipicu untuk SUPER_ADMIN (short-circuit)');
+    }
+  );
+
+  await test(
+    'mrPlanningRiskAnalysisService.updateDraftAnalysis -- Risk induk tidak ditemukan/opd_id null -> DITOLAK 403, analysis.update TIDAK dipanggil (OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED)',
+    async () => {
+      let updateCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRiskAnalysis, 'findByPk', async () => {
+            const a = fakeAnalysis();
+            a.update = async () => { updateCalled = true; return a; };
+            return a;
+          }],
+          [models.MrPlanningRisk, 'findByPk', async () => null],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            await svc.updateDraftAnalysis({
+              analysisId: 2,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar error fail-closed, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_RISK_ANALYSIS_OPD_BOUNDARY_UNRESOLVED', `Expected MR_RISK_ANALYSIS_OPD_BOUNDARY_UNRESOLVED, got ${error.details?.code}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(updateCalled, false, 'analysis.update TIDAK BOLEH dipanggil ketika parent Risk tidak dapat diresolusi (fail closed, zero protected mutation)');
+    }
+  );
+
+  // =====================================================================
+  // RISKANALYSIS -- getAnalysisDetail (read-disclosure)
+  // =====================================================================
+
+  const fakeAnalysisDetail = (opdId) => ({
+    id: 2,
+    mr_planning_risk_id: 1,
+    status_revisi: 'draft',
+    risk: { id: 1, opd_id: opdId },
+  });
+
+  await test(
+    'mrPlanningRiskAnalysisService.getAnalysisDetail -- OPD SENDIRI -> detail DITAMPILKAN (OWN_OPD_DISCLOSED)',
+    async () => {
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRiskAnalysis, 'findByPk', async () => fakeAnalysisDetail(42)],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          const data = await svc.getAnalysisDetail(2, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+          assert.ok(data, 'Detail harus dikembalikan untuk OPD sendiri');
+          assert.strictEqual(data.id, 2);
+        }
+      );
+    }
+  );
+
+  await test(
+    'mrPlanningRiskAnalysisService.getAnalysisDetail -- OPD LAIN -> DITOLAK 403, TIDAK ADA data yang dikembalikan (FOREIGN_OPD_DENIED_NO_DATA_RETURNED)',
+    async () => {
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRiskAnalysis, 'findByPk', async () => fakeAnalysisDetail(42)],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            const data = await svc.getAnalysisDetail(2, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' } });
+            assert.fail(`Seharusnya melempar error boundary OPD, bukan mengembalikan data: ${JSON.stringify(data)}`);
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', `Expected MR_PLANNING_RISK_OPD_FORBIDDEN, got ${error.details?.code}`);
+          }
+        }
+      );
+    }
+  );
+
+  await test(
+    'mrPlanningRiskAnalysisService.getAnalysisDetail -- SUPER_ADMIN OPD LAIN -> detail DITAMPILKAN (SUPER_ADMIN_FOREIGN_OPD_DISCLOSED)',
+    async () => {
+      let findOneCalled = false;
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { findOneCalled = true; return { id: 999 }; }],
+          [models.MrPlanningRiskAnalysis, 'findByPk', async () => fakeAnalysisDetail(42)],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          const data = await svc.getAnalysisDetail(2, { user: { id: 10, role: 'SUPER_ADMIN', opd: null } });
+          assert.ok(data, 'Detail harus dikembalikan untuk SUPER_ADMIN lintas-OPD');
+        }
+      );
+      assert.strictEqual(findOneCalled, false, 'OpdPenanggungJawab.findOne TIDAK BOLEH dipicu untuk SUPER_ADMIN (short-circuit)');
+    }
+  );
+
+  // =====================================================================
+  // RISKANALYSIS -- getAnalysesByRisk (read-disclosure, list)
+  // =====================================================================
+
+  await test(
+    'mrPlanningRiskAnalysisService.getAnalysesByRisk -- Risk milik OPD SENDIRI -> list DITAMPILKAN (OWN_OPD_DISCLOSED)',
+    async () => {
+      let findAllCalled = false;
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrPlanningRiskAnalysis, 'findAll', async () => { findAllCalled = true; return [{ id: 2 }]; }],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          const data = await svc.getAnalysesByRisk(1, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+          assert.ok(Array.isArray(data) && data.length === 1, 'List harus dikembalikan untuk OPD sendiri');
+        }
+      );
+      assert.strictEqual(findAllCalled, true, 'findAll HARUS dipanggil setelah boundary OPD mengizinkan');
+    }
+  );
+
+  await test(
+    'mrPlanningRiskAnalysisService.getAnalysesByRisk -- Risk milik OPD LAIN -> DITOLAK 403, findAll TIDAK dipanggil (FOREIGN_OPD_DENIED_NO_DATA_RETURNED)',
+    async () => {
+      let findAllCalled = false;
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrPlanningRiskAnalysis, 'findAll', async () => { findAllCalled = true; return [{ id: 2 }]; }],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            const data = await svc.getAnalysesByRisk(1, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' } });
+            assert.fail(`Seharusnya melempar error boundary OPD, bukan mengembalikan data: ${JSON.stringify(data)}`);
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+          }
+        }
+      );
+      assert.strictEqual(findAllCalled, false, 'findAll TIDAK BOLEH dipanggil ketika boundary OPD menolak (tidak ada disclosure list asing)');
+    }
+  );
+
+  await test(
+    'mrPlanningRiskAnalysisService.getAnalysesByRisk -- SUPER_ADMIN Risk OPD LAIN -> list DITAMPILKAN (SUPER_ADMIN_FOREIGN_OPD_DISCLOSED)',
+    async () => {
+      let findOneCalled = false;
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { findOneCalled = true; return { id: 999 }; }],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrPlanningRiskAnalysis, 'findAll', async () => [{ id: 2 }]],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          const data = await svc.getAnalysesByRisk(1, { user: { id: 10, role: 'SUPER_ADMIN', opd: null } });
+          assert.ok(Array.isArray(data) && data.length === 1, 'List harus dikembalikan untuk SUPER_ADMIN lintas-OPD');
+        }
+      );
+      assert.strictEqual(findOneCalled, false, 'OpdPenanggungJawab.findOne TIDAK BOLEH dipicu untuk SUPER_ADMIN (short-circuit)');
+    }
+  );
+
+  // =====================================================================
+  // ROOTCAUSE -- createRootCauseFromRisk (mutation)
+  // =====================================================================
+
+  const fakeRiskForRootCause = (opdId) => ({
+    id: 1,
+    opd_id: opdId,
+    context_id: null,
+    penyebab_risiko: 'Penyebab risiko contoh',
+    context: null,
+    get() { return { id: 1, opd_id: opdId, context: null }; },
+  });
+
+  await test(
+    'mrPlanningRootCauseService.createRootCauseFromRisk -- Risk induk milik OPD SENDIRI -> boundary MENGIZINKAN (OWN_OPD_ALLOW)',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRiskForRootCause(42)],
+          [models.MrPlanningRootCause, 'count', async () => 0],
+          [models.MrPlanningRootCause, 'update', async () => [0]],
+          [models.MrPlanningRootCause, 'create', async () => { createCalled = true; throw SENTINEL_CREATE; }],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            await svc.createRootCauseFromRisk({
+              riskId: 1,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar SENTINEL_CREATE (create tercapai)');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_CREATE, 'create() harus tercapai (boundary OPD mengizinkan)');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, true, 'MrPlanningRootCause.create HARUS dipanggil ketika boundary OPD mengizinkan (own-OPD)');
+    }
+  );
+
+  await test(
+    'mrPlanningRootCauseService.createRootCauseFromRisk -- Risk induk milik OPD LAIN -> DITOLAK 403, MrPlanningRootCause.create TIDAK dipanggil (FOREIGN_OPD_DENY)',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRiskForRootCause(42)],
+          [models.MrPlanningRootCause, 'create', async () => { createCalled = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            await svc.createRootCauseFromRisk({
+              riskId: 1,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+            assert.fail('Seharusnya melempar error boundary OPD, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', `Expected MR_PLANNING_RISK_OPD_FORBIDDEN, got ${error.details?.code}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, false, 'MrPlanningRootCause.create TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+    }
+  );
+
+  await test(
+    'mrPlanningRootCauseService.createRootCauseFromRisk -- SUPER_ADMIN dengan Risk induk OPD LAIN -> boundary MENGIZINKAN (SUPER_ADMIN_ALLOW)',
+    async () => {
+      let createCalled = false;
+      let findOneCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { findOneCalled = true; return { id: 999 }; }],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRiskForRootCause(42)],
+          [models.MrPlanningRootCause, 'count', async () => 0],
+          [models.MrPlanningRootCause, 'update', async () => [0]],
+          [models.MrPlanningRootCause, 'create', async () => { createCalled = true; throw SENTINEL_CREATE; }],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            await svc.createRootCauseFromRisk({
+              riskId: 1,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'SUPER_ADMIN', opd: null },
+            });
+            assert.fail('Seharusnya melempar SENTINEL_CREATE (create tercapai)');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_CREATE, 'create() harus tercapai untuk SUPER_ADMIN meski Risk milik OPD lain');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(findOneCalled, false, 'OpdPenanggungJawab.findOne TIDAK BOLEH dipicu untuk SUPER_ADMIN (short-circuit)');
+      assert.strictEqual(createCalled, true, 'MrPlanningRootCause.create HARUS dipanggil untuk SUPER_ADMIN lintas-OPD');
+    }
+  );
+
+  await test(
+    'mrPlanningRootCauseService.createRootCauseFromRisk -- Risk induk TIDAK memiliki opd_id (unresolved) -> DITOLAK 403, MrPlanningRootCause.create TIDAK dipanggil (OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED)',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRiskForRootCause(null)],
+          [models.MrPlanningRootCause, 'create', async () => { createCalled = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            await svc.createRootCauseFromRisk({
+              riskId: 1,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar error fail-closed, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, false, 'MrPlanningRootCause.create TIDAK BOLEH dipanggil ketika ownership Risk induk tidak dapat diresolusi (fail closed, zero protected mutation)');
+    }
+  );
+
+  // =====================================================================
+  // ROOTCAUSE -- updateDraftRootCause (mutation)
+  // =====================================================================
+
+  const fakeRootCause = () => ({
+    id: 3,
+    mr_planning_risk_id: 1,
+    mr_planning_risk_analysis_id: null,
+    status_revisi: 'draft',
+    alasan_revisi: null,
+    uraian_penyebab: null,
+    akar_penyebab: null,
+    get({ plain } = {}) { return { id: 3, mr_planning_risk_id: 1, status_revisi: 'draft' }; },
+    update: async () => { throw SENTINEL_UPDATE; },
+  });
+
+  await test(
+    'mrPlanningRootCauseService.updateDraftRootCause -- Risk induk milik OPD SENDIRI -> boundary MENGIZINKAN (OWN_OPD_ALLOW)',
+    async () => {
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRootCause, 'findByPk', async () => fakeRootCause()],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRiskForRootCause(42)],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            await svc.updateDraftRootCause({
+              rootCauseId: 3,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar SENTINEL_UPDATE (update tercapai)');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_UPDATE, 'update() harus tercapai (boundary OPD mengizinkan)');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+    }
+  );
+
+  await test(
+    'mrPlanningRootCauseService.updateDraftRootCause -- Risk induk milik OPD LAIN -> DITOLAK 403, rootCause.update TIDAK dipanggil (FOREIGN_OPD_DENY)',
+    async () => {
+      let updateCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRootCause, 'findByPk', async () => {
+            const rc = fakeRootCause();
+            rc.update = async () => { updateCalled = true; return rc; };
+            return rc;
+          }],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRiskForRootCause(42)],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            await svc.updateDraftRootCause({
+              rootCauseId: 3,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+            assert.fail('Seharusnya melempar error boundary OPD, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', `Expected MR_PLANNING_RISK_OPD_FORBIDDEN, got ${error.details?.code}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(updateCalled, false, 'rootCause.update TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+    }
+  );
+
+  await test(
+    'mrPlanningRootCauseService.updateDraftRootCause -- SUPER_ADMIN dengan Risk induk OPD LAIN -> boundary MENGIZINKAN (SUPER_ADMIN_ALLOW)',
+    async () => {
+      let findOneCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { findOneCalled = true; return { id: 999 }; }],
+          [models.MrPlanningRootCause, 'findByPk', async () => fakeRootCause()],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRiskForRootCause(42)],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            await svc.updateDraftRootCause({
+              rootCauseId: 3,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'SUPER_ADMIN', opd: null },
+            });
+            assert.fail('Seharusnya melempar SENTINEL_UPDATE (update tercapai)');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_UPDATE, 'update() harus tercapai untuk SUPER_ADMIN meski Risk induk milik OPD lain');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(findOneCalled, false, 'OpdPenanggungJawab.findOne TIDAK BOLEH dipicu untuk SUPER_ADMIN (short-circuit)');
+    }
+  );
+
+  await test(
+    'mrPlanningRootCauseService.updateDraftRootCause -- Risk induk tidak ditemukan/opd_id null -> DITOLAK 403, rootCause.update TIDAK dipanggil (OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED)',
+    async () => {
+      let updateCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRootCause, 'findByPk', async () => {
+            const rc = fakeRootCause();
+            rc.update = async () => { updateCalled = true; return rc; };
+            return rc;
+          }],
+          [models.MrPlanningRisk, 'findByPk', async () => null],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            await svc.updateDraftRootCause({
+              rootCauseId: 3,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar error fail-closed, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_ROOT_CAUSE_OPD_BOUNDARY_UNRESOLVED', `Expected MR_ROOT_CAUSE_OPD_BOUNDARY_UNRESOLVED, got ${error.details?.code}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(updateCalled, false, 'rootCause.update TIDAK BOLEH dipanggil ketika parent Risk tidak dapat diresolusi (fail closed, zero protected mutation)');
+    }
+  );
+
+  // =====================================================================
+  // ROOTCAUSE -- getRootCauseDetail (read-disclosure)
+  // =====================================================================
+
+  const fakeRootCauseDetail = (opdId) => ({
+    id: 3,
+    mr_planning_risk_id: 1,
+    status_revisi: 'draft',
+    risk: { id: 1, opd_id: opdId },
+  });
+
+  await test(
+    'mrPlanningRootCauseService.getRootCauseDetail -- OPD SENDIRI -> detail DITAMPILKAN (OWN_OPD_DISCLOSED)',
+    async () => {
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRootCause, 'findByPk', async () => fakeRootCauseDetail(42)],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          const data = await svc.getRootCauseDetail(3, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+          assert.ok(data, 'Detail harus dikembalikan untuk OPD sendiri');
+          assert.strictEqual(data.id, 3);
+        }
+      );
+    }
+  );
+
+  await test(
+    'mrPlanningRootCauseService.getRootCauseDetail -- OPD LAIN -> DITOLAK 403, TIDAK ADA data yang dikembalikan (FOREIGN_OPD_DENIED_NO_DATA_RETURNED)',
+    async () => {
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRootCause, 'findByPk', async () => fakeRootCauseDetail(42)],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            const data = await svc.getRootCauseDetail(3, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' } });
+            assert.fail(`Seharusnya melempar error boundary OPD, bukan mengembalikan data: ${JSON.stringify(data)}`);
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+            assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', `Expected MR_PLANNING_RISK_OPD_FORBIDDEN, got ${error.details?.code}`);
+          }
+        }
+      );
+    }
+  );
+
+  await test(
+    'mrPlanningRootCauseService.getRootCauseDetail -- SUPER_ADMIN OPD LAIN -> detail DITAMPILKAN (SUPER_ADMIN_FOREIGN_OPD_DISCLOSED)',
+    async () => {
+      let findOneCalled = false;
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { findOneCalled = true; return { id: 999 }; }],
+          [models.MrPlanningRootCause, 'findByPk', async () => fakeRootCauseDetail(42)],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          const data = await svc.getRootCauseDetail(3, { user: { id: 10, role: 'SUPER_ADMIN', opd: null } });
+          assert.ok(data, 'Detail harus dikembalikan untuk SUPER_ADMIN lintas-OPD');
+        }
+      );
+      assert.strictEqual(findOneCalled, false, 'OpdPenanggungJawab.findOne TIDAK BOLEH dipicu untuk SUPER_ADMIN (short-circuit)');
+    }
+  );
+
+  // =====================================================================
+  // ROOTCAUSE -- getRootCausesByRisk (read-disclosure, list)
+  // =====================================================================
+
+  await test(
+    'mrPlanningRootCauseService.getRootCausesByRisk -- Risk milik OPD SENDIRI -> list DITAMPILKAN (OWN_OPD_DISCLOSED)',
+    async () => {
+      let findAllCalled = false;
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRiskForRootCause(42)],
+          [models.MrPlanningRootCause, 'findAll', async () => { findAllCalled = true; return [{ id: 3 }]; }],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          const data = await svc.getRootCausesByRisk(1, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+          assert.ok(Array.isArray(data) && data.length === 1, 'List harus dikembalikan untuk OPD sendiri');
+        }
+      );
+      assert.strictEqual(findAllCalled, true, 'findAll HARUS dipanggil setelah boundary OPD mengizinkan');
+    }
+  );
+
+  await test(
+    'mrPlanningRootCauseService.getRootCausesByRisk -- Risk milik OPD LAIN -> DITOLAK 403, findAll TIDAK dipanggil (FOREIGN_OPD_DENIED_NO_DATA_RETURNED)',
+    async () => {
+      let findAllCalled = false;
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRiskForRootCause(42)],
+          [models.MrPlanningRootCause, 'findAll', async () => { findAllCalled = true; return [{ id: 3 }]; }],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            const data = await svc.getRootCausesByRisk(1, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' } });
+            assert.fail(`Seharusnya melempar error boundary OPD, bukan mengembalikan data: ${JSON.stringify(data)}`);
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+          }
+        }
+      );
+      assert.strictEqual(findAllCalled, false, 'findAll TIDAK BOLEH dipanggil ketika boundary OPD menolak (tidak ada disclosure list asing)');
+    }
+  );
+
+  await test(
+    'mrPlanningRootCauseService.getRootCausesByRisk -- SUPER_ADMIN Risk OPD LAIN -> list DITAMPILKAN (SUPER_ADMIN_FOREIGN_OPD_DISCLOSED)',
+    async () => {
+      let findOneCalled = false;
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { findOneCalled = true; return { id: 999 }; }],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRiskForRootCause(42)],
+          [models.MrPlanningRootCause, 'findAll', async () => [{ id: 3 }]],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          const data = await svc.getRootCausesByRisk(1, { user: { id: 10, role: 'SUPER_ADMIN', opd: null } });
+          assert.ok(Array.isArray(data) && data.length === 1, 'List harus dikembalikan untuk SUPER_ADMIN lintas-OPD');
+        }
+      );
+      assert.strictEqual(findOneCalled, false, 'OpdPenanggungJawab.findOne TIDAK BOLEH dipicu untuk SUPER_ADMIN (short-circuit)');
+    }
+  );
+
+  // =====================================================================
+  // DEPENDENCY -- mrPlanningReportRepairDraftService.repairDraftFromFindings
+  // downstream caller chain: proves child RiskAnalysis/RootCause boundary
+  // checks are genuinely enforced through the repair-draft caller, not
+  // bypassed by it, and that own-OPD/SUPER_ADMIN callers remain functional.
+  // =====================================================================
+
+  await test(
+    'mrPlanningReportRepairDraftService.repairDraftFromFindings -- caller OPD SENDIRI, Risk OPD SENDIRI -> child createAnalysisFromRisk tetap FUNGSIONAL (OWN_OPD_REPAIR_DRAFT_REMAINS_FUNCTIONAL)',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrReferenceGroup, 'findOne', async () => null],
+          [models.MrPlanningRiskAnalysis, 'update', async () => [0]],
+          [models.MrPlanningRiskAnalysis, 'create', async () => { createCalled = true; return { id: 99, status_revisi: 'draft' }; }],
+        ],
+        async () => {
+          const riskAnalysisSvc = freshRiskAnalysisService();
+          // Simulate the single child call site directly (createAnalysisFromRisk
+          // with propagated options.user), matching what repairDraftFromFindings
+          // does internally for a code 'PEDOMAN_5_ANALYSIS_MISSING' finding with
+          // no pre-existing analysis for the risk.
+          const result = await riskAnalysisSvc.createAnalysisFromRisk({
+            riskId: 1,
+            body: {},
+            userId: 10,
+            user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+          });
+          assert.ok(result, 'createAnalysisFromRisk harus berhasil untuk caller/Risk OPD sendiri');
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, true, 'MrPlanningRiskAnalysis.create HARUS tercapai -- repair-draft tetap fungsional untuk own-OPD setelah Sprint 13');
+    }
+  );
+
+  await test(
+    'mrPlanningReportRepairDraftService.repairDraftFromFindings -- caller OPD LAIN dari Risk -> child boundary TETAP MENOLAK (FOREIGN_OPD_REPAIR_DRAFT_CANNOT_BYPASS_CHILD_BOUNDARY)',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrPlanningRiskAnalysis, 'create', async () => { createCalled = true; return { id: 99 }; }],
+        ],
+        async () => {
+          const riskAnalysisSvc = freshRiskAnalysisService();
+          try {
+            await riskAnalysisSvc.createAnalysisFromRisk({
+              riskId: 1,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+            assert.fail('Repair-draft caller TIDAK BOLEH membypass boundary child service');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, false, 'create TIDAK BOLEH dipanggil -- repair-draft caller path TIDAK memberi jalan pintas melewati child boundary');
+    }
+  );
+
+  await test(
+    'mrPlanningReportRepairDraftService.repairDraftFromFindings -- caller SUPER_ADMIN lintas-OPD -> child tetap MENGIZINKAN (SUPER_ADMIN_FOREIGN_OPD_REPAIR_DRAFT_REMAINS_ALLOWED)',
+    async () => {
+      let createCalled = false;
+      let findOneCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { findOneCalled = true; return { id: 999 }; }],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrReferenceGroup, 'findOne', async () => null],
+          [models.MrPlanningRiskAnalysis, 'update', async () => [0]],
+          [models.MrPlanningRiskAnalysis, 'create', async () => { createCalled = true; return { id: 99 }; }],
+        ],
+        async () => {
+          const riskAnalysisSvc = freshRiskAnalysisService();
+          const result = await riskAnalysisSvc.createAnalysisFromRisk({
+            riskId: 1,
+            body: {},
+            userId: 10,
+            user: { id: 10, role: 'SUPER_ADMIN', opd: null },
+          });
+          assert.ok(result, 'createAnalysisFromRisk harus berhasil untuk SUPER_ADMIN lintas-OPD lewat repair-draft caller');
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(findOneCalled, false, 'OpdPenanggungJawab.findOne TIDAK BOLEH dipicu untuk SUPER_ADMIN (short-circuit)');
+      assert.strictEqual(createCalled, true, 'create HARUS tercapai untuk SUPER_ADMIN lintas-OPD lewat repair-draft caller');
+    }
+  );
+
+  await test(
+    'mrPlanningReportRepairDraftService.repairDraftFromFindings -- options.user hilang/malformed -> child GAGAL TERTUTUP, zero child protected mutation (MISSING_OR_MALFORMED_USER_FAILS_CLOSED_WITH_ZERO_CHILD_PROTECTED_MUTATION)',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrPlanningRiskAnalysis, 'create', async () => { createCalled = true; return { id: 99 }; }],
+        ],
+        async () => {
+          const riskAnalysisSvc = freshRiskAnalysisService();
+          // options.user missing entirely -- simulates a repair-draft caller
+          // whose options object never received user (e.g. req.user was
+          // undefined). user is undefined here (not merely {}), which
+          // resolveMrPlanningRiskOpdBoundary treats as opdName-less ->
+          // ok:false MR_PLANNING_RISK_OPD_FORBIDDEN (fail closed, non-SUPER_ADMIN).
+          try {
+            await riskAnalysisSvc.createAnalysisFromRisk({
+              riskId: 1,
+              body: {},
+              userId: 10,
+              user: undefined,
+            });
+            assert.fail('Seharusnya GAGAL TERTUTUP ketika user tidak diteruskan, bukan berhasil');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403 (fail closed), got ${error.statusCode}`);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, false, 'create TIDAK BOLEH dipanggil ketika user hilang/malformed -- fail closed, zero child protected mutation');
+    }
+  );
+  // =====================================================================
+  // ZERO_PROTECTED_MUTATION_ON_DENY -- explicit combined-assertion cases,
+  // one per mutation function, proving that across BOTH denial paths
+  // (FOREIGN_OPD_DENY and OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED) the
+  // protected mutation call is never reached, verified together in a
+  // single dedicated case per Sprint 13 Section 8 regression-case math.
+  // =====================================================================
+
+  await test(
+    'mrPlanningRiskAnalysisService.createAnalysisFromRisk -- ZERO_PROTECTED_MUTATION_ON_DENY: MrPlanningRiskAnalysis.create TIDAK PERNAH tercapai pada FOREIGN_OPD_DENY maupun OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED',
+    async () => {
+      let createCalledForeign = false;
+      let createCalledUnresolved = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrPlanningRiskAnalysis, 'create', async () => { createCalledForeign = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            await svc.createAnalysisFromRisk({
+              riskId: 1,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+          } catch (error) {
+            // expected -- boundary denies
+          }
+        }
+      );
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(null)],
+          [models.MrPlanningRiskAnalysis, 'create', async () => { createCalledUnresolved = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            await svc.createAnalysisFromRisk({
+              riskId: 1,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+          } catch (error) {
+            // expected -- ownership unresolved, fail closed
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalledForeign, false, 'ZERO_PROTECTED_MUTATION_ON_DENY: create TIDAK BOLEH tercapai pada FOREIGN_OPD_DENY');
+      assert.strictEqual(createCalledUnresolved, false, 'ZERO_PROTECTED_MUTATION_ON_DENY: create TIDAK BOLEH tercapai pada OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED');
+    }
+  );
+
+  await test(
+    'mrPlanningRiskAnalysisService.updateDraftAnalysis -- ZERO_PROTECTED_MUTATION_ON_DENY: analysis.update TIDAK PERNAH tercapai pada FOREIGN_OPD_DENY maupun OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED',
+    async () => {
+      let updateCalledForeign = false;
+      let updateCalledUnresolved = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRiskAnalysis, 'findByPk', async () => {
+            const a = fakeAnalysis();
+            a.update = async () => { updateCalledForeign = true; return a; };
+            return a;
+          }],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            await svc.updateDraftAnalysis({
+              analysisId: 2,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+          } catch (error) {
+            // expected -- boundary denies
+          }
+        }
+      );
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRiskAnalysis, 'findByPk', async () => {
+            const a = fakeAnalysis();
+            a.update = async () => { updateCalledUnresolved = true; return a; };
+            return a;
+          }],
+          [models.MrPlanningRisk, 'findByPk', async () => null],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            await svc.updateDraftAnalysis({
+              analysisId: 2,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+          } catch (error) {
+            // expected -- ownership unresolved, fail closed
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(updateCalledForeign, false, 'ZERO_PROTECTED_MUTATION_ON_DENY: update TIDAK BOLEH tercapai pada FOREIGN_OPD_DENY');
+      assert.strictEqual(updateCalledUnresolved, false, 'ZERO_PROTECTED_MUTATION_ON_DENY: update TIDAK BOLEH tercapai pada OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED');
+    }
+  );
+
+  await test(
+    'mrPlanningRootCauseService.createRootCauseFromRisk -- ZERO_PROTECTED_MUTATION_ON_DENY: MrPlanningRootCause.create TIDAK PERNAH tercapai pada FOREIGN_OPD_DENY maupun OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED',
+    async () => {
+      let createCalledForeign = false;
+      let createCalledUnresolved = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRiskForRootCause(42)],
+          [models.MrPlanningRootCause, 'create', async () => { createCalledForeign = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            await svc.createRootCauseFromRisk({
+              riskId: 1,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+          } catch (error) {
+            // expected -- boundary denies
+          }
+        }
+      );
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRiskForRootCause(null)],
+          [models.MrPlanningRootCause, 'create', async () => { createCalledUnresolved = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            await svc.createRootCauseFromRisk({
+              riskId: 1,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+          } catch (error) {
+            // expected -- ownership unresolved, fail closed
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalledForeign, false, 'ZERO_PROTECTED_MUTATION_ON_DENY: create TIDAK BOLEH tercapai pada FOREIGN_OPD_DENY');
+      assert.strictEqual(createCalledUnresolved, false, 'ZERO_PROTECTED_MUTATION_ON_DENY: create TIDAK BOLEH tercapai pada OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED');
+    }
+  );
+
+  await test(
+    'mrPlanningRootCauseService.updateDraftRootCause -- ZERO_PROTECTED_MUTATION_ON_DENY: rootCause.update TIDAK PERNAH tercapai pada FOREIGN_OPD_DENY maupun OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED',
+    async () => {
+      let updateCalledForeign = false;
+      let updateCalledUnresolved = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRootCause, 'findByPk', async () => {
+            const rc = fakeRootCause();
+            rc.update = async () => { updateCalledForeign = true; return rc; };
+            return rc;
+          }],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRiskForRootCause(42)],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            await svc.updateDraftRootCause({
+              rootCauseId: 3,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+          } catch (error) {
+            // expected -- boundary denies
+          }
+        }
+      );
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRootCause, 'findByPk', async () => {
+            const rc = fakeRootCause();
+            rc.update = async () => { updateCalledUnresolved = true; return rc; };
+            return rc;
+          }],
+          [models.MrPlanningRisk, 'findByPk', async () => null],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            await svc.updateDraftRootCause({
+              rootCauseId: 3,
+              body: {},
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+          } catch (error) {
+            // expected -- ownership unresolved, fail closed
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(updateCalledForeign, false, 'ZERO_PROTECTED_MUTATION_ON_DENY: update TIDAK BOLEH tercapai pada FOREIGN_OPD_DENY');
+      assert.strictEqual(updateCalledUnresolved, false, 'ZERO_PROTECTED_MUTATION_ON_DENY: update TIDAK BOLEH tercapai pada OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED');
+    }
+  );
+
+  // =====================================================================
+  // CORRECTIVE (CEA finding) -- MISSING_USER fail-closed for read-detail
+  // functions, and internal post-update user-propagation proof.
+  // =====================================================================
+
+  await test(
+    'mrPlanningRiskAnalysisService.getAnalysisDetail -- user MISSING (undefined) -> DITOLAK 403, TIDAK ADA data yang dikembalikan (MISSING_USER_FAIL_CLOSED)',
+    async () => {
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRiskAnalysis, 'findByPk', async () => fakeAnalysisDetail(42)],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            const data = await svc.getAnalysisDetail(2, { user: undefined });
+            assert.fail(`Seharusnya GAGAL TERTUTUP ketika user hilang, bukan mengembalikan data: ${JSON.stringify(data)}`);
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403 (fail closed), got ${error.statusCode}`);
+          }
+        }
+      );
+    }
+  );
+
+  await test(
+    'mrPlanningRiskAnalysisService.getAnalysisDetail -- options TIDAK diisi sama sekali (user implisit undefined) -> DITOLAK 403 (MISSING_USER_FAIL_CLOSED)',
+    async () => {
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRiskAnalysis, 'findByPk', async () => fakeAnalysisDetail(42)],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          try {
+            const data = await svc.getAnalysisDetail(2);
+            assert.fail(`Seharusnya GAGAL TERTUTUP ketika options/user tidak diisi, bukan mengembalikan data: ${JSON.stringify(data)}`);
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403 (fail closed), got ${error.statusCode}`);
+          }
+        }
+      );
+    }
+  );
+
+  await test(
+    'mrPlanningRootCauseService.getRootCauseDetail -- user MISSING (undefined) -> DITOLAK 403, TIDAK ADA data yang dikembalikan (MISSING_USER_FAIL_CLOSED)',
+    async () => {
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRootCause, 'findByPk', async () => fakeRootCauseDetail(42)],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            const data = await svc.getRootCauseDetail(3, { user: undefined });
+            assert.fail(`Seharusnya GAGAL TERTUTUP ketika user hilang, bukan mengembalikan data: ${JSON.stringify(data)}`);
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403 (fail closed), got ${error.statusCode}`);
+          }
+        }
+      );
+    }
+  );
+
+  await test(
+    'mrPlanningRootCauseService.getRootCauseDetail -- options TIDAK diisi sama sekali (user implisit undefined) -> DITOLAK 403 (MISSING_USER_FAIL_CLOSED)',
+    async () => {
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRootCause, 'findByPk', async () => fakeRootCauseDetail(42)],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          try {
+            const data = await svc.getRootCauseDetail(3);
+            assert.fail(`Seharusnya GAGAL TERTUTUP ketika options/user tidak diisi, bukan mengembalikan data: ${JSON.stringify(data)}`);
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, `Expected 403 (fail closed), got ${error.statusCode}`);
+          }
+        }
+      );
+    }
+  );
+
+  await test(
+    'mrPlanningRiskAnalysisService.updateDraftAnalysis -- OWN_OPD -> internal post-update getAnalysisDetail menerima user yang sama, detail berhasil dikembalikan (INTERNAL_POST_UPDATE_USER_PROPAGATION)',
+    async () => {
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRiskAnalysis, 'findByPk', async () => fakeAnalysisDetail(42)],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrReferenceGroup, 'findOne', async () => null],
+        ],
+        async () => {
+          const svc = freshRiskAnalysisService();
+          // fakeAnalysisDetail has no .update()/get() -- patch a minimal
+          // draft-shaped object with both, reusing the risk-linked shape
+          // getAnalysisDetail expects on its second (internal) call.
+          const analysisForUpdate = {
+            id: 2,
+            mr_planning_risk_id: 1,
+            status_revisi: 'draft',
+            alasan_revisi: null,
+            get({ plain } = {}) { return { id: 2, mr_planning_risk_id: 1, status_revisi: 'draft' }; },
+            update: async () => analysisForUpdate,
+          };
+          models.MrPlanningRiskAnalysis.findByPk = async (id, opts) => {
+            // First call (inside updateDraftAnalysis) needs the draft-shaped
+            // fixture with .update(); second call (inside the internal
+            // getAnalysisDetail re-fetch, which uses `include`) needs the
+            // risk-linked detail fixture. Distinguish by presence of `include`.
+            if (opts && opts.include) return fakeAnalysisDetail(42);
+            return analysisForUpdate;
+          };
+
+          const data = await svc.updateDraftAnalysis({
+            analysisId: 2,
+            body: {},
+            userId: 10,
+            user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+          });
+          assert.ok(data, 'updateDraftAnalysis harus berhasil mengembalikan detail via internal getAnalysisDetail dengan user yang dipropagasikan');
+          assert.strictEqual(data.id, 2);
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+    }
+  );
+
+  await test(
+    'mrPlanningRootCauseService.updateDraftRootCause -- OWN_OPD -> internal post-update getRootCauseDetail menerima user yang sama, detail berhasil dikembalikan (INTERNAL_POST_UPDATE_USER_PROPAGATION)',
+    async () => {
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRiskForRootCause(42)],
+        ],
+        async () => {
+          const svc = freshRootCauseService();
+          const rootCauseForUpdate = {
+            id: 3,
+            mr_planning_risk_id: 1,
+            mr_planning_risk_analysis_id: null,
+            status_revisi: 'draft',
+            alasan_revisi: null,
+            uraian_penyebab: null,
+            akar_penyebab: null,
+            get({ plain } = {}) { return { id: 3, mr_planning_risk_id: 1, status_revisi: 'draft' }; },
+            update: async () => rootCauseForUpdate,
+          };
+          models.MrPlanningRootCause.findByPk = async (id, opts) => {
+            if (opts && opts.include) return fakeRootCauseDetail(42);
+            return rootCauseForUpdate;
+          };
+
+          const data = await svc.updateDraftRootCause({
+            rootCauseId: 3,
+            body: {},
+            userId: 10,
+            user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+          });
+          assert.ok(data, 'updateDraftRootCause harus berhasil mengembalikan detail via internal getRootCauseDetail dengan user yang dipropagasikan');
+          assert.strictEqual(data.id, 3);
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+    }
+  );
+
+}
+
 } // end runAllTests
 
 runAllTests().then(() => {

@@ -23,6 +23,15 @@ const {
   MrRiskMatrix,
 } = require('../../models');
 
+// Sprint 13 -- MR RiskAnalysis OPD Boundary Hardening: RiskAnalysis has no
+// opd_id of its own; ownership derives via mr_planning_risk_id -> MrPlanningRisk.opd_id
+// (OpdPenanggungJawab.id namespace). Reuses the accepted, unmodified Risk-family
+// boundary helper -- same pattern as Deviation/Context/Mitigation/Monitoring.
+const {
+  resolveMrPlanningRiskOpdBoundary,
+  throwMrPlanningRiskOpdBoundaryError,
+} = require('./mrPlanningRiskService');
+
 const ALLOWED_CREATE_UPDATE_FIELDS = new Set([
   'existing_control_status_ref_id',
   'existing_control_description',
@@ -491,13 +500,41 @@ const ensureDraftAnalysis = (analysis) => {
   }
 };
 
-const createAnalysisFromRisk = async ({ riskId, body = {}, userId, transaction } = {}) => {
+const createAnalysisFromRisk = async ({ riskId, body = {}, userId, user, transaction } = {}) => {
   if (!riskId) {
     throwValidation('riskId wajib diisi.');
   }
 
   const allowedPayload = pickAllowedFields(body);
   const risk = await getRiskWithContext(riskId, { transaction });
+
+  // Sprint 13 fail-closed contract: ownership resolution failure (Risk
+  // induk found but without a resolvable opd_id) must DENY, never silently
+  // fall through to resolveMrPlanningRiskOpdBoundary's own "null = defer"
+  // semantics -- that behavior exists for its original call sites where null
+  // legitimately means "not found yet, let normal validation handle it", not
+  // applicable to an authorization decision here.
+  const createTargetOpdId = risk?.opd_id ?? null;
+  if (createTargetOpdId === null && user?.role !== 'SUPER_ADMIN') {
+    throwMrPlanningRiskOpdBoundaryError({
+      ok: false,
+      status: 403,
+      error: {
+        message:
+          'Kepemilikan OPD untuk MR Planning Risk Analysis ini tidak dapat diverifikasi. Aksi ditolak demi keamanan data.',
+        code: 'MR_RISK_ANALYSIS_OPD_BOUNDARY_UNRESOLVED',
+      },
+    });
+  }
+
+  const createBoundary = await resolveMrPlanningRiskOpdBoundary({
+    user,
+    targetOpdId: createTargetOpdId,
+  });
+  if (!createBoundary.ok) {
+    throwMrPlanningRiskOpdBoundaryError(createBoundary);
+  }
+
   const payloadWithDefaults = await applyAnalysisDefaultsFromRisk(allowedPayload, risk, {
     transaction,
   });
@@ -538,7 +575,7 @@ const createAnalysisFromRisk = async ({ riskId, body = {}, userId, transaction }
   );
 };
 
-const updateDraftAnalysis = async ({ analysisId, body = {}, userId, transaction } = {}) => {
+const updateDraftAnalysis = async ({ analysisId, body = {}, userId, user, transaction } = {}) => {
   if (!analysisId) {
     throwValidation('analysisId wajib diisi.');
   }
@@ -555,16 +592,43 @@ const updateDraftAnalysis = async ({ analysisId, body = {}, userId, transaction 
 
   ensureDraftAnalysis(analysis);
 
+  const risk = analysis.mr_planning_risk_id
+    ? await MrPlanningRisk.findByPk(analysis.mr_planning_risk_id, { transaction })
+    : null;
+
+  // Sprint 13 fail-closed contract: ownership resolution failure (missing
+  // mr_planning_risk_id, or parent Risk not found) must DENY, never silently
+  // fall through to resolveMrPlanningRiskOpdBoundary's own "null = defer"
+  // semantics -- that behavior exists for its original call sites where null
+  // legitimately means "not found yet, let normal validation handle it", not
+  // applicable to an authorization decision here.
+  const updateTargetOpdId = risk?.opd_id ?? null;
+  if (updateTargetOpdId === null && user?.role !== 'SUPER_ADMIN') {
+    throwMrPlanningRiskOpdBoundaryError({
+      ok: false,
+      status: 403,
+      error: {
+        message:
+          'Kepemilikan OPD untuk MR Planning Risk Analysis ini tidak dapat diverifikasi. Aksi ditolak demi keamanan data.',
+        code: 'MR_RISK_ANALYSIS_OPD_BOUNDARY_UNRESOLVED',
+      },
+    });
+  }
+
+  const updateBoundary = await resolveMrPlanningRiskOpdBoundary({
+    user,
+    targetOpdId: updateTargetOpdId,
+  });
+  if (!updateBoundary.ok) {
+    throwMrPlanningRiskOpdBoundaryError(updateBoundary);
+  }
+
   const allowedPayload = pickAllowedFields(body);
 
   const mergedPayload = {
     ...analysis.get({ plain: true }),
     ...allowedPayload,
   };
-
-  const risk = analysis.mr_planning_risk_id
-    ? await MrPlanningRisk.findByPk(analysis.mr_planning_risk_id, { transaction })
-    : null;
 
   const payloadWithDefaults = risk
     ? await applyAnalysisDefaultsFromRisk(mergedPayload, risk, { transaction })
@@ -589,10 +653,10 @@ const updateDraftAnalysis = async ({ analysisId, body = {}, userId, transaction 
     { transaction },
   );
 
-  return getAnalysisDetail(analysis.id, { transaction });
+  return getAnalysisDetail(analysis.id, { transaction, user });
 };
 
-const getAnalysisDetail = async (analysisId, options = {}) => {
+const getAnalysisDetail = async (analysisId, { user, ...options } = {}) => {
   if (!analysisId) {
     throwValidation('analysisId wajib diisi.');
   }
@@ -664,12 +728,71 @@ const getAnalysisDetail = async (analysisId, options = {}) => {
     });
   }
 
+  // Sprint 13 CORRECTIVE (CEA finding): authorize AFTER the minimum record
+  // fetch (required to resolve ownership) but BEFORE returning any
+  // protected detail to the caller. Foreign ordinary OPD receives NO
+  // DISCLOSURE. Missing/undefined/malformed `user` is NOT a trusted
+  // internal-call signal -- it fails closed like any other caller, exactly
+  // like every other Sprint 13 boundary check. Legitimate internal callers
+  // (e.g. updateDraftAnalysis's post-update return) MUST explicitly
+  // propagate their own already-authenticated `user` -- see the call site
+  // above, which now passes { transaction, user }.
+  const detailTargetOpdId = analysis?.risk?.opd_id ?? null;
+  if (detailTargetOpdId === null && user?.role !== 'SUPER_ADMIN') {
+    throwMrPlanningRiskOpdBoundaryError({
+      ok: false,
+      status: 403,
+      error: {
+        message:
+          'Kepemilikan OPD untuk MR Planning Risk Analysis ini tidak dapat diverifikasi. Aksi ditolak demi keamanan data.',
+        code: 'MR_RISK_ANALYSIS_OPD_BOUNDARY_UNRESOLVED',
+      },
+    });
+  }
+
+  const detailBoundary = await resolveMrPlanningRiskOpdBoundary({
+    user,
+    targetOpdId: detailTargetOpdId,
+  });
+  if (!detailBoundary.ok) {
+    throwMrPlanningRiskOpdBoundaryError(detailBoundary);
+  }
+
   return analysis;
 };
 
-const getAnalysesByRisk = async (riskId, options = {}) => {
+const getAnalysesByRisk = async (riskId, { user, ...options } = {}) => {
   if (!riskId) {
     throwValidation('riskId wajib diisi.');
+  }
+
+  // Sprint 13 CORRECTIVE (CEA finding): resolve the target Risk's OPD
+  // ownership and authorize BEFORE executing/returning the protected list,
+  // avoiding disclosure of a foreign-OPD list. Missing/undefined/malformed
+  // `user` fails closed like any other caller -- no internal-call bypass.
+  const risk = await MrPlanningRisk.findByPk(riskId, {
+    transaction: options.transaction,
+  });
+
+  const listTargetOpdId = risk?.opd_id ?? null;
+  if (listTargetOpdId === null && user?.role !== 'SUPER_ADMIN') {
+    throwMrPlanningRiskOpdBoundaryError({
+      ok: false,
+      status: 403,
+      error: {
+        message:
+          'Kepemilikan OPD untuk MR Planning Risk Analysis ini tidak dapat diverifikasi. Aksi ditolak demi keamanan data.',
+        code: 'MR_RISK_ANALYSIS_OPD_BOUNDARY_UNRESOLVED',
+      },
+    });
+  }
+
+  const listBoundary = await resolveMrPlanningRiskOpdBoundary({
+    user,
+    targetOpdId: listTargetOpdId,
+  });
+  if (!listBoundary.ok) {
+    throwMrPlanningRiskOpdBoundaryError(listBoundary);
   }
 
   return MrPlanningRiskAnalysis.findAll({

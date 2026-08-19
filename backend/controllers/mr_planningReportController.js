@@ -242,6 +242,11 @@ const repairDraftFromFindings = async (req, res) => {
       req.body || {},
       {
         user_id: getUserId(req),
+        // Sprint 13 caller adaptation (USER_CONTEXT_PROPAGATION_ONLY): the
+        // full user object is now required so child RiskAnalysis/RootCause
+        // OPD boundary checks can authorize correctly. user_id above is
+        // preserved unchanged for existing audit-field semantics.
+        user: req.user || null,
         source_endpoint: getSourceEndpoint(req),
         request_id: req.headers["x-request-id"] || null,
         idempotency_key: req.headers["idempotency-key"] || null,

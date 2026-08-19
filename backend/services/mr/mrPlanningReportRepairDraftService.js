@@ -186,7 +186,9 @@ async function repairDraftFromFindings(contextId, payload = {}, options = {}) {
           }
 
           try {
-            const existing = await mrPlanningRiskAnalysisService.getAnalysesByRisk(riskId);
+            const existing = await mrPlanningRiskAnalysisService.getAnalysesByRisk(riskId, {
+              user: options.user || null,
+            });
             if (Array.isArray(existing) && existing.length > 0) {
               const analysis = existing[0];
               const isDraft = String(analysis?.status_revisi || "").toLowerCase() === "draft";
@@ -222,6 +224,7 @@ async function repairDraftFromFindings(contextId, payload = {}, options = {}) {
                     "Auto-repair Pedoman 5: normalisasi field analisis turunan yang belum terisi.",
                 },
                 userId: options.user_id || null,
+                user: options.user || null,
               });
               repaired_count += 1;
               continue;
@@ -231,6 +234,7 @@ async function repairDraftFromFindings(contextId, payload = {}, options = {}) {
               riskId,
               body: {},
               userId: options.user_id || null,
+              user: options.user || null,
             });
             repaired_count += 1;
           } catch (err) {
@@ -264,7 +268,9 @@ async function repairDraftFromFindings(contextId, payload = {}, options = {}) {
           }
 
           try {
-            const existing = await mrPlanningRootCauseService.getRootCausesByRisk(riskId);
+            const existing = await mrPlanningRootCauseService.getRootCausesByRisk(riskId, {
+              user: options.user || null,
+            });
             if (Array.isArray(existing) && existing.length > 0) {
               const rootCause = existing[0];
               const isDraft = String(rootCause?.status_revisi || "").toLowerCase() === "draft";
@@ -298,6 +304,7 @@ async function repairDraftFromFindings(contextId, payload = {}, options = {}) {
                     "Auto-repair Pedoman 8: normalisasi field root cause turunan yang belum terisi.",
                 },
                 userId: options.user_id || null,
+                user: options.user || null,
               });
               repaired_count += 1;
               continue;
@@ -307,6 +314,7 @@ async function repairDraftFromFindings(contextId, payload = {}, options = {}) {
               riskId,
               body: {},
               userId: options.user_id || null,
+              user: options.user || null,
             });
             repaired_count += 1;
           } catch (err) {

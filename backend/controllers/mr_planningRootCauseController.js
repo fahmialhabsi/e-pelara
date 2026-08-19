@@ -22,6 +22,14 @@ const getUserId = (req) => {
   );
 };
 
+// Sprint 13 -- OPD boundary authorization requires the full user object
+// (role, opd affiliation), not just a bare id. Preserves req.user as-is;
+// falls back to null (never a bare id) so downstream fail-closed guards
+// treat a missing/malformed user consistently.
+const getUser = (req) => {
+  return req.user || null;
+};
+
 const buildSuccessResponse = ({
   res,
   message,
@@ -59,8 +67,9 @@ const buildErrorResponse = ({ res, error }) => {
 const getRootCausesByRisk = async (req, res) => {
   try {
     const { riskId } = req.params;
+    const user = getUser(req);
 
-    const data = await mrPlanningRootCauseService.getRootCausesByRisk(riskId);
+    const data = await mrPlanningRootCauseService.getRootCausesByRisk(riskId, { user });
 
     return buildSuccessResponse({
       res,
@@ -80,8 +89,9 @@ const getRootCausesByRisk = async (req, res) => {
 const getRootCauseDetail = async (req, res) => {
   try {
     const { id } = req.params;
+    const user = getUser(req);
 
-    const data = await mrPlanningRootCauseService.getRootCauseDetail(id);
+    const data = await mrPlanningRootCauseService.getRootCauseDetail(id, { user });
 
     return buildSuccessResponse({
       res,
@@ -118,11 +128,13 @@ const createRootCauseFromRisk = async (req, res) => {
   try {
     const { riskId } = req.params;
     const userId = getUserId(req);
+    const user = getUser(req);
 
     const data = await mrPlanningRootCauseService.createRootCauseFromRisk({
       riskId,
       body: req.body,
       userId,
+      user,
     });
 
     return buildSuccessResponse({
@@ -145,11 +157,13 @@ const updateDraftRootCause = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = getUserId(req);
+    const user = getUser(req);
 
     const data = await mrPlanningRootCauseService.updateDraftRootCause({
       rootCauseId: id,
       body: req.body,
       userId,
+      user,
     });
 
     return buildSuccessResponse({
