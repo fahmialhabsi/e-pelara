@@ -28,6 +28,7 @@
  */
 
 const mrPlanningMonitoringService = require("../services/mr/mrPlanningMonitoringService");
+const mrHistoryService = require("../services/mr/mrHistoryService");
 
 const {
   successResponse,
@@ -246,6 +247,106 @@ const updateDraftMonitoring = async (req, res) => {
   }
 };
 
+// =====================================================
+// A09-F01 / A10-F01 — WORKFLOW & HISTORY
+// =====================================================
+
+const submitMonitoring = async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    const result = await mrPlanningMonitoringService.submitMonitoringForVerification({
+      id: req.params.id,
+      userId,
+      note: req.body?.alasan_revisi || null,
+    });
+
+    return successResponse({
+      res,
+      message: "Monitoring berhasil diajukan untuk verifikasi.",
+      data: result,
+    });
+  } catch (error) {
+    return errorResponse({ res, error });
+  }
+};
+
+const getMonitoringHistory = async (req, res) => {
+  try {
+    const histories = await mrPlanningMonitoringService.getHistoryByMonitoring({
+      monitoringId: req.params.id,
+      status_revisi: req.query.status_revisi || null,
+    });
+
+    return successResponse({
+      res,
+      message: "History Monitoring berhasil dimuat.",
+      data: mrHistoryService.mapHistoriesForFrontend(histories),
+    });
+  } catch (error) {
+    return errorResponse({ res, error });
+  }
+};
+
+const getMonitoringHistoryDetail = async (req, res) => {
+  try {
+    const history = await mrPlanningMonitoringService.getMonitoringHistoryDetail(req.params.history_id);
+
+    return successResponse({
+      res,
+      message: "Detail history Monitoring berhasil dimuat.",
+      data: mrHistoryService.mapHistoryForFrontend(history),
+    });
+  } catch (error) {
+    return errorResponse({ res, error });
+  }
+};
+
+const verifikasiMonitoringHistory = async (req, res) => {
+  try {
+    const data = await mrPlanningMonitoringService.verifikasiMonitoringHistory({
+      historyId: req.params.history_id,
+      userId: getUserId(req),
+      note: req.body?.alasan_revisi || req.body?.catatan || null,
+      request: req,
+    });
+
+    return successResponse({ res, message: "History Monitoring berhasil diverifikasi.", data });
+  } catch (error) {
+    return errorResponse({ res, error });
+  }
+};
+
+const approveMonitoringHistory = async (req, res) => {
+  try {
+    const data = await mrPlanningMonitoringService.approveMonitoringHistory({
+      historyId: req.params.history_id,
+      userId: getUserId(req),
+      note: req.body?.alasan_revisi || req.body?.catatan || null,
+      request: req,
+    });
+
+    return successResponse({ res, message: "Monitoring berhasil disetujui.", data });
+  } catch (error) {
+    return errorResponse({ res, error });
+  }
+};
+
+const tolakMonitoringHistory = async (req, res) => {
+  try {
+    const data = await mrPlanningMonitoringService.tolakMonitoringHistory({
+      historyId: req.params.history_id,
+      userId: getUserId(req),
+      note: req.body?.alasan_revisi || req.body?.alasan_penolakan || req.body?.catatan || null,
+      request: req,
+    });
+
+    return successResponse({ res, message: "Monitoring berhasil ditolak.", data });
+  } catch (error) {
+    return errorResponse({ res, error });
+  }
+};
+
 module.exports = {
   getMonitoringsByRisk,
   getMonitoringsByMitigation,
@@ -253,4 +354,11 @@ module.exports = {
   buildDraftPreviewFromRisk,
   createMonitoringFromRisk,
   updateDraftMonitoring,
+
+  submitMonitoring,
+  getMonitoringHistory,
+  getMonitoringHistoryDetail,
+  verifikasiMonitoringHistory,
+  approveMonitoringHistory,
+  tolakMonitoringHistory,
 };

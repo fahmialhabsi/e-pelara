@@ -15,6 +15,7 @@
 
 const mitigationService = require("../services/mr/mrPlanningMitigationService");
 const mrPlanningMitigationDraftPreviewService = require("../services/mr/mrPlanningMitigationDraftPreviewService");
+const mrHistoryService = require("../services/mr/mrHistoryService");
 
 const getUserId = (req) => {
   return req.user?.id || req.user?.userId || req.user?.user_id || null;
@@ -173,6 +174,137 @@ const cancelDraftMitigation = async (req, res) => {
   }
 };
 
+// =====================================================
+// A09-F01 / A10-F01 — WORKFLOW & HISTORY
+// =====================================================
+
+const submitMitigation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = getUserId(req);
+
+    const data = await mitigationService.submitMitigationForVerification({
+      id,
+      userId,
+      note: req.body?.alasan_revisi || null,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Rencana Tindak Pengendalian berhasil diajukan untuk verifikasi.",
+      data,
+      meta: {},
+    });
+  } catch (error) {
+    console.error("SUBMIT MITIGATION ERROR:", error);
+
+    return res.status(getRootStatusCode(error)).json(buildErrorResponse(error));
+  }
+};
+
+const getMitigationHistory = async (req, res) => {
+  try {
+    const histories = await mitigationService.getHistoryByMitigation({
+      mitigationId: req.params.id,
+      status_revisi: req.query.status_revisi || null,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "History Rencana Tindak Pengendalian berhasil dimuat.",
+      data: mrHistoryService.mapHistoriesForFrontend(histories),
+      meta: {},
+    });
+  } catch (error) {
+    console.error("GET MITIGATION HISTORY ERROR:", error);
+
+    return res.status(getRootStatusCode(error)).json(buildErrorResponse(error));
+  }
+};
+
+const getMitigationHistoryDetail = async (req, res) => {
+  try {
+    const history = await mitigationService.getMitigationHistoryDetail(req.params.history_id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Detail history Rencana Tindak Pengendalian berhasil dimuat.",
+      data: mrHistoryService.mapHistoryForFrontend(history),
+      meta: {},
+    });
+  } catch (error) {
+    console.error("GET MITIGATION HISTORY DETAIL ERROR:", error);
+
+    return res.status(getRootStatusCode(error)).json(buildErrorResponse(error));
+  }
+};
+
+const verifikasiMitigationHistory = async (req, res) => {
+  try {
+    const data = await mitigationService.verifikasiMitigationHistory({
+      historyId: req.params.history_id,
+      userId: getUserId(req),
+      note: req.body?.alasan_revisi || req.body?.catatan || null,
+      request: req,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "History Rencana Tindak Pengendalian berhasil diverifikasi.",
+      data,
+      meta: {},
+    });
+  } catch (error) {
+    console.error("VERIFIKASI MITIGATION HISTORY ERROR:", error);
+
+    return res.status(getRootStatusCode(error)).json(buildErrorResponse(error));
+  }
+};
+
+const approveMitigationHistory = async (req, res) => {
+  try {
+    const data = await mitigationService.approveMitigationHistory({
+      historyId: req.params.history_id,
+      userId: getUserId(req),
+      note: req.body?.alasan_revisi || req.body?.catatan || null,
+      request: req,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Rencana Tindak Pengendalian berhasil disetujui.",
+      data,
+      meta: {},
+    });
+  } catch (error) {
+    console.error("APPROVE MITIGATION HISTORY ERROR:", error);
+
+    return res.status(getRootStatusCode(error)).json(buildErrorResponse(error));
+  }
+};
+
+const tolakMitigationHistory = async (req, res) => {
+  try {
+    const data = await mitigationService.tolakMitigationHistory({
+      historyId: req.params.history_id,
+      userId: getUserId(req),
+      note: req.body?.alasan_revisi || req.body?.alasan_penolakan || req.body?.catatan || null,
+      request: req,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Rencana Tindak Pengendalian berhasil ditolak.",
+      data,
+      meta: {},
+    });
+  } catch (error) {
+    console.error("TOLAK MITIGATION HISTORY ERROR:", error);
+
+    return res.status(getRootStatusCode(error)).json(buildErrorResponse(error));
+  }
+};
+
 module.exports = {
   getMitigationsByRisk,
   getMitigationDetail,
@@ -180,4 +312,11 @@ module.exports = {
   updateDraftMitigation,
   previewDraftFromRisk,
   cancelDraftMitigation,
+
+  submitMitigation,
+  getMitigationHistory,
+  getMitigationHistoryDetail,
+  verifikasiMitigationHistory,
+  approveMitigationHistory,
+  tolakMitigationHistory,
 };

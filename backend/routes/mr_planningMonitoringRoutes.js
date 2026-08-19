@@ -53,7 +53,9 @@ const router = express.Router();
  */
 
 const READ = ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"];
+const HISTORY_READ = ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS"];
 const WRITE = ["SUPER_ADMIN", "ADMINISTRATOR"];
+const APPROVE = ["SUPER_ADMIN"];
 
 /**
  * READ ROUTES
@@ -183,6 +185,56 @@ router.put(
   verifyToken,
   allowRoles(WRITE),
   controller.updateDraftMonitoring
+);
+
+// ========================= A09-F01 / A10-F01: WORKFLOW & HISTORY =========================
+// Guard: route spesifik "/history/:history_id" wajib sebelum "/:id" (pola sama dengan
+// mr_planningMitigationRoutes.js / mr_planningTemuanRoutes.js) supaya tidak tertangkap
+// sebagai detail Monitoring dengan id="history". Route ini juga wajib diletakkan
+// setelah sub-route evidence ("/evidence/:evidenceId", "/:id/evidence") karena tidak
+// ada tumpang tindih path, namun ditempatkan di akhir file mengikuti urutan penambahan
+// fitur yang konsisten dengan Mitigation.
+
+router.get(
+  "/history/:history_id",
+  verifyToken,
+  allowRoles(HISTORY_READ),
+  controller.getMonitoringHistoryDetail
+);
+
+router.patch(
+  "/history/:history_id/verifikasi",
+  verifyToken,
+  allowRoles(WRITE),
+  controller.verifikasiMonitoringHistory
+);
+
+router.patch(
+  "/history/:history_id/approve",
+  verifyToken,
+  allowRoles(APPROVE),
+  controller.approveMonitoringHistory
+);
+
+router.patch(
+  "/history/:history_id/tolak",
+  verifyToken,
+  allowRoles(APPROVE),
+  controller.tolakMonitoringHistory
+);
+
+router.get(
+  "/:id/history",
+  verifyToken,
+  allowRoles(HISTORY_READ),
+  controller.getMonitoringHistory
+);
+
+router.post(
+  "/:id/submit",
+  verifyToken,
+  allowRoles(WRITE),
+  controller.submitMonitoring
 );
 
 module.exports = router;

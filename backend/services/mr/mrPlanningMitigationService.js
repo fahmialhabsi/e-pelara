@@ -23,10 +23,32 @@ const {
   MrPlanningRiskAnalysis,
   MrPlanningRootCause,
   MrPlanningMitigation,
+  MrPlanningMitigationHistory,
   MrReferenceItem,
   MrReferenceGroup,
   MrRiskMatrix,
 } = require("../../models");
+
+// A09-F01 / A10-F01 corrective (Operational UAT Module A):
+// -----------------------------------------------------------------------
+// Mitigation model & mrPlanningMitigationHistoryModel.js sudah menyediakan
+// status_revisi ENUM(draft/verifikasi/approved/ditolak) dan field
+// aktor+timestamp lengkap sejak awal, dan mrHistoryHelper.js sudah memuat
+// HISTORY_FOREIGN_KEYS.mitigation = "mr_planning_mitigation_id" —
+// infrastruktur ini sudah dirancang untuk workflow ini, hanya belum
+// pernah disambungkan. mrApprovalService.js (verifikasiHistory/
+// approveHistory/tolakHistory) genuinely entity-agnostic (menerima
+// ActiveModel/HistoryModel/historyForeignKey sebagai parameter, tanpa
+// hardcode apa pun spesifik Risk pada logika bisnisnya) — dipakai apa
+// adanya, TIDAK dibuat mesin approval baru.
+const mrApprovalService = require("./mrApprovalService");
+const mrHistoryService = require("./mrHistoryService");
+const {
+  buildHistoryPayload,
+  createHistory,
+} = require("../../helpers/mr/mrHistoryHelper");
+
+const MITIGATION_HISTORY_FK = "mr_planning_mitigation_id";
 
 const MATRIX_CODE = "MR_5X5_DEFAULT";
 
@@ -805,6 +827,124 @@ const getMitigationsByRisk = async (riskId) => {
   });
 };
 
+// =====================================================
+// A09-F01 / A10-F01 — WORKFLOW & HISTORY
+// =====================================================
+// Pola identik dengan mrPlanningTemuanService.js /
+// mrPlanningTindakLanjutService.js: submit memindahkan active record ke
+// "verifikasi" DAN membuat satu baris history (via buildHistoryPayload +
+// createHistory) — baris history itulah target verifikasi/approve/tolak
+// generik dari mrApprovalService. Draft yang sudah dibatalkan (is_active
+// = false) tidak boleh diajukan.
+const submitMitigationForVerification = async ({ id, userId, note } = {}) => {
+  return sequelize.transaction(async (transaction) => {
+    const mitigation = await MrPlanningMitigation.findByPk(id, { transaction });
+
+    if (!mitigation) {
+      throw createNotFoundError("MR Planning Mitigation tidak ditemukan.", { id });
+    }
+
+    if (mitigation.is_active === false || Number(mitigation.is_active) === 0) {
+      throw createValidationError(
+        "Rencana Tindak Pengendalian yang sudah dibatalkan tidak dapat diajukan untuk verifikasi.",
+        { id },
+      );
+    }
+
+    if (!["draft", "ditolak"].includes(String(mitigation.status_revisi || "").toLowerCase())) {
+      throw createValidationError(
+        "Rencana Tindak Pengendalian hanya bisa diajukan untuk verifikasi selagi berstatus Draft atau Ditolak.",
+        { id, current_status: mitigation.status_revisi },
+      );
+    }
+
+    const beforeJson = toPlain(mitigation);
+
+    await mitigation.update(
+      {
+        status_revisi: "verifikasi",
+        last_revised_at: new Date(),
+        last_revised_by: userId || null,
+        updated_by: userId || null,
+      },
+      { transaction },
+    );
+
+    const historyPayload = buildHistoryPayload({
+      activeRecord: mitigation,
+      historyForeignKey: MITIGATION_HISTORY_FK,
+      beforeJson,
+      afterJson: toPlain(mitigation),
+      action: "verifikasi",
+      statusRevisi: "draft",
+      alasanRevisi: note,
+      userId,
+      incrementVersi: false,
+      extra: {
+        context_id: mitigation.context_id,
+        mr_planning_risk_id: mitigation.mr_planning_risk_id,
+        root_cause_id: mitigation.root_cause_id,
+      },
+    });
+
+    await createHistory({ HistoryModel: MrPlanningMitigationHistory, payload: historyPayload, transaction });
+
+    return getMitigationDetail(id);
+  });
+};
+
+const verifikasiMitigationHistory = ({ historyId, userId, note, request }) =>
+  mrApprovalService.verifikasiHistory({
+    sequelize,
+    ActiveModel: MrPlanningMitigation,
+    HistoryModel: MrPlanningMitigationHistory,
+    historyId,
+    userId,
+    note,
+    historyForeignKey: MITIGATION_HISTORY_FK,
+    request,
+  });
+
+const approveMitigationHistory = ({ historyId, userId, note, request }) =>
+  mrApprovalService.approveHistory({
+    sequelize,
+    ActiveModel: MrPlanningMitigation,
+    HistoryModel: MrPlanningMitigationHistory,
+    historyId,
+    userId,
+    note,
+    historyForeignKey: MITIGATION_HISTORY_FK,
+    request,
+    // id/created_at/updated_at sudah diblokir default oleh mrApprovalService;
+    // field tambahan yang TIDAK boleh ikut tertimpa dari after_json snapshot
+    // saat approve (mis. relasi FK yang wajib tetap dari active record saat
+    // ini, bukan dari snapshot submit).
+    extraBlockedActiveFields: ["mr_planning_risk_id"],
+  });
+
+const tolakMitigationHistory = ({ historyId, userId, note, request }) =>
+  mrApprovalService.tolakHistory({
+    sequelize,
+    ActiveModel: MrPlanningMitigation,
+    HistoryModel: MrPlanningMitigationHistory,
+    historyId,
+    userId,
+    note,
+    historyForeignKey: MITIGATION_HISTORY_FK,
+    request,
+  });
+
+const getHistoryByMitigation = ({ mitigationId, status_revisi }) =>
+  mrHistoryService.getHistoryByActiveId({
+    HistoryModel: MrPlanningMitigationHistory,
+    activeId: mitigationId,
+    historyForeignKey: MITIGATION_HISTORY_FK,
+    status_revisi,
+  });
+
+const getMitigationHistoryDetail = (historyId) =>
+  mrHistoryService.getHistoryDetail({ HistoryModel: MrPlanningMitigationHistory, historyId });
+
 module.exports = {
   ERROR_CODE,
   MATRIX_CODE,
@@ -831,4 +971,11 @@ module.exports = {
   cancelDraftMitigation,
   getMitigationDetail,
   getMitigationsByRisk,
+
+  submitMitigationForVerification,
+  verifikasiMitigationHistory,
+  approveMitigationHistory,
+  tolakMitigationHistory,
+  getHistoryByMitigation,
+  getMitigationHistoryDetail,
 };

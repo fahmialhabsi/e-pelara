@@ -23,7 +23,9 @@ const allowRoles = require("../middlewares/allowRoles");
 const router = express.Router();
 
 const READ = ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS", "PELAKSANA"];
+const HISTORY_READ = ["SUPER_ADMIN", "ADMINISTRATOR", "PENGAWAS"];
 const WRITE = ["SUPER_ADMIN", "ADMINISTRATOR"];
+const APPROVE = ["SUPER_ADMIN"];
 
 /**
  * Dokumen Rencana Tindak Pengendalian.
@@ -88,6 +90,53 @@ router.patch(
   verifyToken,
   allowRoles(WRITE),
   controller.cancelDraftMitigation
+);
+
+// ========================= A09-F01 / A10-F01: WORKFLOW & HISTORY =========================
+// Guard route spesifik "/history/:history_id" wajib sebelum "/:id" (pola sama
+// dengan mr_planningTemuanRoutes.js) supaya tidak tertangkap sebagai detail
+// Mitigation dengan id="history".
+
+router.get(
+  "/history/:history_id",
+  verifyToken,
+  allowRoles(HISTORY_READ),
+  controller.getMitigationHistoryDetail
+);
+
+router.patch(
+  "/history/:history_id/verifikasi",
+  verifyToken,
+  allowRoles(WRITE),
+  controller.verifikasiMitigationHistory
+);
+
+router.patch(
+  "/history/:history_id/approve",
+  verifyToken,
+  allowRoles(APPROVE),
+  controller.approveMitigationHistory
+);
+
+router.patch(
+  "/history/:history_id/tolak",
+  verifyToken,
+  allowRoles(APPROVE),
+  controller.tolakMitigationHistory
+);
+
+router.get(
+  "/:id/history",
+  verifyToken,
+  allowRoles(HISTORY_READ),
+  controller.getMitigationHistory
+);
+
+router.post(
+  "/:id/submit",
+  verifyToken,
+  allowRoles(WRITE),
+  controller.submitMitigation
 );
 
 module.exports = router;

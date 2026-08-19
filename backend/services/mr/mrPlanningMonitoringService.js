@@ -26,11 +26,25 @@ const {
   MrPlanningContext,
   MrPlanningMitigation,
   MrPlanningMonitoring,
+  MrPlanningMonitoringHistory,
   MrPlanningRiskAnalysis,
   MrReferenceItem,
   MrReferenceGroup,
   MrRiskMatrix,
 } = require("../../models");
+
+// A09-F01 / A10-F01 corrective (Operational UAT Module A): lihat komentar
+// setara di mrPlanningMitigationService.js — mrPlanningMonitoringHistoryModel.js
+// dan mrHistoryHelper.js (HISTORY_FOREIGN_KEYS.monitoring) sudah menyediakan
+// infrastruktur ini sejak awal; mrApprovalService dipakai apa adanya.
+const mrApprovalService = require("./mrApprovalService");
+const mrHistoryService = require("./mrHistoryService");
+const {
+  buildHistoryPayload,
+  createHistory,
+} = require("../../helpers/mr/mrHistoryHelper");
+
+const MONITORING_HISTORY_FK = "mr_planning_monitoring_id";
 
 const MATRIX_CODE = "MR_5X5_DEFAULT";
 
@@ -1392,6 +1406,107 @@ const getMonitoringsByMitigation = async (mitigationId) => {
   });
 };
 
+// =====================================================
+// A09-F01 / A10-F01 — WORKFLOW & HISTORY
+// =====================================================
+const submitMonitoringForVerification = async ({ id, userId, note } = {}) => {
+  return sequelize.transaction(async (transaction) => {
+    const monitoring = await MrPlanningMonitoring.findByPk(id, { transaction });
+
+    if (!monitoring) {
+      throw createNotFoundError("MR Planning Monitoring tidak ditemukan.", { id });
+    }
+
+    if (!["draft", "ditolak"].includes(String(monitoring.status_revisi || "").toLowerCase())) {
+      throw createValidationError(
+        "Monitoring hanya bisa diajukan untuk verifikasi selagi berstatus Draft atau Ditolak.",
+        { id, current_status: monitoring.status_revisi },
+      );
+    }
+
+    const beforeJson = toPlain(monitoring);
+
+    await monitoring.update(
+      {
+        status_revisi: "verifikasi",
+        last_revised_at: new Date(),
+        last_revised_by: userId || null,
+        updated_by: userId || null,
+      },
+      { transaction },
+    );
+
+    const historyPayload = buildHistoryPayload({
+      activeRecord: monitoring,
+      historyForeignKey: MONITORING_HISTORY_FK,
+      beforeJson,
+      afterJson: toPlain(monitoring),
+      action: "verifikasi",
+      statusRevisi: "draft",
+      alasanRevisi: note,
+      userId,
+      incrementVersi: false,
+      extra: {
+        context_id: monitoring.context_id,
+        mr_planning_risk_id: monitoring.mr_planning_risk_id,
+        mr_planning_mitigation_id: monitoring.mr_planning_mitigation_id,
+      },
+    });
+
+    await createHistory({ HistoryModel: MrPlanningMonitoringHistory, payload: historyPayload, transaction });
+
+    return getMonitoringDetail(id);
+  });
+};
+
+const verifikasiMonitoringHistory = ({ historyId, userId, note, request }) =>
+  mrApprovalService.verifikasiHistory({
+    sequelize,
+    ActiveModel: MrPlanningMonitoring,
+    HistoryModel: MrPlanningMonitoringHistory,
+    historyId,
+    userId,
+    note,
+    historyForeignKey: MONITORING_HISTORY_FK,
+    request,
+  });
+
+const approveMonitoringHistory = ({ historyId, userId, note, request }) =>
+  mrApprovalService.approveHistory({
+    sequelize,
+    ActiveModel: MrPlanningMonitoring,
+    HistoryModel: MrPlanningMonitoringHistory,
+    historyId,
+    userId,
+    note,
+    historyForeignKey: MONITORING_HISTORY_FK,
+    request,
+    extraBlockedActiveFields: ["mr_planning_risk_id", "mr_planning_mitigation_id"],
+  });
+
+const tolakMonitoringHistory = ({ historyId, userId, note, request }) =>
+  mrApprovalService.tolakHistory({
+    sequelize,
+    ActiveModel: MrPlanningMonitoring,
+    HistoryModel: MrPlanningMonitoringHistory,
+    historyId,
+    userId,
+    note,
+    historyForeignKey: MONITORING_HISTORY_FK,
+    request,
+  });
+
+const getHistoryByMonitoring = ({ monitoringId, status_revisi }) =>
+  mrHistoryService.getHistoryByActiveId({
+    HistoryModel: MrPlanningMonitoringHistory,
+    activeId: monitoringId,
+    historyForeignKey: MONITORING_HISTORY_FK,
+    status_revisi,
+  });
+
+const getMonitoringHistoryDetail = (historyId) =>
+  mrHistoryService.getHistoryDetail({ HistoryModel: MrPlanningMonitoringHistory, historyId });
+
 module.exports = {
   ERROR_CODE,
   MATRIX_CODE,
@@ -1422,4 +1537,11 @@ module.exports = {
   getMonitoringDetail,
   getMonitoringsByRisk,
   getMonitoringsByMitigation,
+
+  submitMonitoringForVerification,
+  verifikasiMonitoringHistory,
+  approveMonitoringHistory,
+  tolakMonitoringHistory,
+  getHistoryByMonitoring,
+  getMonitoringHistoryDetail,
 };
