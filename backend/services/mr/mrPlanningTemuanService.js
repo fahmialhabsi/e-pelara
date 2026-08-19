@@ -519,6 +519,27 @@ const createRevisionFromApprovedTemuan = async ({ temuanId, body = {}, user } = 
       { transaction },
     );
 
+    // B03-F01 corrective (Operational UAT Module B): saat Temuan yang sudah
+    // Disetujui direvisi kembali ke draft, Rekomendasi anak yang aktif harus
+    // disinkronkan DALAM TRANSAKSI YANG SAMA — kalau tidak, Rekomendasi akan
+    // tertinggal dengan is_locked=true (dikunci saat approveHistory di baris
+    // ~530) padahal Temuan induknya sudah kembali draft, sehingga
+    // updateDraftRekomendasi menolak edit yang sah selama siklus revisi.
+    // Rekomendasi tidak punya approval sendiri dan selalu mengikuti status
+    // Temuan induknya (lihat komentar di createRekomendasi/approveHistory),
+    // jadi status_revisi anak disinkronkan ke "draft" juga — bukan hanya
+    // is_locked — agar representasi status anak tidak berkontradiksi dengan
+    // status Temuan induk yang sebenarnya. Hanya baris AKTIF milik Temuan ini
+    // yang disentuh; Rekomendasi tidak aktif (dibatalkan) dan milik Temuan
+    // lain tidak diubah.
+    await MrPlanningTemuanRekomendasi.update(
+      { is_locked: false, status_revisi: "draft" },
+      {
+        where: { mr_planning_temuan_id: temuan.id, is_active: true },
+        transaction,
+      },
+    );
+
     const historyPayload = buildHistoryPayload({
       activeRecord: temuan,
       entityType: "temuan",
@@ -550,8 +571,65 @@ const createRevisionFromApprovedTemuan = async ({ temuanId, body = {}, user } = 
   return temuan;
 };
 
-const verifikasiHistory = ({ historyId, userId, note, request }) =>
-  mrApprovalService.verifikasiHistory({
+// Sprint 12 -- MR Approval Engine Shared OPD Boundary Hardening: mrApprovalService's
+// shared boundary check unconditionally uses the Risk/OpdPenanggungJawab-namespace
+// resolver (resolveMrPlanningRiskOpdBoundary), regardless of which entity family
+// calls it. MrPlanningTemuan.opd_id DOES exist, but it lives in the RenstraOPD.id
+// namespace (inherited from the parent LHP -- see createTemuanFromLhp and the
+// Sprint 8 comment above), not OpdPenanggungJawab.id. Delegating straight to
+// mrApprovalService.verifikasiHistory would therefore run an unreliable/incorrect
+// namespace comparison rather than a clean deny. Per CEA decision, do NOT modify
+// mrApprovalService.js. Instead resolve and authorize using the already-imported,
+// namespace-correct resolveMrPlanningLhpOpdBoundary HERE, in isolation, BEFORE
+// delegating to the unmodified shared approval engine. On DENY,
+// mrApprovalService.verifikasiHistory is never invoked -- zero mutation. Pattern
+// mirrors Sprint 9 S9-07 (mrPlanningTindakLanjutService.js) and Sprint 12's
+// Mitigation/Monitoring fixes.
+const verifikasiHistory = async ({ historyId, userId, note, request }) => {
+  const history = await mrApprovalService.findHistoryById({
+    HistoryModel: MrPlanningTemuanHistory,
+    historyId,
+  });
+  const activeTemuan = await mrApprovalService.findActiveByHistory({
+    ActiveModel: MrPlanningTemuan,
+    history,
+    historyForeignKey: "mr_planning_temuan_id",
+  });
+
+  const verifikasiTargetOpdId = activeTemuan?.opd_id ?? null;
+
+  // Sprint 12 fail-closed contract: MrPlanningTemuan.opd_id is a real,
+  // always-populated column set at creation (inherited from the parent LHP --
+  // see createTemuanFromLhp), so a null here in practice means ownership
+  // resolution failed (history/active-record lookup went wrong), not a
+  // legitimate not-yet-set case. Must DENY, never silently fall through to
+  // resolveMrPlanningLhpOpdBoundary's own "null = defer/allow" behavior.
+  // SUPER_ADMIN is still exempted below via the boundary resolver itself
+  // (tenant-wide by design), consistent with every other OPD boundary check.
+  if (
+    verifikasiTargetOpdId === null &&
+    request?.user?.role !== "SUPER_ADMIN"
+  ) {
+    throwMrPlanningLhpOpdBoundaryError({
+      ok: false,
+      status: 403,
+      error: {
+        message:
+          "Kepemilikan OPD untuk Temuan ini tidak dapat diverifikasi. Aksi ditolak demi keamanan data.",
+        code: "MR_TEMUAN_OPD_BOUNDARY_UNRESOLVED",
+      },
+    });
+  }
+
+  const verifikasiBoundary = await resolveMrPlanningLhpOpdBoundary({
+    user: request?.user ?? null,
+    targetOpdId: verifikasiTargetOpdId,
+  });
+  if (!verifikasiBoundary.ok) {
+    throwMrPlanningLhpOpdBoundaryError(verifikasiBoundary);
+  }
+
+  return mrApprovalService.verifikasiHistory({
     sequelize,
     ActiveModel: MrPlanningTemuan,
     HistoryModel: MrPlanningTemuanHistory,
@@ -561,6 +639,7 @@ const verifikasiHistory = ({ historyId, userId, note, request }) =>
     historyForeignKey: "mr_planning_temuan_id",
     request,
   });
+};
 
 const approveHistory = async ({ historyId, userId, note, request }) => {
   const result = await mrApprovalService.approveHistory({

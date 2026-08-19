@@ -48,6 +48,19 @@ const {
   createHistory,
 } = require("../../helpers/mr/mrHistoryHelper");
 
+// Sprint 12 -- MR Approval Engine Shared OPD Boundary Hardening: mrApprovalService's
+// shared boundary check reads activeRecord.opd_id, a field MrPlanningMitigation does
+// not have -- making that check silently ineffective for this model (it always
+// resolves targetOpdId to null and short-circuits to ok:true). Per CEA decision, do
+// NOT modify mrApprovalService.js. Instead resolve the parent Risk's opd_id and
+// authorize HERE, in isolation, BEFORE delegating to the unmodified shared approval
+// engine. On DENY, mrApprovalService.verifikasiHistory is never invoked -- zero
+// mutation. Pattern mirrors Sprint 9 S9-07 (mrPlanningTindakLanjutService.js).
+const {
+  resolveMrPlanningRiskOpdBoundary,
+  throwMrPlanningRiskOpdBoundaryError,
+} = require("./mrPlanningRiskService");
+
 const MITIGATION_HISTORY_FK = "mr_planning_mitigation_id";
 
 const MATRIX_CODE = "MR_5X5_DEFAULT";
@@ -893,8 +906,72 @@ const submitMitigationForVerification = async ({ id, userId, note } = {}) => {
   });
 };
 
-const verifikasiMitigationHistory = ({ historyId, userId, note, request }) =>
-  mrApprovalService.verifikasiHistory({
+// Resolve the authoritative owning OPD for a Mitigation active record via its
+// parent Risk (MrPlanningMitigation has no opd_id of its own; no Sequelize
+// association alias exists for it either, so this follows the same direct
+// findByPk-by-foreign-key pattern already used by getRiskWithContext in this
+// file rather than an unverified `include`). Returns null if the Mitigation
+// or its parent Risk cannot be resolved, or if the Risk has no opd_id -- the
+// caller MUST treat null as ownership-resolution failure and fail closed
+// (Sprint 12 contract), NOT rely on resolveMrPlanningRiskOpdBoundary's own
+// null-target "defer" behavior (that behavior exists for its original
+// Risk-record call sites where null legitimately means "not found yet, let
+// normal 404/422 validation handle it" -- not applicable here).
+const resolveMitigationTargetOpdId = async (mitigationId) => {
+  if (!mitigationId) return null;
+  const mitigation = await MrPlanningMitigation.findByPk(mitigationId, {
+    attributes: ["id", "mr_planning_risk_id"],
+  });
+  if (!mitigation?.mr_planning_risk_id) return null;
+  const risk = await MrPlanningRisk.findByPk(mitigation.mr_planning_risk_id, {
+    attributes: ["id", "opd_id"],
+  });
+  return risk?.opd_id ?? null;
+};
+
+const verifikasiMitigationHistory = async ({ historyId, userId, note, request }) => {
+  const history = await mrApprovalService.findHistoryById({
+    HistoryModel: MrPlanningMitigationHistory,
+    historyId,
+  });
+  const activeMitigation = await mrApprovalService.findActiveByHistory({
+    ActiveModel: MrPlanningMitigation,
+    history,
+    historyForeignKey: MITIGATION_HISTORY_FK,
+  });
+
+  const verifikasiTargetOpdId = await resolveMitigationTargetOpdId(activeMitigation?.id ?? null);
+
+  // Sprint 12 fail-closed contract: ownership resolution failure (parent
+  // Risk/Mitigation missing or has no opd_id) must DENY, never silently
+  // fall through to resolveMrPlanningRiskOpdBoundary's own "null = defer/
+  // allow" behavior. SUPER_ADMIN is still exempted below via the boundary
+  // resolver itself (tenant-wide by design), consistent with every other
+  // OPD boundary check in this codebase.
+  if (
+    verifikasiTargetOpdId === null &&
+    request?.user?.role !== "SUPER_ADMIN"
+  ) {
+    throwMrPlanningRiskOpdBoundaryError({
+      ok: false,
+      status: 403,
+      error: {
+        message:
+          "Kepemilikan OPD untuk Rencana Tindak Pengendalian ini tidak dapat diverifikasi. Aksi ditolak demi keamanan data.",
+        code: "MR_MITIGATION_OPD_BOUNDARY_UNRESOLVED",
+      },
+    });
+  }
+
+  const verifikasiBoundary = await resolveMrPlanningRiskOpdBoundary({
+    user: request?.user ?? null,
+    targetOpdId: verifikasiTargetOpdId,
+  });
+  if (!verifikasiBoundary.ok) {
+    throwMrPlanningRiskOpdBoundaryError(verifikasiBoundary);
+  }
+
+  return mrApprovalService.verifikasiHistory({
     sequelize,
     ActiveModel: MrPlanningMitigation,
     HistoryModel: MrPlanningMitigationHistory,
@@ -904,6 +981,7 @@ const verifikasiMitigationHistory = ({ historyId, userId, note, request }) =>
     historyForeignKey: MITIGATION_HISTORY_FK,
     request,
   });
+};
 
 const approveMitigationHistory = ({ historyId, userId, note, request }) =>
   mrApprovalService.approveHistory({

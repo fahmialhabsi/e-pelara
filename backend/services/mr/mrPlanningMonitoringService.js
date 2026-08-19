@@ -46,6 +46,20 @@ const {
 
 const MONITORING_HISTORY_FK = "mr_planning_monitoring_id";
 
+// Sprint 12 -- MR Approval Engine Shared OPD Boundary Hardening: mrApprovalService's
+// shared boundary check reads activeRecord.opd_id, a field MrPlanningMonitoring does
+// not have -- making that check silently ineffective for this model (it always
+// resolves targetOpdId to null and short-circuits to ok:true). Per CEA decision, do
+// NOT modify mrApprovalService.js. Instead resolve the owning Risk's opd_id and
+// authorize HERE, in isolation, BEFORE delegating to the unmodified shared approval
+// engine. On DENY, mrApprovalService.verifikasiHistory is never invoked -- zero
+// mutation. Pattern mirrors Sprint 9 S9-07 (mrPlanningTindakLanjutService.js) and
+// Sprint 12's Mitigation fix (mrPlanningMitigationService.js).
+const {
+  resolveMrPlanningRiskOpdBoundary,
+  throwMrPlanningRiskOpdBoundaryError,
+} = require("./mrPlanningRiskService");
+
 const MATRIX_CODE = "MR_5X5_DEFAULT";
 
 const ERROR_CODE = "MR_MONITORING_VALIDATION_ERROR";
@@ -1459,8 +1473,69 @@ const submitMonitoringForVerification = async ({ id, userId, note } = {}) => {
   });
 };
 
-const verifikasiMonitoringHistory = ({ historyId, userId, note, request }) =>
-  mrApprovalService.verifikasiHistory({
+// Resolve the authoritative owning OPD for a Monitoring active record via its
+// owning Risk (MrPlanningMonitoring has no opd_id of its own; mr_planning_risk_id
+// is a direct FK on the record itself, unlike Mitigation which required an extra
+// hop -- Monitoring can attach to a Mitigation optionally, but the risk linkage is
+// always present and authoritative regardless). Follows the same direct
+// findByPk-by-foreign-key pattern already used elsewhere in this file, not an
+// unverified Sequelize association `include`. Returns null if the Monitoring or
+// its Risk cannot be resolved, or if the Risk has no opd_id -- the caller MUST
+// treat null as ownership-resolution failure and fail closed (Sprint 12 contract).
+const resolveMonitoringTargetOpdId = async (monitoringId) => {
+  if (!monitoringId) return null;
+  const monitoring = await MrPlanningMonitoring.findByPk(monitoringId, {
+    attributes: ["id", "mr_planning_risk_id"],
+  });
+  if (!monitoring?.mr_planning_risk_id) return null;
+  const risk = await MrPlanningRisk.findByPk(monitoring.mr_planning_risk_id, {
+    attributes: ["id", "opd_id"],
+  });
+  return risk?.opd_id ?? null;
+};
+
+const verifikasiMonitoringHistory = async ({ historyId, userId, note, request }) => {
+  const history = await mrApprovalService.findHistoryById({
+    HistoryModel: MrPlanningMonitoringHistory,
+    historyId,
+  });
+  const activeMonitoring = await mrApprovalService.findActiveByHistory({
+    ActiveModel: MrPlanningMonitoring,
+    history,
+    historyForeignKey: MONITORING_HISTORY_FK,
+  });
+
+  const verifikasiTargetOpdId = await resolveMonitoringTargetOpdId(activeMonitoring?.id ?? null);
+
+  // Sprint 12 fail-closed contract: ownership resolution failure (parent Risk/
+  // Monitoring missing or has no opd_id) must DENY, never silently fall through
+  // to resolveMrPlanningRiskOpdBoundary's own "null = defer/allow" behavior.
+  // SUPER_ADMIN is still exempted below via the boundary resolver itself
+  // (tenant-wide by design), consistent with every other OPD boundary check.
+  if (
+    verifikasiTargetOpdId === null &&
+    request?.user?.role !== "SUPER_ADMIN"
+  ) {
+    throwMrPlanningRiskOpdBoundaryError({
+      ok: false,
+      status: 403,
+      error: {
+        message:
+          "Kepemilikan OPD untuk Monitoring ini tidak dapat diverifikasi. Aksi ditolak demi keamanan data.",
+        code: "MR_MONITORING_OPD_BOUNDARY_UNRESOLVED",
+      },
+    });
+  }
+
+  const verifikasiBoundary = await resolveMrPlanningRiskOpdBoundary({
+    user: request?.user ?? null,
+    targetOpdId: verifikasiTargetOpdId,
+  });
+  if (!verifikasiBoundary.ok) {
+    throwMrPlanningRiskOpdBoundaryError(verifikasiBoundary);
+  }
+
+  return mrApprovalService.verifikasiHistory({
     sequelize,
     ActiveModel: MrPlanningMonitoring,
     HistoryModel: MrPlanningMonitoringHistory,
@@ -1470,6 +1545,7 @@ const verifikasiMonitoringHistory = ({ historyId, userId, note, request }) =>
     historyForeignKey: MONITORING_HISTORY_FK,
     request,
   });
+};
 
 const approveMonitoringHistory = ({ historyId, userId, note, request }) =>
   mrApprovalService.approveHistory({

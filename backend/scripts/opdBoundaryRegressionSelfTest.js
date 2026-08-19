@@ -8265,6 +8265,431 @@ console.log('=== SPRINT 11 -- MR Planning Context Workflow-Transition OPD Bounda
   );
 }
 
+
+console.log('=== SPRINT 12 -- MR Approval Engine Shared OPD Boundary Hardening (verifikasiMitigationHistory/verifikasiMonitoringHistory/Temuan verifikasiHistory) ===');
+
+{
+  const SENTINEL_UPDATE = Symbol('SENTINEL_S12_UPDATE_REACHED');
+
+  // -------------------- MITIGATION --------------------
+  {
+    const mitigationServicePath = require.resolve('../services/mr/mrPlanningMitigationService');
+    const riskServicePath = require.resolve('../services/mr/mrPlanningRiskService');
+    const approvalServicePath = require.resolve('../services/mr/mrApprovalService');
+
+    const freshMitigationService = () => {
+      delete require.cache[riskServicePath];
+      delete require.cache[approvalServicePath];
+      delete require.cache[mitigationServicePath];
+      return require('../services/mr/mrPlanningMitigationService');
+    };
+
+    const fakeHistory = { id: 501, mr_planning_mitigation_id: 77, status_revisi: 'draft', get(o) { return { ...this, get: undefined, update: undefined }; }, update: async () => { throw SENTINEL_UPDATE; } };
+    const fakeMitigationRow = (riskId) => ({
+      id: 77,
+      mr_planning_risk_id: riskId,
+      get(o) { return { ...this, get: undefined, update: undefined }; },
+      update: async () => { throw SENTINEL_UPDATE; },
+    });
+    const fakeRiskRow = (opdId) => ({ id: 33, opd_id: opdId, get(o) { return { ...this, get: undefined }; } });
+
+    await test(
+      'mrPlanningMitigationService.verifikasiMitigationHistory -- parent Risk milik OPD LAIN -> DITOLAK 403, mrApprovalService.verifikasiHistory TIDAK dipanggil',
+      async () => {
+        let updateCalled = false;
+        await withStubs(
+          [
+            [models.MrPlanningMitigationHistory, 'findByPk', async () => fakeHistory],
+            [models.MrPlanningMitigation, 'findByPk', async () => {
+              const row = fakeMitigationRow(33);
+              row.update = async () => { updateCalled = true; throw SENTINEL_UPDATE; };
+              return row;
+            }],
+            [models.MrPlanningRisk, 'findByPk', async () => fakeRiskRow(999)],
+            [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 33 })],
+          ],
+          async () => {
+            const svc = freshMitigationService();
+            try {
+              await svc.verifikasiMitigationHistory({ historyId: 501, userId: 10, note: 'x', request: { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } } });
+              assert.fail('Seharusnya melempar error boundary OPD, bukan berhasil');
+            } catch (error) {
+              assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+              assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', `Expected MR_PLANNING_RISK_OPD_FORBIDDEN, got ${error.details?.code}`);
+            }
+          }
+        );
+        assert.strictEqual(updateCalled, false, 'Mitigation.update TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      }
+    );
+
+    await test(
+      'mrPlanningMitigationService.verifikasiMitigationHistory -- parent Risk milik OPD SENDIRI -> boundary MENGIZINKAN, mrApprovalService.verifikasiHistory dipanggil (mutation sentinel reached)',
+      async () => {
+        const originalTransaction = models.sequelize.transaction;
+        models.sequelize.transaction = async () => ({ commit: async () => {}, rollback: async () => {} });
+        try {
+          await withStubs(
+            [
+              [models.MrPlanningMitigationHistory, 'findByPk', async () => fakeHistory],
+              [models.MrPlanningMitigation, 'findByPk', async () => fakeMitigationRow(33)],
+              [models.MrPlanningRisk, 'findByPk', async () => fakeRiskRow(33)],
+              [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 33 })],
+            ],
+            async () => {
+              const svc = freshMitigationService();
+              try {
+                await svc.verifikasiMitigationHistory({ historyId: 501, userId: 10, note: 'x', request: { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } } });
+                assert.fail('Seharusnya menembus boundary check dan mencapai mutation sentinel');
+              } catch (error) {
+                assert.strictEqual(error, SENTINEL_UPDATE, `Expected SENTINEL_UPDATE (proof mutation path reached), got ${typeof error === 'symbol' ? String(error) : (error?.message || error)}`);
+              }
+            }
+          );
+        } finally {
+          models.sequelize.transaction = originalTransaction;
+        }
+      }
+    );
+
+    await test(
+      'mrPlanningMitigationService.verifikasiMitigationHistory -- SUPER_ADMIN dengan target OPD LAIN -> boundary MENGIZINKAN (tenant-wide)',
+      async () => {
+        const originalTransaction = models.sequelize.transaction;
+        models.sequelize.transaction = async () => ({ commit: async () => {}, rollback: async () => {} });
+        try {
+          await withStubs(
+            [
+              [models.MrPlanningMitigationHistory, 'findByPk', async () => fakeHistory],
+              [models.MrPlanningMitigation, 'findByPk', async () => fakeMitigationRow(33)],
+              [models.MrPlanningRisk, 'findByPk', async () => fakeRiskRow(999)],
+            ],
+            async () => {
+              const svc = freshMitigationService();
+              try {
+                await svc.verifikasiMitigationHistory({ historyId: 501, userId: 10, note: 'x', request: { user: { id: 10, role: 'SUPER_ADMIN', opd: null } } });
+                assert.fail('Seharusnya menembus boundary check (SUPER_ADMIN) dan mencapai mutation sentinel');
+              } catch (error) {
+                assert.strictEqual(error, SENTINEL_UPDATE, `Expected SENTINEL_UPDATE (SUPER_ADMIN bypass proof), got ${typeof error === 'symbol' ? String(error) : (error?.message || error)}`);
+              }
+            }
+          );
+        } finally {
+          models.sequelize.transaction = originalTransaction;
+        }
+      }
+    );
+
+    await test(
+      'mrPlanningMitigationService.verifikasiMitigationHistory -- parent Risk TIDAK DAPAT diresolusi (FAIL CLOSED) -> DITOLAK 403, mutation TIDAK dipanggil',
+      async () => {
+        let updateCalled = false;
+        await withStubs(
+          [
+            [models.MrPlanningMitigationHistory, 'findByPk', async () => fakeHistory],
+            [models.MrPlanningMitigation, 'findByPk', async () => {
+              const row = fakeMitigationRow(null); // no mr_planning_risk_id -- broken chain
+              row.update = async () => { updateCalled = true; throw SENTINEL_UPDATE; };
+              return row;
+            }],
+            [models.MrPlanningRisk, 'findByPk', async () => { throw new Error('should not be called when FK is null'); }],
+          ],
+          async () => {
+            const svc = freshMitigationService();
+            try {
+              await svc.verifikasiMitigationHistory({ historyId: 501, userId: 10, note: 'x', request: { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } } });
+              assert.fail('Seharusnya fail-closed (DENY), bukan berhasil');
+            } catch (error) {
+              assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+              assert.strictEqual(error.details?.code, 'MR_MITIGATION_OPD_BOUNDARY_UNRESOLVED', `Expected MR_MITIGATION_OPD_BOUNDARY_UNRESOLVED, got ${error.details?.code}`);
+            }
+          }
+        );
+        assert.strictEqual(updateCalled, false, 'Mitigation.update TIDAK BOLEH dipanggil ketika ownership resolution gagal (fail closed)');
+      }
+    );
+  }
+
+  // -------------------- MONITORING --------------------
+  {
+    const monitoringServicePath = require.resolve('../services/mr/mrPlanningMonitoringService');
+    const riskServicePath = require.resolve('../services/mr/mrPlanningRiskService');
+    const approvalServicePath = require.resolve('../services/mr/mrApprovalService');
+
+    const freshMonitoringService = () => {
+      delete require.cache[riskServicePath];
+      delete require.cache[approvalServicePath];
+      delete require.cache[monitoringServicePath];
+      return require('../services/mr/mrPlanningMonitoringService');
+    };
+
+    const fakeHistory = { id: 601, mr_planning_monitoring_id: 88, status_revisi: 'draft', get(o) { return { ...this, get: undefined, update: undefined }; }, update: async () => { throw SENTINEL_UPDATE; } };
+    const fakeMonitoringRow = (riskId) => ({
+      id: 88,
+      mr_planning_risk_id: riskId,
+      get(o) { return { ...this, get: undefined, update: undefined }; },
+      update: async () => { throw SENTINEL_UPDATE; },
+    });
+    const fakeRiskRow = (opdId) => ({ id: 44, opd_id: opdId, get(o) { return { ...this, get: undefined }; } });
+
+    await test(
+      'mrPlanningMonitoringService.verifikasiMonitoringHistory -- owning Risk milik OPD LAIN -> DITOLAK 403, Monitoring.update TIDAK dipanggil',
+      async () => {
+        let updateCalled = false;
+        await withStubs(
+          [
+            [models.MrPlanningMonitoringHistory, 'findByPk', async () => fakeHistory],
+            [models.MrPlanningMonitoring, 'findByPk', async () => {
+              const row = fakeMonitoringRow(44);
+              row.update = async () => { updateCalled = true; throw SENTINEL_UPDATE; };
+              return row;
+            }],
+            [models.MrPlanningRisk, 'findByPk', async () => fakeRiskRow(999)],
+            [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 44 })],
+          ],
+          async () => {
+            const svc = freshMonitoringService();
+            try {
+              await svc.verifikasiMonitoringHistory({ historyId: 601, userId: 10, note: 'x', request: { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } } });
+              assert.fail('Seharusnya melempar error boundary OPD, bukan berhasil');
+            } catch (error) {
+              assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+              assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN', `Expected MR_PLANNING_RISK_OPD_FORBIDDEN, got ${error.details?.code}`);
+            }
+          }
+        );
+        assert.strictEqual(updateCalled, false, 'Monitoring.update TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      }
+    );
+
+    await test(
+      'mrPlanningMonitoringService.verifikasiMonitoringHistory -- owning Risk milik OPD SENDIRI -> boundary MENGIZINKAN, mutation sentinel reached',
+      async () => {
+        const originalTransaction = models.sequelize.transaction;
+        models.sequelize.transaction = async () => ({ commit: async () => {}, rollback: async () => {} });
+        try {
+          await withStubs(
+            [
+              [models.MrPlanningMonitoringHistory, 'findByPk', async () => fakeHistory],
+              [models.MrPlanningMonitoring, 'findByPk', async () => fakeMonitoringRow(44)],
+              [models.MrPlanningRisk, 'findByPk', async () => fakeRiskRow(44)],
+              [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 44 })],
+            ],
+            async () => {
+              const svc = freshMonitoringService();
+              try {
+                await svc.verifikasiMonitoringHistory({ historyId: 601, userId: 10, note: 'x', request: { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } } });
+                assert.fail('Seharusnya menembus boundary check dan mencapai mutation sentinel');
+              } catch (error) {
+                assert.strictEqual(error, SENTINEL_UPDATE, `Expected SENTINEL_UPDATE, got ${typeof error === 'symbol' ? String(error) : (error?.message || error)}`);
+              }
+            }
+          );
+        } finally {
+          models.sequelize.transaction = originalTransaction;
+        }
+      }
+    );
+
+    await test(
+      'mrPlanningMonitoringService.verifikasiMonitoringHistory -- SUPER_ADMIN dengan target OPD LAIN -> boundary MENGIZINKAN (tenant-wide)',
+      async () => {
+        const originalTransaction = models.sequelize.transaction;
+        models.sequelize.transaction = async () => ({ commit: async () => {}, rollback: async () => {} });
+        try {
+          await withStubs(
+            [
+              [models.MrPlanningMonitoringHistory, 'findByPk', async () => fakeHistory],
+              [models.MrPlanningMonitoring, 'findByPk', async () => fakeMonitoringRow(44)],
+              [models.MrPlanningRisk, 'findByPk', async () => fakeRiskRow(999)],
+            ],
+            async () => {
+              const svc = freshMonitoringService();
+              try {
+                await svc.verifikasiMonitoringHistory({ historyId: 601, userId: 10, note: 'x', request: { user: { id: 10, role: 'SUPER_ADMIN', opd: null } } });
+                assert.fail('Seharusnya menembus boundary check (SUPER_ADMIN) dan mencapai mutation sentinel');
+              } catch (error) {
+                assert.strictEqual(error, SENTINEL_UPDATE, `Expected SENTINEL_UPDATE (SUPER_ADMIN bypass proof), got ${typeof error === 'symbol' ? String(error) : (error?.message || error)}`);
+              }
+            }
+          );
+        } finally {
+          models.sequelize.transaction = originalTransaction;
+        }
+      }
+    );
+
+    await test(
+      'mrPlanningMonitoringService.verifikasiMonitoringHistory -- owning Risk TIDAK DAPAT diresolusi (FAIL CLOSED) -> DITOLAK 403, mutation TIDAK dipanggil',
+      async () => {
+        let updateCalled = false;
+        await withStubs(
+          [
+            [models.MrPlanningMonitoringHistory, 'findByPk', async () => fakeHistory],
+            [models.MrPlanningMonitoring, 'findByPk', async () => {
+              const row = fakeMonitoringRow(null);
+              row.update = async () => { updateCalled = true; throw SENTINEL_UPDATE; };
+              return row;
+            }],
+            [models.MrPlanningRisk, 'findByPk', async () => { throw new Error('should not be called when FK is null'); }],
+          ],
+          async () => {
+            const svc = freshMonitoringService();
+            try {
+              await svc.verifikasiMonitoringHistory({ historyId: 601, userId: 10, note: 'x', request: { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } } });
+              assert.fail('Seharusnya fail-closed (DENY), bukan berhasil');
+            } catch (error) {
+              assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+              assert.strictEqual(error.details?.code, 'MR_MONITORING_OPD_BOUNDARY_UNRESOLVED', `Expected MR_MONITORING_OPD_BOUNDARY_UNRESOLVED, got ${error.details?.code}`);
+            }
+          }
+        );
+        assert.strictEqual(updateCalled, false, 'Monitoring.update TIDAK BOLEH dipanggil ketika ownership resolution gagal (fail closed)');
+      }
+    );
+  }
+
+  // -------------------- TEMUAN --------------------
+  {
+    const temuanServicePath = require.resolve('../services/mr/mrPlanningTemuanService');
+    const lhpServicePath = require.resolve('../services/mr/mrPlanningLhpService');
+    const approvalServicePath = require.resolve('../services/mr/mrApprovalService');
+
+    const freshTemuanService = () => {
+      delete require.cache[lhpServicePath];
+      delete require.cache[approvalServicePath];
+      delete require.cache[temuanServicePath];
+      return require('../services/mr/mrPlanningTemuanService');
+    };
+
+    const fakeHistory = { id: 701, mr_planning_temuan_id: 99, status_revisi: 'draft', get(o) { return { ...this, get: undefined, update: undefined }; }, update: async () => { throw SENTINEL_UPDATE; } };
+    const fakeTemuanRow = (opdId) => ({
+      id: 99,
+      opd_id: opdId,
+      get(o) { return { ...this, get: undefined, update: undefined }; },
+      update: async () => { throw SENTINEL_UPDATE; },
+    });
+
+    await test(
+      'mrPlanningTemuanService.verifikasiHistory -- Temuan milik OPD LAIN (namespace RenstraOPD.id) -> DITOLAK 403, Temuan.update TIDAK dipanggil',
+      async () => {
+        let updateCalled = false;
+        await withStubs(
+          [
+            [models.MrPlanningTemuanHistory, 'findByPk', async () => fakeHistory],
+            [models.MrPlanningTemuan, 'findByPk', async () => {
+              const row = fakeTemuanRow(999);
+              row.update = async () => { updateCalled = true; throw SENTINEL_UPDATE; };
+              return row;
+            }],
+            [models.RenstraOPD, 'findOne', async () => ({ id: 55 })],
+          ],
+          async () => {
+            const svc = freshTemuanService();
+            try {
+              await svc.verifikasiHistory({ historyId: 701, userId: 10, note: 'x', request: { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } } });
+              assert.fail('Seharusnya melempar error boundary OPD, bukan berhasil');
+            } catch (error) {
+              assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+              assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN', `Expected MR_LHP_TEMUAN_OPD_FORBIDDEN, got ${error.code}`);
+            }
+          }
+        );
+        assert.strictEqual(updateCalled, false, 'Temuan.update TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+      }
+    );
+
+    await test(
+      'mrPlanningTemuanService.verifikasiHistory -- Temuan milik OPD SENDIRI (namespace RenstraOPD.id) -> boundary MENGIZINKAN, mutation sentinel reached',
+      async () => {
+        const originalTransaction = models.sequelize.transaction;
+        models.sequelize.transaction = async () => ({ commit: async () => {}, rollback: async () => {} });
+        try {
+          await withStubs(
+            [
+              [models.MrPlanningTemuanHistory, 'findByPk', async () => fakeHistory],
+              [models.MrPlanningTemuan, 'findByPk', async () => fakeTemuanRow(55)],
+              [models.RenstraOPD, 'findOne', async () => ({ id: 55 })],
+              // mrApprovalService's OWN internal boundary check (Risk/OpdPenanggungJawab
+              // namespace, unmodified per CEA decision) also runs on activeTemuan.opd_id
+              // once our pre-check passes -- stub it to match so this test proves the
+              // full path (our correct pre-check + the existing shared-engine internal
+              // check) both succeed and reach the mutation sentinel.
+              [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 55 })],
+            ],
+            async () => {
+              const svc = freshTemuanService();
+              try {
+                await svc.verifikasiHistory({ historyId: 701, userId: 10, note: 'x', request: { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } } });
+                assert.fail('Seharusnya menembus boundary check dan mencapai mutation sentinel');
+              } catch (error) {
+                assert.strictEqual(error, SENTINEL_UPDATE, `Expected SENTINEL_UPDATE, got ${typeof error === 'symbol' ? String(error) : (error?.message || error)}`);
+              }
+            }
+          );
+        } finally {
+          models.sequelize.transaction = originalTransaction;
+        }
+      }
+    );
+
+    await test(
+      'mrPlanningTemuanService.verifikasiHistory -- SUPER_ADMIN dengan target OPD LAIN -> boundary MENGIZINKAN (tenant-wide)',
+      async () => {
+        const originalTransaction = models.sequelize.transaction;
+        models.sequelize.transaction = async () => ({ commit: async () => {}, rollback: async () => {} });
+        try {
+          await withStubs(
+            [
+              [models.MrPlanningTemuanHistory, 'findByPk', async () => fakeHistory],
+              [models.MrPlanningTemuan, 'findByPk', async () => fakeTemuanRow(999)],
+            ],
+            async () => {
+              const svc = freshTemuanService();
+              try {
+                await svc.verifikasiHistory({ historyId: 701, userId: 10, note: 'x', request: { user: { id: 10, role: 'SUPER_ADMIN', opd: null } } });
+                assert.fail('Seharusnya menembus boundary check (SUPER_ADMIN) dan mencapai mutation sentinel');
+              } catch (error) {
+                assert.strictEqual(error, SENTINEL_UPDATE, `Expected SENTINEL_UPDATE (SUPER_ADMIN bypass proof), got ${typeof error === 'symbol' ? String(error) : (error?.message || error)}`);
+              }
+            }
+          );
+        } finally {
+          models.sequelize.transaction = originalTransaction;
+        }
+      }
+    );
+
+    await test(
+      'mrPlanningTemuanService.verifikasiHistory -- Temuan.opd_id TIDAK DAPAT diresolusi (FAIL CLOSED) -> DITOLAK 403, mutation TIDAK dipanggil',
+      async () => {
+        let updateCalled = false;
+        await withStubs(
+          [
+            [models.MrPlanningTemuanHistory, 'findByPk', async () => fakeHistory],
+            [models.MrPlanningTemuan, 'findByPk', async () => {
+              const row = fakeTemuanRow(null);
+              row.update = async () => { updateCalled = true; throw SENTINEL_UPDATE; };
+              return row;
+            }],
+          ],
+          async () => {
+            const svc = freshTemuanService();
+            try {
+              await svc.verifikasiHistory({ historyId: 701, userId: 10, note: 'x', request: { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } } });
+              assert.fail('Seharusnya fail-closed (DENY), bukan berhasil');
+            } catch (error) {
+              assert.strictEqual(error.statusCode, 403, `Expected 403, got ${error.statusCode}`);
+              assert.strictEqual(error.code, 'MR_TEMUAN_OPD_BOUNDARY_UNRESOLVED', `Expected MR_TEMUAN_OPD_BOUNDARY_UNRESOLVED, got ${error.code}`);
+            }
+          }
+        );
+        assert.strictEqual(updateCalled, false, 'Temuan.update TIDAK BOLEH dipanggil ketika ownership resolution gagal (fail closed)');
+      }
+    );
+  }
+}
+
 } // end runAllTests
 
 runAllTests().then(() => {
