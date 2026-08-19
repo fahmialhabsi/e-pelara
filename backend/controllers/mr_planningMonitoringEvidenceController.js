@@ -70,6 +70,7 @@ const uploadEvidence = async (req, res) => {
       body: req.body,
       file: req.file,
       userId,
+      user: req.user,
     });
 
     return createdResponse({
@@ -90,7 +91,9 @@ const uploadEvidence = async (req, res) => {
 
 const getEvidencesByMonitoring = async (req, res) => {
   try {
-    const result = await evidenceService.getEvidencesByMonitoring(req.params.id);
+    const result = await evidenceService.getEvidencesByMonitoring(req.params.id, {
+      user: req.user,
+    });
 
     return successResponse({
       res,
@@ -116,7 +119,8 @@ const getEvidencesByMonitoring = async (req, res) => {
 const getEvidenceDetail = async (req, res) => {
   try {
     const result = await evidenceService.getEvidenceDetail(
-      req.params.evidenceId
+      req.params.evidenceId,
+      { user: req.user }
     );
 
     return successResponse({
@@ -144,6 +148,7 @@ const downloadEvidence = async (req, res) => {
     const result = await evidenceService.prepareEvidenceDownload({
       evidenceId: req.params.evidenceId,
       mode: req.query?.mode,
+      user: req.user,
     });
 
     const data = result?.data || {};
@@ -194,6 +199,7 @@ const cancelEvidence = async (req, res) => {
       evidenceId: req.params.evidenceId,
       body: req.body,
       userId,
+      user: req.user,
     });
 
     return successResponse({

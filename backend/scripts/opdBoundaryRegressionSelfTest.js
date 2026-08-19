@@ -10223,6 +10223,1313 @@ console.log('=== SPRINT 13 -- MR RiskAnalysis + RootCause OPD Boundary Hardening
 
 }
 
+console.log('=== SPRINT 14 -- MR Mitigation Document + Monitoring Evidence OPD Boundary Hardening (createDocument/listDocumentsByMitigation/getDocumentDetail/cancelDocument/getDocumentForDownload, uploadEvidence/getEvidencesByMonitoring/getEvidenceDetail/prepareEvidenceDownload/cancelEvidence) ===');
+
+{
+  const riskServicePath = require.resolve('../services/mr/mrPlanningRiskService');
+  const mitigationDocServicePath = require.resolve('../services/mr/mrPlanningMitigationDocumentService');
+  const monitoringEvidenceServicePath = require.resolve('../services/mr/mrPlanningMonitoringEvidenceService');
+
+  const freshMitigationDocService = () => {
+    delete require.cache[riskServicePath];
+    delete require.cache[mitigationDocServicePath];
+    return require('../services/mr/mrPlanningMitigationDocumentService');
+  };
+
+  const freshMonitoringEvidenceService = () => {
+    delete require.cache[riskServicePath];
+    delete require.cache[monitoringEvidenceServicePath];
+    return require('../services/mr/mrPlanningMonitoringEvidenceService');
+  };
+
+  const fs = require('fs');
+
+  const fakeTransaction = () => ({ LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} });
+
+  const SENTINEL_CREATE = Symbol('S14_SENTINEL_CREATE_REACHED');
+  const SENTINEL_UPDATE = Symbol('S14_SENTINEL_UPDATE_REACHED');
+  const SENTINEL_FINDALL = Symbol('S14_SENTINEL_FINDALL_REACHED');
+
+  const fakeRisk = (opdId) => ({
+    id: 1,
+    opd_id: opdId,
+    get() { return { id: 1, opd_id: opdId }; },
+  });
+
+  // =====================================================================
+  // MITIGATION DOCUMENT -- createDocument (mutation)
+  // =====================================================================
+
+  await test(
+    'mrPlanningMitigationDocumentService.createDocument -- Mitigation induk (via Risk) milik OPD SENDIRI -> boundary MENGIZINKAN, create TERCAPAI (OWN_OPD_ALLOW)',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async (fn) => fn(fakeTransaction());
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMitigation,
+            'findOne',
+            async () => ({
+              id: 5,
+              mr_planning_risk_id: 1,
+              context_id: null,
+              status_dokumen: 'aktif',
+              get() { return { id: 5, mr_planning_risk_id: 1, context_id: null }; },
+            }),
+          ],
+          [models.MrPlanningMitigationDocument, 'create', async () => { createCalled = true; throw SENTINEL_CREATE; }],
+        ],
+        async () => {
+          const svc = freshMitigationDocService();
+          try {
+            await svc.createDocument({
+              mitigationId: 5,
+              body: { document_type: 'RENCANA_AKSI', document_title: 'Judul' },
+              file: { path: '/tmp/x', filename: 'x', mimetype: 'application/pdf', size: 10 },
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar SENTINEL_CREATE atau error validasi lain sebelum benar2 create -- minimal harus mencapai create()');
+          } catch (error) {
+            assert.ok(error === SENTINEL_CREATE || createCalled, 'create() harus tercapai (boundary OPD mengizinkan)');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, true, 'MrPlanningMitigationDocument.create HARUS dipanggil ketika boundary OPD mengizinkan (own-OPD)');
+    }
+  );
+
+  await test(
+    'mrPlanningMitigationDocumentService.createDocument -- Mitigation induk (via Risk) milik OPD LAIN -> DITOLAK 403, create TIDAK dipanggil (FOREIGN_OPD_DENY)',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async (fn) => fn(fakeTransaction());
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMitigation,
+            'findOne',
+            async () => ({
+              id: 5,
+              mr_planning_risk_id: 1,
+              context_id: null,
+              status_dokumen: 'aktif',
+              get() { return { id: 5, mr_planning_risk_id: 1, context_id: null }; },
+            }),
+          ],
+          [models.MrPlanningMitigationDocument, 'create', async () => { createCalled = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshMitigationDocService();
+          try {
+            await svc.createDocument({
+              mitigationId: 5,
+              body: { document_type: 'RENCANA_AKSI', document_title: 'Judul' },
+              file: { path: '/tmp/x', filename: 'x', mimetype: 'application/pdf', size: 10 },
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+            assert.fail('Seharusnya melempar 403 boundary error');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, 'Harus 403');
+            assert.strictEqual(error.details?.code, 'MR_PLANNING_RISK_OPD_FORBIDDEN');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, false, 'MrPlanningMitigationDocument.create TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+    }
+  );
+
+  await test(
+    'mrPlanningMitigationDocumentService.createDocument -- user MISSING (undefined) -> DITOLAK fail-closed, create TIDAK dipanggil (MISSING_USER_FAIL_CLOSED)',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async (fn) => fn(fakeTransaction());
+
+      await withStubs(
+        [
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMitigation,
+            'findOne',
+            async () => ({
+              id: 5,
+              mr_planning_risk_id: 1,
+              context_id: null,
+              status_dokumen: 'aktif',
+              get() { return { id: 5, mr_planning_risk_id: 1, context_id: null }; },
+            }),
+          ],
+          [models.MrPlanningMitigationDocument, 'create', async () => { createCalled = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshMitigationDocService();
+          try {
+            await svc.createDocument({
+              mitigationId: 5,
+              body: { document_type: 'RENCANA_AKSI', document_title: 'Judul' },
+              file: { path: '/tmp/x', filename: 'x', mimetype: 'application/pdf', size: 10 },
+              user: undefined,
+            });
+            assert.fail('Seharusnya melempar 403 boundary error karena user undefined');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, 'Harus 403 (fail-closed, bukan diam2 diizinkan)');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, false, 'create TIDAK BOLEH dipanggil ketika user undefined (missing-user fail-closed)');
+    }
+  );
+
+  await test(
+    'mrPlanningMitigationDocumentService.createDocument -- Risk induk TIDAK DITEMUKAN (ownership unresolved) -> DITOLAK 403 MR_MITIGATION_DOCUMENT_OPD_BOUNDARY_UNRESOLVED, create TIDAK dipanggil',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async (fn) => fn(fakeTransaction());
+
+      await withStubs(
+        [
+          [models.MrPlanningRisk, 'findByPk', async () => null],
+          [
+            models.MrPlanningMitigation,
+            'findOne',
+            async () => ({
+              id: 5,
+              mr_planning_risk_id: 1,
+              context_id: null,
+              status_dokumen: 'aktif',
+              get() { return { id: 5, mr_planning_risk_id: 1, context_id: null }; },
+            }),
+          ],
+          [models.MrPlanningMitigationDocument, 'create', async () => { createCalled = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshMitigationDocService();
+          try {
+            await svc.createDocument({
+              mitigationId: 5,
+              body: { document_type: 'RENCANA_AKSI', document_title: 'Judul' },
+              file: { path: '/tmp/x', filename: 'x', mimetype: 'application/pdf', size: 10 },
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar 403 boundary-unresolved error');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403, 'Harus 403');
+            assert.strictEqual(error.details?.code, 'MR_MITIGATION_DOCUMENT_OPD_BOUNDARY_UNRESOLVED');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, false, 'create TIDAK BOLEH dipanggil ketika ownership Risk tidak dapat diresolusi');
+    }
+  );
+
+  await test(
+    'mrPlanningMitigationDocumentService.createDocument -- SUPER_ADMIN pada OPD LAIN -> boundary MENGIZINKAN (SUPER_ADMIN_FOREIGN_ALLOW)',
+    async () => {
+      let createCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async (fn) => fn(fakeTransaction());
+
+      await withStubs(
+        [
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMitigation,
+            'findOne',
+            async () => ({
+              id: 5,
+              mr_planning_risk_id: 1,
+              context_id: null,
+              status_dokumen: 'aktif',
+              get() { return { id: 5, mr_planning_risk_id: 1, context_id: null }; },
+            }),
+          ],
+          [models.MrPlanningMitigationDocument, 'create', async () => { createCalled = true; throw SENTINEL_CREATE; }],
+        ],
+        async () => {
+          const svc = freshMitigationDocService();
+          try {
+            await svc.createDocument({
+              mitigationId: 5,
+              body: { document_type: 'RENCANA_AKSI', document_title: 'Judul' },
+              file: { path: '/tmp/x', filename: 'x', mimetype: 'application/pdf', size: 10 },
+              user: { id: 1, role: 'SUPER_ADMIN', opd: null },
+            });
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_CREATE, 'create() harus tercapai untuk SUPER_ADMIN lintas OPD');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(createCalled, true, 'SUPER_ADMIN harus tetap bisa create lintas OPD');
+    }
+  );
+
+  // =====================================================================
+  // MITIGATION DOCUMENT -- listDocumentsByMitigation (read/list)
+  // =====================================================================
+
+  await test(
+    'mrPlanningMitigationDocumentService.listDocumentsByMitigation -- OPD SENDIRI -> data DITAMPILKAN',
+    async () => {
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMitigation,
+            'findOne',
+            async () => ({
+              id: 5,
+              mr_planning_risk_id: 1,
+              status_dokumen: 'aktif',
+              get() { return { id: 5, mr_planning_risk_id: 1 }; },
+            }),
+          ],
+          [models.MrPlanningMitigationDocument, 'findAll', async () => { throw SENTINEL_FINDALL; }],
+        ],
+        async () => {
+          const svc = freshMitigationDocService();
+          try {
+            await svc.listDocumentsByMitigation({ mitigationId: 5, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+            assert.fail('Seharusnya mencapai findAll (SENTINEL_FINDALL)');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_FINDALL, 'findAll harus tercapai untuk own-OPD');
+          }
+        }
+      );
+    }
+  );
+
+  await test(
+    'mrPlanningMitigationDocumentService.listDocumentsByMitigation -- OPD LAIN -> DITOLAK 403, findAll TIDAK dipanggil, ZERO data disclosure',
+    async () => {
+      let findAllCalled = false;
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMitigation,
+            'findOne',
+            async () => ({
+              id: 5,
+              mr_planning_risk_id: 1,
+              status_dokumen: 'aktif',
+              get() { return { id: 5, mr_planning_risk_id: 1 }; },
+            }),
+          ],
+          [models.MrPlanningMitigationDocument, 'findAll', async () => { findAllCalled = true; return [{ id: 1 }]; }],
+        ],
+        async () => {
+          const svc = freshMitigationDocService();
+          try {
+            await svc.listDocumentsByMitigation({ mitigationId: 5, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' } });
+            assert.fail('Seharusnya melempar 403');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+      assert.strictEqual(findAllCalled, false, 'findAll TIDAK BOLEH dipanggil -- zero data disclosure untuk foreign-OPD');
+    }
+  );
+
+  await test(
+    'mrPlanningMitigationDocumentService.listDocumentsByMitigation -- user MISSING -> DITOLAK fail-closed, findAll TIDAK dipanggil',
+    async () => {
+      let findAllCalled = false;
+      await withStubs(
+        [
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMitigation,
+            'findOne',
+            async () => ({
+              id: 5,
+              mr_planning_risk_id: 1,
+              status_dokumen: 'aktif',
+              get() { return { id: 5, mr_planning_risk_id: 1 }; },
+            }),
+          ],
+          [models.MrPlanningMitigationDocument, 'findAll', async () => { findAllCalled = true; return [{ id: 1 }]; }],
+        ],
+        async () => {
+          const svc = freshMitigationDocService();
+          try {
+            await svc.listDocumentsByMitigation({ mitigationId: 5, user: undefined });
+            assert.fail('Seharusnya melempar 403 karena user undefined');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+      assert.strictEqual(findAllCalled, false, 'findAll TIDAK BOLEH dipanggil ketika user undefined');
+    }
+  );
+
+  // =====================================================================
+  // MITIGATION DOCUMENT -- getDocumentDetail (read detail)
+  // =====================================================================
+
+  await test(
+    'mrPlanningMitigationDocumentService.getDocumentDetail -- OPD SENDIRI -> detail DITAMPILKAN',
+    async () => {
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMitigationDocument,
+            'findOne',
+            async () => ({
+              id: 7,
+              mr_planning_risk_id: 1,
+              is_active: true,
+              get() { return { id: 7, mr_planning_risk_id: 1, is_active: true }; },
+            }),
+          ],
+        ],
+        async () => {
+          const svc = freshMitigationDocService();
+          const data = await svc.getDocumentDetail({ documentId: 7, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+          assert.strictEqual(data.id, 7);
+        }
+      );
+    }
+  );
+
+  await test(
+    'mrPlanningMitigationDocumentService.getDocumentDetail -- OPD LAIN -> DITOLAK 403, tidak ada disclosure data dokumen',
+    async () => {
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMitigationDocument,
+            'findOne',
+            async () => ({
+              id: 7,
+              mr_planning_risk_id: 1,
+              is_active: true,
+              get() { return { id: 7, mr_planning_risk_id: 1, is_active: true }; },
+            }),
+          ],
+        ],
+        async () => {
+          const svc = freshMitigationDocService();
+          try {
+            await svc.getDocumentDetail({ documentId: 7, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' } });
+            assert.fail('Seharusnya melempar 403');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+    }
+  );
+
+  await test(
+    'mrPlanningMitigationDocumentService.getDocumentDetail -- user MALFORMED (object tanpa role/opd) -> DITOLAK fail-closed',
+    async () => {
+      await withStubs(
+        [
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMitigationDocument,
+            'findOne',
+            async () => ({
+              id: 7,
+              mr_planning_risk_id: 1,
+              is_active: true,
+              get() { return { id: 7, mr_planning_risk_id: 1, is_active: true }; },
+            }),
+          ],
+        ],
+        async () => {
+          const svc = freshMitigationDocService();
+          try {
+            await svc.getDocumentDetail({ documentId: 7, user: {} });
+            assert.fail('Seharusnya melempar 403 karena user malformed (tanpa opd)');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+    }
+  );
+
+  // =====================================================================
+  // MITIGATION DOCUMENT -- cancelDocument (mutation)
+  // =====================================================================
+
+  await test(
+    'mrPlanningMitigationDocumentService.cancelDocument -- OPD SENDIRI -> update TERCAPAI (OWN_OPD_ALLOW)',
+    async () => {
+      let updateCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async (fn) => fn(fakeTransaction());
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMitigationDocument,
+            'findOne',
+            async () => ({
+              id: 7,
+              mr_planning_risk_id: 1,
+              is_active: true,
+              status_dokumen: 'aktif',
+              update: async () => { updateCalled = true; throw SENTINEL_UPDATE; },
+              get() { return { id: 7, mr_planning_risk_id: 1, is_active: true }; },
+            }),
+          ],
+        ],
+        async () => {
+          const svc = freshMitigationDocService();
+          try {
+            await svc.cancelDocument({
+              documentId: 7,
+              body: { cancel_reason: 'Alasan valid' },
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya mencapai update (SENTINEL_UPDATE)');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_UPDATE);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(updateCalled, true, 'update() harus tercapai untuk own-OPD');
+    }
+  );
+
+  await test(
+    'mrPlanningMitigationDocumentService.cancelDocument -- OPD LAIN -> DITOLAK 403, update TIDAK dipanggil (zero protected mutation)',
+    async () => {
+      let updateCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async (fn) => fn(fakeTransaction());
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMitigationDocument,
+            'findOne',
+            async () => ({
+              id: 7,
+              mr_planning_risk_id: 1,
+              is_active: true,
+              status_dokumen: 'aktif',
+              update: async () => { updateCalled = true; return {}; },
+              get() { return { id: 7, mr_planning_risk_id: 1, is_active: true }; },
+            }),
+          ],
+        ],
+        async () => {
+          const svc = freshMitigationDocService();
+          try {
+            await svc.cancelDocument({
+              documentId: 7,
+              body: { cancel_reason: 'Alasan valid' },
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+            assert.fail('Seharusnya melempar 403');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(updateCalled, false, 'update TIDAK BOLEH dipanggil ketika boundary menolak');
+    }
+  );
+
+  await test(
+    'mrPlanningMitigationDocumentService.cancelDocument -- user MISSING -> DITOLAK fail-closed, update TIDAK dipanggil',
+    async () => {
+      let updateCalled = false;
+      const originalTransaction = models.sequelize.transaction;
+      models.sequelize.transaction = async (fn) => fn(fakeTransaction());
+
+      await withStubs(
+        [
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMitigationDocument,
+            'findOne',
+            async () => ({
+              id: 7,
+              mr_planning_risk_id: 1,
+              is_active: true,
+              status_dokumen: 'aktif',
+              update: async () => { updateCalled = true; return {}; },
+              get() { return { id: 7, mr_planning_risk_id: 1, is_active: true }; },
+            }),
+          ],
+        ],
+        async () => {
+          const svc = freshMitigationDocService();
+          try {
+            await svc.cancelDocument({
+              documentId: 7,
+              body: { cancel_reason: 'Alasan valid' },
+              user: undefined,
+            });
+            assert.fail('Seharusnya melempar 403 karena user undefined');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransaction;
+      assert.strictEqual(updateCalled, false, 'update TIDAK BOLEH dipanggil ketika user undefined');
+    }
+  );
+
+  // =====================================================================
+  // MITIGATION DOCUMENT -- getDocumentForDownload (filesystem-disclosure ordering, §15)
+  // =====================================================================
+
+  await test(
+    'mrPlanningMitigationDocumentService.getDocumentForDownload -- OPD LAIN -> DITOLAK 403 SEBELUM fs.existsSync dipanggil (FS_ORDERING_PROOF)',
+    async () => {
+      let fsExistsCalled = false;
+      const originalExistsSync = fs.existsSync;
+      fs.existsSync = (...args) => { fsExistsCalled = true; return originalExistsSync(...args); };
+
+      try {
+        await withStubs(
+          [
+            [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+            [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+            [
+              models.MrPlanningMitigationDocument,
+              'findOne',
+              async () => ({
+                id: 7,
+                mr_planning_risk_id: 1,
+                is_active: true,
+                file_path: '/some/protected/path.pdf',
+                get() { return { id: 7, mr_planning_risk_id: 1, is_active: true, file_path: '/some/protected/path.pdf' }; },
+              }),
+            ],
+          ],
+          async () => {
+            const svc = freshMitigationDocService();
+            try {
+              await svc.getDocumentForDownload({ documentId: 7, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' } });
+              assert.fail('Seharusnya melempar 403');
+            } catch (error) {
+              assert.strictEqual(error.statusCode, 403);
+            }
+          }
+        );
+      } finally {
+        fs.existsSync = originalExistsSync;
+      }
+
+      assert.strictEqual(fsExistsCalled, false, 'fs.existsSync TIDAK BOLEH dipanggil sebelum authorization -- zero filesystem-state disclosure untuk foreign-OPD (§15)');
+    }
+  );
+
+  await test(
+    'mrPlanningMitigationDocumentService.getDocumentForDownload -- OPD SENDIRI -> authorization lolos, fs.existsSync BARU dipanggil setelahnya',
+    async () => {
+      let fsExistsCalled = false;
+      const originalExistsSync = fs.existsSync;
+      fs.existsSync = (...args) => { fsExistsCalled = true; return true; };
+
+      try {
+        await withStubs(
+          [
+            [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+            [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+            [
+              models.MrPlanningMitigationDocument,
+              'findOne',
+              async () => ({
+                id: 7,
+                mr_planning_risk_id: 1,
+                is_active: true,
+                file_path: '/some/own/path.pdf',
+                get() { return { id: 7, mr_planning_risk_id: 1, is_active: true, file_path: '/some/own/path.pdf' }; },
+              }),
+            ],
+          ],
+          async () => {
+            const svc = freshMitigationDocService();
+            const result = await svc.getDocumentForDownload({ documentId: 7, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+            assert.ok(result.absolutePath, 'Harus mengembalikan absolutePath untuk own-OPD');
+          }
+        );
+      } finally {
+        fs.existsSync = originalExistsSync;
+      }
+
+      assert.strictEqual(fsExistsCalled, true, 'fs.existsSync harus tercapai setelah authorization lolos (own-OPD)');
+    }
+  );
+
+  // =====================================================================
+  // MONITORING EVIDENCE -- uploadEvidence (mutation)
+  // =====================================================================
+
+  await test(
+    'mrPlanningMonitoringEvidenceService.uploadEvidence -- Monitoring induk (via Risk) milik OPD SENDIRI -> boundary MENGIZINKAN, create TERCAPAI (OWN_OPD_ALLOW)',
+    async () => {
+      let createCalled = false;
+      const originalTransactionFn = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMonitoring,
+            'findByPk',
+            async () => ({
+              id: 9,
+              mr_planning_risk_id: 1,
+              mr_planning_mitigation_id: null,
+              context_id: null,
+              get() { return { id: 9, mr_planning_risk_id: 1, mr_planning_mitigation_id: null, context_id: null }; },
+            }),
+          ],
+          [models.MrPlanningMonitoringEvidence, 'create', async () => { createCalled = true; throw SENTINEL_CREATE; }],
+        ],
+        async () => {
+          const svc = freshMonitoringEvidenceService();
+          try {
+            await svc.uploadEvidence({
+              monitoringId: 9,
+              body: { evidence_type: 'FOTO_KEGIATAN', evidence_title: 'Judul' },
+              file: { path: '/tmp/y', filename: 'y', originalname: 'y.jpg', mimetype: 'image/jpeg', size: 10 },
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya mencapai create (SENTINEL_CREATE) atau error validasi lain setelah create tercapai');
+          } catch (error) {
+            assert.ok(error === SENTINEL_CREATE || createCalled, 'create() harus tercapai untuk own-OPD');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransactionFn;
+      assert.strictEqual(createCalled, true, 'MrPlanningMonitoringEvidence.create HARUS dipanggil ketika boundary OPD mengizinkan (own-OPD)');
+    }
+  );
+
+  await test(
+    'mrPlanningMonitoringEvidenceService.uploadEvidence -- Monitoring induk milik OPD LAIN -> DITOLAK 403, create TIDAK dipanggil (FOREIGN_OPD_DENY)',
+    async () => {
+      let createCalled = false;
+      const originalTransactionFn = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMonitoring,
+            'findByPk',
+            async () => ({
+              id: 9,
+              mr_planning_risk_id: 1,
+              mr_planning_mitigation_id: null,
+              context_id: null,
+              get() { return { id: 9, mr_planning_risk_id: 1, mr_planning_mitigation_id: null, context_id: null }; },
+            }),
+          ],
+          [models.MrPlanningMonitoringEvidence, 'create', async () => { createCalled = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshMonitoringEvidenceService();
+          try {
+            await svc.uploadEvidence({
+              monitoringId: 9,
+              body: { evidence_type: 'FOTO_KEGIATAN', evidence_title: 'Judul' },
+              file: { path: '/tmp/y', filename: 'y', originalname: 'y.jpg', mimetype: 'image/jpeg', size: 10 },
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+            assert.fail('Seharusnya melempar 403');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransactionFn;
+      assert.strictEqual(createCalled, false, 'create TIDAK BOLEH dipanggil ketika boundary OPD menolak');
+    }
+  );
+
+  await test(
+    'mrPlanningMonitoringEvidenceService.uploadEvidence -- user MISSING -> DITOLAK fail-closed, create TIDAK dipanggil',
+    async () => {
+      let createCalled = false;
+      const originalTransactionFn = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMonitoring,
+            'findByPk',
+            async () => ({
+              id: 9,
+              mr_planning_risk_id: 1,
+              mr_planning_mitigation_id: null,
+              context_id: null,
+              get() { return { id: 9, mr_planning_risk_id: 1, mr_planning_mitigation_id: null, context_id: null }; },
+            }),
+          ],
+          [models.MrPlanningMonitoringEvidence, 'create', async () => { createCalled = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshMonitoringEvidenceService();
+          try {
+            await svc.uploadEvidence({
+              monitoringId: 9,
+              body: { evidence_type: 'FOTO_KEGIATAN', evidence_title: 'Judul' },
+              file: { path: '/tmp/y', filename: 'y', originalname: 'y.jpg', mimetype: 'image/jpeg', size: 10 },
+              userId: 10,
+              user: undefined,
+            });
+            assert.fail('Seharusnya melempar 403 karena user undefined');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransactionFn;
+      assert.strictEqual(createCalled, false, 'create TIDAK BOLEH dipanggil ketika user undefined');
+    }
+  );
+
+  await test(
+    'mrPlanningMonitoringEvidenceService.uploadEvidence -- Risk induk TIDAK DITEMUKAN (ownership unresolved) -> DITOLAK 403 MR_MONITORING_EVIDENCE_OPD_BOUNDARY_UNRESOLVED, create TIDAK dipanggil',
+    async () => {
+      let createCalled = false;
+      const originalTransactionFn = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.MrPlanningRisk, 'findByPk', async () => null],
+          [
+            models.MrPlanningMonitoring,
+            'findByPk',
+            async () => ({
+              id: 9,
+              mr_planning_risk_id: 1,
+              mr_planning_mitigation_id: null,
+              context_id: null,
+              get() { return { id: 9, mr_planning_risk_id: 1, mr_planning_mitigation_id: null, context_id: null }; },
+            }),
+          ],
+          [models.MrPlanningMonitoringEvidence, 'create', async () => { createCalled = true; return { id: 1 }; }],
+        ],
+        async () => {
+          const svc = freshMonitoringEvidenceService();
+          try {
+            await svc.uploadEvidence({
+              monitoringId: 9,
+              body: { evidence_type: 'FOTO_KEGIATAN', evidence_title: 'Judul' },
+              file: { path: '/tmp/y', filename: 'y', originalname: 'y.jpg', mimetype: 'image/jpeg', size: 10 },
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar 403 boundary-unresolved');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+            assert.strictEqual(error.details?.code, 'MR_MONITORING_EVIDENCE_OPD_BOUNDARY_UNRESOLVED');
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransactionFn;
+      assert.strictEqual(createCalled, false, 'create TIDAK BOLEH dipanggil ketika ownership Risk tidak dapat diresolusi');
+    }
+  );
+
+  await test(
+    'mrPlanningMonitoringEvidenceService.uploadEvidence -- SUPER_ADMIN pada OPD LAIN -> boundary MENGIZINKAN',
+    async () => {
+      let createCalled = false;
+      const originalTransactionFn = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMonitoring,
+            'findByPk',
+            async () => ({
+              id: 9,
+              mr_planning_risk_id: 1,
+              mr_planning_mitigation_id: null,
+              context_id: null,
+              get() { return { id: 9, mr_planning_risk_id: 1, mr_planning_mitigation_id: null, context_id: null }; },
+            }),
+          ],
+          [models.MrPlanningMonitoringEvidence, 'create', async () => { createCalled = true; throw SENTINEL_CREATE; }],
+        ],
+        async () => {
+          const svc = freshMonitoringEvidenceService();
+          try {
+            await svc.uploadEvidence({
+              monitoringId: 9,
+              body: { evidence_type: 'FOTO_KEGIATAN', evidence_title: 'Judul' },
+              file: { path: '/tmp/y', filename: 'y', originalname: 'y.jpg', mimetype: 'image/jpeg', size: 10 },
+              userId: 1,
+              user: { id: 1, role: 'SUPER_ADMIN', opd: null },
+            });
+          } catch (error) {
+            assert.ok(error === SENTINEL_CREATE || createCalled);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransactionFn;
+      assert.strictEqual(createCalled, true, 'SUPER_ADMIN harus tetap bisa upload lintas OPD');
+    }
+  );
+
+  // =====================================================================
+  // MONITORING EVIDENCE -- getEvidencesByMonitoring (read/list)
+  // =====================================================================
+
+  await test(
+    'mrPlanningMonitoringEvidenceService.getEvidencesByMonitoring -- OPD LAIN -> DITOLAK 403, findAll TIDAK dipanggil (zero data disclosure)',
+    async () => {
+      let findAllCalled = false;
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [
+            models.MrPlanningMonitoring,
+            'findByPk',
+            async () => ({
+              id: 9,
+              mr_planning_risk_id: 1,
+              get() { return { id: 9, mr_planning_risk_id: 1 }; },
+            }),
+          ],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrPlanningMonitoringEvidence, 'findAll', async () => { findAllCalled = true; return [{ id: 1 }]; }],
+        ],
+        async () => {
+          const svc = freshMonitoringEvidenceService();
+          try {
+            await svc.getEvidencesByMonitoring(9, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' } });
+            assert.fail('Seharusnya melempar 403');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+      assert.strictEqual(findAllCalled, false, 'findAll TIDAK BOLEH dipanggil untuk foreign-OPD');
+    }
+  );
+
+  await test(
+    'mrPlanningMonitoringEvidenceService.getEvidencesByMonitoring -- OPD SENDIRI -> data DITAMPILKAN',
+    async () => {
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [
+            models.MrPlanningMonitoring,
+            'findByPk',
+            async () => ({
+              id: 9,
+              mr_planning_risk_id: 1,
+              get() { return { id: 9, mr_planning_risk_id: 1 }; },
+            }),
+          ],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrPlanningMonitoringEvidence, 'findAll', async () => { throw SENTINEL_FINDALL; }],
+        ],
+        async () => {
+          const svc = freshMonitoringEvidenceService();
+          try {
+            await svc.getEvidencesByMonitoring(9, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+            assert.fail('Seharusnya mencapai findAll');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_FINDALL);
+          }
+        }
+      );
+    }
+  );
+
+  // =====================================================================
+  // MONITORING EVIDENCE -- getEvidenceDetail (read detail)
+  // =====================================================================
+
+  await test(
+    'mrPlanningMonitoringEvidenceService.getEvidenceDetail -- OPD LAIN -> DITOLAK 403',
+    async () => {
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [
+            models.MrPlanningMonitoringEvidence,
+            'findByPk',
+            async () => ({
+              id: 11,
+              mr_planning_risk_id: 1,
+              is_active: true,
+              status_bukti: 'aktif',
+              get() { return { id: 11, mr_planning_risk_id: 1, is_active: true, status_bukti: 'aktif' }; },
+            }),
+          ],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+        ],
+        async () => {
+          const svc = freshMonitoringEvidenceService();
+          try {
+            await svc.getEvidenceDetail(11, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' } });
+            assert.fail('Seharusnya melempar 403');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+    }
+  );
+
+  await test(
+    'mrPlanningMonitoringEvidenceService.getEvidenceDetail -- user MALFORMED (object tanpa opd) -> DITOLAK fail-closed',
+    async () => {
+      await withStubs(
+        [
+          [
+            models.MrPlanningMonitoringEvidence,
+            'findByPk',
+            async () => ({
+              id: 11,
+              mr_planning_risk_id: 1,
+              is_active: true,
+              status_bukti: 'aktif',
+              get() { return { id: 11, mr_planning_risk_id: 1, is_active: true, status_bukti: 'aktif' }; },
+            }),
+          ],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+        ],
+        async () => {
+          const svc = freshMonitoringEvidenceService();
+          try {
+            await svc.getEvidenceDetail(11, { user: {} });
+            assert.fail('Seharusnya melempar 403 karena user malformed');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+    }
+  );
+
+  // =====================================================================
+  // MONITORING EVIDENCE -- prepareEvidenceDownload (filesystem-disclosure ordering, §15)
+  // =====================================================================
+
+  await test(
+    'mrPlanningMonitoringEvidenceService.prepareEvidenceDownload -- OPD LAIN -> DITOLAK 403 SEBELUM fs.existsSync dipanggil (FS_ORDERING_PROOF)',
+    async () => {
+      let fsExistsCalled = false;
+      const originalExistsSync = fs.existsSync;
+      fs.existsSync = (...args) => { fsExistsCalled = true; return originalExistsSync(...args); };
+
+      try {
+        await withStubs(
+          [
+            [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+            [
+              models.MrPlanningMonitoringEvidence,
+              'findByPk',
+              async () => ({
+                id: 11,
+                mr_planning_risk_id: 1,
+                is_active: true,
+                status_bukti: 'aktif',
+                file_path: '/some/protected/evidence.jpg',
+                get() { return { id: 11, mr_planning_risk_id: 1, is_active: true, status_bukti: 'aktif', file_path: '/some/protected/evidence.jpg' }; },
+              }),
+            ],
+            [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          ],
+          async () => {
+            const svc = freshMonitoringEvidenceService();
+            try {
+              await svc.prepareEvidenceDownload({ evidenceId: 11, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' } });
+              assert.fail('Seharusnya melempar 403');
+            } catch (error) {
+              assert.strictEqual(error.statusCode, 403);
+            }
+          }
+        );
+      } finally {
+        fs.existsSync = originalExistsSync;
+      }
+
+      assert.strictEqual(fsExistsCalled, false, 'fs.existsSync TIDAK BOLEH dipanggil sebelum authorization -- zero filesystem-state disclosure untuk foreign-OPD (§15)');
+    }
+  );
+
+  await test(
+    'mrPlanningMonitoringEvidenceService.prepareEvidenceDownload -- OPD SENDIRI -> authorization lolos, fs.existsSync BARU dipanggil setelahnya',
+    async () => {
+      let fsExistsCalled = false;
+      const originalExistsSync = fs.existsSync;
+      fs.existsSync = (...args) => { fsExistsCalled = true; return true; };
+
+      try {
+        await withStubs(
+          [
+            [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+            [
+              models.MrPlanningMonitoringEvidence,
+              'findByPk',
+              async () => ({
+                id: 11,
+                mr_planning_risk_id: 1,
+                is_active: true,
+                status_bukti: 'aktif',
+                file_path: '/some/own/evidence.jpg',
+                get() { return { id: 11, mr_planning_risk_id: 1, is_active: true, status_bukti: 'aktif', file_path: '/some/own/evidence.jpg' }; },
+              }),
+            ],
+            [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          ],
+          async () => {
+            const svc = freshMonitoringEvidenceService();
+            const result = await svc.prepareEvidenceDownload({ evidenceId: 11, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+            assert.ok(result?.data?.file_path, 'Harus mengembalikan file_path untuk own-OPD');
+          }
+        );
+      } finally {
+        fs.existsSync = originalExistsSync;
+      }
+
+      assert.strictEqual(fsExistsCalled, true, 'fs.existsSync harus tercapai setelah authorization lolos (own-OPD)');
+    }
+  );
+
+  await test(
+    'mrPlanningMonitoringEvidenceService.prepareEvidenceDownload -- user MISSING -> DITOLAK fail-closed SEBELUM fs.existsSync',
+    async () => {
+      let fsExistsCalled = false;
+      const originalExistsSync = fs.existsSync;
+      fs.existsSync = (...args) => { fsExistsCalled = true; return originalExistsSync(...args); };
+
+      try {
+        await withStubs(
+          [
+            [
+              models.MrPlanningMonitoringEvidence,
+              'findByPk',
+              async () => ({
+                id: 11,
+                mr_planning_risk_id: 1,
+                is_active: true,
+                status_bukti: 'aktif',
+                file_path: '/some/protected/evidence.jpg',
+                get() { return { id: 11, mr_planning_risk_id: 1, is_active: true, status_bukti: 'aktif', file_path: '/some/protected/evidence.jpg' }; },
+              }),
+            ],
+            [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          ],
+          async () => {
+            const svc = freshMonitoringEvidenceService();
+            try {
+              await svc.prepareEvidenceDownload({ evidenceId: 11, user: undefined });
+              assert.fail('Seharusnya melempar 403 karena user undefined');
+            } catch (error) {
+              assert.strictEqual(error.statusCode, 403);
+            }
+          }
+        );
+      } finally {
+        fs.existsSync = originalExistsSync;
+      }
+
+      assert.strictEqual(fsExistsCalled, false, 'fs.existsSync TIDAK BOLEH dipanggil ketika user undefined');
+    }
+  );
+
+  // =====================================================================
+  // MONITORING EVIDENCE -- cancelEvidence (mutation)
+  // =====================================================================
+
+  await test(
+    'mrPlanningMonitoringEvidenceService.cancelEvidence -- OPD SENDIRI -> update TERCAPAI (OWN_OPD_ALLOW)',
+    async () => {
+      let updateCalled = false;
+      const originalTransactionFn = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMonitoringEvidence,
+            'findByPk',
+            async () => ({
+              id: 11,
+              mr_planning_risk_id: 1,
+              is_active: true,
+              status_bukti: 'aktif',
+              update: async () => { updateCalled = true; throw SENTINEL_UPDATE; },
+              get() { return { id: 11, mr_planning_risk_id: 1, is_active: true, status_bukti: 'aktif' }; },
+            }),
+          ],
+        ],
+        async () => {
+          const svc = freshMonitoringEvidenceService();
+          try {
+            await svc.cancelEvidence({
+              evidenceId: 11,
+              body: { cancel_reason: 'Alasan valid' },
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya mencapai update (SENTINEL_UPDATE)');
+          } catch (error) {
+            assert.strictEqual(error, SENTINEL_UPDATE);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransactionFn;
+      assert.strictEqual(updateCalled, true, 'update() harus tercapai untuk own-OPD');
+    }
+  );
+
+  await test(
+    'mrPlanningMonitoringEvidenceService.cancelEvidence -- OPD LAIN -> DITOLAK 403, update TIDAK dipanggil (zero protected mutation)',
+    async () => {
+      let updateCalled = false;
+      const originalTransactionFn = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 999 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMonitoringEvidence,
+            'findByPk',
+            async () => ({
+              id: 11,
+              mr_planning_risk_id: 1,
+              is_active: true,
+              status_bukti: 'aktif',
+              update: async () => { updateCalled = true; return {}; },
+              get() { return { id: 11, mr_planning_risk_id: 1, is_active: true, status_bukti: 'aktif' }; },
+            }),
+          ],
+        ],
+        async () => {
+          const svc = freshMonitoringEvidenceService();
+          try {
+            await svc.cancelEvidence({
+              evidenceId: 11,
+              body: { cancel_reason: 'Alasan valid' },
+              userId: 10,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+            assert.fail('Seharusnya melempar 403');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransactionFn;
+      assert.strictEqual(updateCalled, false, 'update TIDAK BOLEH dipanggil ketika boundary menolak');
+    }
+  );
+
+  await test(
+    'mrPlanningMonitoringEvidenceService.cancelEvidence -- user MISSING -> DITOLAK fail-closed, update TIDAK dipanggil',
+    async () => {
+      let updateCalled = false;
+      const originalTransactionFn = models.sequelize.transaction;
+      models.sequelize.transaction = async () => fakeTransaction();
+
+      await withStubs(
+        [
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [
+            models.MrPlanningMonitoringEvidence,
+            'findByPk',
+            async () => ({
+              id: 11,
+              mr_planning_risk_id: 1,
+              is_active: true,
+              status_bukti: 'aktif',
+              update: async () => { updateCalled = true; return {}; },
+              get() { return { id: 11, mr_planning_risk_id: 1, is_active: true, status_bukti: 'aktif' }; },
+            }),
+          ],
+        ],
+        async () => {
+          const svc = freshMonitoringEvidenceService();
+          try {
+            await svc.cancelEvidence({
+              evidenceId: 11,
+              body: { cancel_reason: 'Alasan valid' },
+              userId: 10,
+              user: undefined,
+            });
+            assert.fail('Seharusnya melempar 403 karena user undefined');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      models.sequelize.transaction = originalTransactionFn;
+      assert.strictEqual(updateCalled, false, 'update TIDAK BOLEH dipanggil ketika user undefined');
+    }
+  );
+
+}
 } // end runAllTests
 
 runAllTests().then(() => {

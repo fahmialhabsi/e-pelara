@@ -8,7 +8,18 @@ const {
   sequelize,
   MrPlanningMitigation,
   MrPlanningMitigationDocument,
+  MrPlanningRisk,
 } = require("../../models");
+
+// Sprint 14 -- MR Mitigation Document OPD Boundary Hardening: Document has no
+// opd_id of its own; ownership derives via mr_planning_risk_id -> MrPlanningRisk.opd_id
+// (OpdPenanggungJawab.id namespace). Reuses the accepted, unmodified Risk-family
+// boundary helper -- same pattern as Deviation/Context/Mitigation/Monitoring/
+// RiskAnalysis/RootCause.
+const {
+  resolveMrPlanningRiskOpdBoundary,
+  throwMrPlanningRiskOpdBoundaryError,
+} = require("./mrPlanningRiskService");
 
 const DOCUMENT_TYPES = Object.freeze({
   SK_TIM_TINDAK_LANJUT: "SK_TIM_TINDAK_LANJUT",
@@ -149,6 +160,41 @@ const findActiveMitigationOrFail = async (mitigationId, options = {}) => {
   return mitigation;
 };
 
+// Sprint 14 fail-closed authorization: resolve the authoritative Risk OPD
+// ownership for a given mr_planning_risk_id and authorize the caller BEFORE
+// any protected mutation/disclosure/filesystem access. Ownership resolution
+// failure (missing FK, parent Risk not found) DENIES rather than silently
+// deferring to resolveMrPlanningRiskOpdBoundary's own "null = defer" semantics
+// -- that behavior exists for its original call sites where null legitimately
+// means "not found yet, let normal validation handle it", not applicable to an
+// authorization decision here.
+const authorizeMitigationDocumentAccess = async ({ riskId, user, transaction } = {}) => {
+  const risk = riskId
+    ? await MrPlanningRisk.findByPk(riskId, { transaction })
+    : null;
+
+  const targetOpdId = risk?.opd_id ?? null;
+  if (targetOpdId === null && user?.role !== "SUPER_ADMIN") {
+    throwMrPlanningRiskOpdBoundaryError({
+      ok: false,
+      status: 403,
+      error: {
+        message:
+          "Kepemilikan OPD untuk Dokumen Rencana Tindak Pengendalian ini tidak dapat diverifikasi. Aksi ditolak demi keamanan data.",
+        code: "MR_MITIGATION_DOCUMENT_OPD_BOUNDARY_UNRESOLVED",
+      },
+    });
+  }
+
+  const boundary = await resolveMrPlanningRiskOpdBoundary({
+    user,
+    targetOpdId,
+  });
+  if (!boundary.ok) {
+    throwMrPlanningRiskOpdBoundaryError(boundary);
+  }
+};
+
 const assertMitigationCanReceiveDocument = (mitigation) => {
   const statusRevisi = String(mitigation.status_revisi || "").toLowerCase();
 
@@ -184,6 +230,12 @@ const createDocument = async ({ mitigationId, body = {}, file, user }) => {
   try {
     return await sequelize.transaction(async (transaction) => {
       const mitigation = await findActiveMitigationOrFail(mitigationId, {
+        transaction,
+      });
+
+      await authorizeMitigationDocumentAccess({
+        riskId: mitigation.mr_planning_risk_id,
+        user,
         transaction,
       });
 
@@ -239,8 +291,13 @@ const createDocument = async ({ mitigationId, body = {}, file, user }) => {
   }
 };
 
-const listDocumentsByMitigation = async ({ mitigationId }) => {
+const listDocumentsByMitigation = async ({ mitigationId, user }) => {
   const mitigation = await findActiveMitigationOrFail(mitigationId);
+
+  await authorizeMitigationDocumentAccess({
+    riskId: mitigation.mr_planning_risk_id,
+    user,
+  });
 
   const documents = await MrPlanningMitigationDocument.findAll({
     where: {
@@ -257,7 +314,7 @@ const listDocumentsByMitigation = async ({ mitigationId }) => {
   return documents.map(formatDocument);
 };
 
-const getDocumentDetail = async ({ documentId }) => {
+const getDocumentDetail = async ({ documentId, user }) => {
   const id = toIntegerId(documentId, "ID Dokumen");
 
   const document = await MrPlanningMitigationDocument.findOne({
@@ -273,6 +330,11 @@ const getDocumentDetail = async ({ documentId }) => {
     error.code = "MR_MITIGATION_DOCUMENT_NOT_FOUND";
     throw error;
   }
+
+  await authorizeMitigationDocumentAccess({
+    riskId: document.mr_planning_risk_id,
+    user,
+  });
 
   return formatDocument(document);
 };
@@ -308,6 +370,12 @@ const cancelDocument = async ({ documentId, body = {}, user }) => {
       throw error;
     }
 
+    await authorizeMitigationDocumentAccess({
+      riskId: document.mr_planning_risk_id,
+      user,
+      transaction,
+    });
+
     await document.update(
       {
         is_active: false,
@@ -324,8 +392,12 @@ const cancelDocument = async ({ documentId, body = {}, user }) => {
   });
 };
 
-const getDocumentForDownload = async ({ documentId }) => {
-  const document = await getDocumentDetail({ documentId });
+const getDocumentForDownload = async ({ documentId, user }) => {
+  // Sprint 14 (§15): authorization (inside getDocumentDetail) MUST occur before
+  // any filesystem operation below (path resolution, fs.existsSync) so that a
+  // foreign-OPD document's storage state is never disclosed to an unauthorized
+  // caller, even indirectly via a 404-vs-403 timing/response difference.
+  const document = await getDocumentDetail({ documentId, user });
 
   if (!document?.file_path) {
     const error = new Error("Berkas dokumen tidak ditemukan.");

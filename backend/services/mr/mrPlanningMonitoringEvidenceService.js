@@ -31,6 +31,17 @@ const {
   MrPlanningContext,
 } = require("../../models");
 
+// Sprint 14 -- MR Monitoring Evidence OPD Boundary Hardening: Evidence carries
+// its own mr_planning_risk_id (denormalized from the parent Monitoring at
+// upload time) -> MrPlanningRisk.opd_id (OpdPenanggungJawab.id namespace).
+// Reuses the accepted, unmodified Risk-family boundary helper -- same pattern
+// as Deviation/Context/Mitigation/Monitoring/RiskAnalysis/RootCause/Mitigation
+// Document.
+const {
+  resolveMrPlanningRiskOpdBoundary,
+  throwMrPlanningRiskOpdBoundaryError,
+} = require("./mrPlanningRiskService");
+
 const ERROR_CODE = "MR_MONITORING_EVIDENCE_VALIDATION_ERROR";
 
 const EVIDENCE_TYPES = Object.freeze([
@@ -316,6 +327,41 @@ const getEvidenceOrThrow = async (evidenceId, transaction = null) => {
   return evidence;
 };
 
+// Sprint 14 fail-closed authorization: resolve the authoritative Risk OPD
+// ownership for a given mr_planning_risk_id and authorize the caller BEFORE
+// any protected mutation/disclosure/filesystem access. Ownership resolution
+// failure (missing FK, parent Risk not found) DENIES rather than silently
+// deferring to resolveMrPlanningRiskOpdBoundary's own "null = defer" semantics
+// -- that behavior exists for its original call sites where null legitimately
+// means "not found yet, let normal validation handle it", not applicable to an
+// authorization decision here.
+const authorizeMonitoringEvidenceAccess = async ({ riskId, user, transaction } = {}) => {
+  const risk = riskId
+    ? await MrPlanningRisk.findByPk(riskId, { transaction })
+    : null;
+
+  const targetOpdId = risk?.opd_id ?? null;
+  if (targetOpdId === null && user?.role !== "SUPER_ADMIN") {
+    throwMrPlanningRiskOpdBoundaryError({
+      ok: false,
+      status: 403,
+      error: {
+        message:
+          "Kepemilikan OPD untuk Bukti Realisasi ini tidak dapat diverifikasi. Aksi ditolak demi keamanan data.",
+        code: "MR_MONITORING_EVIDENCE_OPD_BOUNDARY_UNRESOLVED",
+      },
+    });
+  }
+
+  const boundary = await resolveMrPlanningRiskOpdBoundary({
+    user,
+    targetOpdId,
+  });
+  if (!boundary.ok) {
+    throwMrPlanningRiskOpdBoundaryError(boundary);
+  }
+};
+
 const toPublicEvidence = (record) => {
   const plain = toPlain(record);
 
@@ -363,7 +409,7 @@ const toPublicEvidence = (record) => {
   };
 };
 
-const uploadEvidence = async ({ monitoringId, body = {}, file, userId }) => {
+const uploadEvidence = async ({ monitoringId, body = {}, file, userId, user }) => {
   const transaction = await sequelize.transaction();
 
   try {
@@ -379,6 +425,12 @@ const uploadEvidence = async ({ monitoringId, body = {}, file, userId }) => {
 
     const monitoring = await getMonitoringOrThrow(monitoringId, transaction);
     const plainMonitoring = toPlain(monitoring);
+
+    await authorizeMonitoringEvidenceAccess({
+      riskId: plainMonitoring.mr_planning_risk_id,
+      user,
+      transaction,
+    });
 
     const checksum = buildChecksum(file.path);
     const relativePath = buildRelativeFilePath(file.path);
@@ -415,7 +467,7 @@ const uploadEvidence = async ({ monitoringId, body = {}, file, userId }) => {
 
     await transaction.commit();
 
-    const detail = await getEvidenceDetail(created.id);
+    const detail = await getEvidenceDetail(created.id, { user });
 
     return {
       message: "Bukti Realisasi berhasil diunggah.",
@@ -432,8 +484,14 @@ const uploadEvidence = async ({ monitoringId, body = {}, file, userId }) => {
   }
 };
 
-const getEvidencesByMonitoring = async (monitoringId) => {
-  await getMonitoringOrThrow(monitoringId);
+const getEvidencesByMonitoring = async (monitoringId, { user } = {}) => {
+  const monitoring = await getMonitoringOrThrow(monitoringId);
+  const plainMonitoring = toPlain(monitoring);
+
+  await authorizeMonitoringEvidenceAccess({
+    riskId: plainMonitoring.mr_planning_risk_id,
+    user,
+  });
 
   const evidences = await MrPlanningMonitoringEvidence.findAll({
     where: {
@@ -458,8 +516,15 @@ const getEvidencesByMonitoring = async (monitoringId) => {
   };
 };
 
-const getEvidenceDetail = async (evidenceId) => {
-  const evidence = await getEvidenceOrThrow(evidenceId);
+const getEvidenceDetail = async (evidenceId, { user, transaction } = {}) => {
+  const evidence = await getEvidenceOrThrow(evidenceId, transaction);
+  const plain = toPlain(evidence);
+
+  await authorizeMonitoringEvidenceAccess({
+    riskId: plain.mr_planning_risk_id,
+    user,
+    transaction,
+  });
 
   return {
     message: "Detail Bukti Realisasi berhasil dimuat.",
@@ -467,9 +532,17 @@ const getEvidenceDetail = async (evidenceId) => {
   };
 };
 
-const prepareEvidenceDownload = async ({ evidenceId, mode = "download" }) => {
+const prepareEvidenceDownload = async ({ evidenceId, mode = "download", user }) => {
   const evidence = await getEvidenceOrThrow(evidenceId);
   const plain = toPlain(evidence);
+
+  // Sprint 14 (§15): authorization MUST occur before any filesystem operation
+  // below (path resolution, fs.existsSync) so that a foreign-OPD evidence's
+  // storage state is never disclosed to an unauthorized caller.
+  await authorizeMonitoringEvidenceAccess({
+    riskId: plain.mr_planning_risk_id,
+    user,
+  });
 
   if (!plain.is_active || plain.status_bukti !== "aktif") {
     throw createValidationError("Bukti Realisasi sudah dibatalkan.", {
@@ -504,7 +577,7 @@ const prepareEvidenceDownload = async ({ evidenceId, mode = "download" }) => {
   };
 };
 
-const cancelEvidence = async ({ evidenceId, body = {}, userId }) => {
+const cancelEvidence = async ({ evidenceId, body = {}, userId, user }) => {
   const transaction = await sequelize.transaction();
 
   try {
@@ -523,6 +596,12 @@ const cancelEvidence = async ({ evidenceId, body = {}, userId }) => {
         evidence_id: evidenceId,
       });
     }
+
+    await authorizeMonitoringEvidenceAccess({
+      riskId: evidence.mr_planning_risk_id,
+      user,
+      transaction,
+    });
 
     const cancelReason = safeTrim(body.cancel_reason);
 
@@ -546,7 +625,7 @@ const cancelEvidence = async ({ evidenceId, body = {}, userId }) => {
 
     await transaction.commit();
 
-    const detail = await getEvidenceDetail(evidenceId);
+    const detail = await getEvidenceDetail(evidenceId, { user });
 
     return {
       message: "Bukti Realisasi berhasil dibatalkan.",

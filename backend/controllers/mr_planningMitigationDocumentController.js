@@ -71,6 +71,7 @@ const getMitigationDocuments = async (req, res) => {
   try {
     const data = await documentService.listDocumentsByMitigation({
       mitigationId: req.params.id,
+      user: req.user,
     });
 
     return sendSuccess(
@@ -97,6 +98,7 @@ const getMitigationDocumentDetail = async (req, res) => {
   try {
     const data = await documentService.getDocumentDetail({
       documentId: req.params.documentId,
+      user: req.user,
     });
 
     return sendSuccess(
@@ -147,6 +149,7 @@ const downloadMitigationDocument = async (req, res) => {
     const { document, absolutePath, originalFileName, mimeType } =
       await documentService.getDocumentForDownload({
         documentId: req.params.documentId,
+        user: req.user,
       });
 
     const dispositionType =
