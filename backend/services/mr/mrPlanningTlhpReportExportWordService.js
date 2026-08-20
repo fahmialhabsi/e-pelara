@@ -125,8 +125,11 @@ const buildScopeDescription = (scope) => {
 };
 
 const buildTlhpWordDocument = async (scopeParams, options = {}) => {
-  const { draft = false } = options;
-  const report = await reportQueryService.getFullReport(scopeParams);
+  const { draft = false, user } = options;
+  // Sprint 15: authorization happens inside getFullReport() (single
+  // coherent enforcement path shared with getSummary/getFullReport JSON
+  // reads and, transitively, the PDF export which wraps this function).
+  const report = await reportQueryService.getFullReport(scopeParams, { user });
   const {
     report_scope: scope,
     lhp_list: lhpList,

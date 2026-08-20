@@ -25,6 +25,19 @@ const {
   PejabatPenandatangan,
 } = require("../../models");
 
+// Sprint 15 -- TLHP Report/Export OPD Boundary Hardening: reuse the accepted,
+// unmodified LHP/Temuan boundary helper (RenstraOPD.id namespace) -- NOT the
+// Risk-family helper, which is a different id-space (OpdPenanggungJawab.id).
+// See resolveMrPlanningLhpOpdBoundary in mrPlanningLhpService.js for the full
+// namespace rationale. Scope covers /summary, /full, /export-word,
+// /export-pdf ONLY -- /export-history is explicitly out of scope for Sprint
+// 15 (MrPlanningReportExport.opd_id has mixed/ambiguous ownership provenance
+// across writers, verified separately; do not extend this helper there).
+const {
+  resolveMrPlanningLhpOpdBoundary,
+  throwMrPlanningLhpOpdBoundaryError,
+} = require("./mrPlanningLhpService");
+
 class MrPlanningTlhpReportError extends Error {
   constructor(message, options = {}) {
     super(message);
@@ -49,6 +62,44 @@ const resolveScope = ({ tahun, opd_id, entitas_pemeriksa_ref_id, lhp_id } = {}) 
     entitas_pemeriksa_ref_id: entitas_pemeriksa_ref_id ? Number(entitas_pemeriksa_ref_id) : null,
     lhp_id: lhp_id ? Number(lhp_id) : null,
   };
+};
+
+// Sprint 15 fail-closed authorization: scope.opd_id is an OPTIONAL client-
+// supplied filter (see module doc comment above), NEVER an authorization
+// source by itself. For an ordinary (non-SUPER_ADMIN) caller, an omitted
+// opd_id would otherwise widen the query to every OPD's LHP/Temuan data for
+// the requested tahun -- explicit call-site fail-closed guard below denies
+// that case rather than silently rewriting the caller's request scope to
+// their own OPD (which would be a silent scope substitution, not
+// authorization) or silently deferring to resolveMrPlanningLhpOpdBoundary's
+// own "null target = defer" semantics (that semantics exists for its
+// original single-record call sites where null legitimately means "record
+// not found yet, let normal validation handle it" -- not applicable here,
+// where null means "caller is requesting a multi-OPD/tenant-wide scope").
+const authorizeTlhpReportScope = async ({ scope, user } = {}) => {
+  if (user?.role === "SUPER_ADMIN") {
+    return;
+  }
+
+  if (scope?.opd_id === null || scope?.opd_id === undefined) {
+    throwMrPlanningLhpOpdBoundaryError({
+      ok: false,
+      status: 403,
+      error: {
+        message:
+          "Parameter opd_id wajib diisi untuk melihat Laporan Pemantauan TLHP. Cakupan lintas-OPD hanya diizinkan untuk SUPER_ADMIN.",
+        code: "MR_TLHP_REPORT_OPD_SCOPE_REQUIRED",
+      },
+    });
+  }
+
+  const boundary = await resolveMrPlanningLhpOpdBoundary({
+    user,
+    targetOpdId: scope.opd_id,
+  });
+  if (!boundary.ok) {
+    throwMrPlanningLhpOpdBoundaryError(boundary);
+  }
 };
 
 const buildLhpWhere = (scope) => {
@@ -169,7 +220,15 @@ const getEvidenceCountsByRekomendasi = async (rekomendasiIds) => {
   }, {});
 };
 
-const getSummary = async (scope) => {
+const getSummary = async (scope, { user, _skipAuthorization = false } = {}) => {
+  // Sprint 15 (Section 11): AUTHORIZE BEFORE PROTECTED QUERY/DISCLOSURE. _skipAuthorization
+  // is set ONLY by the internal getFullReport() call below, which has already
+  // authorized this exact scope -- avoids a redundant double-check, not a
+  // bypass reachable from any external caller.
+  if (!_skipAuthorization) {
+    await authorizeTlhpReportScope({ scope, user });
+  }
+
   const lhpList = await getLhpListForScope(scope);
   const lhpIds = lhpList.map((l) => l.id);
   const detail = await getTemuanRekomendasiDetail(lhpIds);
@@ -315,14 +374,21 @@ const getReportOfficials = async ({ tahun, opd_id, nama_opd } = {}) => {
   };
 };
 
-const getFullReport = async (scopeParams) => {
+const getFullReport = async (scopeParams, { user } = {}) => {
   const scope = resolveScope(scopeParams);
+
+  // Sprint 15 (Section 11): AUTHORIZE BEFORE PROTECTED QUERY/DISCLOSURE. This is the
+  // single enforcement point shared by /full, /export-word, and /export-pdf
+  // (both export services call getFullReport internally -- see Section 12 of the
+  // Sprint 15 mandate: "preserve a single coherent enforcement path").
+  await authorizeTlhpReportScope({ scope, user });
+
   const lhpList = await getLhpListForScope(scope);
   const lhpIds = lhpList.map((l) => l.id);
   const detail = await getTemuanRekomendasiDetail(lhpIds);
   const rekomendasiIds = detail.filter((r) => r.rekomendasi).map((r) => r.rekomendasi.id);
   const evidenceCounts = await getEvidenceCountsByRekomendasi(rekomendasiIds);
-  const summary = await getSummary(scope);
+  const summary = await getSummary(scope, { user, _skipAuthorization: true });
 
   const namaOpdCandidates = [...new Set(lhpList.map((l) => l.nama_opd).filter(Boolean))];
   const namaOpd = namaOpdCandidates.length === 1 ? namaOpdCandidates[0] : null;

@@ -11530,6 +11530,419 @@ console.log('=== SPRINT 14 -- MR Mitigation Document + Monitoring Evidence OPD B
   );
 
 }
+
+console.log('=== SPRINT 15 -- TLHP Report/Export OPD Boundary Hardening (getSummary/getFullReport -- shared enforcement point for /summary, /full, /export-word, /export-pdf; /export-history explicitly OUT OF SCOPE and untouched) ===');
+
+{
+  const lhpServicePath = require.resolve('../services/mr/mrPlanningLhpService');
+  const tlhpReportQueryServicePath = require.resolve('../services/mr/mrPlanningTlhpReportQueryService');
+
+  const freshTlhpReportQueryService = () => {
+    delete require.cache[lhpServicePath];
+    delete require.cache[tlhpReportQueryServicePath];
+    return require('../services/mr/mrPlanningTlhpReportQueryService');
+  };
+
+  const SENTINEL_FINDALL_LHP = Symbol('S15_SENTINEL_FINDALL_LHP_REACHED');
+
+  // =====================================================================
+  // getSummary -- OWN_OPD_ALLOW / FOREIGN_OPD_DENY / SUPER_ADMIN / fail-closed
+  // =====================================================================
+
+  await test(
+    'mrPlanningTlhpReportQueryService.getSummary -- opd_id target milik OPD SENDIRI -> boundary MENGIZINKAN, findAll LHP TERCAPAI (OWN_OPD_ALLOW)',
+    async () => {
+      let findAllCalled = false;
+
+      await withStubs(
+        [
+          [models.RenstraOPD, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningLhp, 'findAll', async () => { findAllCalled = true; throw SENTINEL_FINDALL_LHP; }],
+        ],
+        async () => {
+          const svc = freshTlhpReportQueryService();
+          const scope = svc.resolveScope({ tahun: 2026, opd_id: 42 });
+          try {
+            await svc.getSummary(scope, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+            assert.fail('Seharusnya mencapai findAll (SENTINEL_FINDALL_LHP) atau error validasi lain setelah findAll tercapai');
+          } catch (error) {
+            assert.ok(error === SENTINEL_FINDALL_LHP || findAllCalled, 'findAll harus tercapai untuk own-OPD');
+          }
+        }
+      );
+
+      assert.strictEqual(findAllCalled, true, 'MrPlanningLhp.findAll HARUS dipanggil ketika boundary OPD mengizinkan (own-OPD)');
+    }
+  );
+
+  await test(
+    'mrPlanningTlhpReportQueryService.getSummary -- opd_id target milik OPD LAIN -> DITOLAK 403, findAll LHP TIDAK dipanggil (FOREIGN_OPD_DENY, zero disclosure)',
+    async () => {
+      let findAllCalled = false;
+
+      await withStubs(
+        [
+          [models.RenstraOPD, 'findOne', async () => ({ id: 99 })],
+          [models.MrPlanningLhp, 'findAll', async () => { findAllCalled = true; return [{ id: 1 }]; }],
+        ],
+        async () => {
+          const svc = freshTlhpReportQueryService();
+          const scope = svc.resolveScope({ tahun: 2026, opd_id: 42 });
+          try {
+            await svc.getSummary(scope, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' } });
+            assert.fail('Seharusnya melempar 403');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+            assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+          }
+        }
+      );
+
+      assert.strictEqual(findAllCalled, false, 'findAll TIDAK BOLEH dipanggil ketika boundary OPD menolak (zero disclosure untuk foreign-OPD)');
+    }
+  );
+
+  await test(
+    'mrPlanningTlhpReportQueryService.getSummary -- SUPER_ADMIN dengan opd_id target OPD LAIN -> boundary MENGIZINKAN (SUPER_ADMIN_FOREIGN_OPD_ALLOW, tenant-wide by design)',
+    async () => {
+      let findAllCalled = false;
+
+      await withStubs(
+        [
+          [models.MrPlanningLhp, 'findAll', async () => { findAllCalled = true; throw SENTINEL_FINDALL_LHP; }],
+        ],
+        async () => {
+          const svc = freshTlhpReportQueryService();
+          const scope = svc.resolveScope({ tahun: 2026, opd_id: 42 });
+          try {
+            await svc.getSummary(scope, { user: { id: 1, role: 'SUPER_ADMIN', opd: null } });
+          } catch (error) {
+            assert.ok(error === SENTINEL_FINDALL_LHP || findAllCalled);
+          }
+        }
+      );
+
+      assert.strictEqual(findAllCalled, true, 'SUPER_ADMIN harus tetap bisa melihat Ringkasan TLHP lintas OPD');
+    }
+  );
+
+  await test(
+    'mrPlanningTlhpReportQueryService.getSummary -- opd_id TIDAK DIISI (omitted), user BUKAN SUPER_ADMIN -> DITOLAK fail-closed, findAll TIDAK dipanggil (NULL_TARGET_FAIL_CLOSED, cegah tenant-wide default)',
+    async () => {
+      let findAllCalled = false;
+
+      await withStubs(
+        [
+          [models.MrPlanningLhp, 'findAll', async () => { findAllCalled = true; return [{ id: 1 }]; }],
+        ],
+        async () => {
+          const svc = freshTlhpReportQueryService();
+          const scope = svc.resolveScope({ tahun: 2026 });
+          assert.strictEqual(scope.opd_id, null, 'Prasyarat test: opd_id harus null ketika tidak diisi');
+          try {
+            await svc.getSummary(scope, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+            assert.fail('Seharusnya melempar 403 karena opd_id tidak diisi untuk user non-SUPER_ADMIN');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+            assert.strictEqual(error.code, 'MR_TLHP_REPORT_OPD_SCOPE_REQUIRED');
+          }
+        }
+      );
+
+      assert.strictEqual(findAllCalled, false, 'findAll TIDAK BOLEH dipanggil ketika opd_id tidak diisi untuk user non-SUPER_ADMIN (cegah scope lintas-OPD default)');
+    }
+  );
+
+  await test(
+    'mrPlanningTlhpReportQueryService.getSummary -- opd_id TIDAK DIISI, user SUPER_ADMIN -> boundary MENGIZINKAN (SUPER_ADMIN tetap tenant-wide meski opd_id kosong)',
+    async () => {
+      let findAllCalled = false;
+
+      await withStubs(
+        [
+          [models.MrPlanningLhp, 'findAll', async () => { findAllCalled = true; throw SENTINEL_FINDALL_LHP; }],
+        ],
+        async () => {
+          const svc = freshTlhpReportQueryService();
+          const scope = svc.resolveScope({ tahun: 2026 });
+          try {
+            await svc.getSummary(scope, { user: { id: 1, role: 'SUPER_ADMIN', opd: null } });
+          } catch (error) {
+            assert.ok(error === SENTINEL_FINDALL_LHP || findAllCalled);
+          }
+        }
+      );
+
+      assert.strictEqual(findAllCalled, true, 'SUPER_ADMIN harus tetap bisa melihat Ringkasan TLHP tenant-wide walau opd_id tidak diisi');
+    }
+  );
+
+  await test(
+    'mrPlanningTlhpReportQueryService.getSummary -- user MISSING (undefined) -> DITOLAK fail-closed, findAll TIDAK dipanggil (MISSING_USER_FAIL_CLOSED)',
+    async () => {
+      let findAllCalled = false;
+
+      await withStubs(
+        [
+          [models.MrPlanningLhp, 'findAll', async () => { findAllCalled = true; return [{ id: 1 }]; }],
+        ],
+        async () => {
+          const svc = freshTlhpReportQueryService();
+          const scope = svc.resolveScope({ tahun: 2026, opd_id: 42 });
+          try {
+            await svc.getSummary(scope, { user: undefined });
+            assert.fail('Seharusnya melempar 403 karena user undefined');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      assert.strictEqual(findAllCalled, false, 'findAll TIDAK BOLEH dipanggil ketika user undefined');
+    }
+  );
+
+  await test(
+    'mrPlanningTlhpReportQueryService.getSummary -- user MALFORMED (object tanpa opd) -> DITOLAK fail-closed, findAll TIDAK dipanggil (MALFORMED_USER_FAIL_CLOSED)',
+    async () => {
+      let findAllCalled = false;
+
+      await withStubs(
+        [
+          [models.MrPlanningLhp, 'findAll', async () => { findAllCalled = true; return [{ id: 1 }]; }],
+        ],
+        async () => {
+          const svc = freshTlhpReportQueryService();
+          const scope = svc.resolveScope({ tahun: 2026, opd_id: 42 });
+          try {
+            await svc.getSummary(scope, { user: { id: 10, role: 'ADMINISTRATOR' } });
+            assert.fail('Seharusnya melempar 403 karena user.opd tidak ada (malformed)');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      assert.strictEqual(findAllCalled, false, 'findAll TIDAK BOLEH dipanggil ketika user malformed (tanpa opd)');
+    }
+  );
+
+  await test(
+    'mrPlanningTlhpReportQueryService.getSummary -- resolusi caller OPD gagal (RenstraOPD.findOne throw) -> DITOLAK fail-closed 503, findAll TIDAK dipanggil (OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED)',
+    async () => {
+      let findAllCalled = false;
+
+      await withStubs(
+        [
+          [models.RenstraOPD, 'findOne', async () => { throw new Error('DB unavailable (simulated)'); }],
+          [models.MrPlanningLhp, 'findAll', async () => { findAllCalled = true; return [{ id: 1 }]; }],
+        ],
+        async () => {
+          const svc = freshTlhpReportQueryService();
+          const scope = svc.resolveScope({ tahun: 2026, opd_id: 42 });
+          try {
+            await svc.getSummary(scope, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+            assert.fail('Seharusnya melempar 503 karena resolusi caller OPD gagal');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 503);
+            assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_BOUNDARY_UNAVAILABLE');
+          }
+        }
+      );
+
+      assert.strictEqual(findAllCalled, false, 'findAll TIDAK BOLEH dipanggil ketika resolusi caller OPD gagal karena error internal (fail closed)');
+    }
+  );
+
+  // =====================================================================
+  // getFullReport -- single enforcement point shared by /full, /export-word, /export-pdf
+  // =====================================================================
+
+  await test(
+    'mrPlanningTlhpReportQueryService.getFullReport -- opd_id target milik OPD SENDIRI -> boundary MENGIZINKAN, findAll LHP TERCAPAI (OWN_OPD_ALLOW, AUTHORIZATION_BEFORE_DISCLOSURE)',
+    async () => {
+      let findAllCalled = false;
+
+      await withStubs(
+        [
+          [models.RenstraOPD, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningLhp, 'findAll', async () => { findAllCalled = true; throw SENTINEL_FINDALL_LHP; }],
+        ],
+        async () => {
+          const svc = freshTlhpReportQueryService();
+          try {
+            await svc.getFullReport({ tahun: 2026, opd_id: 42 }, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+            assert.fail('Seharusnya mencapai findAll (SENTINEL_FINDALL_LHP) atau error validasi lain setelah findAll tercapai');
+          } catch (error) {
+            assert.ok(error === SENTINEL_FINDALL_LHP || findAllCalled, 'findAll harus tercapai untuk own-OPD');
+          }
+        }
+      );
+
+      assert.strictEqual(findAllCalled, true, 'MrPlanningLhp.findAll HARUS dipanggil ketika boundary OPD mengizinkan (own-OPD, getFullReport)');
+    }
+  );
+
+  await test(
+    'mrPlanningTlhpReportQueryService.getFullReport -- opd_id target milik OPD LAIN -> DITOLAK 403 SEBELUM findAll LHP dipanggil (FOREIGN_OPD_DENY, AUTHORIZE BEFORE DISCLOSURE -- protects /full, /export-word, /export-pdf identically)',
+    async () => {
+      let findAllCalled = false;
+
+      await withStubs(
+        [
+          [models.RenstraOPD, 'findOne', async () => ({ id: 99 })],
+          [models.MrPlanningLhp, 'findAll', async () => { findAllCalled = true; return [{ id: 1 }]; }],
+        ],
+        async () => {
+          const svc = freshTlhpReportQueryService();
+          try {
+            await svc.getFullReport({ tahun: 2026, opd_id: 42 }, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' } });
+            assert.fail('Seharusnya melempar 403');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+            assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_FORBIDDEN');
+          }
+        }
+      );
+
+      assert.strictEqual(findAllCalled, false, 'findAll TIDAK BOLEH dipanggil untuk foreign-OPD -- membuktikan Word/PDF export tidak akan pernah men-generate konten terproteksi sebelum ditolak (zero disclosure, no export-content-before-denial)');
+    }
+  );
+
+  await test(
+    'mrPlanningTlhpReportQueryService.getFullReport -- SUPER_ADMIN dengan opd_id target OPD LAIN -> boundary MENGIZINKAN (SUPER_ADMIN_FOREIGN_OPD_ALLOW)',
+    async () => {
+      let findAllCalled = false;
+
+      await withStubs(
+        [
+          [models.MrPlanningLhp, 'findAll', async () => { findAllCalled = true; throw SENTINEL_FINDALL_LHP; }],
+        ],
+        async () => {
+          const svc = freshTlhpReportQueryService();
+          try {
+            await svc.getFullReport({ tahun: 2026, opd_id: 42 }, { user: { id: 1, role: 'SUPER_ADMIN', opd: null } });
+          } catch (error) {
+            assert.ok(error === SENTINEL_FINDALL_LHP || findAllCalled);
+          }
+        }
+      );
+
+      assert.strictEqual(findAllCalled, true, 'SUPER_ADMIN harus tetap bisa melihat Laporan Pemantauan TLHP lengkap lintas OPD');
+    }
+  );
+
+  await test(
+    'mrPlanningTlhpReportQueryService.getFullReport -- opd_id TIDAK DIISI, user BUKAN SUPER_ADMIN -> DITOLAK fail-closed, findAll TIDAK dipanggil (NULL_TARGET_FAIL_CLOSED)',
+    async () => {
+      let findAllCalled = false;
+
+      await withStubs(
+        [
+          [models.MrPlanningLhp, 'findAll', async () => { findAllCalled = true; return [{ id: 1 }]; }],
+        ],
+        async () => {
+          const svc = freshTlhpReportQueryService();
+          try {
+            await svc.getFullReport({ tahun: 2026 }, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+            assert.fail('Seharusnya melempar 403 karena opd_id tidak diisi untuk user non-SUPER_ADMIN');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+            assert.strictEqual(error.code, 'MR_TLHP_REPORT_OPD_SCOPE_REQUIRED');
+          }
+        }
+      );
+
+      assert.strictEqual(findAllCalled, false, 'findAll TIDAK BOLEH dipanggil ketika opd_id tidak diisi untuk user non-SUPER_ADMIN (getFullReport, cegah tenant-wide default via /full, /export-word, /export-pdf)');
+    }
+  );
+
+  await test(
+    'mrPlanningTlhpReportQueryService.getFullReport -- user MISSING (undefined) -> DITOLAK fail-closed, findAll TIDAK dipanggil (MISSING_USER_FAIL_CLOSED)',
+    async () => {
+      let findAllCalled = false;
+
+      await withStubs(
+        [
+          [models.MrPlanningLhp, 'findAll', async () => { findAllCalled = true; return [{ id: 1 }]; }],
+        ],
+        async () => {
+          const svc = freshTlhpReportQueryService();
+          try {
+            await svc.getFullReport({ tahun: 2026, opd_id: 42 }, { user: undefined });
+            assert.fail('Seharusnya melempar 403 karena user undefined');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      assert.strictEqual(findAllCalled, false, 'findAll TIDAK BOLEH dipanggil ketika user undefined (getFullReport)');
+    }
+  );
+
+  await test(
+    'mrPlanningTlhpReportQueryService.getFullReport -- user MALFORMED (object tanpa opd) -> DITOLAK fail-closed, findAll TIDAK dipanggil (MALFORMED_USER_FAIL_CLOSED)',
+    async () => {
+      let findAllCalled = false;
+
+      await withStubs(
+        [
+          [models.MrPlanningLhp, 'findAll', async () => { findAllCalled = true; return [{ id: 1 }]; }],
+        ],
+        async () => {
+          const svc = freshTlhpReportQueryService();
+          try {
+            await svc.getFullReport({ tahun: 2026, opd_id: 42 }, { user: { id: 10, role: 'ADMINISTRATOR' } });
+            assert.fail('Seharusnya melempar 403 karena user.opd tidak ada (malformed)');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      assert.strictEqual(findAllCalled, false, 'findAll TIDAK BOLEH dipanggil ketika user malformed (getFullReport)');
+    }
+  );
+
+  await test(
+    'mrPlanningTlhpReportQueryService.getFullReport -- resolusi caller OPD gagal (RenstraOPD.findOne throw) -> DITOLAK fail-closed 503, findAll TIDAK dipanggil (OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED)',
+    async () => {
+      let findAllCalled = false;
+
+      await withStubs(
+        [
+          [models.RenstraOPD, 'findOne', async () => { throw new Error('DB unavailable (simulated)'); }],
+          [models.MrPlanningLhp, 'findAll', async () => { findAllCalled = true; return [{ id: 1 }]; }],
+        ],
+        async () => {
+          const svc = freshTlhpReportQueryService();
+          try {
+            await svc.getFullReport({ tahun: 2026, opd_id: 42 }, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+            assert.fail('Seharusnya melempar 503 karena resolusi caller OPD gagal');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 503);
+            assert.strictEqual(error.code, 'MR_LHP_TEMUAN_OPD_BOUNDARY_UNAVAILABLE');
+          }
+        }
+      );
+
+      assert.strictEqual(findAllCalled, false, 'findAll TIDAK BOLEH dipanggil ketika resolusi caller OPD gagal (getFullReport, fail closed)');
+    }
+  );
+
+  // =====================================================================
+  // Internal call getFullReport -> getSummary (_skipAuthorization) tidak
+  // menimbulkan double-check yang mengubah perilaku -- dibuktikan tidak
+  // langsung (implisit) lewat seluruh test getFullReport di atas: jika
+  // getSummary internal ikut memeriksa ulang boundary dengan scope yang
+  // SAMA, hasilnya identik (own-OPD tetap allow, foreign tetap deny) --
+  // tidak ada test terpisah yang bisa membedakan kedua perilaku tanpa
+  // membuka rincian implementasi lebih jauh dari yang perlu (di luar
+  // batas minimum-necessary-scope Sprint 15).
+  // =====================================================================
+
+}
 } // end runAllTests
 
 runAllTests().then(() => {

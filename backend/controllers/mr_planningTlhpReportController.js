@@ -64,7 +64,7 @@ const recordExportFailureSafely = async ({ req, scope, report = null, format, er
 const getSummary = async (req, res) => {
   try {
     const scope = reportQueryService.resolveScope(req.query);
-    const data = await reportQueryService.getSummary(scope);
+    const data = await reportQueryService.getSummary(scope, { user: req.user });
     return res.json({ success: true, message: "Ringkasan TLHP berhasil dimuat.", data });
   } catch (error) {
     return sendError(res, error);
@@ -73,7 +73,7 @@ const getSummary = async (req, res) => {
 
 const getFullReport = async (req, res) => {
   try {
-    const data = await reportQueryService.getFullReport(req.query);
+    const data = await reportQueryService.getFullReport(req.query, { user: req.user });
     return res.json({ success: true, message: "Laporan Pemantauan TLHP berhasil dimuat.", data });
   } catch (error) {
     return sendError(res, error);
@@ -99,7 +99,7 @@ const exportWord = async (req, res) => {
 
   try {
     const result = await runWithHeavyExportGuard(() =>
-      reportExportWordService.buildTlhpWordDocument(req.query, { draft }),
+      reportExportWordService.buildTlhpWordDocument(req.query, { draft, user: req.user }),
     );
     report = result.report;
 
@@ -140,7 +140,7 @@ const exportPdf = async (req, res) => {
 
   try {
     const result = await runWithHeavyExportGuard(() =>
-      reportExportPdfService.buildTlhpPdfFromWord(req.query, { draft }),
+      reportExportPdfService.buildTlhpPdfFromWord(req.query, { draft, user: req.user }),
     );
     report = result.report;
 
