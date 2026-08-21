@@ -413,6 +413,19 @@ const getFullReport = async (scopeParams, { user } = {}) => {
 module.exports = {
   MrPlanningTlhpReportError,
   resolveScope,
+
+  // Sprint 18 -- TLHP export-history OPD boundary hardening: expose the
+  // existing Sprint 15 authorization helper (previously internal-only) so
+  // mr_planningTlhpReportController.js's getExportHistory can authorize the
+  // caller's requested scope BEFORE calling the export-history disclosure
+  // service -- same pattern already used by getSummary/getFullReport in
+  // this controller. This does NOT trust MrPlanningReportExport.opd_id (the
+  // stored export row) as ownership truth -- it authorizes the caller
+  // against scope.opd_id (the REQUESTED target, fail-closed if omitted) via
+  // resolveMrPlanningLhpOpdBoundary, which resolves the caller's own OPD
+  // server-side. No new authorization framework; this only exports what
+  // already existed.
+  authorizeTlhpReportScope,
   getLhpListForScope,
   getTemuanRekomendasiDetail,
   getEvidenceCountsByRekomendasi,

@@ -12831,6 +12831,327 @@ console.log('=== SPRINT 17 -- General MR quickRepair OPD Authorization & Mutatio
     }
   );
 }
+
+console.log('=== SPRINT 18 -- General MR + TLHP Export-History OPD Authorization & Information-Disclosure Boundary Hardening (mr_planningReportController.getExportHistory, mr_planningTlhpReportController.getExportHistory) ===');
+
+{
+  const riskServicePath = require.resolve('../services/mr/mrPlanningRiskService');
+  const lhpServicePath = require.resolve('../services/mr/mrPlanningLhpService');
+  const reportQueryServicePath = require.resolve('../services/mr/mrPlanningReportQueryService');
+  const tlhpReportQueryServicePath = require.resolve('../services/mr/mrPlanningTlhpReportQueryService');
+  const reportControllerPath = require.resolve('../controllers/mr_planningReportController');
+  const tlhpReportControllerPath = require.resolve('../controllers/mr_planningTlhpReportController');
+
+  const freshReportController = () => {
+    delete require.cache[riskServicePath];
+    delete require.cache[reportQueryServicePath];
+    delete require.cache[reportControllerPath];
+    return require('../controllers/mr_planningReportController');
+  };
+
+  const freshTlhpReportController = () => {
+    delete require.cache[lhpServicePath];
+    delete require.cache[tlhpReportQueryServicePath];
+    delete require.cache[tlhpReportControllerPath];
+    return require('../controllers/mr_planningTlhpReportController');
+  };
+
+  const SENTINEL_DISCLOSURE_S18 = Symbol('S18_SENTINEL_DISCLOSURE_REACHED');
+
+  // =====================================================================
+  // GENERAL MR -- getExportHistory
+  // =====================================================================
+
+  // getContext()'s own SELECT (context row incl. opd_id) is distinguished by
+  // a column unique to it (c.pemilik_risiko_user_id), matching the Sprint 16
+  // convention in this file -- any other sequelize.query call in this
+  // isolated block is treated as the protected export-history disclosure
+  // point (via the Model.findAndCountAll stub below).
+  const buildContextAwareQueryStub = (contextRow) => async (sql) => {
+    if (/c\.pemilik_risiko_user_id/.test(sql)) {
+      return [contextRow];
+    }
+    throw SENTINEL_DISCLOSURE_S18;
+  };
+
+  const GMR_OWN_OPD_CONTEXT_ROW = { id: 501, opd_id: 42 };
+  const GMR_FOREIGN_OPD_CONTEXT_ROW = { id: 501, opd_id: 99 };
+  const GMR_NULL_OPD_CONTEXT_ROW = { id: 501, opd_id: null };
+
+  const fakeExportModel = (onReached) => ({
+    findAndCountAll: async () => { onReached(); throw SENTINEL_DISCLOSURE_S18; },
+  });
+
+  await test(
+    'mr_planningReportController.getExportHistory -- context.opd_id milik OPD SENDIRI -> boundary MENGIZINKAN, disclosure query TERCAPAI (GMR-EH-01 OWN_OPD_ALLOW, GMR-EH-06 AUTHORIZATION_BEFORE_DISCLOSURE)',
+    async () => {
+      let disclosureReached = false;
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.sequelize, 'query', buildContextAwareQueryStub(GMR_OWN_OPD_CONTEXT_ROW)],
+          [models.MrPlanningReportExport, 'findAndCountAll', async () => { disclosureReached = true; throw SENTINEL_DISCLOSURE_S18; }],
+        ],
+        async () => {
+          const controller = freshReportController();
+          const req = { params: { contextId: '501' }, query: {}, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } };
+          const res = fakeRes();
+          await controller.getExportHistory(req, res);
+          assert.ok(disclosureReached || res.statusCode === 500, 'disclosure query harus tercapai (atau error internal pasca-SENTINEL) untuk own-OPD');
+        }
+      );
+      assert.strictEqual(disclosureReached, true, 'MrPlanningReportExport.findAndCountAll HARUS dipanggil ketika boundary OPD mengizinkan (own-OPD)');
+    }
+  );
+
+  await test(
+    'mr_planningReportController.getExportHistory -- context.opd_id milik OPD LAIN -> DITOLAK 403, disclosure query TIDAK dipanggil (GMR-EH-02 FOREIGN_OPD_DENY, GMR-EH-07 FOREIGN_OPD_DISCLOSURE_HANDLER_NOT_REACHED)',
+    async () => {
+      let disclosureReached = false;
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.sequelize, 'query', buildContextAwareQueryStub(GMR_FOREIGN_OPD_CONTEXT_ROW)],
+          [models.MrPlanningReportExport, 'findAndCountAll', async () => { disclosureReached = true; return { rows: [], count: 0 }; }],
+        ],
+        async () => {
+          const controller = freshReportController();
+          const req = { params: { contextId: '501' }, query: {}, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } };
+          const res = fakeRes();
+          await controller.getExportHistory(req, res);
+          assert.strictEqual(res.statusCode, 403, 'HTTP 403 diharapkan untuk foreign-OPD');
+        }
+      );
+      assert.strictEqual(disclosureReached, false, 'MrPlanningReportExport.findAndCountAll TIDAK BOLEH dipanggil ketika boundary OPD menolak (zero disclosure)');
+    }
+  );
+
+  await test(
+    'mr_planningReportController.getExportHistory -- SUPER_ADMIN dengan context.opd_id OPD LAIN -> boundary MENGIZINKAN (GMR-EH-03 SUPER_ADMIN_ALLOW, tenant-wide by design)',
+    async () => {
+      let disclosureReached = false;
+      await withStubs(
+        [
+          [models.sequelize, 'query', buildContextAwareQueryStub(GMR_FOREIGN_OPD_CONTEXT_ROW)],
+          [models.MrPlanningReportExport, 'findAndCountAll', async () => { disclosureReached = true; throw SENTINEL_DISCLOSURE_S18; }],
+        ],
+        async () => {
+          const controller = freshReportController();
+          const req = { params: { contextId: '501' }, query: {}, user: { id: 1, role: 'SUPER_ADMIN' } };
+          const res = fakeRes();
+          await controller.getExportHistory(req, res);
+        }
+      );
+      assert.strictEqual(disclosureReached, true, 'SUPER_ADMIN harus tetap bisa melihat export-history lintas-OPD (tenant-wide by design)');
+    }
+  );
+
+  await test(
+    'mr_planningReportController.getExportHistory -- context.opd_id NULL, user BUKAN SUPER_ADMIN -> DITOLAK fail-closed, disclosure query TIDAK dipanggil (GMR-EH-05 MISSING_ORDINARY_USER_OPD analog / NULL_TARGET_FAIL_CLOSED)',
+    async () => {
+      let disclosureReached = false;
+      await withStubs(
+        [
+          [models.sequelize, 'query', buildContextAwareQueryStub(GMR_NULL_OPD_CONTEXT_ROW)],
+          [models.MrPlanningReportExport, 'findAndCountAll', async () => { disclosureReached = true; return { rows: [], count: 0 }; }],
+        ],
+        async () => {
+          const controller = freshReportController();
+          const req = { params: { contextId: '501' }, query: {}, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } };
+          const res = fakeRes();
+          await controller.getExportHistory(req, res);
+          assert.strictEqual(res.statusCode, 403, 'HTTP 403 diharapkan ketika context.opd_id null (non-SUPER_ADMIN)');
+        }
+      );
+      assert.strictEqual(disclosureReached, false, 'disclosure TIDAK BOLEH tercapai ketika context.opd_id null (fail-closed)');
+    }
+  );
+
+  await test(
+    'mr_planningReportController.getExportHistory -- user MISSING (req.user undefined) -> DITOLAK fail-closed, disclosure query TIDAK dipanggil (GMR-EH-04 MISSING_USER_FAIL_CLOSED)',
+    async () => {
+      let disclosureReached = false;
+      await withStubs(
+        [
+          [models.sequelize, 'query', buildContextAwareQueryStub(GMR_OWN_OPD_CONTEXT_ROW)],
+          [models.MrPlanningReportExport, 'findAndCountAll', async () => { disclosureReached = true; return { rows: [], count: 0 }; }],
+        ],
+        async () => {
+          const controller = freshReportController();
+          const req = { params: { contextId: '501' }, query: {}, user: undefined };
+          const res = fakeRes();
+          await controller.getExportHistory(req, res);
+          assert.strictEqual(res.statusCode, 403, 'HTTP 403 diharapkan ketika req.user hilang');
+        }
+      );
+      assert.strictEqual(disclosureReached, false, 'disclosure TIDAK BOLEH tercapai ketika req.user hilang (fail-closed)');
+    }
+  );
+
+  // =====================================================================
+  // TLHP -- getExportHistory
+  // =====================================================================
+
+  await test(
+    'mr_planningTlhpReportController.getExportHistory -- scope.opd_id (dari query, MILIK OPD SENDIRI) -> boundary MENGIZINKAN, disclosure query TERCAPAI (TLHP-EH-01 OWN_OPD_ALLOW, TLHP-EH-06 AUTHORIZATION_BEFORE_DISCLOSURE)',
+    async () => {
+      let disclosureReached = false;
+      await withStubs(
+        [
+          [models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 42, nama_opd: where.nama_opd })],
+          [models.MrPlanningReportExport, 'findAndCountAll', async () => { disclosureReached = true; throw SENTINEL_DISCLOSURE_S18; }],
+        ],
+        async () => {
+          const controller = freshTlhpReportController();
+          const req = { query: { tahun: '2026', opd_id: '42' }, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } };
+          const res = fakeRes();
+          await controller.getExportHistory(req, res);
+        }
+      );
+      assert.strictEqual(disclosureReached, true, 'MrPlanningReportExport.findAndCountAll HARUS dipanggil ketika boundary OPD mengizinkan (own-OPD, requested scope.opd_id sesuai caller)');
+    }
+  );
+
+  await test(
+    'mr_planningTlhpReportController.getExportHistory -- scope.opd_id (dari query, MILIK OPD LAIN, TIDAK sesuai caller) -> DITOLAK 403, disclosure query TIDAK dipanggil (TLHP-EH-02 FOREIGN_OPD_DENY, TLHP-EH-08 ATTACKER_CONTROLLED_QUERY_OPD_CANNOT_BYPASS_BOUNDARY, TLHP-EH-07 FOREIGN_OPD_DISCLOSURE_HANDLER_NOT_REACHED)',
+    async () => {
+      let disclosureReached = false;
+      await withStubs(
+        [
+          [models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 42, nama_opd: where.nama_opd })],
+          [models.MrPlanningReportExport, 'findAndCountAll', async () => { disclosureReached = true; return { rows: [], count: 0 }; }],
+        ],
+        async () => {
+          const controller = freshTlhpReportController();
+          // Caller's own OPD resolves to id=42 (per RenstraOPD.findOne stub above),
+          // but attacker supplies a DIFFERENT opd_id=99 in the query string,
+          // attempting to view another OPD's TLHP export history.
+          const req = { query: { tahun: '2026', opd_id: '99' }, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } };
+          const res = fakeRes();
+          await controller.getExportHistory(req, res);
+          assert.strictEqual(res.statusCode, 403, 'HTTP 403 diharapkan ketika query opd_id tidak sesuai OPD caller');
+        }
+      );
+      assert.strictEqual(disclosureReached, false, 'disclosure TIDAK BOLEH tercapai ketika query opd_id (attacker-controlled) tidak sesuai OPD caller (boundary tidak bisa dibypass lewat query)');
+    }
+  );
+
+  await test(
+    'mr_planningTlhpReportController.getExportHistory -- query opd_id DIHILANGKAN, user BUKAN SUPER_ADMIN -> DITOLAK fail-closed, TIDAK melebar ke seluruh OPD (TLHP-EH-09 OMITTED_QUERY_OPD_CANNOT_RETURN_CROSS_OPD_HISTORY)',
+    async () => {
+      let disclosureReached = false;
+      await withStubs(
+        [
+          [models.MrPlanningReportExport, 'findAndCountAll', async () => { disclosureReached = true; return { rows: [], count: 0 }; }],
+        ],
+        async () => {
+          const controller = freshTlhpReportController();
+          const req = { query: { tahun: '2026' }, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } };
+          const res = fakeRes();
+          await controller.getExportHistory(req, res);
+          assert.strictEqual(res.statusCode, 403, 'HTTP 403 diharapkan ketika query opd_id dihilangkan (non-SUPER_ADMIN)');
+        }
+      );
+      assert.strictEqual(disclosureReached, false, 'disclosure TIDAK BOLEH tercapai ketika query opd_id dihilangkan -- tidak boleh melebar ke seluruh OPD (fail-closed, bukan tenant-wide silent widen)');
+    }
+  );
+
+  await test(
+    'mr_planningTlhpReportController.getExportHistory -- SUPER_ADMIN, query opd_id DIHILANGKAN -> boundary MENGIZINKAN (TLHP-EH-03 SUPER_ADMIN_ALLOW, tenant-wide by design)',
+    async () => {
+      let disclosureReached = false;
+      await withStubs(
+        [
+          [models.MrPlanningReportExport, 'findAndCountAll', async () => { disclosureReached = true; throw SENTINEL_DISCLOSURE_S18; }],
+        ],
+        async () => {
+          const controller = freshTlhpReportController();
+          const req = { query: { tahun: '2026' }, user: { id: 1, role: 'SUPER_ADMIN' } };
+          const res = fakeRes();
+          await controller.getExportHistory(req, res);
+        }
+      );
+      assert.strictEqual(disclosureReached, true, 'SUPER_ADMIN harus tetap bisa melihat export-history lintas-OPD tanpa query opd_id (tenant-wide by design)');
+    }
+  );
+
+  await test(
+    'mr_planningTlhpReportController.getExportHistory -- user MISSING (req.user undefined) -> DITOLAK fail-closed, disclosure query TIDAK dipanggil (TLHP-EH-04 MISSING_USER_FAIL_CLOSED)',
+    async () => {
+      let disclosureReached = false;
+      await withStubs(
+        [
+          [models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 42, nama_opd: where.nama_opd })],
+          [models.MrPlanningReportExport, 'findAndCountAll', async () => { disclosureReached = true; return { rows: [], count: 0 }; }],
+        ],
+        async () => {
+          const controller = freshTlhpReportController();
+          const req = { query: { tahun: '2026', opd_id: '42' }, user: undefined };
+          const res = fakeRes();
+          await controller.getExportHistory(req, res);
+          assert.strictEqual(res.statusCode, 403, 'HTTP 403 diharapkan ketika req.user hilang');
+        }
+      );
+      assert.strictEqual(disclosureReached, false, 'disclosure TIDAK BOLEH tercapai ketika req.user hilang (fail-closed)');
+    }
+  );
+
+  await test(
+    'mr_planningTlhpReportController.getExportHistory -- resolusi RenstraOPD (kepemilikan caller) gagal secara internal -> fail-closed, disclosure query TIDAK dipanggil (TLHP-EH-05 analog / OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED)',
+    async () => {
+      let disclosureReached = false;
+      await withStubs(
+        [
+          [models.RenstraOPD, 'findOne', async () => { throw new Error('DB unavailable (simulated)'); }],
+          [models.MrPlanningReportExport, 'findAndCountAll', async () => { disclosureReached = true; return { rows: [], count: 0 }; }],
+        ],
+        async () => {
+          const controller = freshTlhpReportController();
+          const req = { query: { tahun: '2026', opd_id: '42' }, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } };
+          const res = fakeRes();
+          await controller.getExportHistory(req, res);
+          assert.strictEqual(res.statusCode >= 400, true, 'error status diharapkan ketika resolusi kepemilikan caller gagal secara internal');
+        }
+      );
+      assert.strictEqual(disclosureReached, false, 'disclosure TIDAK BOLEH tercapai ketika resolusi kepemilikan caller gagal secara internal (fail-closed)');
+    }
+  );
+
+  await test(
+    'mr_planningTlhpReportController.getExportHistory -- STORED MrPlanningReportExport.opd_id TIDAK digunakan sebagai sumber kebenaran kepemilikan (TLHP-EH-10 STORED_EXPORT_OPD_ID_IS_NOT_USED_AS_AUTHORITATIVE_OWNER)',
+    async () => {
+      // This test proves the authorization decision is made BEFORE the
+      // disclosure query even runs -- findAndCountAll is stubbed to return
+      // rows whose OWN opd_id values are all foreign (99), which would be
+      // irrelevant/unreachable information if authorization depended on
+      // inspecting stored row content. The boundary must deny based solely
+      // on the caller-vs-requested-scope comparison (scope.opd_id vs
+      // resolveMrPlanningLhpOpdBoundary's caller resolution), never by
+      // reading exportRow.opd_id from already-fetched/stored data.
+      let disclosureReached = false;
+      await withStubs(
+        [
+          [models.RenstraOPD, 'findOne', async ({ where }) => ({ id: 42, nama_opd: where.nama_opd })],
+          [models.MrPlanningReportExport, 'findAndCountAll', async () => {
+            disclosureReached = true;
+            return { rows: [{ id: 1, opd_id: 99, report_type: 'tlhp_monitoring' }], count: 1 };
+          }],
+        ],
+        async () => {
+          const controller = freshTlhpReportController();
+          // Caller resolves to OPD 42; requests scope.opd_id=99 (foreign) --
+          // must be denied before findAndCountAll is ever called, regardless
+          // of what any stored row's own opd_id column contains.
+          const req = { query: { tahun: '2026', opd_id: '99' }, user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } };
+          const res = fakeRes();
+          await controller.getExportHistory(req, res);
+          assert.strictEqual(res.statusCode, 403, 'HTTP 403 diharapkan -- boundary tidak boleh bergantung pada isi stored export row');
+        }
+      );
+      assert.strictEqual(disclosureReached, false, 'disclosure TIDAK BOLEH tercapai -- membuktikan authorization TIDAK bergantung pada MrPlanningReportExport.opd_id yang tersimpan (stored value bukan sumber kebenaran)');
+    }
+  );
+}
 } // end runAllTests
 
 runAllTests().then(() => {

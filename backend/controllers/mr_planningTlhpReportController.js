@@ -82,6 +82,21 @@ const getFullReport = async (req, res) => {
 
 const getExportHistory = async (req, res) => {
   try {
+    // Sprint 18 (TLHP export-history OPD authorization & information-
+    // disclosure boundary hardening): this endpoint previously disclosed
+    // MrPlanningReportExport rows filtered only by an OPTIONAL, client-
+    // supplied req.query.opd_id, with no server-side authorization -- an
+    // ordinary caller could omit opd_id to see every OPD's TLHP export
+    // history, or supply an arbitrary opd_id, since the stored export row's
+    // own opd_id column is itself client-influenced at write time and is
+    // NOT trusted as ownership truth here. Reuse the same authorization
+    // sequence already used by getSummary/getFullReport in this controller:
+    // resolve the REQUESTED scope, then authorize the caller against it
+    // (fail-closed if opd_id is omitted, own-OPD only unless SUPER_ADMIN) --
+    // BEFORE calling the export-history disclosure service.
+    const scope = reportQueryService.resolveScope(req.query);
+    await reportQueryService.authorizeTlhpReportScope({ scope, user: req.user });
+
     const data = await reportExportHistoryService.getExportHistoryByScope(req.query);
     return res.json({ success: true, message: "Riwayat export TLHP berhasil dimuat.", data: data.rows, meta: data.meta });
   } catch (error) {

@@ -5602,6 +5602,15 @@ module.exports = {
   buildUnifiedReportApprovalGate,
   buildReportScope,
 
+  // Sprint 18 -- export-history OPD boundary hardening: expose the existing
+  // Sprint 16 authorization helper (previously internal-only) so
+  // mr_planningReportController.js's getExportHistory can authorize the
+  // caller against the resolved MrPlanningContext.opd_id BEFORE calling the
+  // export-history disclosure service -- same pattern already used by
+  // getSummary/getLampiran/getFullReport in this file. No new authorization
+  // framework; this only exports what already existed.
+  authorizeGeneralMrReportScope,
+
   // R16B exports untuk kebutuhan test/debug backend.
   getDaftarRisiko,
   getAnalisisRisiko,

@@ -284,6 +284,22 @@ const getExportHistory = async (req, res) => {
   try {
     const { contextId } = req.params;
 
+    // Sprint 18 (General MR export-history OPD authorization &
+    // information-disclosure boundary hardening): this endpoint previously
+    // disclosed MrPlanningReportExport rows for any contextId with no OPD
+    // boundary check at all. Reuse the same authorization sequence already
+    // used by getSummary/getLampiran/getFullReport in this controller --
+    // resolve the authoritative MrPlanningContext, then authorize the caller
+    // against its opd_id (OpdPenanggungJawab.id namespace) -- BEFORE calling
+    // the export-history disclosure service, so a foreign-OPD caller never
+    // reaches the protected query.
+    const context = await reportQueryService.getContext(contextId);
+    await reportQueryService.authorizeGeneralMrReportScope({
+      contextId,
+      context,
+      user: req.user,
+    });
+
     const result = await reportExportHistoryService.getExportHistoryByContext(
       contextId,
       req.query
