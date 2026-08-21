@@ -12583,6 +12583,254 @@ console.log('=== SPRINT 16 -- MR (Risiko) Report OPD Boundary Hardening (getSumm
   // =====================================================================
 
 }
+
+console.log('=== SPRINT 17 -- General MR quickRepair OPD Authorization & Mutation Boundary Hardening (mr_planningReportController.quickRepair) ===');
+
+{
+  const controllerPath = require.resolve('../controllers/mr_planningReportController');
+  const riskServicePath = require.resolve('../services/mr/mrPlanningRiskService');
+
+  const freshController = () => {
+    delete require.cache[riskServicePath];
+    delete require.cache[controllerPath];
+    return require('../controllers/mr_planningReportController');
+  };
+
+  const fakeRisk = (opdId) => ({ id: 1, opd_id: opdId });
+
+  await test(
+    'quickRepair -- Risk induk milik OPD SENDIRI -> boundary MENGIZINKAN, mutasi tercapai (OWN_OPD_ALLOW)',
+    async () => {
+      let updateCalled = false;
+      let createCalled = false;
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrPlanningRiskAnalysis, 'update', async () => { updateCalled = true; return [0]; }],
+          [models.MrPlanningRiskAnalysis, 'findOne', async () => null],
+          [models.MrPlanningRiskAnalysis, 'create', async () => { createCalled = true; return { id: 99 }; }],
+        ],
+        async () => {
+          const controller = freshController();
+          const req = {
+            params: { contextId: '1' },
+            body: { repairs: [{ risk_id: 1, fields: { inherent_score: 5 } }] },
+            user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+          };
+          const res = fakeRes();
+          await controller.quickRepair(req, res);
+          assert.strictEqual(res.statusCode, 200, 'HTTP 200 diharapkan untuk own-OPD');
+          assert.strictEqual(res.body.repaired, 1, 'repaired count harus 1');
+          assert.strictEqual(res.body.results[0].status, 'repaired', 'status item harus repaired');
+        }
+      );
+      assert.ok(updateCalled, 'MrPlanningRiskAnalysis.update HARUS dipanggil ketika boundary OPD mengizinkan (own-OPD)');
+      assert.ok(createCalled, 'MrPlanningRiskAnalysis.create HARUS dipanggil ketika boundary OPD mengizinkan (own-OPD)');
+    }
+  );
+
+  await test(
+    'quickRepair -- Risk induk milik OPD LAIN -> boundary MENOLAK, mutasi TIDAK tercapai (FOREIGN_OPD_DENY, AUTHORIZATION_BEFORE_MUTATION)',
+    async () => {
+      let updateCalled = false;
+      let createCalled = false;
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(999)],
+          [models.MrPlanningRiskAnalysis, 'update', async () => { updateCalled = true; return [0]; }],
+          [models.MrPlanningRiskAnalysis, 'findOne', async () => null],
+          [models.MrPlanningRiskAnalysis, 'create', async () => { createCalled = true; return { id: 99 }; }],
+        ],
+        async () => {
+          const controller = freshController();
+          const req = {
+            params: { contextId: '1' },
+            body: { repairs: [{ risk_id: 1, fields: { inherent_score: 5 } }] },
+            user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+          };
+          const res = fakeRes();
+          await controller.quickRepair(req, res);
+          assert.strictEqual(res.statusCode, 200, 'quickRepair tetap 200 (per-item deny, bukan abort batch)');
+          assert.strictEqual(res.body.repaired, 0, 'repaired count harus 0 -- tidak ada mutasi untuk risk_id foreign-OPD');
+          assert.strictEqual(res.body.results[0].status, 'denied', 'status item harus denied');
+        }
+      );
+      assert.strictEqual(updateCalled, false, 'MrPlanningRiskAnalysis.update TIDAK BOLEH dipanggil ketika boundary OPD menolak (foreign-OPD) -- membuktikan authorization-before-mutation');
+      assert.strictEqual(createCalled, false, 'MrPlanningRiskAnalysis.create TIDAK BOLEH dipanggil ketika boundary OPD menolak (foreign-OPD)');
+    }
+  );
+
+  await test(
+    'quickRepair -- SUPER_ADMIN -> tenant-wide, mutasi tercapai walau risk_id milik OPD lain (SUPER_ADMIN_TENANT_WIDE)',
+    async () => {
+      let updateCalled = false;
+      await withStubs(
+        [
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(999)],
+          [models.MrPlanningRiskAnalysis, 'update', async () => { updateCalled = true; return [0]; }],
+          [models.MrPlanningRiskAnalysis, 'findOne', async () => null],
+          [models.MrPlanningRiskAnalysis, 'create', async () => ({ id: 99 })],
+        ],
+        async () => {
+          const controller = freshController();
+          const req = {
+            params: { contextId: '1' },
+            body: { repairs: [{ risk_id: 1, fields: { inherent_score: 5 } }] },
+            user: { id: 1, role: 'SUPER_ADMIN' },
+          };
+          const res = fakeRes();
+          await controller.quickRepair(req, res);
+          assert.strictEqual(res.body.repaired, 1, 'SUPER_ADMIN harus tetap bisa memperbaiki risk_id lintas-OPD (tenant-wide by design)');
+        }
+      );
+      assert.ok(updateCalled, 'SUPER_ADMIN: mutasi harus tercapai lintas-OPD');
+    }
+  );
+
+  await test(
+    'quickRepair -- MrPlanningRisk.opd_id NULL (unresolved ownership), caller BUKAN SUPER_ADMIN -> fail-closed, mutasi TIDAK tercapai (NULL_TARGET_FAIL_CLOSED)',
+    async () => {
+      let updateCalled = false;
+      await withStubs(
+        [
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(null)],
+          [models.MrPlanningRiskAnalysis, 'update', async () => { updateCalled = true; return [0]; }],
+        ],
+        async () => {
+          const controller = freshController();
+          const req = {
+            params: { contextId: '1' },
+            body: { repairs: [{ risk_id: 1, fields: { inherent_score: 5 } }] },
+            user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+          };
+          const res = fakeRes();
+          await controller.quickRepair(req, res);
+          assert.strictEqual(res.body.repaired, 0, 'opd_id null pada risk induk harus fail-closed untuk caller non-SUPER_ADMIN');
+          assert.strictEqual(res.body.results[0].status, 'denied', 'status item harus denied');
+          assert.strictEqual(res.body.results[0].reason, 'MR_RISK_ANALYSIS_OPD_BOUNDARY_UNRESOLVED', 'reason code harus UNRESOLVED');
+        }
+      );
+      assert.strictEqual(updateCalled, false, 'update TIDAK BOLEH dipanggil ketika ownership tidak dapat diverifikasi (null opd_id, non-SUPER_ADMIN)');
+    }
+  );
+
+  await test(
+    'quickRepair -- MrPlanningRisk.findByPk TIDAK menemukan risk (risk_id tidak valid) -> skip aman, mutasi TIDAK tercapai (RISK_NOT_FOUND)',
+    async () => {
+      let updateCalled = false;
+      await withStubs(
+        [
+          [models.MrPlanningRisk, 'findByPk', async () => null],
+          [models.MrPlanningRiskAnalysis, 'update', async () => { updateCalled = true; return [0]; }],
+        ],
+        async () => {
+          const controller = freshController();
+          const req = {
+            params: { contextId: '1' },
+            body: { repairs: [{ risk_id: 999999, fields: { inherent_score: 5 } }] },
+            user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+          };
+          const res = fakeRes();
+          await controller.quickRepair(req, res);
+          assert.strictEqual(res.body.repaired, 0, 'risk_id yang tidak ditemukan tidak boleh menghasilkan mutasi');
+          assert.strictEqual(res.body.results[0].status, 'skipped', 'status item harus skipped');
+        }
+      );
+      assert.strictEqual(updateCalled, false, 'update TIDAK BOLEH dipanggil ketika risk_id tidak ditemukan');
+    }
+  );
+
+  await test(
+    'quickRepair -- user MISSING (req.user undefined), risk milik OPD tertentu -> fail-closed via boundary helper (MISSING_USER_FAIL_CLOSED)',
+    async () => {
+      let updateCalled = false;
+      await withStubs(
+        [
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrPlanningRiskAnalysis, 'update', async () => { updateCalled = true; return [0]; }],
+        ],
+        async () => {
+          const controller = freshController();
+          const req = {
+            params: { contextId: '1' },
+            body: { repairs: [{ risk_id: 1, fields: { inherent_score: 5 } }] },
+            user: undefined,
+          };
+          const res = fakeRes();
+          await controller.quickRepair(req, res);
+          assert.strictEqual(res.body.repaired, 0, 'user hilang harus fail-closed');
+          assert.strictEqual(res.body.results[0].status, 'denied', 'status item harus denied');
+        }
+      );
+      assert.strictEqual(updateCalled, false, 'update TIDAK BOLEH dipanggil ketika req.user hilang');
+    }
+  );
+
+  await test(
+    'quickRepair -- OpdPenanggungJawab.findOne (resolusi kepemilikan) melempar error internal -> fail-closed, mutasi TIDAK tercapai (OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED)',
+    async () => {
+      let updateCalled = false;
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { throw new Error('DB unavailable (simulated)'); }],
+          [models.MrPlanningRisk, 'findByPk', async () => fakeRisk(42)],
+          [models.MrPlanningRiskAnalysis, 'update', async () => { updateCalled = true; return [0]; }],
+        ],
+        async () => {
+          const controller = freshController();
+          const req = {
+            params: { contextId: '1' },
+            body: { repairs: [{ risk_id: 1, fields: { inherent_score: 5 } }] },
+            user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+          };
+          const res = fakeRes();
+          await controller.quickRepair(req, res);
+          assert.strictEqual(res.body.repaired, 0, 'kegagalan resolusi kepemilikan internal harus fail-closed');
+          assert.strictEqual(res.body.results[0].status, 'denied', 'status item harus denied');
+        }
+      );
+      assert.strictEqual(updateCalled, false, 'update TIDAK BOLEH dipanggil ketika resolusi kepemilikan gagal secara internal');
+    }
+  );
+
+  await test(
+    'quickRepair -- batch campuran (1 risk own-OPD + 1 risk foreign-OPD) -> item own-OPD diperbaiki, item foreign-OPD ditolak, TIDAK saling mengganggu (PER_ITEM_ISOLATION)',
+    async () => {
+      const updateCalls = [];
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.MrPlanningRisk, 'findByPk', async (id) => (id === 1 ? fakeRisk(42) : fakeRisk(999))],
+          [models.MrPlanningRiskAnalysis, 'update', async (vals, opts) => { updateCalls.push(opts.where.mr_planning_risk_id); return [0]; }],
+          [models.MrPlanningRiskAnalysis, 'findOne', async () => null],
+          [models.MrPlanningRiskAnalysis, 'create', async () => ({ id: 99 })],
+        ],
+        async () => {
+          const controller = freshController();
+          const req = {
+            params: { contextId: '1' },
+            body: {
+              repairs: [
+                { risk_id: 1, fields: { inherent_score: 5 } },
+                { risk_id: 2, fields: { inherent_score: 5 } },
+              ],
+            },
+            user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+          };
+          const res = fakeRes();
+          await controller.quickRepair(req, res);
+          assert.strictEqual(res.body.repaired, 1, 'hanya 1 item (own-OPD) yang boleh terhitung repaired');
+          const byId = Object.fromEntries(res.body.results.map((r) => [r.risk_id, r.status]));
+          assert.strictEqual(byId[1], 'repaired', 'risk_id=1 (own-OPD) harus repaired');
+          assert.strictEqual(byId[2], 'denied', 'risk_id=2 (foreign-OPD) harus denied');
+        }
+      );
+      assert.deepStrictEqual(updateCalls, [1], 'MrPlanningRiskAnalysis.update hanya boleh dipanggil untuk risk_id=1 (own-OPD), TIDAK untuk risk_id=2 (foreign-OPD)');
+    }
+  );
+}
 } // end runAllTests
 
 runAllTests().then(() => {

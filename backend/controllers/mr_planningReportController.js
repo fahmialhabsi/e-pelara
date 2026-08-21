@@ -8,7 +8,7 @@ const reportExportAuditService = require("../services/mr/mrPlanningReportExportA
 const reportExportHistoryService = require("../services/mr/mrPlanningReportExportHistoryService");
 const mrIntegrityScanService = require("../services/mr/mrIntegrityScanService");
 const mrPlanningReportRepairDraftService = require("../services/mr/mrPlanningReportRepairDraftService");
-const { recalculateRiskMatrixForPayload } = require("../services/mr/mrPlanningRiskService");
+const { recalculateRiskMatrixForPayload, resolveMrPlanningRiskOpdBoundary } = require("../services/mr/mrPlanningRiskService");
 const { assertReportExportPolicy } = require("../services/mr/mrPolicyEngineService");
 const { logActivity } = require("../services/auditService");
 const db = require("../models");
@@ -561,6 +561,43 @@ const quickRepair = async (req, res) => {
     for (const item of repairs) {
       const { risk_id, fields = {} } = item;
       if (!risk_id || !Object.keys(fields).length) continue;
+
+      // Sprint 17 (quickRepair OPD authorization & mutation boundary
+      // hardening): risk_id is attacker-controlled request-body input with
+      // no prior ownership verification. Resolve the owning MrPlanningRisk
+      // and enforce the same fail-closed OPD boundary already used by
+      // repairDraftFromFindings's child RiskAnalysis writes (see
+      // mrPlanningRiskAnalysisService.js createAnalysisFromRisk /
+      // updateAnalysisFromRisk) BEFORE any mutation is issued for this
+      // risk_id. A foreign-OPD or unresolved-ownership risk_id is skipped
+      // (not mutated) rather than aborting the whole batch, preserving
+      // quickRepair's existing per-item repair semantics for authorized
+      // items while denying the unauthorized one.
+      const risk = await db.MrPlanningRisk.findByPk(risk_id);
+      if (!risk) {
+        results.push({ risk_id, status: 'skipped', reason: 'MR_PLANNING_RISK_NOT_FOUND' });
+        continue;
+      }
+
+      const targetOpdId = risk?.opd_id ?? null;
+      if (targetOpdId === null && req.user?.role !== 'SUPER_ADMIN') {
+        results.push({ risk_id, status: 'denied', reason: 'MR_RISK_ANALYSIS_OPD_BOUNDARY_UNRESOLVED' });
+        continue;
+      }
+
+      const boundary = await resolveMrPlanningRiskOpdBoundary({
+        user: req.user,
+        targetOpdId,
+      });
+      if (!boundary.ok) {
+        results.push({
+          risk_id,
+          status: 'denied',
+          reason: boundary.error?.code || 'MR_RISK_ANALYSIS_OPD_BOUNDARY_FORBIDDEN',
+        });
+        continue;
+      }
+
       await db.MrPlanningRiskAnalysis.update({ is_latest: 0 }, { where: { mr_planning_risk_id: risk_id } });
       const existing = await db.MrPlanningRiskAnalysis.findOne({
         where: { mr_planning_risk_id: risk_id, is_active: 1 },
@@ -593,9 +630,9 @@ const quickRepair = async (req, res) => {
       } catch (e) {}
       results.push({ risk_id, status: 'repaired' });
     }
-    return res.json({ success: true, context_id: contextId, repaired: results.length, results });
+    return res.json({ success: true, context_id: contextId, repaired: results.filter((r) => r.status === 'repaired').length, results });
   } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
+    return sendError(res, err);
   }
 };
 
