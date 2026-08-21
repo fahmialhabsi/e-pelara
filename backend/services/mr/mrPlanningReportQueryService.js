@@ -16,6 +16,18 @@ const {
 const { sequelize, MrPlanningSnapshot, PejabatPenandatangan } = require('../../models');
 const { QueryTypes } = require('sequelize');
 
+// Sprint 16 -- MR (Risiko) Report OPD Boundary Hardening: reuse the accepted,
+// unmodified Risk-family boundary helper (OpdPenanggungJawab.id namespace --
+// see MrPlanningContext.opd_id, NOT the LHP/Temuan RenstraOPD.id namespace
+// used by Sprint 15's TLHP report). Scope covers getSummary/getLampiran/
+// getFullReport -- the single shared enforcement point for /summary,
+// /lampiran, /full, /export-excel(-inspektorat), /export-word, /export-pdf,
+// and the integrity scan (all converge on getFullReport).
+const {
+  resolveMrPlanningRiskOpdBoundary,
+  throwMrPlanningRiskOpdBoundaryError,
+} = require('./mrPlanningRiskService');
+
 // Dipakai untuk cooperative cancellation — client (React Query) yang
 // membatalkan request via AbortSignal seharusnya benar-benar menghentikan
 // pipeline getFullReport/getLampiran di sini, bukan cuma diabaikan di FE
@@ -1290,6 +1302,38 @@ const assertContextId = (contextId) => {
   return id;
 };
 
+// Sprint 16 fail-closed authorization: MrPlanningContext.opd_id is
+// allowNull:true (nullable in production) -- resolveMrPlanningRiskOpdBoundary's
+// null-target case is a deliberate PASS-THROUGH for its original single-record
+// call sites ("record not found yet, let existing 404/422 handle it"), NOT a
+// fail-closed guarantee. This report's context is always resolvable (getContext
+// already 404s when the context row is missing), so a null opd_id here means
+// the context genuinely has no owning OPD -- explicit fail-closed guard below
+// denies that case for non-SUPER_ADMIN callers rather than relying on the
+// shared helper's pass-through semantics.
+const authorizeGeneralMrReportScope = async ({ contextId, context, user } = {}) => {
+  if (user?.role === 'SUPER_ADMIN') {
+    return;
+  }
+
+  if (context?.opd_id === null || context?.opd_id === undefined) {
+    const error = new Error(
+      'Context laporan MR ini belum memiliki OPD pemilik. Akses ditolak untuk mencegah cakupan lintas-OPD -- hanya SUPER_ADMIN yang diizinkan.',
+    );
+    error.status = 403;
+    error.code = 'MR_REPORT_OPD_SCOPE_REQUIRED';
+    throw error;
+  }
+
+  const boundary = await resolveMrPlanningRiskOpdBoundary({
+    user,
+    targetOpdId: context.opd_id,
+  });
+  if (!boundary.ok) {
+    throwMrPlanningRiskOpdBoundaryError(boundary);
+  }
+};
+
 const DEFAULT_REPORT_SCOPE_MODE = 'unified';
 
 const normalizeReportScopeMode = (value) => {
@@ -1777,6 +1821,16 @@ const getContextItems = async (contextId, options = {}) => {
 
 const getSummary = async (contextId, options = {}) => {
   const id = assertContextId(contextId);
+
+  // Sprint 16 (AUTHORIZE BEFORE PROTECTED QUERY/DISCLOSURE): _skipAuthorization
+  // is set ONLY by the internal getFullReport()/computeFullReport() call below,
+  // which has already authorized this exact context -- avoids a redundant
+  // double-check, not a bypass reachable from any external caller.
+  if (!options._skipAuthorization) {
+    const authContext = options.context || (await getContext(id));
+    await authorizeGeneralMrReportScope({ contextId: id, context: authContext, user: options.user });
+  }
+
   const reportScope = options.reportScope || { scope_mode: 'context' };
   const riskScopeWhere = buildRiskScopeWhere(reportScope, 'r');
 
@@ -5132,6 +5186,15 @@ const getLampiran = async (contextId, options = {}) => {
   throwIfAborted(options.signal);
 
   const anchorContext = options.context || (await getContext(id));
+
+  // Sprint 16 (AUTHORIZE BEFORE PROTECTED QUERY/DISCLOSURE): _skipAuthorization
+  // is set ONLY by the internal getFullReport()/computeFullReport() call below,
+  // which has already authorized this exact context -- avoids a redundant
+  // double-check, not a bypass reachable from any external caller.
+  if (!options._skipAuthorization) {
+    await authorizeGeneralMrReportScope({ contextId: id, context: anchorContext, user: options.user });
+  }
+
   const reportScope =
     options.reportScope ||
     buildReportScope({
@@ -5249,10 +5312,14 @@ const computeFullReport = async (contextId, options = {}) => {
         ? 'final_export'
         : 'prefer_existing';
 
+  // Sprint 16: outer getFullReport() has already authorized this exact
+  // context before computeFullReport() was ever invoked (including on cache
+  // miss -- see getFullReport below) -- _skipAuthorization here avoids a
+  // redundant double-check of the same already-authorized scope.
   const [contextItems, summary, lampiran, settingParameter] = await Promise.all([
     getContextItems(id, { reportScope }),
-    getSummary(id, { reportScope }),
-    getLampiran(id, { context, reportScope, signal }),
+    getSummary(id, { reportScope, context: anchorContext, _skipAuthorization: true }),
+    getLampiran(id, { context, reportScope, signal, _skipAuthorization: true }),
     getSettingParameter(),
   ]);
 
@@ -5482,6 +5549,18 @@ const subscribeToFullReportEntry = (entry, callerSignal, cacheKey) => {
 
 const getFullReport = async (contextId, options = {}) => {
   const { signal: callerSignal, ...cacheableOptions } = options;
+
+  // Sprint 16 (AUTHORIZE BEFORE PROTECTED QUERY/DISCLOSURE): this MUST run
+  // before the cache lookup below -- a cache HIT would otherwise hand out an
+  // already-computed report to an unauthorized caller without ever reaching
+  // computeFullReport()/getSummary()/getLampiran()'s own checks. The
+  // resolved context is threaded into computeFullReport() below via
+  // _skipAuthorization so it (and its internal getSummary/getLampiran calls)
+  // doesn't redundantly re-check the same already-authorized scope.
+  const id = assertContextId(contextId);
+  const authContext = await getContext(id);
+  await authorizeGeneralMrReportScope({ contextId: id, context: authContext, user: options.user });
+
   const now = Date.now();
   sweepExpiredFullReportCache(now);
 
@@ -5496,6 +5575,7 @@ const getFullReport = async (contextId, options = {}) => {
           return await computeFullReport(contextId, {
             ...cacheableOptions,
             signal: controller.signal,
+            _skipAuthorization: true,
           });
         } finally {
           releaseFullReportComputationSlot();

@@ -2258,7 +2258,7 @@ const createOfficialInspektoratSheets = ({ workbook, report }) => {
 };
 
 const buildExcelWorkbook = async (contextId, options = {}) => {
-  const report = await reportQueryService.getFullReport(contextId, { signal: options.signal });
+  const report = await reportQueryService.getFullReport(contextId, { signal: options.signal, user: options.user });
 
   const workbook = new ExcelJS.Workbook();
 

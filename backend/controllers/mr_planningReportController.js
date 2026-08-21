@@ -131,7 +131,7 @@ const getSummary = async (req, res) => {
   try {
     const { contextId } = req.params;
 
-    const data = await reportQueryService.getSummary(contextId);
+    const data = await reportQueryService.getSummary(contextId, { user: req.user });
 
     return res.status(200).json({
       success: true,
@@ -148,7 +148,7 @@ const getLampiran = async (req, res) => {
   try {
     const { contextId } = req.params;
 
-    const data = await reportQueryService.getLampiran(contextId);
+    const data = await reportQueryService.getLampiran(contextId, { user: req.user });
 
     return res.status(200).json({
       success: true,
@@ -170,6 +170,7 @@ const getFullReport = async (req, res) => {
       flow: req.query?.flow,
       snapshot_mode: req.query?.snapshot_mode,
       user_id: getUserId(req),
+      user: req.user,
       source_endpoint: getSourceEndpoint(req),
       request_id: req.headers["x-request-id"] || null,
       idempotency_key: req.headers["idempotency-key"] || null,
@@ -196,6 +197,7 @@ const getIntegrityScan = async (req, res) => {
     const { contextId } = req.params;
     const data = await mrIntegrityScanService.scanContextIntegrity(contextId, {
       user_id: getUserId(req),
+      user: req.user,
       source_endpoint: getSourceEndpoint(req),
       request_id: req.headers["x-request-id"] || null,
       idempotency_key: req.headers["idempotency-key"] || null,
@@ -305,7 +307,7 @@ const exportExcel = async (req, res) => {
 
   try {
     const { workbook, filename, report } =
-      await reportExportExcelService.buildExcelWorkbook(contextId, { signal });
+      await reportExportExcelService.buildExcelWorkbook(contextId, { signal, user: req.user });
     assertReportExportPolicy({ report, format: isFinalExcel ? "excel_final" : "excel" });
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -370,7 +372,7 @@ const exportExcelInspektorat = async (req, res) => {
 
   try {
     const { workbook, filename, report } =
-      await reportExportExcelService.buildExcelWorkbookInspektorat(contextId, { signal });
+      await reportExportExcelService.buildExcelWorkbookInspektorat(contextId, { signal, user: req.user });
     assertReportExportPolicy({ report, format: isFinalExcel ? "excel_final" : "excel" });
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -434,7 +436,7 @@ const exportWord = async (req, res) => {
 
   try {
     const { buffer, filename, report } = await runWithHeavyExportGuard(() =>
-      reportExportWordService.buildWordDocument(contextId, { signal })
+      reportExportWordService.buildWordDocument(contextId, { signal, user: req.user })
     );
     assertReportExportPolicy({ report, format: "docx" });
 
@@ -495,7 +497,7 @@ const exportPdf = async (req, res) => {
 
   try {
     const { buffer, filename, report } = await runWithHeavyExportGuard(() =>
-      reportExportPdfService.buildPdfFromWord(contextId, { signal })
+      reportExportPdfService.buildPdfFromWord(contextId, { signal, user: req.user })
     );
     assertReportExportPolicy({ report, format: "pdf" });
 

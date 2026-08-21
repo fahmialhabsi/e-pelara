@@ -210,6 +210,7 @@ const scanContextIntegrity = async (contextId, options = {}) => {
     flow: options.flow || "integrity_scan",
     snapshot_mode: options.snapshot_mode || "detect_only",
     user_id: options.user_id || null,
+    user: options.user || null,
     source_endpoint: options.source_endpoint || null,
     request_id: options.request_id || null,
     idempotency_key: options.idempotency_key || null,

@@ -151,7 +151,7 @@ const buildPdfFromWord = async (contextId, options = {}) => {
       buffer: wordBuffer,
       filename: wordFilename,
       report,
-    } = await reportExportWordService.buildWordDocument(contextId, { signal: options.signal });
+    } = await reportExportWordService.buildWordDocument(contextId, { signal: options.signal, user: options.user });
 
     const pdfExportGate = getPdfExportGate(report);
 

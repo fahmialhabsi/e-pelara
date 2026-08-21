@@ -3229,7 +3229,7 @@ const buildConclusionSection = ({ summary }) => [
 ];
 
 const buildWordDocument = async (contextId, options = {}) => {
-  const report = await reportQueryService.getFullReport(contextId, { signal: options.signal });
+  const report = await reportQueryService.getFullReport(contextId, { signal: options.signal, user: options.user });
 
   const { context, context_items: contextItems, summary, narasi, lampiran } = report;
 

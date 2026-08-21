@@ -11943,6 +11943,646 @@ console.log('=== SPRINT 15 -- TLHP Report/Export OPD Boundary Hardening (getSumm
   // =====================================================================
 
 }
+
+console.log('=== SPRINT 16 -- MR (Risiko) Report OPD Boundary Hardening (getSummary/getFullReport -- shared enforcement point for /summary, /lampiran, /full, /export-excel(-inspektorat), /export-word, /export-pdf, and the integrity scan, all of which converge on getFullReport) ===');
+
+{
+  const riskServicePath = require.resolve('../services/mr/mrPlanningRiskService');
+  const reportQueryServicePath = require.resolve('../services/mr/mrPlanningReportQueryService');
+
+  const freshReportQueryService = () => {
+    delete require.cache[riskServicePath];
+    delete require.cache[reportQueryServicePath];
+    return require('../services/mr/mrPlanningReportQueryService');
+  };
+
+  const SENTINEL_PROTECTED_QUERY_S16 = Symbol('S16_SENTINEL_PROTECTED_QUERY_REACHED');
+
+  // getContext()'s own SELECT (context row incl. opd_id) is distinguished from
+  // every OTHER protected query in this file by a column unique to it
+  // (c.pemilik_risiko_user_id) -- any other sequelize.query call (getSummary's
+  // own aggregate SELECT, getContextItems, getLampiran's sub-queries inside
+  // computeFullReport, etc.) is the "protected disclosure" point and throws the
+  // sentinel, proving whether it was reached.
+  const buildContextAwareQueryStub = (contextRow) => async (sql) => {
+    if (/c\.pemilik_risiko_user_id/.test(sql)) {
+      return [contextRow];
+    }
+    throw SENTINEL_PROTECTED_QUERY_S16;
+  };
+
+  const OWN_OPD_CONTEXT_ROW = {
+    id: 501,
+    tahun: 2026,
+    periode_type: 'tahunan',
+    periode_label: '2026',
+    jenis_dokumen: 'RISIKO',
+    renstra_id: null,
+    opd_id: 42,
+    nama_opd: null, // falsy -> getReportOfficials short-circuits, no 2nd query
+    status_revisi: 'final',
+    versi: 1,
+    is_active: true,
+  };
+
+  const FOREIGN_OPD_CONTEXT_ROW = { ...OWN_OPD_CONTEXT_ROW, opd_id: 99 };
+  const NULL_OPD_CONTEXT_ROW = { ...OWN_OPD_CONTEXT_ROW, opd_id: null };
+
+  // =====================================================================
+  // getSummary -- OWN_OPD_ALLOW / FOREIGN_OPD_DENY / SUPER_ADMIN / fail-closed
+  // (context passed directly via options.context -- exercises the accepted
+  // options.context code path, avoiding re-stubbing getContext's own SQL)
+  // =====================================================================
+
+  await test(
+    'mrPlanningReportQueryService.getSummary -- context.opd_id milik OPD SENDIRI -> boundary MENGIZINKAN, query summary TERCAPAI (OWN_OPD_ALLOW, AUTHORIZATION_BEFORE_DISCLOSURE)',
+    async () => {
+      let queryCalled = false;
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.sequelize, 'query', async () => { queryCalled = true; throw SENTINEL_PROTECTED_QUERY_S16; }],
+        ],
+        async () => {
+          const svc = freshReportQueryService();
+          try {
+            await svc.getSummary(501, {
+              context: OWN_OPD_CONTEXT_ROW,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya mencapai query summary (SENTINEL) atau error lain setelah query tercapai');
+          } catch (error) {
+            assert.ok(error === SENTINEL_PROTECTED_QUERY_S16 || queryCalled, 'query summary harus tercapai untuk own-OPD');
+          }
+        }
+      );
+
+      assert.strictEqual(queryCalled, true, 'sequelize.query (summary) HARUS dipanggil ketika boundary OPD mengizinkan (own-OPD)');
+    }
+  );
+
+  await test(
+    'mrPlanningReportQueryService.getSummary -- context.opd_id milik OPD LAIN -> DITOLAK 403, query summary TIDAK dipanggil (FOREIGN_OPD_DENY, zero disclosure)',
+    async () => {
+      let queryCalled = false;
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.sequelize, 'query', async () => { queryCalled = true; return [{ context_id: 501 }]; }],
+        ],
+        async () => {
+          const svc = freshReportQueryService();
+          try {
+            await svc.getSummary(501, {
+              context: FOREIGN_OPD_CONTEXT_ROW,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' },
+            });
+            assert.fail('Seharusnya melempar 403');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      assert.strictEqual(queryCalled, false, 'sequelize.query (summary) TIDAK BOLEH dipanggil ketika boundary OPD menolak (zero disclosure untuk foreign-OPD)');
+    }
+  );
+
+  await test(
+    'mrPlanningReportQueryService.getSummary -- SUPER_ADMIN dengan context.opd_id OPD LAIN -> boundary MENGIZINKAN (SUPER_ADMIN_FOREIGN_OPD_ALLOW, tenant-wide by design)',
+    async () => {
+      let queryCalled = false;
+
+      await withStubs(
+        [
+          [models.sequelize, 'query', async () => { queryCalled = true; throw SENTINEL_PROTECTED_QUERY_S16; }],
+        ],
+        async () => {
+          const svc = freshReportQueryService();
+          try {
+            await svc.getSummary(501, {
+              context: FOREIGN_OPD_CONTEXT_ROW,
+              user: { id: 1, role: 'SUPER_ADMIN', opd: null },
+            });
+          } catch (error) {
+            assert.ok(error === SENTINEL_PROTECTED_QUERY_S16 || queryCalled);
+          }
+        }
+      );
+
+      assert.strictEqual(queryCalled, true, 'SUPER_ADMIN harus tetap bisa melihat Summary MR lintas OPD');
+    }
+  );
+
+  await test(
+    'mrPlanningReportQueryService.getSummary -- context.opd_id NULL (allowNull:true di production), user BUKAN SUPER_ADMIN -> DITOLAK fail-closed, query TIDAK dipanggil (NULL_TARGET_FAIL_CLOSED -- helper generik hanya pass-through, guard eksplisit di call site ini)',
+    async () => {
+      let queryCalled = false;
+
+      await withStubs(
+        [
+          [models.sequelize, 'query', async () => { queryCalled = true; return [{ context_id: 501 }]; }],
+        ],
+        async () => {
+          const svc = freshReportQueryService();
+          try {
+            await svc.getSummary(501, {
+              context: NULL_OPD_CONTEXT_ROW,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar 403 karena context.opd_id null untuk user non-SUPER_ADMIN');
+          } catch (error) {
+            assert.strictEqual(error.status, 403);
+            assert.strictEqual(error.code, 'MR_REPORT_OPD_SCOPE_REQUIRED');
+          }
+        }
+      );
+
+      assert.strictEqual(queryCalled, false, 'sequelize.query (summary) TIDAK BOLEH dipanggil ketika context.opd_id null untuk user non-SUPER_ADMIN');
+    }
+  );
+
+  await test(
+    'mrPlanningReportQueryService.getSummary -- context.opd_id NULL, user SUPER_ADMIN -> boundary MENGIZINKAN (SUPER_ADMIN tetap tenant-wide meski context.opd_id null)',
+    async () => {
+      let queryCalled = false;
+
+      await withStubs(
+        [
+          [models.sequelize, 'query', async () => { queryCalled = true; throw SENTINEL_PROTECTED_QUERY_S16; }],
+        ],
+        async () => {
+          const svc = freshReportQueryService();
+          try {
+            await svc.getSummary(501, {
+              context: NULL_OPD_CONTEXT_ROW,
+              user: { id: 1, role: 'SUPER_ADMIN', opd: null },
+            });
+          } catch (error) {
+            assert.ok(error === SENTINEL_PROTECTED_QUERY_S16 || queryCalled);
+          }
+        }
+      );
+
+      assert.strictEqual(queryCalled, true, 'SUPER_ADMIN harus tetap bisa melihat Summary MR meski context.opd_id null');
+    }
+  );
+
+  await test(
+    'mrPlanningReportQueryService.getSummary -- user MISSING (undefined) -> DITOLAK fail-closed, query TIDAK dipanggil (MISSING_USER_FAIL_CLOSED)',
+    async () => {
+      let queryCalled = false;
+
+      await withStubs(
+        [
+          [models.sequelize, 'query', async () => { queryCalled = true; return [{ context_id: 501 }]; }],
+        ],
+        async () => {
+          const svc = freshReportQueryService();
+          try {
+            await svc.getSummary(501, { context: OWN_OPD_CONTEXT_ROW, user: undefined });
+            assert.fail('Seharusnya melempar 403 karena user undefined');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      assert.strictEqual(queryCalled, false, 'sequelize.query (summary) TIDAK BOLEH dipanggil ketika user undefined');
+    }
+  );
+
+  await test(
+    'mrPlanningReportQueryService.getSummary -- user MALFORMED (object tanpa opd) -> DITOLAK fail-closed, query TIDAK dipanggil (MALFORMED_USER_FAIL_CLOSED)',
+    async () => {
+      let queryCalled = false;
+
+      await withStubs(
+        [
+          [models.sequelize, 'query', async () => { queryCalled = true; return [{ context_id: 501 }]; }],
+        ],
+        async () => {
+          const svc = freshReportQueryService();
+          try {
+            await svc.getSummary(501, {
+              context: OWN_OPD_CONTEXT_ROW,
+              user: { id: 10, role: 'ADMINISTRATOR' },
+            });
+            assert.fail('Seharusnya melempar 403 karena user.opd tidak ada (malformed)');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      assert.strictEqual(queryCalled, false, 'sequelize.query (summary) TIDAK BOLEH dipanggil ketika user malformed (tanpa opd)');
+    }
+  );
+
+  await test(
+    'mrPlanningReportQueryService.getSummary -- resolusi caller OPD gagal (OpdPenanggungJawab.findOne throw) -> DITOLAK fail-closed 503, query TIDAK dipanggil (OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED)',
+    async () => {
+      let queryCalled = false;
+
+      await withStubs(
+        [
+          [models.OpdPenanggungJawab, 'findOne', async () => { throw new Error('DB unavailable (simulated)'); }],
+          [models.sequelize, 'query', async () => { queryCalled = true; return [{ context_id: 501 }]; }],
+        ],
+        async () => {
+          const svc = freshReportQueryService();
+          try {
+            await svc.getSummary(501, {
+              context: OWN_OPD_CONTEXT_ROW,
+              user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' },
+            });
+            assert.fail('Seharusnya melempar 503 karena resolusi caller OPD gagal');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 503);
+          }
+        }
+      );
+
+      assert.strictEqual(queryCalled, false, 'sequelize.query (summary) TIDAK BOLEH dipanggil ketika resolusi caller OPD gagal (fail closed)');
+    }
+  );
+
+  // =====================================================================
+  // getFullReport -- single enforcement point shared by /full, /export-excel(-inspektorat),
+  // /export-word, /export-pdf, and integrity scan. Unlike getSummary above, getFullReport
+  // does NOT accept a caller-supplied context (by design -- it is the shared enforcement
+  // point and must resolve context itself via getContext(), not trust the caller) -- so
+  // getContext()'s own SELECT is stubbed here via buildContextAwareQueryStub, distinguished
+  // from every other protected query by its unique c.pemilik_risiko_user_id column.
+  // Also proves the cache does NOT bypass authorization: the FIRST call below for each
+  // scenario is necessarily a cache MISS (fresh module via freshReportQueryService()), so
+  // this exercises the authorize-before-cache-lookup path directly.
+  // =====================================================================
+
+  await test(
+    'mrPlanningReportQueryService.getFullReport -- context.opd_id milik OPD SENDIRI -> boundary MENGIZINKAN, protected query TERCAPAI (OWN_OPD_ALLOW, AUTHORIZATION_BEFORE_DISCLOSURE)',
+    async () => {
+      let protectedQueryCalled = false;
+
+      await withStubs(
+        [
+          [models.PejabatPenandatangan, 'findOne', async () => null],
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.sequelize, 'query', async (sql) => {
+            if (/c\.pemilik_risiko_user_id/.test(sql)) return [OWN_OPD_CONTEXT_ROW];
+            protectedQueryCalled = true;
+            throw SENTINEL_PROTECTED_QUERY_S16;
+          }],
+        ],
+        async () => {
+          const svc = freshReportQueryService();
+          try {
+            await svc.getFullReport(501, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+            assert.fail('Seharusnya mencapai protected query (SENTINEL) atau error lain setelahnya');
+          } catch (error) {
+            assert.ok(error === SENTINEL_PROTECTED_QUERY_S16 || protectedQueryCalled, 'protected query harus tercapai untuk own-OPD');
+          }
+        }
+      );
+
+      assert.strictEqual(protectedQueryCalled, true, 'protected query (post-getContext) HARUS dipanggil ketika boundary OPD mengizinkan (own-OPD, getFullReport)');
+    }
+  );
+
+  await test(
+    'mrPlanningReportQueryService.getFullReport -- context.opd_id milik OPD LAIN -> DITOLAK 403 SEBELUM protected query dipanggil DAN SEBELUM cache diisi (FOREIGN_OPD_DENY, AUTHORIZE BEFORE DISCLOSURE AND BEFORE CACHE -- melindungi /full, /export-excel, /export-word, /export-pdf, integrity-scan secara identik)',
+    async () => {
+      let protectedQueryCalled = false;
+
+      await withStubs(
+        [
+          [models.PejabatPenandatangan, 'findOne', async () => null],
+          [models.OpdPenanggungJawab, 'findOne', async () => ({ id: 42 })],
+          [models.sequelize, 'query', async (sql) => {
+            if (/c\.pemilik_risiko_user_id/.test(sql)) return [FOREIGN_OPD_CONTEXT_ROW];
+            protectedQueryCalled = true;
+            return [{ context_id: 501 }];
+          }],
+        ],
+        async () => {
+          const svc = freshReportQueryService();
+          try {
+            await svc.getFullReport(501, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD LAIN' } });
+            assert.fail('Seharusnya melempar 403');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      assert.strictEqual(protectedQueryCalled, false, 'protected query TIDAK BOLEH dipanggil untuk foreign-OPD -- membuktikan Excel/Word/PDF export dan integrity-scan tidak akan pernah men-generate/men-cache konten terproteksi sebelum ditolak (zero disclosure, no-cache-before-denial)');
+    }
+  );
+
+  await test(
+    'mrPlanningReportQueryService.getFullReport -- SUPER_ADMIN dengan context.opd_id OPD LAIN -> boundary MENGIZINKAN (SUPER_ADMIN_FOREIGN_OPD_ALLOW)',
+    async () => {
+      let protectedQueryCalled = false;
+
+      await withStubs(
+        [
+          [models.PejabatPenandatangan, 'findOne', async () => null],
+          [models.sequelize, 'query', async (sql) => {
+            if (/c\.pemilik_risiko_user_id/.test(sql)) return [FOREIGN_OPD_CONTEXT_ROW];
+            protectedQueryCalled = true;
+            throw SENTINEL_PROTECTED_QUERY_S16;
+          }],
+        ],
+        async () => {
+          const svc = freshReportQueryService();
+          try {
+            await svc.getFullReport(501, { user: { id: 1, role: 'SUPER_ADMIN', opd: null } });
+          } catch (error) {
+            assert.ok(error === SENTINEL_PROTECTED_QUERY_S16 || protectedQueryCalled);
+          }
+        }
+      );
+
+      assert.strictEqual(protectedQueryCalled, true, 'SUPER_ADMIN harus tetap bisa melihat Full Report MR lintas OPD');
+    }
+  );
+
+  await test(
+    'mrPlanningReportQueryService.getFullReport -- context.opd_id NULL, user BUKAN SUPER_ADMIN -> DITOLAK fail-closed, protected query TIDAK dipanggil (NULL_TARGET_FAIL_CLOSED)',
+    async () => {
+      let protectedQueryCalled = false;
+
+      await withStubs(
+        [
+          [models.PejabatPenandatangan, 'findOne', async () => null],
+          [models.sequelize, 'query', async (sql) => {
+            if (/c\.pemilik_risiko_user_id/.test(sql)) return [NULL_OPD_CONTEXT_ROW];
+            protectedQueryCalled = true;
+            return [{ context_id: 501 }];
+          }],
+        ],
+        async () => {
+          const svc = freshReportQueryService();
+          try {
+            await svc.getFullReport(501, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+            assert.fail('Seharusnya melempar 403 karena context.opd_id null untuk user non-SUPER_ADMIN');
+          } catch (error) {
+            assert.strictEqual(error.status, 403);
+            assert.strictEqual(error.code, 'MR_REPORT_OPD_SCOPE_REQUIRED');
+          }
+        }
+      );
+
+      assert.strictEqual(protectedQueryCalled, false, 'protected query TIDAK BOLEH dipanggil ketika context.opd_id null untuk user non-SUPER_ADMIN (getFullReport, cegah tenant-wide default via /full, export, integrity-scan)');
+    }
+  );
+
+  await test(
+    'mrPlanningReportQueryService.getFullReport -- user MISSING (undefined) -> DITOLAK fail-closed, protected query TIDAK dipanggil (MISSING_USER_FAIL_CLOSED)',
+    async () => {
+      let protectedQueryCalled = false;
+
+      await withStubs(
+        [
+          [models.PejabatPenandatangan, 'findOne', async () => null],
+          [models.sequelize, 'query', async (sql) => {
+            if (/c\.pemilik_risiko_user_id/.test(sql)) return [OWN_OPD_CONTEXT_ROW];
+            protectedQueryCalled = true;
+            return [{ context_id: 501 }];
+          }],
+        ],
+        async () => {
+          const svc = freshReportQueryService();
+          try {
+            await svc.getFullReport(501, { user: undefined });
+            assert.fail('Seharusnya melempar 403 karena user undefined');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      assert.strictEqual(protectedQueryCalled, false, 'protected query TIDAK BOLEH dipanggil ketika user undefined (getFullReport)');
+    }
+  );
+
+  await test(
+    'mrPlanningReportQueryService.getFullReport -- user MALFORMED (object tanpa opd) -> DITOLAK fail-closed, protected query TIDAK dipanggil (MALFORMED_USER_FAIL_CLOSED)',
+    async () => {
+      let protectedQueryCalled = false;
+
+      await withStubs(
+        [
+          [models.PejabatPenandatangan, 'findOne', async () => null],
+          [models.sequelize, 'query', async (sql) => {
+            if (/c\.pemilik_risiko_user_id/.test(sql)) return [OWN_OPD_CONTEXT_ROW];
+            protectedQueryCalled = true;
+            return [{ context_id: 501 }];
+          }],
+        ],
+        async () => {
+          const svc = freshReportQueryService();
+          try {
+            await svc.getFullReport(501, { user: { id: 10, role: 'ADMINISTRATOR' } });
+            assert.fail('Seharusnya melempar 403 karena user.opd tidak ada (malformed)');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 403);
+          }
+        }
+      );
+
+      assert.strictEqual(protectedQueryCalled, false, 'protected query TIDAK BOLEH dipanggil ketika user malformed (getFullReport)');
+    }
+  );
+
+  await test(
+    'mrPlanningReportQueryService.getFullReport -- resolusi caller OPD gagal (OpdPenanggungJawab.findOne throw) -> DITOLAK fail-closed 503, protected query TIDAK dipanggil (OWNERSHIP_RESOLUTION_FAILURE_FAIL_CLOSED)',
+    async () => {
+      let protectedQueryCalled = false;
+
+      await withStubs(
+        [
+          [models.PejabatPenandatangan, 'findOne', async () => null],
+          [models.OpdPenanggungJawab, 'findOne', async () => { throw new Error('DB unavailable (simulated)'); }],
+          [models.sequelize, 'query', async (sql) => {
+            if (/c\.pemilik_risiko_user_id/.test(sql)) return [OWN_OPD_CONTEXT_ROW];
+            protectedQueryCalled = true;
+            return [{ context_id: 501 }];
+          }],
+        ],
+        async () => {
+          const svc = freshReportQueryService();
+          try {
+            await svc.getFullReport(501, { user: { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' } });
+            assert.fail('Seharusnya melempar 503 karena resolusi caller OPD gagal');
+          } catch (error) {
+            assert.strictEqual(error.statusCode, 503);
+          }
+        }
+      );
+
+      assert.strictEqual(protectedQueryCalled, false, 'protected query TIDAK BOLEH dipanggil ketika resolusi caller OPD gagal (getFullReport, fail closed)');
+    }
+  );
+
+  // =====================================================================
+  // Propagation fix verification: mrIntegrityScanService.scanContextIntegrity,
+  // mrPlanningReportExportExcelService.buildExcelWorkbook/buildExcelWorkbookInspektorat,
+  // mrPlanningReportExportWordService.buildWordDocument, and
+  // mrPlanningReportExportPdfService.buildPdfFromWord all previously called
+  // getFullReport()/buildWordDocument() with hand-built option literals that
+  // dropped `user` entirely. Sprint 16 fixed each literal to forward
+  // `user: options.user`. Rather than re-deriving full OWN/FOREIGN_OPD
+  // behavior per format (already covered transitively above -- every format
+  // converges on the same getFullReport() enforcement point, matching how
+  // Sprint 15 reasoned about TLHP's export chain), these tests verify the
+  // propagation FIX ITSELF: that `user` from each wrapper's own options
+  // actually reaches the options object getFullReport() receives.
+  // =====================================================================
+
+  await test(
+    'mrIntegrityScanService.scanContextIntegrity -- meneruskan user dari options ke reportQueryService.getFullReport (PROPAGATION_FIX_VERIFIED)',
+    async () => {
+      delete require.cache[require.resolve('../services/mr/mrIntegrityScanService')];
+      delete require.cache[reportQueryServicePath];
+
+      let receivedOptions = null;
+      const reportQueryService = require('../services/mr/mrPlanningReportQueryService');
+      const originalGetFullReport = reportQueryService.getFullReport;
+      reportQueryService.getFullReport = async (contextId, options) => {
+        receivedOptions = options;
+        return { report_quality_gate: {}, report_governance_gate: {} };
+      };
+
+      try {
+        const mrIntegrityScanService = require('../services/mr/mrIntegrityScanService');
+        const fakeUser = { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' };
+        await mrIntegrityScanService.scanContextIntegrity(501, { user: fakeUser });
+
+        assert.ok(receivedOptions, 'getFullReport harus terpanggil');
+        assert.strictEqual(receivedOptions.user, fakeUser, 'scanContextIntegrity harus meneruskan user apa adanya ke getFullReport (propagation fix)');
+      } finally {
+        reportQueryService.getFullReport = originalGetFullReport;
+      }
+    }
+  );
+
+  await test(
+    'mrPlanningReportExportExcelService.buildExcelWorkbook dan buildExcelWorkbookInspektorat -- meneruskan user dari options ke reportQueryService.getFullReport (PROPAGATION_FIX_VERIFIED)',
+    async () => {
+      delete require.cache[require.resolve('../services/mr/mrPlanningReportExportExcelService')];
+      delete require.cache[reportQueryServicePath];
+
+      let receivedOptions = null;
+      const reportQueryService = require('../services/mr/mrPlanningReportQueryService');
+      const originalGetFullReport = reportQueryService.getFullReport;
+      reportQueryService.getFullReport = async (contextId, options) => {
+        receivedOptions = options;
+        throw SENTINEL_PROTECTED_QUERY_S16; // hentikan sebelum ExcelJS workbook-building sungguhan
+      };
+
+      try {
+        const reportExportExcelService = require('../services/mr/mrPlanningReportExportExcelService');
+        const fakeUser = { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' };
+
+        receivedOptions = null;
+        try {
+          await reportExportExcelService.buildExcelWorkbook(501, { user: fakeUser });
+        } catch (error) {
+          assert.strictEqual(error, SENTINEL_PROTECTED_QUERY_S16);
+        }
+        assert.ok(receivedOptions, 'getFullReport harus terpanggil (buildExcelWorkbook)');
+        assert.strictEqual(receivedOptions.user, fakeUser, 'buildExcelWorkbook harus meneruskan user apa adanya ke getFullReport (propagation fix)');
+
+        receivedOptions = null;
+        try {
+          await reportExportExcelService.buildExcelWorkbookInspektorat(501, { user: fakeUser });
+        } catch (error) {
+          assert.strictEqual(error, SENTINEL_PROTECTED_QUERY_S16);
+        }
+        assert.ok(receivedOptions, 'getFullReport harus terpanggil (buildExcelWorkbookInspektorat, transparent passthrough)');
+        assert.strictEqual(receivedOptions.user, fakeUser, 'buildExcelWorkbookInspektorat harus meneruskan user apa adanya ke getFullReport lewat buildExcelWorkbook (propagation fix, passthrough tidak berubah)');
+      } finally {
+        reportQueryService.getFullReport = originalGetFullReport;
+      }
+    }
+  );
+
+  await test(
+    'mrPlanningReportExportWordService.buildWordDocument -- meneruskan user dari options ke reportQueryService.getFullReport (PROPAGATION_FIX_VERIFIED)',
+    async () => {
+      delete require.cache[require.resolve('../services/mr/mrPlanningReportExportWordService')];
+      delete require.cache[reportQueryServicePath];
+
+      let receivedOptions = null;
+      const reportQueryService = require('../services/mr/mrPlanningReportQueryService');
+      const originalGetFullReport = reportQueryService.getFullReport;
+      reportQueryService.getFullReport = async (contextId, options) => {
+        receivedOptions = options;
+        throw SENTINEL_PROTECTED_QUERY_S16;
+      };
+
+      try {
+        const reportExportWordService = require('../services/mr/mrPlanningReportExportWordService');
+        const fakeUser = { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' };
+        try {
+          await reportExportWordService.buildWordDocument(501, { user: fakeUser });
+        } catch (error) {
+          assert.strictEqual(error, SENTINEL_PROTECTED_QUERY_S16);
+        }
+        assert.ok(receivedOptions, 'getFullReport harus terpanggil (buildWordDocument)');
+        assert.strictEqual(receivedOptions.user, fakeUser, 'buildWordDocument harus meneruskan user apa adanya ke getFullReport (propagation fix)');
+      } finally {
+        reportQueryService.getFullReport = originalGetFullReport;
+      }
+    }
+  );
+
+  await test(
+    'mrPlanningReportExportPdfService.buildPdfFromWord -- meneruskan user dari options ke reportExportWordService.buildWordDocument (PROPAGATION_FIX_VERIFIED, PDF export chain menyusul Word)',
+    async () => {
+      delete require.cache[require.resolve('../services/mr/mrPlanningReportExportPdfService')];
+      delete require.cache[require.resolve('../services/mr/mrPlanningReportExportWordService')];
+
+      let receivedOptions = null;
+      const reportExportWordService = require('../services/mr/mrPlanningReportExportWordService');
+      const originalBuildWordDocument = reportExportWordService.buildWordDocument;
+      reportExportWordService.buildWordDocument = async (contextId, options) => {
+        receivedOptions = options;
+        throw SENTINEL_PROTECTED_QUERY_S16;
+      };
+
+      try {
+        const reportExportPdfService = require('../services/mr/mrPlanningReportExportPdfService');
+        const fakeUser = { id: 10, role: 'ADMINISTRATOR', opd: 'OPD SENDIRI' };
+        try {
+          await reportExportPdfService.buildPdfFromWord(501, { user: fakeUser });
+        } catch (error) {
+          assert.strictEqual(error, SENTINEL_PROTECTED_QUERY_S16);
+        }
+        assert.ok(receivedOptions, 'buildWordDocument harus terpanggil (buildPdfFromWord)');
+        assert.strictEqual(receivedOptions.user, fakeUser, 'buildPdfFromWord harus meneruskan user apa adanya ke buildWordDocument (propagation fix)');
+      } finally {
+        reportExportWordService.buildWordDocument = originalBuildWordDocument;
+      }
+    }
+  );
+
+  // =====================================================================
+  // Internal call getFullReport -> computeFullReport -> getSummary/getLampiran
+  // (_skipAuthorization) tidak menimbulkan double-check yang mengubah
+  // perilaku -- dibuktikan tidak langsung (implisit) lewat seluruh test
+  // getFullReport di atas: jika getSummary/getLampiran internal ikut
+  // memeriksa ulang boundary dengan context yang SAMA, hasilnya identik
+  // (own-OPD tetap allow, foreign tetap deny) -- tidak ada test terpisah
+  // yang bisa membedakan kedua perilaku tanpa membuka rincian implementasi
+  // lebih jauh dari yang perlu (di luar batas minimum-necessary-scope
+  // Sprint 16, konsisten dengan penalaran Sprint 15).
+  // =====================================================================
+
+}
 } // end runAllTests
 
 runAllTests().then(() => {
