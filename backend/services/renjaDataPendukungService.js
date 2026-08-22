@@ -19,6 +19,93 @@
 
 const { Op } = require('sequelize');
 
+// Sprint 19 — Renja Pokir DPRD (C3) + Renja Inovasi Bidang Urusan (C4) OPD
+// authorization boundary. Mirrors the proven pattern from
+// mrPlanningRiskService.js resolveMrPlanningRiskOpdBoundary (shipped in
+// quickRepair, Sprint 17): resolve both caller and target to
+// OpdPenanggungJawab.id and compare IDs, never compare a name string to an
+// id directly. req.user.opd (see models/user.js `opd` column, STRING) is
+// the OPD *name*, not opd_penanggung_jawab_id — resolved here via
+// OpdPenanggungJawab.findOne({ where: { nama_opd } }), same as the MR
+// helper. SUPER_ADMIN is exempt (tenant-wide authority, existing
+// precedent). Fails closed on unresolved mapping or internal error.
+async function resolveRenjaDataPendukungOpdBoundary(db, { user, perangkatDaerahId }) {
+  if (user?.role === 'SUPER_ADMIN') {
+    return { ok: true, superAdmin: true, callerOpdId: null };
+  }
+
+  const pdId = toInt(perangkatDaerahId);
+  if (!pdId) {
+    // Tidak ada target PD yang bisa diverifikasi — biarkan validasi field
+    // wajib yang sudah ada (tahun/perangkat_daerah_id) yang menangani.
+    return { ok: true, superAdmin: false, callerOpdId: null };
+  }
+
+  const opdName = user?.opd;
+  if (!opdName) {
+    return {
+      ok: false,
+      status: 403,
+      error: {
+        message: 'Anda tidak berwenang melakukan aksi ini pada data milik OPD lain.',
+        code: 'RENJA_DATA_PENDUKUNG_OPD_FORBIDDEN',
+      },
+    };
+  }
+
+  let callerOpdId = null;
+  let targetOpdId = null;
+  try {
+    const [callerRow, mappingRow] = await Promise.all([
+      db.OpdPenanggungJawab.findOne({ where: { nama_opd: opdName } }),
+      db.PerangkatDaerahOpdMapping.findOne({ where: { perangkat_daerah_id: pdId } }),
+    ]);
+    callerOpdId = callerRow?.id ?? null;
+    targetOpdId = mappingRow?.opd_penanggung_jawab_id ?? null;
+  } catch (err) {
+    return {
+      ok: false,
+      status: 503,
+      error: {
+        message:
+          'Batas kewenangan OPD untuk data pendukung Renja tidak dapat diverifikasi saat ini. Aksi ditolak sementara demi keamanan data — silakan coba lagi.',
+        code: 'RENJA_DATA_PENDUKUNG_OPD_BOUNDARY_UNAVAILABLE',
+      },
+    };
+  }
+
+  if (targetOpdId === null) {
+    // perangkat_daerah_id tidak punya mapping OPD — fail closed, bukan
+    // fail open. Berbeda dari resolveMrPlanningRiskOpdBoundary (yang fail
+    // open saat targetOpdId null) karena di sana null berarti "risk belum
+    // dikaitkan ke OPD manapun" (state antara yang sah); di sini
+    // perangkat_daerah_id selalu wajib diisi (allowNull:false pada kedua
+    // model), sehingga mapping yang hilang adalah data tidak konsisten,
+    // bukan state sah — dan permintaan pada resource semacam itu ditolak.
+    return {
+      ok: false,
+      status: 403,
+      error: {
+        message: 'Batas kewenangan OPD untuk data ini tidak dapat ditentukan.',
+        code: 'RENJA_DATA_PENDUKUNG_OPD_BOUNDARY_UNRESOLVED',
+      },
+    };
+  }
+
+  if (callerOpdId === null || callerOpdId !== targetOpdId) {
+    return {
+      ok: false,
+      status: 403,
+      error: {
+        message: 'Anda tidak berwenang melakukan aksi ini pada data milik OPD lain.',
+        code: 'RENJA_DATA_PENDUKUNG_OPD_FORBIDDEN',
+      },
+    };
+  }
+
+  return { ok: true, superAdmin: false, callerOpdId };
+}
+
 /** Kata yang tidak membawa makna pencocokan pada teks usulan/nomenklatur. */
 const STOPWORDS = new Set([
   'dan',
@@ -432,4 +519,5 @@ module.exports = {
   terapkanRecallInovasi,
   rekapInovasi,
   parseRupiah,
+  resolveRenjaDataPendukungOpdBoundary,
 };

@@ -56,8 +56,28 @@ const gagal = (res, e, status = 500) => {
   return res.status(status).json({ success: false, message: e.message || 'Terjadi kesalahan.' });
 };
 
+// Sprint 19 — C3 OPD authorization boundary. Bounded to this controller's
+// existing perangkat_daerah_id-scoped model; see renjaDataPendukungService.js
+// resolveRenjaDataPendukungOpdBoundary for the shared, narrowly-scoped
+// resolution logic (mirrors resolveMrPlanningRiskOpdBoundary from
+// mrPlanningRiskService.js, Sprint 17).
+const tolakOpd = (res, boundary) =>
+  res.status(boundary.status).json({
+    success: false,
+    message: boundary.error.message,
+    code: boundary.error.code,
+  });
+
 async function findAll(req, res) {
   try {
+    const pdId = toInt(req.query.perangkat_daerah_id);
+    if (pdId) {
+      const boundary = await layanan.resolveRenjaDataPendukungOpdBoundary(db, {
+        user: req.user,
+        perangkatDaerahId: pdId,
+      });
+      if (!boundary.ok) return tolakOpd(res, boundary);
+    }
     const rows = await db.RenjaPokirDprd.findAll({
       where: susunWhere(req.query),
       order: URUTAN_BAKU,
@@ -71,8 +91,18 @@ async function findAll(req, res) {
 
 async function findOne(req, res) {
   try {
+    // Authorization-before-disclosure: muat baris dulu untuk mendapatkan
+    // perangkat_daerah_id-nya, tapi JANGAN kembalikan isinya sebelum lolos
+    // boundary check.
     const row = await db.RenjaPokirDprd.findByPk(toInt(req.params.id));
     if (!row) return res.status(404).json({ success: false, message: 'Data tidak ditemukan.' });
+
+    const boundary = await layanan.resolveRenjaDataPendukungOpdBoundary(db, {
+      user: req.user,
+      perangkatDaerahId: row.perangkat_daerah_id,
+    });
+    if (!boundary.ok) return tolakOpd(res, boundary);
+
     return res.json({ success: true, data: row });
   } catch (e) {
     return gagal(res, e);
@@ -90,6 +120,16 @@ async function create(req, res) {
     if (!String(payload.usulan ?? '').trim()) {
       return res.status(400).json({ success: false, message: 'Kolom usulan wajib diisi.' });
     }
+
+    // Create ownership guard — jangan percaya perangkat_daerah_id dari
+    // body begitu saja; non-SUPER_ADMIN tidak boleh membuat data atas
+    // nama OPD lain.
+    const boundary = await layanan.resolveRenjaDataPendukungOpdBoundary(db, {
+      user: req.user,
+      perangkatDaerahId: payload.perangkat_daerah_id,
+    });
+    if (!boundary.ok) return tolakOpd(res, boundary);
+
     if (payload.urutan === null || payload.urutan === undefined) {
       const terakhir = await db.RenjaPokirDprd.max('urutan', {
         where: {
@@ -110,7 +150,31 @@ async function update(req, res) {
   try {
     const row = await db.RenjaPokirDprd.findByPk(toInt(req.params.id));
     if (!row) return res.status(404).json({ success: false, message: 'Data tidak ditemukan.' });
-    await row.update(bersihkanPayload(req.body));
+
+    // Update ownership guard — otorisasi pemilik saat ini dulu.
+    const boundaryCurrent = await layanan.resolveRenjaDataPendukungOpdBoundary(db, {
+      user: req.user,
+      perangkatDaerahId: row.perangkat_daerah_id,
+    });
+    if (!boundaryCurrent.ok) return tolakOpd(res, boundaryCurrent);
+
+    const payload = bersihkanPayload(req.body);
+
+    // Jika perangkat_daerah_id ikut diubah, otorisasi juga kepemilikan
+    // baru yang diminta — non-SUPER_ADMIN tidak boleh memindahkan data
+    // ke OPD lain.
+    if (
+      Object.prototype.hasOwnProperty.call(payload, 'perangkat_daerah_id') &&
+      toInt(payload.perangkat_daerah_id) !== Number(row.perangkat_daerah_id)
+    ) {
+      const boundaryRequested = await layanan.resolveRenjaDataPendukungOpdBoundary(db, {
+        user: req.user,
+        perangkatDaerahId: payload.perangkat_daerah_id,
+      });
+      if (!boundaryRequested.ok) return tolakOpd(res, boundaryRequested);
+    }
+
+    await row.update(payload);
     return res.json({ success: true, data: row });
   } catch (e) {
     return gagal(res, e);
@@ -119,8 +183,16 @@ async function update(req, res) {
 
 async function destroy(req, res) {
   try {
-    const n = await db.RenjaPokirDprd.destroy({ where: { id: toInt(req.params.id) } });
-    if (!n) return res.status(404).json({ success: false, message: 'Data tidak ditemukan.' });
+    const row = await db.RenjaPokirDprd.findByPk(toInt(req.params.id));
+    if (!row) return res.status(404).json({ success: false, message: 'Data tidak ditemukan.' });
+
+    const boundary = await layanan.resolveRenjaDataPendukungOpdBoundary(db, {
+      user: req.user,
+      perangkatDaerahId: row.perangkat_daerah_id,
+    });
+    if (!boundary.ok) return tolakOpd(res, boundary);
+
+    await row.destroy();
     return res.json({ success: true, message: 'Data dihapus.' });
   } catch (e) {
     return gagal(res, e);
@@ -130,6 +202,12 @@ async function destroy(req, res) {
 /** Impor massal — hasil reses DPRD biasanya diterima sebagai daftar, bukan satuan. */
 async function importMassal(req, res) {
   try {
+    const boundary = await layanan.resolveRenjaDataPendukungOpdBoundary(db, {
+      user: req.user,
+      perangkatDaerahId: req.body?.perangkat_daerah_id,
+    });
+    if (!boundary.ok) return tolakOpd(res, boundary);
+
     const hasil = await layanan.importPokir(db, {
       tahun: req.body?.tahun,
       perangkat_daerah_id: req.body?.perangkat_daerah_id,
@@ -143,6 +221,12 @@ async function importMassal(req, res) {
 
 async function previewAutofill(req, res) {
   try {
+    const boundary = await layanan.resolveRenjaDataPendukungOpdBoundary(db, {
+      user: req.user,
+      perangkatDaerahId: req.query.perangkat_daerah_id,
+    });
+    if (!boundary.ok) return tolakOpd(res, boundary);
+
     const data = await layanan.previewAutofillPokir(db, {
       tahun: req.query.tahun,
       perangkat_daerah_id: req.query.perangkat_daerah_id,
@@ -156,6 +240,27 @@ async function previewAutofill(req, res) {
 
 async function terapkanAutofill(req, res) {
   try {
+    // perubahan[].id adalah row RenjaPokirDprd yang sudah ada dan
+    // attacker-controlled — muat baris-baris itu dan otorisasi tiap
+    // perangkat_daerah_id unik yang terlibat SEBELUM menerapkan mutasi.
+    const perubahan = Array.isArray(req.body?.perubahan) ? req.body.perubahan : [];
+    const ids = [...new Set(perubahan.map((p) => toInt(p?.id)).filter(Boolean))];
+
+    if (ids.length) {
+      const rows = await db.RenjaPokirDprd.findAll({
+        where: { id: ids },
+        attributes: ['id', 'perangkat_daerah_id'],
+      });
+      const pdIdsUnik = [...new Set(rows.map((r) => r.perangkat_daerah_id))];
+      for (const pdId of pdIdsUnik) {
+        const boundary = await layanan.resolveRenjaDataPendukungOpdBoundary(db, {
+          user: req.user,
+          perangkatDaerahId: pdId,
+        });
+        if (!boundary.ok) return tolakOpd(res, boundary);
+      }
+    }
+
     const data = await layanan.terapkanAutofillPokir(db, req.body?.perubahan);
     return res.json({ success: true, data });
   } catch (e) {
@@ -182,6 +287,14 @@ async function sugesti(req, res) {
 
 async function rekap(req, res) {
   try {
+    const pdId = toInt(req.query.perangkat_daerah_id);
+    if (pdId) {
+      const boundary = await layanan.resolveRenjaDataPendukungOpdBoundary(db, {
+        user: req.user,
+        perangkatDaerahId: pdId,
+      });
+      if (!boundary.ok) return tolakOpd(res, boundary);
+    }
     const data = await layanan.rekapPokir(db, {
       tahun: req.query.tahun,
       perangkat_daerah_id: req.query.perangkat_daerah_id,

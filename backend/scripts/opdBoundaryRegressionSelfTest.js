@@ -13152,6 +13152,579 @@ console.log('=== SPRINT 18 -- General MR + TLHP Export-History OPD Authorization
     }
   );
 }
+
+console.log('\n=== Sprint 19 — C3 (renjaPokirDprdController) + C4 (renjaInovasiBidangUrusanController) OPD boundary ===');
+
+// Fixture konsisten dipakai di seluruh blok Sprint 19:
+// - PD 100 dipetakan ke OPD 1 ("Dinas A")
+// - PD 200 dipetakan ke OPD 2 ("Dinas B")
+// - caller "Dinas A" -> callerOpdId 1 (same-OPD terhadap PD 100)
+const S19_MAPPING = {
+  100: { id: 501, perangkat_daerah_id: 100, opd_penanggung_jawab_id: 1 },
+  200: { id: 502, perangkat_daerah_id: 200, opd_penanggung_jawab_id: 2 },
+};
+
+function s19StubMapping() {
+  return async (query) => {
+    const pdId = query?.where?.perangkat_daerah_id;
+    return S19_MAPPING[pdId] || null;
+  };
+}
+
+function s19StubOpd() {
+  return async (query) => {
+    const namaOpd = query?.where?.nama_opd;
+    if (namaOpd === 'Dinas A') return { id: 1, nama_opd: 'Dinas A' };
+    if (namaOpd === 'Dinas B') return { id: 2, nama_opd: 'Dinas B' };
+    return null;
+  };
+}
+
+const S19_USER_SAME_OPD = { id: 9001, role: 'PELAKSANA', opd: 'Dinas A' };
+const S19_USER_CROSS_OPD = { id: 9002, role: 'PELAKSANA', opd: 'Dinas B' };
+const S19_USER_UNRESOLVED_OPD = { id: 9003, role: 'PELAKSANA', opd: 'Dinas Tidak Ada' };
+const S19_USER_SUPER_ADMIN = { id: 9000, role: 'SUPER_ADMIN', opd: 'Dinas Manapun' };
+
+async function s19Run(controllerPath, modelName, fn) {
+  delete require.cache[require.resolve(controllerPath)];
+  const controller = require(controllerPath);
+  return withStubs(
+    [
+      [models.PerangkatDaerahOpdMapping, 'findOne', s19StubMapping()],
+      [models.OpdPenanggungJawab, 'findOne', s19StubOpd()],
+    ],
+    () => fn(controller, models[modelName]),
+  );
+}
+
+// --- C3: renjaPokirDprdController ---
+
+await test('C3 findOne — SAME-OPD READ = ALLOW', async () => {
+  await s19Run('../controllers/renjaPokirDprdController', 'RenjaPokirDprd', async (controller, Model) => {
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({ id: 1, perangkat_daerah_id: 100, usulan: 'Contoh usulan' });
+    try {
+      const req = { params: { id: '1' }, user: S19_USER_SAME_OPD };
+      const res = fakeRes();
+      await controller.findOne(req, res);
+      assert.strictEqual(res.statusCode, 200, `expected 200, got ${res.statusCode} body=${JSON.stringify(res.body)}`);
+      assert.strictEqual(res.body?.data?.perangkat_daerah_id, 100);
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C3 findOne — CROSS-OPD READ = DENY (403, no disclosure)', async () => {
+  await s19Run('../controllers/renjaPokirDprdController', 'RenjaPokirDprd', async (controller, Model) => {
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({ id: 1, perangkat_daerah_id: 200, usulan: 'RAHASIA OPD LAIN' });
+    try {
+      const req = { params: { id: '1' }, user: S19_USER_SAME_OPD }; // caller OPD id 1 vs target OPD id 2 (PD 200) -> genuinely cross-OPD
+      const res = fakeRes();
+      await controller.findOne(req, res);
+      assert.strictEqual(res.statusCode, 403, `expected 403, got ${res.statusCode}`);
+      assert.strictEqual(res.body?.data, undefined, 'data milik OPD lain tidak boleh terekspos di body response');
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C3 create — SAME-OPD CREATE = ALLOW', async () => {
+  await s19Run('../controllers/renjaPokirDprdController', 'RenjaPokirDprd', async (controller, Model) => {
+    let createCalled = false;
+    const originalMax = Model.max;
+    const originalCreate = Model.create;
+    Model.max = async () => 0;
+    Model.create = async (payload) => {
+      createCalled = true;
+      return { id: 2, ...payload };
+    };
+    try {
+      const req = {
+        body: { tahun: '2027', perangkat_daerah_id: 100, usulan: 'Usulan baru' },
+        user: S19_USER_SAME_OPD,
+      };
+      const res = fakeRes();
+      await controller.create(req, res);
+      assert.strictEqual(res.statusCode, 201, `expected 201, got ${res.statusCode} body=${JSON.stringify(res.body)}`);
+      assert.strictEqual(createCalled, true);
+    } finally {
+      Model.max = originalMax;
+      Model.create = originalCreate;
+    }
+  });
+});
+
+await test('C3 create — CROSS-OPD CREATE = DENY (403, no row created)', async () => {
+  await s19Run('../controllers/renjaPokirDprdController', 'RenjaPokirDprd', async (controller, Model) => {
+    let createCalled = false;
+    const originalCreate = Model.create;
+    Model.create = async () => {
+      createCalled = true;
+      return {};
+    };
+    try {
+      const req = {
+        body: { tahun: '2027', perangkat_daerah_id: 200, usulan: 'Usulan atas nama OPD lain' },
+        user: S19_USER_SAME_OPD, // caller di "Dinas A" (PD 100), body mengklaim perangkat_daerah_id 200 (PD milik "Dinas B")
+      };
+      const res = fakeRes();
+      await controller.create(req, res);
+      assert.strictEqual(res.statusCode, 403, `expected 403, got ${res.statusCode}`);
+      assert.strictEqual(createCalled, false, 'create tidak boleh terpanggil saat cross-OPD');
+    } finally {
+      Model.create = originalCreate;
+    }
+  });
+});
+
+await test('C3 update — SAME-OPD UPDATE = ALLOW', async () => {
+  await s19Run('../controllers/renjaPokirDprdController', 'RenjaPokirDprd', async (controller, Model) => {
+    let updateCalled = false;
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({
+      id: 1,
+      perangkat_daerah_id: 100,
+      update: async function (payload) {
+        updateCalled = true;
+        Object.assign(this, payload);
+      },
+    });
+    try {
+      const req = { params: { id: '1' }, body: { usulan: 'Diperbarui' }, user: S19_USER_SAME_OPD };
+      const res = fakeRes();
+      await controller.update(req, res);
+      assert.strictEqual(res.statusCode, 200, `expected 200, got ${res.statusCode} body=${JSON.stringify(res.body)}`);
+      assert.strictEqual(updateCalled, true);
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C3 update — CROSS-OPD UPDATE = DENY (403, no mutation)', async () => {
+  await s19Run('../controllers/renjaPokirDprdController', 'RenjaPokirDprd', async (controller, Model) => {
+    let updateCalled = false;
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({
+      id: 1,
+      perangkat_daerah_id: 200,
+      update: async () => {
+        updateCalled = true;
+      },
+    });
+    try {
+      const req = { params: { id: '1' }, body: { usulan: 'Coba ubah' }, user: S19_USER_SAME_OPD }; // caller OPD id 1 vs target OPD id 2 (PD 200) -> genuinely cross-OPD
+      const res = fakeRes();
+      await controller.update(req, res);
+      assert.strictEqual(res.statusCode, 403, `expected 403, got ${res.statusCode}`);
+      assert.strictEqual(updateCalled, false, 'update tidak boleh terpanggil saat cross-OPD');
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C3 update — CROSS-OPD REASSIGNMENT = DENY (same-OPD owner, but requested new PD is foreign)', async () => {
+  await s19Run('../controllers/renjaPokirDprdController', 'RenjaPokirDprd', async (controller, Model) => {
+    let updateCalled = false;
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({
+      id: 1,
+      perangkat_daerah_id: 100,
+      update: async () => {
+        updateCalled = true;
+      },
+    });
+    try {
+      const req = {
+        params: { id: '1' },
+        body: { perangkat_daerah_id: 200 },
+        user: S19_USER_SAME_OPD,
+      };
+      const res = fakeRes();
+      await controller.update(req, res);
+      assert.strictEqual(res.statusCode, 403, `expected 403, got ${res.statusCode}`);
+      assert.strictEqual(updateCalled, false, 'reassignment ke OPD lain tidak boleh diterapkan untuk non-SUPER_ADMIN');
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C3 destroy — SAME-OPD DELETE = ALLOW', async () => {
+  await s19Run('../controllers/renjaPokirDprdController', 'RenjaPokirDprd', async (controller, Model) => {
+    let destroyCalled = false;
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({
+      id: 1,
+      perangkat_daerah_id: 100,
+      destroy: async () => {
+        destroyCalled = true;
+      },
+    });
+    try {
+      const req = { params: { id: '1' }, user: S19_USER_SAME_OPD };
+      const res = fakeRes();
+      await controller.delete(req, res);
+      assert.strictEqual(res.statusCode, 200, `expected 200, got ${res.statusCode} body=${JSON.stringify(res.body)}`);
+      assert.strictEqual(destroyCalled, true);
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C3 destroy — CROSS-OPD DELETE = DENY (403, no row deleted)', async () => {
+  await s19Run('../controllers/renjaPokirDprdController', 'RenjaPokirDprd', async (controller, Model) => {
+    let destroyCalled = false;
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({
+      id: 1,
+      perangkat_daerah_id: 200,
+      destroy: async () => {
+        destroyCalled = true;
+      },
+    });
+    try {
+      const req = { params: { id: '1' }, user: S19_USER_SAME_OPD }; // caller OPD id 1 vs target OPD id 2 (PD 200) -> genuinely cross-OPD
+      const res = fakeRes();
+      await controller.delete(req, res);
+      assert.strictEqual(res.statusCode, 403, `expected 403, got ${res.statusCode}`);
+      assert.strictEqual(destroyCalled, false, 'destroy tidak boleh terpanggil saat cross-OPD');
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C3 findOne — UNRESOLVED CALLER OPD = FAIL CLOSED (nama_opd tidak ditemukan)', async () => {
+  await s19Run('../controllers/renjaPokirDprdController', 'RenjaPokirDprd', async (controller, Model) => {
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({ id: 1, perangkat_daerah_id: 100 });
+    try {
+      const req = { params: { id: '1' }, user: S19_USER_UNRESOLVED_OPD };
+      const res = fakeRes();
+      await controller.findOne(req, res);
+      assert.strictEqual(res.statusCode, 403, `expected fail-closed 403, got ${res.statusCode}`);
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C3 findOne — UNRESOLVED PERANGKAT-DAERAH MAPPING = FAIL CLOSED (PD tanpa mapping OPD)', async () => {
+  await s19Run('../controllers/renjaPokirDprdController', 'RenjaPokirDprd', async (controller, Model) => {
+    const original = Model.findByPk;
+    // PD 999 sengaja tidak ada di S19_MAPPING -> mappingRow null -> targetOpdId null.
+    Model.findByPk = async () => ({ id: 1, perangkat_daerah_id: 999 });
+    try {
+      const req = { params: { id: '1' }, user: S19_USER_SAME_OPD };
+      const res = fakeRes();
+      await controller.findOne(req, res);
+      assert.strictEqual(res.statusCode, 403, `expected fail-closed 403, got ${res.statusCode}`);
+      assert.strictEqual(res.body?.code, 'RENJA_DATA_PENDUKUNG_OPD_BOUNDARY_UNRESOLVED');
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C3 destroy — SUPER_ADMIN = PRESERVE INTENDED ACCESS (cross-OPD delete allowed for SUPER_ADMIN)', async () => {
+  await s19Run('../controllers/renjaPokirDprdController', 'RenjaPokirDprd', async (controller, Model) => {
+    let destroyCalled = false;
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({
+      id: 1,
+      perangkat_daerah_id: 200,
+      destroy: async () => {
+        destroyCalled = true;
+      },
+    });
+    try {
+      const req = { params: { id: '1' }, user: S19_USER_SUPER_ADMIN };
+      const res = fakeRes();
+      await controller.delete(req, res);
+      assert.notStrictEqual(res.statusCode, 403, `SUPER_ADMIN tidak boleh diblokir, got ${res.statusCode}`);
+      assert.strictEqual(destroyCalled, true, 'SUPER_ADMIN harus tetap bisa delete lintas OPD');
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C3 terapkanAutofill — bulk id-list surface: CROSS-OPD row in batch = DENY whole batch, no partial mutation', async () => {
+  await s19Run('../controllers/renjaPokirDprdController', 'RenjaPokirDprd', async (controller, Model) => {
+    const originalFindAll = Model.findAll;
+    Model.findAll = async () => [
+      { id: 1, perangkat_daerah_id: 100 },
+      { id: 2, perangkat_daerah_id: 200 }, // foreign OPD baris tercampur dalam satu batch
+    ];
+    try {
+      const req = {
+        body: { perubahan: [{ id: 1, nilai_baru: 'A' }, { id: 2, nilai_baru: 'B' }] },
+        user: S19_USER_SAME_OPD,
+      };
+      const res = fakeRes();
+      await controller.terapkanAutofill(req, res);
+      assert.strictEqual(res.statusCode, 403, `expected 403, got ${res.statusCode} body=${JSON.stringify(res.body)}`);
+    } finally {
+      Model.findAll = originalFindAll;
+    }
+  });
+});
+
+// --- C4: renjaInovasiBidangUrusanController ---
+
+await test('C4 findOne — SAME-OPD READ = ALLOW', async () => {
+  await s19Run('../controllers/renjaInovasiBidangUrusanController', 'RenjaInovasiBidangUrusan', async (controller, Model) => {
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({ id: 1, perangkat_daerah_id: 100, nama_inovasi: 'Inovasi A' });
+    try {
+      const req = { params: { id: '1' }, user: S19_USER_SAME_OPD };
+      const res = fakeRes();
+      await controller.findOne(req, res);
+      assert.strictEqual(res.statusCode, 200, `expected 200, got ${res.statusCode}`);
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C4 findOne — CROSS-OPD READ = DENY', async () => {
+  await s19Run('../controllers/renjaInovasiBidangUrusanController', 'RenjaInovasiBidangUrusan', async (controller, Model) => {
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({ id: 1, perangkat_daerah_id: 200, nama_inovasi: 'RAHASIA' });
+    try {
+      const req = { params: { id: '1' }, user: S19_USER_SAME_OPD }; // caller OPD id 1 vs target OPD id 2 (PD 200) -> genuinely cross-OPD
+      const res = fakeRes();
+      await controller.findOne(req, res);
+      assert.strictEqual(res.statusCode, 403, `expected 403, got ${res.statusCode}`);
+      assert.strictEqual(res.body?.data, undefined);
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C4 create — SAME-OPD CREATE = ALLOW', async () => {
+  await s19Run('../controllers/renjaInovasiBidangUrusanController', 'RenjaInovasiBidangUrusan', async (controller, Model) => {
+    let createCalled = false;
+    const originalMax = Model.max;
+    const originalCreate = Model.create;
+    Model.max = async () => 0;
+    Model.create = async (payload) => {
+      createCalled = true;
+      return { id: 2, ...payload };
+    };
+    try {
+      const req = {
+        body: { tahun: '2027', perangkat_daerah_id: 100, nama_inovasi: 'Inovasi baru' },
+        user: S19_USER_SAME_OPD,
+      };
+      const res = fakeRes();
+      await controller.create(req, res);
+      assert.strictEqual(res.statusCode, 201, `expected 201, got ${res.statusCode} body=${JSON.stringify(res.body)}`);
+      assert.strictEqual(createCalled, true);
+    } finally {
+      Model.max = originalMax;
+      Model.create = originalCreate;
+    }
+  });
+});
+
+await test('C4 create — CROSS-OPD CREATE = DENY', async () => {
+  await s19Run('../controllers/renjaInovasiBidangUrusanController', 'RenjaInovasiBidangUrusan', async (controller, Model) => {
+    let createCalled = false;
+    const originalCreate = Model.create;
+    Model.create = async () => {
+      createCalled = true;
+      return {};
+    };
+    try {
+      const req = {
+        body: { tahun: '2027', perangkat_daerah_id: 200, nama_inovasi: 'Inovasi OPD lain' },
+        user: S19_USER_SAME_OPD,
+      };
+      const res = fakeRes();
+      await controller.create(req, res);
+      assert.strictEqual(res.statusCode, 403, `expected 403, got ${res.statusCode}`);
+      assert.strictEqual(createCalled, false);
+    } finally {
+      Model.create = originalCreate;
+    }
+  });
+});
+
+await test('C4 update — SAME-OPD UPDATE = ALLOW', async () => {
+  await s19Run('../controllers/renjaInovasiBidangUrusanController', 'RenjaInovasiBidangUrusan', async (controller, Model) => {
+    let updateCalled = false;
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({
+      id: 1,
+      perangkat_daerah_id: 100,
+      update: async () => {
+        updateCalled = true;
+      },
+    });
+    try {
+      const req = { params: { id: '1' }, body: { nama_inovasi: 'Diperbarui' }, user: S19_USER_SAME_OPD };
+      const res = fakeRes();
+      await controller.update(req, res);
+      assert.strictEqual(res.statusCode, 200, `expected 200, got ${res.statusCode}`);
+      assert.strictEqual(updateCalled, true);
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C4 update — CROSS-OPD UPDATE = DENY', async () => {
+  await s19Run('../controllers/renjaInovasiBidangUrusanController', 'RenjaInovasiBidangUrusan', async (controller, Model) => {
+    let updateCalled = false;
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({
+      id: 1,
+      perangkat_daerah_id: 200,
+      update: async () => {
+        updateCalled = true;
+      },
+    });
+    try {
+      const req = { params: { id: '1' }, body: { nama_inovasi: 'Coba ubah' }, user: S19_USER_SAME_OPD }; // caller OPD id 1 vs target OPD id 2 (PD 200) -> genuinely cross-OPD
+      const res = fakeRes();
+      await controller.update(req, res);
+      assert.strictEqual(res.statusCode, 403, `expected 403, got ${res.statusCode}`);
+      assert.strictEqual(updateCalled, false);
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C4 destroy — SAME-OPD DELETE = ALLOW', async () => {
+  await s19Run('../controllers/renjaInovasiBidangUrusanController', 'RenjaInovasiBidangUrusan', async (controller, Model) => {
+    let destroyCalled = false;
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({
+      id: 1,
+      perangkat_daerah_id: 100,
+      destroy: async () => {
+        destroyCalled = true;
+      },
+    });
+    try {
+      const req = { params: { id: '1' }, user: S19_USER_SAME_OPD };
+      const res = fakeRes();
+      await controller.delete(req, res);
+      assert.strictEqual(res.statusCode, 200, `expected 200, got ${res.statusCode}`);
+      assert.strictEqual(destroyCalled, true);
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C4 destroy — CROSS-OPD DELETE = DENY', async () => {
+  await s19Run('../controllers/renjaInovasiBidangUrusanController', 'RenjaInovasiBidangUrusan', async (controller, Model) => {
+    let destroyCalled = false;
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({
+      id: 1,
+      perangkat_daerah_id: 200,
+      destroy: async () => {
+        destroyCalled = true;
+      },
+    });
+    try {
+      const req = { params: { id: '1' }, user: S19_USER_SAME_OPD }; // caller OPD id 1 vs target OPD id 2 (PD 200) -> genuinely cross-OPD
+      const res = fakeRes();
+      await controller.delete(req, res);
+      assert.strictEqual(res.statusCode, 403, `expected 403, got ${res.statusCode}`);
+      assert.strictEqual(destroyCalled, false);
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
+await test('C4 terapkanRecall — SAME-OPD bulk create = ALLOW', async () => {
+  await s19Run('../controllers/renjaInovasiBidangUrusanController', 'RenjaInovasiBidangUrusan', async (controller, Model) => {
+    let bulkCreateCalled = false;
+    const originalFindAll = Model.findAll;
+    const originalMax = Model.max;
+    const originalBulkCreate = Model.bulkCreate;
+    Model.findAll = async () => [];
+    Model.max = async () => 0;
+    Model.bulkCreate = async () => {
+      bulkCreateCalled = true;
+      return [];
+    };
+    try {
+      const req = {
+        body: { tahun: '2027', perangkat_daerah_id: 100, kandidat: [{ nama_inovasi: 'Lanjutan' }] },
+        user: S19_USER_SAME_OPD,
+      };
+      const res = fakeRes();
+      await controller.terapkanRecall(req, res);
+      assert.strictEqual(res.statusCode, 200, `expected 200, got ${res.statusCode} body=${JSON.stringify(res.body)}`);
+      assert.strictEqual(bulkCreateCalled, true);
+    } finally {
+      Model.findAll = originalFindAll;
+      Model.max = originalMax;
+      Model.bulkCreate = originalBulkCreate;
+    }
+  });
+});
+
+await test('C4 terapkanRecall — CROSS-OPD bulk create = DENY, no rows created', async () => {
+  await s19Run('../controllers/renjaInovasiBidangUrusanController', 'RenjaInovasiBidangUrusan', async (controller, Model) => {
+    let bulkCreateCalled = false;
+    const originalBulkCreate = Model.bulkCreate;
+    Model.bulkCreate = async () => {
+      bulkCreateCalled = true;
+      return [];
+    };
+    try {
+      const req = {
+        body: { tahun: '2027', perangkat_daerah_id: 200, kandidat: [{ nama_inovasi: 'Coba lintas OPD' }] },
+        user: S19_USER_SAME_OPD,
+      };
+      const res = fakeRes();
+      await controller.terapkanRecall(req, res);
+      assert.strictEqual(res.statusCode, 403, `expected 403, got ${res.statusCode}`);
+      assert.strictEqual(bulkCreateCalled, false);
+    } finally {
+      Model.bulkCreate = originalBulkCreate;
+    }
+  });
+});
+
+await test('C4 destroy — SUPER_ADMIN = PRESERVE INTENDED ACCESS', async () => {
+  await s19Run('../controllers/renjaInovasiBidangUrusanController', 'RenjaInovasiBidangUrusan', async (controller, Model) => {
+    let destroyCalled = false;
+    const original = Model.findByPk;
+    Model.findByPk = async () => ({
+      id: 1,
+      perangkat_daerah_id: 200,
+      destroy: async () => {
+        destroyCalled = true;
+      },
+    });
+    try {
+      const req = { params: { id: '1' }, user: S19_USER_SUPER_ADMIN };
+      const res = fakeRes();
+      await controller.delete(req, res);
+      assert.notStrictEqual(res.statusCode, 403, `SUPER_ADMIN tidak boleh diblokir, got ${res.statusCode}`);
+      assert.strictEqual(destroyCalled, true);
+    } finally {
+      Model.findByPk = original;
+    }
+  });
+});
+
 } // end runAllTests
 
 runAllTests().then(() => {
