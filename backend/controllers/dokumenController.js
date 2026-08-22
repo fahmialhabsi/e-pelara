@@ -91,6 +91,14 @@ const download = async (req, res) => {
     if (!doc)
       return res.status(404).json({ message: "Dokumen tidak ditemukan" });
 
+    // Cek kepemilikan: user biasa hanya bisa unduh miliknya sendiri
+    // (identik dengan pola yang sudah diterapkan di remove() di bawah)
+    const userRole = req.user?.role;
+    const isAdmin = ["SUPER_ADMIN", "ADMINISTRATOR"].includes(userRole);
+    if (!isAdmin && doc.uploaded_by !== req.user?.id) {
+      return res.status(403).json({ message: "Akses ditolak" });
+    }
+
     const filePath = path.join(__dirname, "..", "uploads", doc.filepath);
     if (!fs.existsSync(filePath)) {
       return res

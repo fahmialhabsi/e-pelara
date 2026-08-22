@@ -218,6 +218,9 @@ const submit = async (req, res) => {
   const v = validateEntity(entity_type, entity_id);
   if (!v.ok) return res.status(400).json({ success: false, message: v.msg });
 
+  const boundary = await assertApprovalOpdBoundary(req, entity_type, v.id);
+  if (!boundary.ok) return res.status(boundary.status).json(boundary.body);
+
   try {
     const currentStatus = await getCurrentStatus(entity_type, entity_id);
     const transition = TRANSITIONS.SUBMIT;

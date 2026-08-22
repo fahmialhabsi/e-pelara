@@ -65,3 +65,19 @@ backups/database/
 # dokumen pemerintah persisten (walau metadata manifest sudah bebas nama
 # file individual/kredensial) ter-commit tidak sengaja.
 backups/uploads/
+
+# Sprint 20 — S20-DEFER-SECRET-01/02: bounded ignore protection for
+# private-key / PKCS#12 material (CEA/Owner mandate
+# ePELARA-MP-S20-BI-FGS-20260822, Section 6E). This prevents FUTURE
+# accidental (re)commit of key/cert material. It does NOT untrack the
+# four already-tracked files (backend/cert.pem, backend/certs/cert.p12,
+# backend/key.pem, backend/private-key.pem) — that requires
+# `git rm --cached`, an index/staging operation explicitly deferred to a
+# separately authorized controlled staging phase (staging is not
+# authorized under this mandate). Historical exposure of these four
+# files in git history is unaffected by this rule and remains an open
+# item (see S20-DEFER-SECRET-01/02).
+*.pem
+*.p12
+*.pfx
+certs/

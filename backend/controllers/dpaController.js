@@ -287,6 +287,8 @@ module.exports = {
       const puppeteer = require('puppeteer');
       const dpa = await Dpa.findByPk(id);
       if (!dpa) return res.status(404).json({ success: false, message: 'DPA tidak ditemukan' });
+      const boundary = await assertDpaOpdBoundary(req, dpa);
+      if (!boundary.ok) return res.status(boundary.status).json(boundary.body);
       const rka = await Rka.findByPk(dpa.rka_id);
       const rincian = await RkaRincianBelanja.findAll({
         where: { rka_id: dpa.rka_id },
@@ -485,6 +487,8 @@ module.exports = {
       const puppeteer = require('puppeteer');
       const dpa = await Dpa.findByPk(id);
       if (!dpa) return res.status(404).json({ success: false, message: 'DPA tidak ditemukan' });
+      const boundary = await assertDpaOpdBoundary(req, dpa);
+      if (!boundary.ok) return res.status(boundary.status).json(boundary.body);
       const rka = await Rka.findByPk(dpa.rka_id);
       const rincian = await RkaRincianBelanja.findAll({
         where: { rka_id: dpa.rka_id },
@@ -842,6 +846,9 @@ module.exports = {
       if (!data) {
         return res.status(404).json({ success: false, error: 'Data tidak ditemukan' });
       }
+
+      const boundary = await assertDpaOpdBoundary(req, data);
+      if (!boundary.ok) return res.status(boundary.status).json(boundary.body);
 
       res.json(data);
     } catch (e) {
