@@ -22,11 +22,16 @@ const URUTAN_BAKU = [
   ['id', 'ASC'],
 ];
 
-const susunWhere = (query) => {
+const susunWhere = (query, forcedPdScope) => {
   const where = {};
   if (query.tahun) where.tahun = String(query.tahun);
   const pdId = toInt(query.perangkat_daerah_id);
-  if (pdId) where.perangkat_daerah_id = pdId;
+  if (pdId) {
+    where.perangkat_daerah_id = pdId;
+  } else if (Array.isArray(forcedPdScope)) {
+    const { Op } = db.Sequelize;
+    where.perangkat_daerah_id = { [Op.in]: forcedPdScope };
+  }
   if (query.bentuk_inovasi) where.bentuk_inovasi = query.bentuk_inovasi;
   if (query.q) {
     const { Op } = db.Sequelize;
@@ -72,18 +77,79 @@ const tolakOpd = (res, boundary) =>
     code: boundary.error.code,
   });
 
+// Sprint 21 — Candidate A (S19-DEFER-01). Resolves the caller's own
+// perangkat_daerah_id scope for use as a forced default on findAll/rekap
+// when the client omits an explicit perangkat_daerah_id filter, instead of
+// returning/aggregating unscoped cross-OPD data. Plural by design: one
+// OpdPenanggungJawab can own multiple PerangkatDaerah mappings
+// (perangkat_daerah_id is unique in PerangkatDaerahOpdMapping,
+// opd_penanggung_jawab_id is not — confirmed via
+// models/perangkatDaerahOpdMappingModel.js and the existing reverse-lookup
+// precedent in services/prosnp/prosnpDpaSourceService.js). Returns an
+// array (possibly empty) of positive integer perangkat_daerah_id values,
+// or null if the caller's own OPD cannot be resolved at all. Identical
+// helper to renjaPokirDprdController.js's (C3) — duplicated locally rather
+// than shared, since services/renjaDataPendukungService.js is out of
+// scope for modification in this mandate.
+async function resolveCallerPerangkatDaerahIds(user) {
+  const opdName = user?.opd;
+  if (!opdName) return null;
+  const callerRow = await db.OpdPenanggungJawab.findOne({ where: { nama_opd: opdName } });
+  const callerOpdId = callerRow?.id ?? null;
+  if (!callerOpdId) return null;
+  const mappings = await db.PerangkatDaerahOpdMapping.findAll({
+    where: { opd_penanggung_jawab_id: callerOpdId },
+  });
+  return mappings
+    .map((m) => m.perangkat_daerah_id)
+    .filter((id) => Number.isInteger(id) && id > 0);
+}
+
+// Sprint 21 — Candidate A. Replicates layanan.rekapInovasi's exact
+// aggregate math (services/renjaDataPendukungService.js, out of scope for
+// modification) for a forced multi-PD scope (Op.in), used only for the new
+// omitted-filter + non-SUPER_ADMIN default-scoping case in rekap() below.
+// All pre-existing call paths (explicit filter, SUPER_ADMIN) continue to
+// call layanan.rekapInovasi() directly, unchanged.
+async function hitungRekapInovasiUntukPdIds(pdIds, tahun) {
+  const { Op } = db.Sequelize;
+  const where = {};
+  if (tahun) where.tahun = String(tahun);
+  where.perangkat_daerah_id = { [Op.in]: pdIds };
+  const rows = await db.RenjaInovasiBidangUrusan.findAll({ where });
+  const perBentuk = {};
+  for (const r of rows) {
+    const k = r.bentuk_inovasi || '(belum dikategorikan)';
+    perBentuk[k] = (perBentuk[k] || 0) + 1;
+  }
+  return {
+    jumlah_inovasi: rows.length,
+    per_bentuk: perBentuk,
+    inovasi_baru: rows.filter((r) => String(r.tahun_mulai || '') === String(tahun)).length,
+    inovasi_berlanjut: rows.filter((r) => r.tahun_mulai && String(r.tahun_mulai) !== String(tahun))
+      .length,
+  };
+}
+
 async function findAll(req, res) {
   try {
     const pdId = toInt(req.query.perangkat_daerah_id);
+    let forcedPdScope;
     if (pdId) {
       const boundary = await layanan.resolveRenjaDataPendukungOpdBoundary(db, {
         user: req.user,
         perangkatDaerahId: pdId,
       });
       if (!boundary.ok) return tolakOpd(res, boundary);
+    } else if (req.user?.role !== 'SUPER_ADMIN') {
+      // Sprint 21 — Candidate A: filter omitted, caller is not
+      // SUPER_ADMIN. Default to the caller's own OPD scope instead of
+      // returning unscoped cross-OPD rows.
+      forcedPdScope = await resolveCallerPerangkatDaerahIds(req.user);
+      if (!Array.isArray(forcedPdScope)) forcedPdScope = [];
     }
     const rows = await db.RenjaInovasiBidangUrusan.findAll({
-      where: susunWhere(req.query),
+      where: susunWhere(req.query, forcedPdScope),
       order: URUTAN_BAKU,
       include: [{ model: db.PerangkatDaerah, as: 'perangkatDaerah', required: false }],
     });
@@ -255,11 +321,25 @@ async function rekap(req, res) {
         perangkatDaerahId: pdId,
       });
       if (!boundary.ok) return tolakOpd(res, boundary);
+      const data = await layanan.rekapInovasi(db, {
+        tahun: req.query.tahun,
+        perangkat_daerah_id: req.query.perangkat_daerah_id,
+      });
+      return res.json({ success: true, data });
     }
-    const data = await layanan.rekapInovasi(db, {
-      tahun: req.query.tahun,
-      perangkat_daerah_id: req.query.perangkat_daerah_id,
-    });
+    if (req.user?.role === 'SUPER_ADMIN') {
+      const data = await layanan.rekapInovasi(db, {
+        tahun: req.query.tahun,
+        perangkat_daerah_id: req.query.perangkat_daerah_id,
+      });
+      return res.json({ success: true, data });
+    }
+    // Sprint 21 — Candidate A: filter omitted, caller is not SUPER_ADMIN.
+    // Default to the caller's own OPD scope instead of an unscoped
+    // aggregate spanning all OPDs' innovation records.
+    let forcedPdScope = await resolveCallerPerangkatDaerahIds(req.user);
+    if (!Array.isArray(forcedPdScope)) forcedPdScope = [];
+    const data = await hitungRekapInovasiUntukPdIds(forcedPdScope, req.query.tahun);
     return res.json({ success: true, data });
   } catch (e) {
     return gagal(res, e);
