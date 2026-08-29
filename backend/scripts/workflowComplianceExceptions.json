@@ -76,6 +76,114 @@
       "table": "prosnp_kategori_referensi",
       "statusColumn": null,
       "note": "Tidak ada kolom status sama sekali — tabel referensi/lookup dua-kolom (kelompok + aktif), dikecualikan dari kriteria 1."
+    },
+    "prosnpMasterIndikatorModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN-P redesain (prosnp_master_indikator, migration 20260807010000-prosn-redesign-master-nomenklatur-dan-status.js). Master data 4 indikator resmi B.1.1-B.1.4 sesuai Kepmendagri 700.1.1.4-180/2026 (kode, nama_indikator, tipe_form, bobot_maksimal, kriteria_skor JSON, urutan) — dikonfigurasi via seeder, bukan entitas yang disetujui via workflow. Kolom 'aktif' adalah boolean on/off administratif, pola yang sama dengan prosnpIndikatorModel.js yang sudah di-whitelist. Dikonfirmasi sebagai documented exception mengikuti preseden model master data ProSN-P sebelumnya, selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), mandat Corrective Implementation Pass ProSN §15, sesi coding 2026-08-07",
+      "table": "prosnp_master_indikator",
+      "statusColumn": null,
+      "note": "Tidak ada kolom status sama sekali — dikecualikan dari kriteria 1."
+    },
+    "prosnpKomoditasModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN-P redesain (prosnp_komoditas, migration 20260807010000-prosn-redesign-master-nomenklatur-dan-status.js). Master data referensi komoditas (kode, nama, kategori, flag_beras, satuan_dasar) dipakai sbg lookup tetap oleh ProsnStokTransaksi.komoditas_id — bukan entitas transaksional. Kolom 'aktif' adalah boolean on/off administratif, pola yang sama dengan prosnpIndikatorModel.js/prosnpKategoriReferensiModel.js yang sudah di-whitelist. Dikonfirmasi sebagai documented exception mengikuti preseden, selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), mandat Corrective Implementation Pass ProSN §15, sesi coding 2026-08-07",
+      "table": "prosnp_komoditas",
+      "statusColumn": null,
+      "note": "Tidak ada kolom status sama sekali — tabel referensi/lookup, dikecualikan dari kriteria 1."
+    },
+    "prosnpNomenklaturMappingModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN-P redesain (prosnp_nomenklatur_mapping, migration 20260807010000-prosn-redesign-master-nomenklatur-dan-status.js). Model ini adalah tabel pemetaan nomenklatur SIPD (Kepmendagri 900.1-861/2026) ke 4 master indikator ProSN — master data hasil pemetaan regulasi, bukan dokumen yang di-submit/approve/reject. Kolom 'status_relevansi' (ENUM core/direct_conditional/supporting/context_only/excluded) adalah KLASIFIKASI relevansi sub kegiatan terhadap indikator ProSN (dipakai sbg whitelist filter di prosnpDpaSourceService.js §10), bukan status lifecycle dokumen — dan tidak terdeteksi regex kolom-status script karena diawali 'status_' bukan diakhiri '_status' (gap yang sama persis sudah didokumentasikan di exception prosnpPemeriksaanModel.js). Kolom 'is_active' adalah boolean on/off administratif. Dikonfirmasi sebagai documented exception mengikuti preseden, selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), mandat Corrective Implementation Pass ProSN §15, sesi coding 2026-08-07",
+      "table": "prosnp_nomenklatur_mapping",
+      "statusColumn": "status_relevansi",
+      "actualValues": ["core", "direct_conditional", "supporting", "context_only", "excluded"]
+    },
+    "prosnpSuratPenugasanModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN-P redesain B.1.1 (prosnp_surat_penugasan, migration 20260807010100-prosn-redesign-b11-b12-register-tables.js). Register surat penugasan KDH ke OPD — entitas transaksional per pengisian, bukan dokumen approval linear (kelayakannya justru dijaga oleh Evidence Category Gate terpisah, lihat prosnpEvidenceGateService.js §6.1). Kolom 'status_tindak_lanjut' (ENUM belum_ditindaklanjuti/sedang_diproses/selesai) melacak progres tindak lanjut internal atas surat, bukan status dokumen linear, dan tidak terdeteksi regex kolom-status karena diawali 'status_' (gap sama seperti prosnpPemeriksaanModel.js). Dikonfirmasi sebagai documented exception mengikuti preseden, selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), mandat Corrective Implementation Pass ProSN §15, sesi coding 2026-08-07",
+      "table": "prosnp_surat_penugasan",
+      "statusColumn": "status_tindak_lanjut",
+      "actualValues": ["belum_ditindaklanjuti", "sedang_diproses", "selesai"]
+    },
+    "prosnpSuratPenugasanDukunganModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN-P redesain B.1.1 (prosnp_surat_penugasan_dukungan, migration 20260807010100-prosn-redesign-b11-b12-register-tables.js). Tabel anak berisi rincian dukungan program/anggaran per surat penugasan (program, kegiatan, sub_kegiatan, pagu, realisasi) — data faktual terikat ke satu ProsnSuratPenugasan, tidak punya lifecycle sendiri. Kolom 'sumber_jenis' (ENUM dpa/renja/rkpd/manual) adalah TAG provenans sumber data (dari mana angka pagu/realisasi diambil), bukan status persetujuan. Dikonfirmasi sebagai documented exception mengikuti preseden, selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), mandat Corrective Implementation Pass ProSN §15, sesi coding 2026-08-07",
+      "table": "prosnp_surat_penugasan_dukungan",
+      "statusColumn": null,
+      "note": "Tidak ada kolom status lifecycle — 'sumber_jenis' adalah tag provenans data, dikecualikan dari kriteria 1."
+    },
+    "prosnpRapatForkopimdaModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN-P redesain B.1.2 (prosnp_rapat_forkopimda, migration 20260807010100-prosn-redesign-b11-b12-register-tables.js). Register rapat koordinasi Forkopimda — kesahan tiap rapat dijaga Evidence Category Gate per-rapat (prosnpEvidenceGateService.rapatMemilikiBuktiLengkap, §6.2), bukan status approval linear. Kolom 'status_tindak_lanjut' (ENUM belum_ditindaklanjuti/sedang_diproses/selesai) sama persis polanya dengan prosnpSuratPenugasanModel.js — melacak progres tindak lanjut hasil rapat, tidak terdeteksi regex karena diawali 'status_'. Dikonfirmasi sebagai documented exception mengikuti preseden, selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), mandat Corrective Implementation Pass ProSN §15, sesi coding 2026-08-07",
+      "table": "prosnp_rapat_forkopimda",
+      "statusColumn": "status_tindak_lanjut",
+      "actualValues": ["belum_ditindaklanjuti", "sedang_diproses", "selesai"]
+    },
+    "prosnpCadanganTargetModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN-P redesain B.1.3 (prosnp_cadangan_target, migration 20260807010200-prosn-redesign-b13-neraca-cadangan-pangan.js, diperluas migration 20260807110000-prosn-b13-dpa-source-mapping.js §10). Target dari Keputusan KDH, discope tenant+tahun (dipakai bersama Semester I & II). Kolom 'status_aktif' adalah boolean on/off administratif (target mana yang berlaku, bukan lifecycle multi-tahap) — pola sama dengan model master data ProSN-P lain. Kolom 'source_type' (ENUM sistem/manual) adalah TAG provenans sumber pagu/realisasi (dari APBD nyata vs override manual, §10 Source-Driven DPA Mapping), bukan status persetujuan dokumen. Dikonfirmasi sebagai documented exception mengikuti preseden, selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), mandat Corrective Implementation Pass ProSN §15, sesi coding 2026-08-07",
+      "table": "prosnp_cadangan_target",
+      "statusColumn": null,
+      "note": "'status_aktif' adalah boolean administratif dan 'source_type' adalah tag provenans data, bukan status lifecycle dokumen — dikecualikan dari kriteria 1."
+    },
+    "prosnpStokTransaksiModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN-P redesain B.1.3 (prosnp_stok_transaksi, migration 20260807010200-prosn-redesign-b13-neraca-cadangan-pangan.js, diperluas migration 20260807100100-prosn-b13-rekonsiliasi-semester.js). Register transaksi/mutasi stok cadangan pangan yang membentuk neraca (dihitung backend, lihat prosnpB13RuleEngine.js). Kolom 'status_verifikasi' (ENUM uploaded/valid/invalid/needs_clarification/duplicate/expired) adalah lifecycle VERIFIKASI bukti transaksi — pola arsitektural identik dengan prosnpBuktiDukungModel.js (sudah di-whitelist), hanya beda nama tabel — dan tidak terdeteksi regex kolom-status karena diawali 'status_' (gap sama seperti prosnpPemeriksaanModel.js). Dikonfirmasi sebagai documented exception mengikuti preseden, selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), mandat Corrective Implementation Pass ProSN §15, sesi coding 2026-08-07",
+      "table": "prosnp_stok_transaksi",
+      "statusColumn": "status_verifikasi",
+      "actualValues": ["uploaded", "valid", "invalid", "needs_clarification", "duplicate", "expired"]
+    },
+    "prosnpInovasiModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN-P redesain B.1.4 (prosnp_inovasi, migration 20260807010300-prosn-redesign-b14-inovasi-perkada.js). Register inovasi pengadaan/pengelolaan gabah-beras dan Perkada pendukung — kelayakan skor dijaga Evidence Category Gate (prosnpEvidenceGateService.inovasiEvidenceStatus, §6.4), bukan approval linear. Tiga kolom status melacak progres substantif berbeda: 'status_implementasi' (ENUM gagasan/diterapkan_sebagian/diterapkan_penuh) — tahap penerapan inovasi; 'status_perkada' (ENUM belum_ada/proses_penyusunan/ditetapkan) — tahap legalisasi Perkada; 'status_evaluasi' (STRING bebas) — catatan evaluasi naratif. Ketiganya lifecycle domain substantif inovasi, bukan status dokumen linear, dan tidak terdeteksi regex karena diawali 'status_'. Dikonfirmasi sebagai documented exception mengikuti preseden, selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), mandat Corrective Implementation Pass ProSN §15, sesi coding 2026-08-07",
+      "table": "prosnp_inovasi",
+      "statusColumn": "status_implementasi, status_perkada, status_evaluasi",
+      "actualValues": {
+        "status_implementasi": ["gagasan", "diterapkan_sebagian", "diterapkan_penuh"],
+        "status_perkada": ["belum_ada", "proses_penyusunan", "ditetapkan"],
+        "status_evaluasi": "STRING bebas (catatan naratif, bukan ENUM)"
+      }
+    },
+    "prosnpSatgasMbgModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN Indicator Foundation MBG 2.1 (prosnp_satgas_mbg, migration 20260807113000-prosn-mbg-register-satgas-sarpras-laporan.js, spek 34). Register Satgas MBG per pengisian — kolom 'status_kelembagaan' (ENUM belum_terbentuk/terbentuk_belum_optimal/terbentuk_aktif) adalah DEKLARASI/catatan naratif operator, BUKAN sumber skor (skor selalu dihitung ulang independen dari evidence oleh rule engine evidence-driven murni, lihat prosnpGenericTierRuleEngine.hitungStatusTier — koreksi wajib #3 tinjauan CEA). Tidak terdeteksi regex kolom-status karena diawali 'status_', gap yang sama sudah didokumentasikan di prosnpPemeriksaanModel.js/prosnpInovasiModel.js. Dikonfirmasi sebagai documented exception mengikuti preseden, selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), mandat ProSN Indicator Foundation spek 34, sesi coding 2026-08-07",
+      "table": "prosnp_satgas_mbg",
+      "statusColumn": "status_kelembagaan",
+      "actualValues": ["belum_terbentuk", "terbentuk_belum_optimal", "terbentuk_aktif"]
+    },
+    "prosnpSarprasKomponenMbgModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN Indicator Foundation MBG 2.2 (prosnp_sarpras_komponen_mbg, migration 20260807113000-prosn-mbg-register-satgas-sarpras-laporan.js, spek 34). Register checklist komponen sarpras — satu baris PER KOMPONEN (nama_komponen + tersedia BOOLEAN + catatan), bukan entitas berstatus lifecycle. Proporsi ketersediaan dihitung backend (prosnpGenericTierRuleEngine.hitungChecklistProporsional) dari kumpulan baris ini, bukan dari satu kolom status. Dikonfirmasi sebagai documented exception mengikuti preseden, selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), mandat ProSN Indicator Foundation spek 34, sesi coding 2026-08-07",
+      "table": "prosnp_sarpras_komponen_mbg",
+      "statusColumn": null,
+      "note": "Tidak ada kolom status sama sekali — 'tersedia' adalah boolean checklist per komponen, dikecualikan dari kriteria 1."
+    },
+    "prosnpLaporanSatgasMbgModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN Indicator Foundation MBG 2.3 (prosnp_laporan_satgas_mbg, migration 20260807113000-prosn-mbg-register-satgas-sarpras-laporan.js, spek 34). Register laporan berkala Satgas — SENGAJA TIDAK punya kolom data_lengkap/status yang writable (koreksi wajib #1 tinjauan CEA: kelengkapan laporan DIHITUNG backend dari rencana_kerja/permasalahan/hasil_identifikasi_sppg + evidence gate per-record, bukan checkbox operator). Tidak ada entitas berstatus lifecycle di tabel ini. Dikonfirmasi sebagai documented exception mengikuti preseden, selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), mandat ProSN Indicator Foundation spek 34, sesi coding 2026-08-07",
+      "table": "prosnp_laporan_satgas_mbg",
+      "statusColumn": null,
+      "note": "Tidak ada kolom status sama sekali — dikecualikan dari kriteria 1."
+    },
+    "prosnpIndikatorKontributorModel.js": {
+      "criterion1": true,
+      "reason": "Modul ProSN Indicator Foundation (prosnp_indikator_kontributor, migration 20260807111000-prosn-indicator-foundation-master-dan-ownership.js, spek 34 D4). Tabel pivot many-to-many OPD kontributor per indikator (indikator_id + opd_id + peran ENUM kontributor_data/kontributor_bukti/koordinator_teknis) — junction table administratif, bukan entitas yang disetujui via workflow. Kolom 'peran' adalah klasifikasi jenis kontribusi, bukan status lifecycle. Setara secara arsitektural dengan prosnpBuktiIndikatorModel.js (junction table) yang sudah di-whitelist. Dikonfirmasi sebagai documented exception mengikuti preseden, selaras ADR-0005 §3 butir 6.",
+      "authorizedBy": "Project Owner (Fahmi Alhabsi), mandat ProSN Indicator Foundation spek 34, sesi coding 2026-08-07",
+      "table": "prosnp_indikator_kontributor",
+      "statusColumn": null,
+      "note": "Tidak ada kolom status sama sekali — tabel pivot/junction, dikecualikan dari kriteria 1."
     }
   }
 }

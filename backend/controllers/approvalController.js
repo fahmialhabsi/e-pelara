@@ -101,6 +101,11 @@ async function assertApprovalOpdBoundary(req, entity_type, entity_id) {
 }
 
 // Mapping entity_type → nama tabel DB (tabel yang punya kolom approval_status)
+// Sprint 3 — S3-1: "rpjmd" ditambahkan (ADR-0002 §3 butir 4). Sebelumnya
+// entity_type ini lolos VALID_ENTITY_TYPES tapi tidak ada di map ini,
+// sehingga syncStatusToTable() silent no-op — approval tercatat di log
+// tapi status dokumen rpjmd tidak pernah berubah. Lihat migration
+// 20260808090001-add-rpjmd-approval-status.js untuk desain verification.
 const ENTITY_TABLE_MAP = {
   dpa:   "dpa",
   rka:   "rka",
@@ -108,6 +113,7 @@ const ENTITY_TABLE_MAP = {
   renja: "renja",
   rkpd:  "rkpd",
   renstra: "renstra",
+  rpjmd: "rpjmd",
 };
 
 // Sync approval_status kolom di tabel dokumen yang bersangkutan
@@ -124,7 +130,11 @@ async function syncStatusToTable(entity_type, entity_id, new_status) {
   }
 }
 
-const ADMIN_ROLES = ["SUPER_ADMIN", "ADMINISTRATOR"];
+// Sprint 3 — S3-3: dead code ADMIN_ROLES (["SUPER_ADMIN","ADMINISTRATOR"])
+// dihapus dari sini — tidak pernah dipakai di file ini (otorisasi admin
+// untuk route approve/reject/revise sudah dikontrol oleh allowRoles() di
+// approvalRoutes.js, yang sekarang memakai WORKFLOW_ADMIN_ROLES dari
+// planningWorkflowService.js sebagai satu-satunya sumber definisi).
 
 // Tipe entitas yang valid
 const VALID_ENTITY_TYPES = ["dpa", "rka", "lakip", "renja", "rkpd", "rpjmd", "renstra"];

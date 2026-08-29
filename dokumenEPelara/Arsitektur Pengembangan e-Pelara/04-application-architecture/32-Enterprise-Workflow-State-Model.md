@@ -4,12 +4,12 @@ title: Enterprise Workflow State Model
 system: e-PeLARA Next Generation
 classification: Application Architecture Blueprint
 domain: Business and Application Architecture
-version: 0.2.0
+version: 0.2.1
 status: Approved
 owner: Chief Enterprise Architect
 approver: Project Owner
 effective_date: 2026-08-06
-last_reviewed: 2026-08-06
+last_reviewed: 2026-08-29
 parent_document: ../04-application-architecture/29-Application-Architecture.md
 conforms_to: ../00-governance/01-Repository-Structure.md
 roadmap_reference: ../11-roadmaps/02-Enterprise-Architecture-Roadmap.md
@@ -156,8 +156,8 @@ Kewajiban ini **tidak** berlaku retroaktif untuk memaksa migrasi modul existing 
 | Item | Placeholder | Routing |
 | --- | --- | --- |
 | Rencana migrasi teknis konkret status Renja (kolom `status` + 4 boolean → 4-state generik) | To be assigned by Project Owner — Evidence Pending | Migration/Implementation (Seq 67+) |
-| Perbaikan sinkronisasi status RPJMD ke tabel dokumen | To be assigned by Project Owner — Evidence Pending | Migration/Implementation (Seq 67+) |
-| Penyatuan teknis definisi otorisasi admin (dua sumber definisi paralel) | To be assigned by Project Owner — Evidence Pending | Migration/Implementation (Seq 67+) |
+| Perbaikan sinkronisasi status RPJMD ke tabel dokumen | **Implemented (Addendum 2026-08-29).** `rpjmd` ditambahkan ke `ENTITY_TABLE_MAP`/`TABLE_STATUS_MAP` (`backend/controllers/approvalController.js`, `guardApproved.js`), migration `20260808090001-add-rpjmd-approval-status.js` menambah kolom `approval_status` ENUM 4-state. Diverifikasi via `node scripts/rpjmdApprovalSyncRegressionSelfTest.js` — **8/8 pass** (regression guard eksplisit mengecek "rpjmd" tidak lagi silent no-op). | Selesai; evidence di AIR-004 (Issue Register). |
+| Penyatuan teknis definisi otorisasi admin (dua sumber definisi paralel) | **Implemented (Addendum 2026-08-29).** `ADMIN_ROLES` dead code dihapus dari `approvalController.js`; `approvalRoutes.js` kini memakai `WORKFLOW_ADMIN_ROLES` dari `planningWorkflowService.js` sebagai satu-satunya sumber definisi. Diverifikasi via `node scripts/workflowAdminUnificationRegressionSelfTest.js` — **18/18 pass** (termasuk cross-check konsistensi `allowRoles()` vs `isWorkflowAdminRole()` untuk 10 nilai role berbeda). | Selesai; evidence di AIR-004 (Issue Register). |
 | Disposisi modul BMD, TLHP, MR, LK, Penatausahaan/BKU terhadap model ini | To be assigned by Project Owner — Evidence Pending | Analisis arsitektur lanjutan |
 | Kebutuhan approval berjenjang/multi-eselon di masa depan | To be assigned by Project Owner — Evidence Pending | ADR terpisah bila dikonfirmasi |
 | Owner/steward institusional per modul untuk peran approver | To be assigned by Project Owner — Evidence Pending | Governance lanjutan |
@@ -182,6 +182,8 @@ Kewajiban ini **tidak** berlaku retroaktif untuk memaksa migrasi modul existing 
 
 **Dilarang**: Menetapkan skema database/kode aplikasi aktual, menunjuk owner/steward institusional, menetapkan kewenangan hukum approval, menetapkan API/event contract teknis, mengklaim implementasi migrasi telah dilaksanakan, menetapkan approval berjenjang sebagai model resmi, atau memberikan disposition Gate G3.
 
+**Addendum 2026-08-29 — mandat berbeda (eksekusi backlog runbook)**: pembaruan §9 (dua baris RPJMD sync dan admin unification) dilakukan di bawah `11-roadmaps/backlog-eksekusi-otomatis.md`, mandat eksekusi teknis yang berbeda dari mandat draft-only di atas. Klaim "Implemented" pada kedua baris tersebut merujuk pada verifikasi langsung sesi ini sendiri (kode ditinjau, regression self-test dijalankan dan diamati — 8/8 dan 18/18 pass), bukan laporan pihak ketiga. Tidak ada disposition Gate G3 baru ditetapkan; tidak ada bagian lain dokumen ini diklaim implemented di luar dua baris yang eksplisit diperbarui.
+
 ## 12. Persetujuan
 
 | Peran | Nama/Identitas | Status | Catatan | Tanggal |
@@ -198,6 +200,7 @@ Kewajiban ini **tidak** berlaku retroaktif untuk memaksa migrasi modul existing 
 | 0.2.0 | 2026-08-06 | Ditambahkan §7a (Kewajiban Kepatuhan Modul Baru) berdasarkan ADR-0005 (Mandatory Generic Workflow Compliance Decision, Accepted 2026-08-06): prinsip kewajiban forward-looking, kriteria validasi kepatuhan (deskripsi arsitektural), kerangka enforcement berlapis (governance/static check/schema constraint) sebagai Candidate Target Direction, dan batas kewajiban. §8, §9, §10 diperbarui untuk konsistensi referensi ADR-0005. Tidak ada kode/script validasi ditulis; tidak ada disposition Gate ditetapkan. | Claude Work | Draft for Review |
 | — | 2026-08-06 | Rujukan ditambahkan ke lampiran teknis 32a (Enforcement Specification) pada §7a.3. | Claude Work | — |
 | 0.2.0 (final) | 2026-08-06 | **Finalisasi**: Project Owner menyetujui BP-APP-002 v0.2.0 secara eksplisit, termasuk isi §7a. Status dinaikkan menjadi Approved, effective_date 2026-08-06, review_outcome PASSED. | Claude Work, berdasarkan persetujuan eksplisit Project Owner | Approved |
+| 0.2.1 | 2026-08-29 | **Addendum evidence**: §9 baris "Perbaikan sinkronisasi status RPJMD" dan "Penyatuan teknis definisi otorisasi admin" diperbarui dari Evidence Pending menjadi Implemented, berdasarkan verifikasi langsung kode + regression self-test (8/8 dan 18/18 pass). Ditambahkan addendum §11 mencatat mandat berbeda. Tidak ada bagian konseptual lain dokumen ini diubah; tidak ada disposition Gate baru. Dijalankan di bawah runbook `11-roadmaps/backlog-eksekusi-otomatis.md`. | Claude (mode `/loop`, sesi eksekusi backlog) | Approved (evidence addendum; review substantif Project Owner belum dilakukan) |
 
 ## 14. Validation Checklist (Version 0.2.0 Approved)
 
