@@ -4,12 +4,12 @@ title: SIPD Integration Blueprint
 system: e-PeLARA Next Generation
 classification: Integration Architecture Blueprint
 domain: Integration Architecture
-version: 0.1.0
+version: 0.1.1
 status: Approved
 owner: Chief Enterprise Architect
 approver: Project Owner
 effective_date: 2026-08-06
-last_reviewed: 2026-08-06
+last_reviewed: 2026-08-29
 parent_document: ../05-integration-architecture/34-Integration-Architecture.md
 conforms_to: ../00-governance/01-Repository-Structure.md
 roadmap_reference: ../11-roadmaps/02-Enterprise-Architecture-Roadmap.md
@@ -72,6 +72,25 @@ Sesuai ADR-0004 §3 butir 4, bagian ini sengaja **tidak diisi** sampai ketersedi
 
 Placeholder ini tidak boleh diisi berdasarkan asumsi; pengisian memerlukan evidence institusional baru dan kemungkinan ADR terpisah (ADR-0004 §3.1 butir 3).
 
+## 6a. Addendum 2026-08-29 — Dokumentasi Kontrak Teknis Interim Pattern (Bagian A saja)
+
+Dilakukan di bawah `11-roadmaps/backlog-eksekusi-otomatis.md`, mandat eksekusi teknis berbeda dari mandat draft-only §12. Peninjauan langsung terhadap dua service parser yang sudah ada dan berjalan (§6):
+
+**`rkaSipdPdfImportService.js`** (PDF "Cetak RKA Rincian Belanja"):
+- Header (Program/Kegiatan/Sub Kegiatan/Alokasi) diparse dari teks flat (`pdf-parse`), berbasis pola baris "Label: Value" dengan daftar label yang dikenal secara eksplisit (`KNOWN_LABELS`).
+- Rincian belanja per item (Koefisien/Satuan/Harga/Spesifikasi) diparse dari **posisi glyph** (`pdfjs-dist`), bukan teks flat — karena kolom pada tabel PDF asli tidak punya pemisah teks yang jelas; tiap glyph di-bucket ke kolom berdasar posisi-x, baris dikelompokkan berdasar posisi-y.
+- Nominal Rupiah wajib format Indonesia penuh (`1.234.567,00`); kolom Koefisien punya penanganan desimal terpisah.
+- Error handling: `throw new Error(...)` dengan pesan Bahasa Indonesia yang dapat dibaca pengguna (bukan error code terstruktur) — mis. "Tahun anggaran tidak ditemukan di PDF", "Kode Sub Kegiatan tidak ditemukan di PDF."
+- Output divalidasi ulang oleh `rkaValidationService` dengan schema yang **sama** dengan input form manual (`POST /api/rka`) — tidak ada jalur validasi terpisah untuk data hasil import.
+
+**`realisasiSipdPdfImportService.js`** (PDF "Laporan Realisasi per Sub Kegiatan", menu Penatausahaan > Statistik Belanja SIPD):
+- PDF sumber **tidak memiliki lapisan teks sama sekali** (dikonfirmasi: nol operator `showText`, hanya `paintImageXObject`/vector path) — baik `pdf-parse` maupun `pdfjs-dist` text extraction mengembalikan 0 karakter.
+- Satu-satunya jalur: render tiap halaman jadi gambar, OCR (`tesseract.js`) dengan output word-level bounding box, lalu pengelompokan baris via nearest-neighbor terhadap baris "anchor" (kode rekening + nilai Rp).
+- Setiap baris SIPD punya 4 kolom realisasi (KKPD/UP-GU/TU/LS); parser mengembalikan satu objek `rincian` per baris SIPD, dipecah controller pemanggil jadi maksimal 4 baris Penatausahaan.
+- PDF tidak mencantumkan tahun anggaran secara eksplisit (hanya tanggal cetak) — tahun **wajib** dikirim terpisah oleh pemanggil, bukan diekstrak dari dokumen.
+
+**Sifat evidence**: Documented Current Fact (perilaku kode aktual saat ini), bukan spesifikasi normatif — perubahan pada parser di masa depan tidak otomatis mengubah dokumen ini. Ringkasan ini **tidak** menyentuh Bagian B (§7) — placeholder Target Integration Pattern (API-based) **sengaja tetap kosong**, dikonfirmasi ulang tetap berlaku sesuai ADR-0004 §3 butir 4 dan §7 dokumen ini sendiri ("tidak boleh diisi berdasarkan asumsi"). Tidak dibuat draft/candidate skema API apa pun pada addendum ini — berbeda dari pendekatan pada item backlog lain yang bersifat pola teknis generik, karena SIPD adalah sistem eksternal spesifik milik Kemendagri yang karakteristiknya tidak diketahui, sehingga draft apa pun akan murni karangan, bukan kandidat rekayasa yang beralasan.
+
 ## 8. Prinsip Boundary Integrasi
 
 1. **Kontrak-first, konsisten STD-INT-001**: baik Interim maupun Target Pattern mengikuti prinsip contract-first, dengan lapisan verifikasi tambahan untuk pihak eksternal (mengikuti pola BP-INT-002 §6 butir 4).
@@ -88,8 +107,8 @@ ARCH-INT-001 mengklasifikasikan SIPD sebagai kategori integrasi eksternal Govern
 | Item | Placeholder | Routing |
 | --- | --- | --- |
 | Ketersediaan dan konfirmasi API SIPD dari Kemendagri | To be designated or verified by competent institutional authority — Evidence Pending | Eskalasi Project Owner (di luar dokumen ini) |
-| Kontrak data/skema teknis Interim Pattern (format kolom PDF, aturan validasi, error handling) | To be assigned by Project Owner — Evidence Pending | Implementasi teknis / pembaruan dokumen ini |
-| Protokol dan skema Target Integration Pattern (API-based) | To be assigned — Evidence Pending | ADR terpisah bila API dikonfirmasi tersedia |
+| Kontrak data/skema teknis Interim Pattern (format kolom PDF, aturan validasi, error handling) | **Terdokumentasi (Addendum 2026-08-29)** — lihat §6a untuk ringkasan kontrak teknis nyata kedua parser, berdasarkan peninjauan langsung kode. | Selesai untuk dokumentasi; perluasan/perbaikan teknis tetap implementasi terpisah. |
+| Protokol dan skema Target Integration Pattern (API-based) | **Tetap placeholder kosong, dengan sengaja (tidak berubah).** Addendum 2026-08-29 mengonfirmasi ulang keputusan ini — lihat §6a penutup. | ADR terpisah bila API dikonfirmasi tersedia. |
 | Otoritas institusional verifikasi keabsahan data hasil PDF-import | To be designated or verified by competent institutional authority — Evidence Pending | Keputusan Project Owner terpisah |
 
 ## 11. Assumptions dan Program State
@@ -105,6 +124,8 @@ ARCH-INT-001 mengklasifikasikan SIPD sebagai kategori integrasi eksternal Govern
 
 **Dilarang**: Menetapkan atau mengklaim ketersediaan API SIPD, kontrak teknis resmi dengan Kemendagri, owner/steward institusional, authority, compliance, implementasi, effective date, atau disposition Gate.
 
+**Addendum 2026-08-29 — mandat berbeda**: penambahan §6a dilakukan di bawah runbook eksekusi backlog, bukan mandat draft-only di atas. Batasan §12 asli tetap berlaku penuh untuk addendum ini: Bagian B (§7) tetap tidak diisi, tidak ada klaim ketersediaan API, tidak ada kontrak dengan Kemendagri diusulkan. §6a murni mendokumentasikan perilaku kode Interim Pattern yang sudah ada dan berjalan (Bagian A) — dalam kategori "Diizinkan" (mendokumentasikan Interim Pattern berdasarkan evidence kode).
+
 ## 13. Persetujuan
 
 | Peran | Nama/Identitas | Status | Catatan | Tanggal |
@@ -119,6 +140,7 @@ ARCH-INT-001 mengklasifikasikan SIPD sebagai kategori integrasi eksternal Govern
 | --- | --- | --- | --- | --- |
 | 0.1.0 | 2026-08-06 | Penyusunan awal SIPD Integration Blueprint sebagai BP-INT-001 Seq 38, berdasarkan ADR-0004 (Accepted) dan ARCH-INT-001 (Approved). Cakupan: dokumentasi Interim Integration Pattern (Bagian A) dan kerangka placeholder Target Integration Pattern (Bagian B, belum diisi). | Claude Work | Draft for Review |
 | 0.1.0 (final) | 2026-08-06 | **Finalisasi**: Project Owner menyetujui BP-INT-001 v0.1.0 secara eksplisit. Status dinaikkan menjadi Approved, effective_date 2026-08-06, review_outcome PASSED. Bagian B (Target Integration Pattern) tetap placeholder — tidak diisi oleh finalisasi ini. | Claude Work, berdasarkan persetujuan eksplisit Project Owner | Approved |
+| 0.1.1 | 2026-08-29 | **Addendum evidence**: ditambahkan §6a mendokumentasikan kontrak teknis nyata Interim Pattern (kedua parser PDF) berdasarkan peninjauan langsung kode. §10 baris kontrak teknis diperbarui dari Evidence Pending menjadi Terdokumentasi. Bagian B (§7) **sengaja tidak disentuh** — dikonfirmasi ulang tetap placeholder kosong sesuai ADR-0004 §3 butir 4, tidak ada draft/candidate API pattern dibuat. Ditambahkan addendum §12. Dijalankan di bawah runbook `11-roadmaps/backlog-eksekusi-otomatis.md`. | Claude (mode `/loop`, sesi eksekusi backlog) | Approved (evidence addendum; review substantif Project Owner belum dilakukan) |
 
 ## 15. Validation Checklist (Version 0.1.0 Approved)
 
