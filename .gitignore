@@ -40,7 +40,8 @@ frontend/.env.production
 .claire/
 .claude/
 backup/
-dokumenEPelara/
+dokumenEPelara/*
+!dokumenEPelara/Arsitektur Pengembangan e-Pelara/
 e-pelara-integration/
 e-pelara/
 *.sql

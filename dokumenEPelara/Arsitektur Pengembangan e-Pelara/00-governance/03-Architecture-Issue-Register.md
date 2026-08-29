@@ -1,0 +1,176 @@
+---
+document_id: AIR-EA-001
+title: Architecture Issue Register
+system: e-PeLARA Next Generation
+classification: Architecture Issue Register
+domain: Enterprise Architecture
+version: 1.0.5
+status: Approved
+owner: Chief Enterprise Architect
+approver: Project Owner
+effective_date: 2026-08-04
+last_reviewed: 2026-08-06
+parent_document: 00-Architecture-Charter.md
+conforms_to: 01-Repository-Structure.md
+roadmap_reference: ../11-roadmaps/02-Enterprise-Architecture-Roadmap.md
+intended_repository_path: 00-governance/03-Architecture-Issue-Register.md
+---
+
+# 03 — Architecture Issue Register
+
+## 1. Tujuan dan Kedudukan
+
+Register ini adalah artefak tata kelola resmi untuk mencatat, mengendalikan, menelusuri, menyelesaikan, dan menutup kontradiksi, ketidakjelasan, gap, serta keputusan arsitektur yang belum diselesaikan dalam e-PeLARA Next Generation. Register melaksanakan mandat `00-Architecture-Charter.md`: ketidakkonsistenan Official Baseline dicatat dan dikelola tanpa memperluas ruang lingkup secara tidak terkendali.
+
+Register bukan sumber keputusan arsitektur. Apabila issue membutuhkan pilihan arsitektur, keputusan, alasan, konsekuensi, dan persetujuannya direkam pada Architecture Decision Record (ADR). Register tetap menjadi indeks status dan bukti penutupan issue tersebut.
+
+## 2. Ruang Lingkup dan Klasifikasi
+
+Issue dicatat bila terdapat evidence eksplisit tentang kontradiksi, gap, ketidakjelasan, atau keputusan arsitektur yang belum tersedia pada artefak resmi. Cakupan lintas delapan domain EA adalah:
+
+1. Business Architecture;
+2. Data Architecture;
+3. Application Architecture;
+4. Integration Architecture;
+5. Technology Architecture;
+6. Security & Privacy Architecture;
+7. Government Intelligence & AI Architecture; dan
+8. Document & Publishing Architecture.
+
+Issue dapat diberi domain utama dan domain terdampak. Governance, migration, dan compliance dicatat sebagai kategori lintas-domain agar tetap ditelusuri terhadap delapan domain tersebut.
+
+| Istilah | Pengertian dan perlakuan |
+|---|---|
+| Issue | Kontradiksi, gap, atau ketidakjelasan yang sudah memiliki evidence eksplisit dan perlu resolusi atau disposition. Dicatat di register ini. |
+| Risk | Ketidakpastian terhadap tujuan, dampak, atau peluang kegagalan. Dirujuk ke Architecture Risk Register. |
+| Decision | Pilihan arsitektur yang memerlukan otoritas dan konsekuensi terdokumentasi. Direkam dalam ADR. |
+| Change | Perubahan yang disetujui terhadap baseline, desain, atau artefak. Dikendalikan melalui Change Log dan proses perubahan. |
+| Defect | Kegagalan perilaku implementasi terhadap spesifikasi yang telah disetujui. Dikelola dalam pelacakan defect implementasi; dapat menaik menjadi issue jika berdampak arsitektural. |
+| Action item | Tugas terukur untuk melakukan analisis, menyiapkan bukti, atau melaksanakan keputusan. Ditautkan ke issue, tetapi bukan issue itu sendiri. |
+
+### Severity
+
+| Severity | Kriteria |
+|---|---|
+| Critical | Menghambat architecture gate kritis, kepatuhan/kewenangan, integritas data, keamanan, atau ketahanan layanan. |
+| High | Menghambat rancangan lintas-domain atau menimbulkan dampak besar bila ditunda. |
+| Medium | Memerlukan klarifikasi atau standardisasi sebelum area terkait diimplementasikan, tanpa blokir langsung saat ini. |
+| Low | Dampak terbatas, dokumentasional, atau dapat dijadwalkan pada review berikutnya. |
+
+## 3. Prinsip Pengelolaan
+
+1. Evidence before assertion: issue hanya dicatat berdasarkan sumber resmi yang eksplisit.
+2. Satu issue memiliki satu ID tetap, owner, status, dan jalur keputusan yang dapat ditelusuri.
+3. Tidak ada status Resolved atau Closed tanpa resolution evidence dan closure approval.
+4. Issue tidak boleh mengubah prinsip **One Data, Many Publications**.
+5. Issue tidak menjadi alasan audit repository, source code, database, API, atau artefak di luar mandat.
+6. ID tidak digunakan ulang dan tidak diisi dengan issue buatan untuk menutup urutan angka.
+
+### Aturan Penomoran dan Reserved ID
+
+Format ID adalah `AIR-001`, `AIR-002`, dan seterusnya, dengan nomor tiga digit berurutan. Nomor dialokasikan saat issue terverifikasi dicatat. Bila sebuah nomor dicadangkan untuk pencatatan yang sah tetapi usulan dibatalkan sebelum verifikasi, nomor tersebut diberi status **Reserved—Not Issued**, alasan, tanggal, dan persetujuan Chief Enterprise Architect; nomor tidak digunakan kembali. Tidak ada reserved ID dalam edisi awal ini.
+
+## 4. Lifecycle dan Status Resmi
+
+```mermaid
+flowchart LR
+    A[Open] --> B[Under Analysis]
+    A --> D[Deferred]
+    B --> C[Decision Required]
+    B --> D[Deferred]
+    B --> E[Resolved]
+    C --> E[Resolved]
+    C --> G[Rejected]
+    D --> B
+    E --> F[Closed]
+    A --> G
+```
+
+| Status | Makna dan kondisi keluar |
+|---|---|
+| Open | Evidence awal telah dicatat dan owner belum memulai analisis. Keluar ke Under Analysis, Rejected, atau Deferred. |
+| Under Analysis | Dampak, domain, evidence, dan alternatif sedang dianalisis. Keluar ke Decision Required, Resolved, Deferred, atau Rejected. |
+| Decision Required | Analisis menunjukkan keputusan otoritatif diperlukan; ADR dan/atau eskalasi wajib ditempuh. |
+| Deferred | Issue valid tetapi ditunda dengan alasan, risiko, pemilik, dan tanggal review yang jelas. |
+| Resolved | Resolusi telah diterapkan pada artefak yang tepat dan resolution evidence telah direkam; masih menunggu closure approval. |
+| Closed | Closure approval telah diberikan setelah evidence resolusi diverifikasi. |
+| Rejected | Usulan issue tidak valid, duplikat, atau di luar ruang lingkup; alasan dan otoritas penolakan dicatat. |
+
+## 5. Struktur Field Register
+
+Setiap entri wajib berisi: Issue ID; judul; domain; sumber/evidence; uraian kontradiksi atau gap; dampak; severity; status; owner; target architecture gate; target resolution; decision path; related ADR/risk/compliance; resolution evidence; dan closure approval. Field pendukung yang wajib ditambahkan saat relevan: domain terdampak, tanggal buka, action item, alasan penundaan, dan tanggal review berikutnya.
+
+## 6. Eskalasi, Keterhubungan Artefak, dan Cadence Review
+
+### Aturan Eskalasi
+
+Issue dieskalasikan kepada Project Owner melalui Chief Enterprise Architect apabila memengaruhi regulasi atau kewenangan; scope, biaya, atau jadwal utama; data lintas OPD; integrasi eksternal; risiko kehilangan data, gangguan layanan, keamanan, atau vendor lock-in; atau memerlukan pengecualian terhadap Charter. Issue Critical segera dieskalasikan setelah evidence tervalidasi. Issue High yang statusnya Decision Required dieskalasikan sebelum architecture gate target.
+
+| Artefak terkait | Hubungan dengan register |
+|---|---|
+| ADR | Wajib untuk issue yang memerlukan keputusan arsitektur. ID ADR dan statusnya dicatat pada field related ADR/risk/compliance. |
+| Architecture Risk Register | Wajib dirujuk bila issue menciptakan ketidakpastian terhadap tujuan, dampak, atau jadwal. |
+| Compliance Register | Wajib dirujuk bila issue menyangkut kewajiban regulasi, standar, atau kontrol kepatuhan. |
+| Traceability Matrix | Menautkan issue dengan evidence, requirement, desain, gate, keputusan, dan bukti penerimaan. |
+| Change Log | Mencatat perubahan pada register ini; perubahan baseline/desain akibat resolusi tetap mengikuti proses perubahan artefak masing-masing. |
+
+Review dilakukan mingguan selama tahap aktif yang memuat issue Open, Under Analysis, atau Decision Required; sebelum setiap architecture gate; dan pada architecture review bulanan. Entry Deferred ditinjau pada tanggal review berikutnya yang dicatat. Project Owner menerima ringkasan issue Critical/High dan semua issue Decision Required.
+
+### Definition of Resolution
+
+Issue dapat berstatus Resolved hanya jika: jalur keputusan telah selesai bila diperlukan; perubahan atau disposition terdokumentasi pada artefak berwenang; evidence dapat diperiksa dan ditautkan; dampak residual telah dinilai; serta owner merekomendasikan resolusi.
+
+### Definition of Closure
+
+Issue dapat berstatus Closed hanya jika seluruh kriteria Resolution terpenuhi, closure approval dicatat oleh otoritas berwenang, referensi ADR/risk/compliance/traceability telah diperbarui bila relevan, dan tidak ada action item wajib yang tersisa. ChatGPT Work tidak memiliki kewenangan memberikan closure approval.
+
+## 7. Governance dan Kewenangan
+
+| Peran | Nama | Kewenangan |
+|---|---|---|
+| Project Owner | Fahmi Alhabsi | Persetujuan institusional dan keputusan akhir yang dieskalasikan; memberikan persetujuan penutupan sesuai dampaknya. |
+| Chief Enterprise Architect | ChatGPT | Menetapkan klasifikasi, owner, jalur keputusan, rekomendasi resolusi, dan eskalasi arsitektur; mengarahkan issue ke ADR bila diperlukan. |
+| Penyusun Dokumen | ChatGPT Work | Menyusun dan memelihara register berdasarkan evidence resmi; tidak mengambil keputusan arsitektur dan tidak menutup issue. |
+| Owner Issue | Ditunjuk per issue | Menyediakan analisis, action item, evidence resolusi, dan rekomendasi status. |
+
+Issue yang membutuhkan keputusan arsitektur diarahkan ke ADR. Issue kepatuhan diarahkan ke Compliance Register. Issue yang menimbulkan ketidakpastian terhadap tujuan diarahkan ke Architecture Risk Register.
+
+## 8. Initial Architecture Issues
+
+Seluruh entri berikut berasal dari daftar initial issue yang eksplisit pada `00-Architecture-Charter.md`; empat issue bertanda keputusan segera juga dirujuk langsung oleh Roadmap. Status awal tidak menyatakan issue telah selesai.
+
+| Issue ID | Judul | Domain | Sumber/evidence | Uraian kontradiksi atau gap | Dampak | Severity | Status | Owner | Target architecture gate | Target resolution | Decision path | Related ADR/risk/compliance | Resolution evidence | Closure approval |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| AIR-001 | Ketidakkonsistenan siklus Renstra 5 tahun dan 6 tahun | Data Architecture | Charter §11; Roadmap artefak ADR-0001/G2; Baseline `../01-current-state/2-modul-sistem.md` dan `../01-current-state/3-alur-logika-sistem.md` menyatakan 5 tahun, sedangkan `../01-current-state/5-referensi-teknis-database-api-frontend.md` §1 dan §5.1.5 menyatakan Renstra 6 tahun | Siklus dan aturan temporal Renstra belum konsisten antardokumen. | Mengganggu model periode, perhitungan, lineage, dan konsistensi dokumen. | Critical | Resolved | Data Architecture Lead/Data Owner — To be assigned by Project Owner. | G2 — Data and Knowledge Foundation | Temporal model dan aturan periode disahkan. | ADR-0001 (Accepted, 2026-08-05); jalur keputusan selesai — Project Owner memilih Opsi C (Hybrid: siklus normatif 5 tahun + transition year kondisional tahun ke-6). | ADR-0001, Version 1.0.0, Accepted, `00-governance/adr/ADR-0001-Temporal-Model-Decision.md`; Risk/Compliance: belum ditentukan, tetap Evidence Pending. | ADR-0001 Version 1.0.0 Accepted, efektif 2026-08-05, mencatat keputusan periode dan disposisi field `target_tahun_6`/`pagu_tahun_6` sebagai transition year. Aturan pemicu transition year dan penetapan metadata `period_type` tetap Evidence Pending, dirutekan ke BP-DATA-003/GOV-DATA-001. | Belum tersedia; Resolved bukan Closed — closure approval eksplisit Project Owner belum diperoleh secara terpisah sesuai Definition of Closure §4. |
+| AIR-002 | Status data dashboard tidak konsisten | Application Architecture | Architecture Charter §11 — mencatat kontradiksi antara temuan baseline terdahulu dan penilaian current state. | Status implementasi dashboard tidak konsisten di artefak baseline. | Ketidakpastian tingkat kesiapan baseline dan dasar desain dashboard. | Medium | Open | Application Owner — To be assigned by Project Owner. | G3 — Integrated Target Architecture | Status baseline dan evidence level dashboard ditetapkan. | Klarifikasi artefak baseline; ADR hanya bila mengubah arsitektur target. | ADR/Risk/Compliance: belum ditentukan. | Belum tersedia. | Belum tersedia. |
+| AIR-003 | Status model Notification tidak konsisten | Application Architecture | Charter §11; `../01-current-state/5-referensi-teknis-database-api-frontend.md` §5.1.5 menyatakan field belum didefinisikan; `../01-current-state/4-penilaian-kesesuaian-standar.md` §4 menyatakan field sudah lengkap | Kondisi model Notification berbeda antardokumen sumber. | Ketidakpastian kontrak data dan notifikasi real-time. | Medium | Open | Application/Integration Owner — To be assigned by Project Owner. | G3 — Integrated Target Architecture | Target notification architecture dan status baseline tervalidasi. | Analisis artefak; ADR bila ada keputusan lintas-domain. | ADR/Risk/Compliance: belum ditentukan. | Belum tersedia. | Belum tersedia. |
+| AIR-004 | Ketidakjelasan status implementasi workflow approval | Business & Application Architecture | Charter §11; Roadmap BP-APP-002/G3; `../01-current-state/4-penilaian-kesesuaian-standar.md` §4.6 menyebut implementasi berikutnya, sedangkan Charter mencatat implementasi parsial | Workflow approval belum memiliki status dan model state enterprise yang konsisten. | Mengancam kewenangan, lifecycle dokumen, auditability, dan kepatuhan. | Critical | Resolved | Business Process Owner dan Application Owner — To be assigned by Project Owner. | G3 — Integrated Target Architecture | Enterprise Workflow State Model disetujui. | ADR-0002 (Accepted, 2026-08-06); jalur keputusan selesai — Project Owner memilih Opsi A (Standardisasi Penuh: model generik 4-state DRAFT/SUBMITTED/APPROVED/REJECTED berlaku seragam lintas RPJMD, Renstra, Renja, RKA, DPA, RKPD, LAKIP). | ADR-0002, Version 1.0.0, Accepted, `00-governance/adr/ADR-0002-Enterprise-Workflow-State-Model-Decision.md`; Compliance Register: evaluasi tetap diperlukan, belum dilakukan pada ADR ini. | ADR-0002 Version 1.0.0 Accepted, efektif 2026-08-06, menetapkan standardisasi model state 4-state lintas modul, penyatuan checklist granular Renja sebagai metadata (bukan state terpisah), kewajiban perbaikan sinkronisasi RPJMD, dan penyatuan definisi otorisasi admin. Rencana migrasi teknis konkret, disposisi modul BMD/TLHP/MR/LK/Penatausahaan, dan kebutuhan approval berjenjang tetap Evidence Pending, didelegasikan ke BP-APP-002. | Belum tersedia; Resolved bukan Closed — closure approval eksplisit Project Owner belum diperoleh secara terpisah sesuai Definition of Closure §4. |
+| AIR-005 | Beberapa library UI digunakan bersamaan | Technology & Document/Publishing Architecture | Charter §11; `../01-current-state/1-identitas-sistem.md` dan `../01-current-state/5-referensi-teknis-database-api-frontend.md` mencatat beberapa library UI | Belum ada satu design system target dan strategi konsolidasi. | Inkonsistensi UX, biaya pemeliharaan, dan kualitas publikasi. | Medium | Open | Technology/Design System Owner — To be assigned by Project Owner. | G3 — Integrated Target Architecture | Design system target dan strategi konsolidasi bertahap ditetapkan. | ADR bila pilihan standar lintas aplikasi diperlukan. | ADR/Risk/Compliance: belum ditentukan. | Belum tersedia. | Belum tersedia. |
+| AIR-006 | Kriteria penerimaan siap produksi belum seragam | Governance lintas delapan domain | Charter §11; `../01-current-state/4-penilaian-kesesuaian-standar.md` §5 menyatakan siap produksi sementara Charter P-16 dan Gate 6 mengharuskan evidence | Klaim kesiapan produksi belum dipetakan ke kriteria penerimaan dan evidence seragam. | Risiko go-live tanpa bukti yang memadai. | High | Decision Required | Release and Operations Owner — To be assigned by Project Owner. | G6 — Production Ready | Production Readiness Gate dan evidence checklist disetujui. | ADR/governance decision; eskalasi Project Owner untuk go-live. | ADR: akan ditetapkan; Risk Register: evaluasi diperlukan. | Belum tersedia. | Belum tersedia; Project Owner. |
+| AIR-007 | Integrasi SIPD masih berupa gap | Integration Architecture | Charter §11; Roadmap BP-INT-001/G3; `../01-current-state/4-penilaian-kesesuaian-standar.md` §4.6 menyatakan perlu dikaji | Kontrak, akses, dan pola integrasi SIPD belum ditetapkan. | Menghambat interoperabilitas dan pertukaran data perencanaan. | High | Resolved | Integration Owner — To be assigned by Project Owner. | G3 — Integrated Target Architecture | SIPD Integration Blueprint dan disposition akses/kontrak disetujui tanpa mengasumsikan API tersedia. | ADR-0004 (Accepted, 2026-08-06); jalur keputusan selesai — Project Owner memilih Opsi A (Formalisasi Interim Pattern: pola ekspor-manual/PDF-parsing yang sudah berjalan diakui sebagai Interim Integration Pattern resmi; status akses API SIPD tetap Decision Required/Evidence Pending sampai dikonfirmasi Kemendagri). | ADR-0004, Version 1.0.0, Accepted, `00-governance/adr/ADR-0004-SIPD-Integration-Interim-Pattern-Decision.md`; Risk/Compliance: evaluasi tetap diperlukan, belum dilakukan pada ADR ini. | ADR-0004 Version 1.0.0 Accepted, efektif 2026-08-06, memformalkan pola PDF-import/ekspor-manual sebagai Interim Integration Pattern, tanpa mengasumsikan ketersediaan API SIPD. Kontrak data teknis Interim Pattern, eskalasi institusional ke Kemendagri, dan Target Integration Pattern (API-based) tetap Evidence Pending, didelegasikan ke BP-INT-001. | Belum tersedia; Resolved bukan Closed — closure approval eksplisit Project Owner belum diperoleh secara terpisah sesuai Definition of Closure §4. |
+| AIR-008 | CSRF protection belum tersedia | Security & Privacy Architecture | Charter §11; `../01-current-state/4-penilaian-kesesuaian-standar.md` §4 menyatakan belum ada CSRF protection | Control pencegahan CSRF belum tersedia dalam baseline. | Risiko keamanan pada pengiriman form. | High | Open | Security Owner — To be assigned by Project Owner. | G3 — Integrated Target Architecture | Security control dan evidence penerapannya ditetapkan dalam Security Architecture/control backlog. | Security decision; eskalasi bila memerlukan security exception. | Compliance Register: evaluasi control diperlukan; Risk Register: evaluasi diperlukan. | Belum tersedia. | Belum tersedia; otoritas keamanan dan Project Owner bila berdampak. |
+| AIR-009 | Backup dan restore otomatis belum tersedia | Technology Architecture | Charter §11; Roadmap BP-TECH-003/G3–G5 | Otomasi backup/restore dan target ketahanan belum tersedia. | Risiko kehilangan data dan pemulihan layanan tidak terukur. | Critical | Resolved | Technology and Operations Owner — To be assigned by Project Owner. | G3 — Integrated Target Architecture; G4 — Migration Ready; G5 — Implementation Ready | RPO/RTO, backup, restore test, dan disaster recovery target disetujui serta dibuktikan. | ADR-0003 (Accepted, 2026-08-06); jalur keputusan target selesai — Project Owner menetapkan RPO 24 jam, RTO fleksibel sesuai kapasitas operasional; restore test wajib dilakukan berkala. Pembuktian aktual (implementasi backup, restore test terlaksana) belum dilakukan. | ADR-0003, Version 1.0.0, Accepted, `00-governance/adr/ADR-0003-Backup-and-Disaster-Recovery-Decision.md`; Risk Register: evaluasi tetap diperlukan, belum dilakukan pada ADR ini. | ADR-0003 Version 1.0.0 Accepted, efektif 2026-08-06, menetapkan target RPO 24 jam dan RTO fleksibel, mensyaratkan restore test berkala sebagai bukti (bukan hanya backup ada). Teknologi/tooling backup konkret, lokasi penyimpanan, kebijakan retensi, dan pelaksanaan restore test aktual tetap Evidence Pending, didelegasikan ke BP-TECH-003 dan implementasi teknis. | Belum tersedia; Resolved bukan Closed — closure approval eksplisit Project Owner **dan bukti restore test aktual** belum diperoleh, sesuai Definition of Closure §4 dan definisi resolusi AIR-009 yang eksplisit mensyaratkan pembuktian. |
+| AIR-010 | Dokumentasi mencampur current state, hasil perbaikan, dan rekomendasi masa depan | Governance lintas delapan domain | Charter §11; perbedaan status pada AIR-002, AIR-003, AIR-004, dan AIR-006 memperlihatkan campuran evidence baseline | Status, versi, tanggal efektif, owner, dan evidence level belum diterapkan seragam pada artefak. | Menurunkan keterlacakan dan meningkatkan risiko keputusan berbasis status yang keliru. | High | Resolved | Chief Enterprise Architect | G1 — Business and Regulatory Alignment | Standar metadata dan evidence level diterapkan pada artefak tata kelola terkait. | Governance decision — diselesaikan tanpa ADR karena tidak menetapkan keputusan arsitektur lintas-domain, hanya standar metadata administratif. | Traceability Matrix: belum ada implementasi aktual (Seq 74 belum dimulai), ditautkan konseptual ke GOV-EA-006 §30; ADR/Risk/Compliance: tidak diperlukan untuk resolusi ini. | GOV-EA-006 (Traceability Standard) Version 1.1.0 §30 "Metadata dan Evidence Level Standard" menetapkan field front-matter minimum dan definisi Evidence Level; diterapkan melalui patch administratif pada front-matter `01-Repository-Structure.md`, `06-Change-Log.md`, `07-Architecture-Governance-Operating-Model.md`, `08-Architecture-Review-and-Gate-Standard.md`, dan `09-Traceability-Standard.md` (field `domain`/`last_reviewed` ditambahkan tanpa mengubah substansi/versi/status). `03-Architecture-Issue-Register.md`, `04-Architecture-Risk-Register.md`, dan `05-Compliance-Register.md` sudah memenuhi standar field sejak awal. `00-Architecture-Charter.md` sengaja tidak diubah (baseline foundational tanpa front-matter, sesuai batas §30.1). | Belum tersedia; Resolved bukan Closed — closure approval eksplisit Chief Enterprise Architect/Project Owner belum diperoleh secara terpisah sesuai Definition of Closure §4. |
+
+### Issue yang Memerlukan Keputusan Segera
+
+AIR-006 perlu diputuskan sebelum G6 agar klaim kesiapan produksi dapat dinilai dengan evidence yang seragam. AIR-001, AIR-004, AIR-007, dan AIR-009 telah Resolved masing-masing melalui ADR-0001 (2026-08-05), ADR-0002 (2026-08-06), ADR-0004 (2026-08-06), dan ADR-0003 (2026-08-06); keempatnya tetap memerlukan closure approval eksplisit Project Owner secara terpisah sesuai Definition of Closure §4 — untuk AIR-009 secara khusus juga memerlukan bukti restore test aktual — namun tidak lagi termasuk kategori "memerlukan keputusan segera" karena jalur keputusan arsitekturnya sudah selesai.
+
+## 9. Persetujuan
+
+| Peran | Nama | Keputusan | Tanda tangan | Tanggal |
+|---|---|---|---|---|
+| Penyusun Dokumen | ChatGPT Work | Disusun | Pending | 2026-08-04 |
+| Chief Enterprise Architect | ChatGPT | Direview dan direkomendasikan untuk disahkan | Pending | — |
+| Project Owner | Fahmi Alhabsi | Disahkan | Pending | 2026-08-04 |
+
+## 10. Change Log
+
+| Versi | Tanggal | Perubahan | Penyusun | Status |
+|---|---|---|---|---|
+| 1.0.5 | 2026-08-06 | AIR-007 dan AIR-009 diperbarui dari Decision Required menjadi Resolved setelah ADR-0004 (SIPD Integration Interim Pattern Decision, Opsi A — Formalisasi Interim Pattern) dan ADR-0003 (Backup and Disaster Recovery Decision, Opsi A — RPO 24 jam/RTO fleksibel) disahkan Accepted oleh Project Owner pada 2026-08-06, berdasarkan peninjauan langsung implementasi kode aplikasi. Decision path, resolution evidence, dan related ADR pada kedua baris diperbarui; baris "Issue yang Memerlukan Keputusan Segera" disesuaikan. Closure approval tetap Belum tersedia untuk keduanya; untuk AIR-009 secara khusus closure juga memerlukan bukti restore test aktual, belum dilaksanakan. Tidak ada baris issue lain yang diubah. | Claude Work, di bawah HANDOFF-e-PeLARA-EA-2026-08-05-v10 | Approved — Administrative Patch |
+| 1.0.4 | 2026-08-06 | AIR-004 diperbarui dari Decision Required menjadi Resolved setelah ADR-0002 (Enterprise Workflow State Model Decision, Opsi A — Standardisasi Penuh) disahkan Accepted oleh Project Owner pada 2026-08-06, berdasarkan peninjauan langsung implementasi kode aplikasi. Decision path, resolution evidence, dan related ADR pada baris AIR-004 diperbarui; baris "Issue yang Memerlukan Keputusan Segera" disesuaikan. Closure approval tetap Belum tersedia karena closure memerlukan persetujuan eksplisit Project Owner secara terpisah. Tidak ada baris issue lain yang diubah. | Claude Work, di bawah HANDOFF-e-PeLARA-EA-2026-08-05-v10 | Approved — Administrative Patch |
+| 1.0.3 | 2026-08-05 | AIR-010 diperbarui dari Open menjadi Resolved setelah GOV-EA-006 (Traceability Standard) Version 1.1.0 §30 menetapkan Metadata dan Evidence Level Standard, dan diterapkan melalui patch administratif pada front-matter lima artefak governance (01, 06, 07, 08, 09). Resolution evidence, decision path, dan status pada baris AIR-010 diperbarui; closure approval tetap Belum tersedia. Tidak ada baris issue lain yang diubah. | Claude Work, berdasarkan standing delegation Project Owner tanggal 2026-08-05 | Approved — Administrative Patch |
+| 1.0.2 | 2026-08-05 | AIR-001 diperbarui dari Decision Required menjadi Resolved setelah ADR-0001 (Temporal Model Decision, Opsi C — Hybrid) disahkan Accepted oleh Project Owner pada 2026-08-05. Decision path, resolution evidence, dan related ADR pada baris AIR-001 diperbarui; closure approval tetap Belum tersedia karena closure memerlukan persetujuan eksplisit Project Owner secara terpisah. Tidak ada baris issue lain yang diubah. | Claude Work, di bawah HANDOFF-e-PeLARA-EA-2026-08-05-v10 | Approved — Administrative Patch |
+| 1.0.1 | 2026-08-04 | Pembaruan referensi lokasi Official Current State Baseline setelah pemindahan ke 01-current-state; tanpa perubahan substansi. | ChatGPT Work | Approved — Administrative Patch |
+| 1.0.0 | 2026-08-04 | Penyusunan, review, dan pengesahan Official Architecture Issue Register. | ChatGPT Work | Approved |
