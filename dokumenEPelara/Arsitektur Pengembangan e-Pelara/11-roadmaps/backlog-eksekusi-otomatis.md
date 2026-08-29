@@ -102,7 +102,7 @@ Dokumen ini **bukan** artefak Master Document Sequence (Seq 00–74), **bukan** 
 |----|------|--------|---------|----------|------------------|
 | 1 | AIR-009 Backup & Restore | Selesai | 2026-08-29 | ECHG-086 | Engine sudah Implemented sejak Sprint 2 (commit 949a3e4f, belum dilaporkan ke governance). Backup+restore test nyata dijalankan sesi ini: RESTORE_VERIFIED, checksum match, 283/283 tabel. Task Scheduler berkala BELUM terdaftar (dicek Get-ScheduledTask) — tindakan Owner tersisa, dicatat di BP-TECH-003 §9. AIR-009 tetap Resolved (bukan Closed) — closure tetap wewenang Owner. |
 | 2 | AIR-008 CSRF Protection | Selesai | 2026-08-29 | ECHG-087 | Sudah diimplementasikan penuh (Sprint 3, S3-2, uncommitted) sebelum sesi ini — double-submit-cookie, wired di verifyToken.js, self-test 19/19 pass. Kode dikomit sesi ini. Cakupan sengaja terbatas ke cookie-auth state-changing request (Bearer tidak diperiksa, by design). AIR-008 tetap Resolved (bukan Closed). |
-| 3 | AIR-006 Production Readiness | Belum | — | — | — |
+| 3 | AIR-006 Production Readiness | Selesai | 2026-08-29 | ECHG-088 | Checklist 8 kategori (GOV-MIG-002 v1.1.0) diisi evidence aktual: Backup/Restore & Operations tersedia; Functional/Security/UAT/Rollback sebagian (parsial per modul); Performance & Approval Evidence Pending. AIR-006 tetap Decision Required (bukan Resolved) — keputusan go-live sengaja tidak diambil, tetap wewenang Project Owner. |
 | 4 | AIR-001 Transition Year Renstra | Belum | — | — | — |
 | 5 | AIR-004 Workflow / 32a | Belum | — | — | — |
 | 6 | AIR-007 SIPD Target Pattern | Belum | — | — | — |

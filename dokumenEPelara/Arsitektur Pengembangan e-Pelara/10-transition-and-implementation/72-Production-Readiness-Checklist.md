@@ -4,12 +4,12 @@ title: Production Readiness Checklist
 system: e-PeLARA Next Generation
 classification: Governance Standard
 domain: Transition and Implementation
-version: 1.0.0
+version: 1.1.0
 status: Approved
 owner: Chief Enterprise Architect
 approver: Project Owner
 effective_date: 2026-08-05
-last_reviewed: 2026-08-05
+last_reviewed: 2026-08-29
 parent_document: ../10-transition-and-implementation/71-Implementation-Readiness-Checklist.md
 conforms_to: ../00-governance/01-Repository-Structure.md
 roadmap_reference: ../11-roadmaps/02-Enterprise-Architecture-Roadmap.md
@@ -49,16 +49,22 @@ Documented Current Fact; Documented Assessment; Candidate Target Direction; Evid
 
 ## 6. Candidate Production Readiness Checklist Structure
 
-| Kategori (mengikuti G6 Evidence Minimum) | Kriteria Konseptual | Metode Verifikasi Konseptual | Evidence Status |
+**Kolom "Evidence Status" di bawah diperbarui 2026-08-29 dengan temuan penilaian aktual (bukan lagi placeholder konseptual) — lihat §6a untuk metodologi dan batasan. Penilaian ini TIDAK menyatakan sistem siap go-live; lihat §11.**
+
+| Kategori (mengikuti G6 Evidence Minimum) | Kriteria Konseptual | Metode Verifikasi Konseptual | Evidence Status (dinilai 2026-08-29) |
 | --- | --- | --- | --- |
-| Functional/Integration/Regression Evidence | Hasil pengujian fungsional tersedia dan terdokumentasi. | Review evidence pengujian (bukan pelaksanaan pengujian oleh dokumen ini). | Candidate Target Direction |
-| Performance Evidence | Hasil pengujian performa tersedia sesuai target non-fungsional. | Review evidence performa. | Candidate Target Direction |
-| Security Evidence | Kontrol keamanan diverifikasi sesuai ARCH-SEC-001/STD-SEC-001 (Approved); AIR-008 dicatat sebagai prasyarat terbuka. | Review evidence keamanan. | Candidate Target Direction; Implementation Pending untuk AIR-008 |
-| UAT Evidence | User Acceptance Test terdokumentasi. | Review evidence UAT. | Candidate Target Direction |
-| Backup/Restore Evidence | Automasi backup/restore terbukti; AIR-009 dicatat sebagai prasyarat terbuka (Decision Required). | Review evidence uji restore. | Evidence Pending (AIR-009 belum selesai) |
-| Operations Evidence | Kesiapan observability/incident response sesuai BP-TECH-002 (Approved). | Review evidence operasional. | Candidate Target Direction |
-| Rollback Evidence | Rencana dan bukti uji rollback tersedia. | Review evidence rollback. | Candidate Target Direction |
-| Approval | Persetujuan go-live oleh Project Owner sesuai Roadmap §8 Otoritas G6. | Verifikasi approval tercatat. | Evidence Pending (approval aktual belum ada) |
+| Functional/Integration/Regression Evidence | Hasil pengujian fungsional tersedia dan terdokumentasi. | Review evidence pengujian (bukan pelaksanaan pengujian oleh dokumen ini). | **Sebagian tersedia.** 15 self-test/verify/check script di `backend/package.json`; 4 di antaranya (Renja status sync, role-auth regression, backup engine, uploads backup engine) wired ke CI (`ci-generic.yml`). Frontend: 7 file test Vitest, mencakup rpjmd/audit/prosnp/foodOperations saja. **Modul lain (RKA, DPA, LK, BMD, TLHP, MR, LAKIP, Penatausahaan, dll.) tidak punya automated test/CI coverage** — mengandalkan self-test manual ad-hoc atau tidak ada sama sekali. |
+| Performance Evidence | Hasil pengujian performa tersedia sesuai target non-fungsional. | Review evidence performa. | **Evidence Pending.** Tidak ditemukan script/tooling load-testing atau hasil pengujian performa di repository. |
+| Security Evidence | Kontrol keamanan diverifikasi sesuai ARCH-SEC-001/STD-SEC-001 (Approved); AIR-008 dicatat sebagai prasyarat terbuka. | Review evidence keamanan. | **Sebagian tersedia.** AIR-008 (CSRF) kini Resolved dengan evidence (self-test 19/19 pass, lihat AIR-EA-001 v1.0.7). `express-rate-limit` terpasang tapi **hanya untuk rute MR tertentu** (`mrSensitiveLimiter`), bukan global. Tidak ditemukan `helmet` atau middleware security header setara. CORS allowlist ada di `server.js`. |
+| UAT Evidence | User Acceptance Test terdokumentasi. | Review evidence UAT. | **Sebagian tersedia.** Script UAT browser + screenshot evidence nyata ditemukan untuk modul Food Operations (`foodOpsPhase1BrowserUAT.js`, 9 screenshot) dan ProSN-P (`prosnpBrowserUAT.js`, `prosnpAutofillBrowserUAT.js`, `prosnpMbgBrowserUAT.js`, 4 screenshot). **Modul lain tidak punya UAT evidence terdokumentasi serupa.** |
+| Backup/Restore Evidence | Automasi backup/restore terbukti; AIR-009 dicatat sebagai prasyarat terbuka (Decision Required). | Review evidence uji restore. | **Tersedia.** AIR-009 kini Resolved — backup dan restore test nyata dijalankan 2026-08-29, outcome `RESTORE_VERIFIED` (detail: BP-TECH-003 v0.2.0 §9). Penjadwalan otomatis berkala masih tindakan Owner tersisa. |
+| Operations Evidence | Kesiapan observability/incident response sesuai BP-TECH-002 (Approved). | Review evidence operasional. | **Tersedia.** Endpoint `/health`, `/readiness`, `/metrics-lite` aktif di `server.js`; structured logging (Winston) dan request logging (morgan) terpasang. |
+| Rollback Evidence | Rencana dan bukti uji rollback tersedia. | Review evidence rollback. | **Sebagian tersedia.** `docs/planning-readiness/03-deployment-checklist.md` §6 mendokumentasikan prosedur rollback manual (stop write → restore DB dari backup → deploy ulang artifact stabil → smoke test) — kini lebih kredibel karena restore DB terbukti berfungsi (baris di atas). Scope checklist ini **hanya modul planning (Renstra/Renja/RKPD)**, belum mencakup modul lain. Ditemukan juga rollback SQL eksplisit untuk sebagian migration FK (`backend/scripts/sql/phase5_fk/`, `phase6_fk/`) dan 43 dari 264 file migration punya fungsi `down()` — mayoritas migration **tidak** punya rollback terprogram. |
+| Approval | Persetujuan go-live oleh Project Owner sesuai Roadmap §8 Otoritas G6. | Verifikasi approval tercatat. | Evidence Pending (approval aktual belum ada) — **tidak dinilai oleh sesi ini, tetap wewenang penuh Project Owner.** |
+
+### 6a. Metodologi dan Batasan Penilaian 2026-08-29
+
+Penilaian di atas dilakukan langsung terhadap kode/konfigurasi aktual repository (grep, pembacaan file, `git log`), bukan laporan pihak ketiga yang tidak diverifikasi. **Batasan eksplisit**: ini adalah **snapshot satu kali**, bukan hasil audit menyeluruh per modul — kategori bertanda "Sebagian tersedia" berarti evidence ditemukan untuk sebagian modul/aspek, bukan cakupan penuh seluruh ~15 modul domain ePeLARA. Kolom Evidence Status di atas menggantikan placeholder "Candidate Target Direction" generik dengan temuan konkret, tetapi **tidak mengubah kesimpulan §11 (Batas Kewenangan AI) maupun §5 prinsip 1** — struktur checklist tetap yang disetujui, bukan keputusan go-live.
 
 ## 7. Boundary dengan GOV-MIG-001 (Approved, Batch Ini)
 
@@ -72,9 +78,10 @@ Dokumen ini menyediakan struktur yang relevan dengan resolusi AIR-006 (kriteria 
 
 | Item | Placeholder | Routing |
 | --- | --- | --- |
-| Hasil pengujian aktual (functional/performance/UAT) | To be assigned by Project Owner — Evidence Pending | Implementasi/testing lanjutan per release |
-| Resolusi AIR-006/008/009 | To be designated or verified by competent institutional authority — Evidence Pending | Governance lanjutan (Decision Required/Open) |
-| Approval go-live aktual | To be assigned by Project Owner — Evidence Pending | Keputusan Project Owner per release |
+| Hasil pengujian aktual (functional/performance/UAT) | **Sebagian terisi 2026-08-29** (lihat §6/§6a) — cakupan masih parsial per modul, performance testing sama sekali belum ada. | Perluasan test coverage per modul — implementasi/testing lanjutan per release |
+| Resolusi AIR-008/009 | **Kini Resolved** (2026-08-29, evidence di AIR-EA-001 v1.0.7). | Selesai untuk bagian evidence; closure formal tetap Project Owner. |
+| Resolusi AIR-006 (kriteria readiness seragam) | Struktur/kriteria sudah ada sejak v1.0.0; **penilaian aktual per kategori kini terisi (v1.1.0, §6)**. Closure AIR-006 sendiri tetap memerlukan keputusan governance terpisah — dokumen ini menyediakan evidence, bukan closure. | Keputusan closure AIR-006 — Project Owner/Chief Enterprise Architect. |
+| Approval go-live aktual | To be assigned by Project Owner — Evidence Pending, tidak berubah. | Keputusan Project Owner per release. |
 
 ## 10. Assumptions dan Program State
 
@@ -85,9 +92,9 @@ Dokumen ini menyediakan struktur yang relevan dengan resolusi AIR-006 (kriteria 
 
 ## 11. Batas Kewenangan AI
 
-**Diizinkan**: Menyusun struktur/kriteria checklist berdasarkan GOV-MIG-001 dan Roadmap §8 G6 yang Approved, mencatat AIR terkait secara verbatim, routing Evidence Pending, self-review, dan finalisasi struktur dalam batas delegasi.
+**Mandat penyusunan awal (2026-08-05, Batch 4 Autonomous Mandate)** — **Diizinkan**: Menyusun struktur/kriteria checklist berdasarkan GOV-MIG-001 dan Roadmap §8 G6 yang Approved, mencatat AIR terkait secara verbatim, routing Evidence Pending, self-review, dan finalisasi struktur dalam batas delegasi. **Dilarang**: Menyatakan sistem/rilis siap go-live, menutup AIR-006/008/009, memberikan approval go-live aktual, atau disposition G6.
 
-**Dilarang**: Menyatakan sistem/rilis siap go-live, menutup AIR-006/008/009, memberikan approval go-live aktual, atau disposition G6.
+**Addendum 2026-08-29 — mandat berbeda (eksekusi backlog runbook)**: pengisian kolom Evidence Status di §6 dilakukan di bawah `11-roadmaps/backlog-eksekusi-otomatis.md` (item AIR-006), mandat eksekusi teknis yang secara eksplisit diberi wewenang memverifikasi kondisi kode/infra nyata dan mencatat temuan. Batasan §11 di atas **tetap berlaku penuh** untuk addendum ini juga: pengisian evidence per kategori bukan pernyataan go-live, bukan closure AIR-006/008/009, bukan disposition G6. Yang berubah hanya: placeholder generik → temuan konkret dengan rujukan file/perintah yang dapat diverifikasi ulang.
 
 ## 12. Persetujuan
 
@@ -104,8 +111,9 @@ Dokumen ini menyediakan struktur yang relevan dengan resolusi AIR-006 (kriteria 
 | 0.1.0 | 2026-08-05 | Penyusunan awal Production Readiness Checklist sebagai GOV-MIG-002 Seq 72, berdasarkan GOV-MIG-001 (Approved), AIR-006 (dicatat verbatim), Roadmap §8 G6 Evidence Minimum. Cakupan: struktur checklist 8 kategori. AIR-006/008/009 dicatat verbatim tidak ditutup; tidak ada klaim go-live. | Claude Work | Draft for Review |
 | — | 2026-08-05 | Substantive Self-Review PASSED. | Claude Work | Review Outcome: PASSED |
 | 1.0.0 | 2026-08-05 | Finalisasi struktur menjadi Version 1.0.0 Approved, efektif 2026-08-05. | Claude Work | Approved |
+| 1.1.0 | 2026-08-29 | **Addendum evidence**: kolom Evidence Status §6 diisi dengan temuan penilaian aktual per kategori (functional/security/UAT/backup/operations/rollback), berdasarkan verifikasi langsung kode/konfigurasi. Ditambahkan §6a (metodologi/batasan). §9 diperbarui mencatat AIR-008/009 kini Resolved. Tidak ada klaim go-live, tidak ada closure AIR-006/008/009, tidak ada disposition G6 — batasan §11 asli tetap berlaku penuh (lihat addendum §11). Dijalankan di bawah runbook `11-roadmaps/backlog-eksekusi-otomatis.md`. | Claude (mode `/loop`, sesi eksekusi backlog) | Approved (evidence addendum; review substantif Project Owner atas addendum ini belum dilakukan) |
 
-## 14. Validation Checklist (Version 1.0.0 Approved)
+## 14. Validation Checklist (Version 1.1.0)
 
 1. ✓ Metadata final: version 1.0.0, status Approved, effective_date 2026-08-05.
 2. ✓ Dependency (GOV-MIG-001) Approved dan tidak diubah.
@@ -117,4 +125,4 @@ Dokumen ini menyediakan struktur yang relevan dengan resolusi AIR-006 (kriteria 
 
 ## 15. State Aktual Dokumen
 
-Version 1.0.0, status **Approved** (struktur/kriteria). Dependency Approved dan tidak diubah. AIR-006/008/009 tetap terbuka. Belum ada sistem/rilis dinyatakan siap go-live. G1 DEFERRED; G2/G3/G4/G5 tanpa disposition; tidak ada disposition G6.
+Version 1.1.0, status **Approved** (struktur v1.0.0 disetujui 2026-08-05; addendum evidence v1.1.0 2026-08-29 belum direview terpisah oleh Project Owner). Dependency Approved dan tidak diubah. AIR-008/009 kini Resolved dengan evidence; AIR-006 punya evidence penilaian per kategori tapi closure tetap terbuka, wewenang Project Owner. **Belum ada sistem/rilis dinyatakan siap go-live** — beberapa kategori (Performance, sebagian Functional/Security/UAT/Rollback) masih Evidence Pending atau parsial, lihat §6. G1 DEFERRED; G2/G3/G4/G5 tanpa disposition; tidak ada disposition G6.
