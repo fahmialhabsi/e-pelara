@@ -1,4 +1,9 @@
-const { Penatausahaan, PeriodeRpjmd, Dpa } = require("../models");
+const { Penatausahaan, PeriodeRpjmd, Dpa, OpdPenanggungJawab } = require("../models");
+const {
+  assertOpdBoundary,
+  resolveOpdScope,
+  sendBoundaryFailure,
+} = require("../helpers/opdBoundary");
 const Joi = require("joi");
 
 // Skema untuk menambahkan satu baris transaksi/item belanja secara manual
@@ -36,29 +41,38 @@ module.exports = {
     try {
       const where = {};
       const { tahun, periode_id, program } = req.query;
+      const scope = await resolveOpdScope(req, OpdPenanggungJawab);
+      if (!scope.ok) return sendBoundaryFailure(res, scope);
 
       if (tahun) where.tahun = tahun;
       if (periode_id) where.periode_id = periode_id;
       if (program) where.program = program;
 
+      const dpaInclude = {
+        model: Dpa,
+        as: "dpa",
+        attributes: [
+          "id",
+          "program",
+          "kegiatan",
+          "sub_kegiatan",
+          "kode_program",
+          "kode_kegiatan",
+          "kode_sub_kegiatan",
+          "anggaran",
+          "opd_id",
+        ],
+      };
+      if (!scope.isSuperAdmin) {
+        dpaInclude.where = { opd_id: scope.callerOpdId };
+        dpaInclude.required = true;
+      }
+
       const data = await Penatausahaan.findAll({
         where,
         include: [
           { model: PeriodeRpjmd, as: "periode" },
-          {
-            model: Dpa,
-            as: "dpa",
-            attributes: [
-              "id",
-              "program",
-              "kegiatan",
-              "sub_kegiatan",
-              "kode_program",
-              "kode_kegiatan",
-              "kode_sub_kegiatan",
-              "anggaran",
-            ],
-          },
+          dpaInclude,
         ],
         order: [["tahun", "DESC"]],
       });
@@ -72,9 +86,18 @@ module.exports = {
   async getById(req, res) {
     try {
       const { id } = req.params;
-      const data = await Penatausahaan.findByPk(id, {
-        include: [{ model: PeriodeRpjmd, as: "periode" }],
-      });
+      const scope = await resolveOpdScope(req, OpdPenanggungJawab);
+      if (!scope.ok) return sendBoundaryFailure(res, scope);
+
+      const include = [
+        { model: PeriodeRpjmd, as: "periode" },
+        { model: Dpa, as: "dpa", attributes: ["id", "opd_id"] },
+      ];
+      if (!scope.isSuperAdmin) {
+        include[1].where = { opd_id: scope.callerOpdId };
+        include[1].required = true;
+      }
+      const data = await Penatausahaan.findByPk(id, { include });
 
       if (!data) return res.status(404).json({ error: "Data tidak ditemukan" });
       res.json(data);
@@ -93,6 +116,8 @@ module.exports = {
 
       const dpa = await Dpa.findByPk(dpa_id);
       if (!dpa) return res.status(404).json({ error: "DPA tidak ditemukan." });
+      const boundary = await assertOpdBoundary(req, dpa, OpdPenanggungJawab);
+      if (!boundary.ok) return sendBoundaryFailure(res, boundary);
 
       const periodeRows = await PeriodeRpjmd.findAll();
       const periode = periodeRows.find(
@@ -128,6 +153,13 @@ module.exports = {
       if (error)
         return res.status(400).json({ error: error.details[0].message });
 
+      const row = await Penatausahaan.findByPk(id, {
+        include: [{ model: Dpa, as: "dpa", attributes: ["id", "opd_id"] }],
+      });
+      if (!row) return res.status(404).json({ error: "Data tidak ditemukan" });
+      const boundary = await assertOpdBoundary(req, row.dpa, OpdPenanggungJawab);
+      if (!boundary.ok) return sendBoundaryFailure(res, boundary);
+
       const [updated] = await Penatausahaan.update(value, { where: { id } });
       if (!updated)
         return res.status(404).json({ error: "Data tidak ditemukan" });
@@ -142,6 +174,13 @@ module.exports = {
   async destroy(req, res) {
     try {
       const { id } = req.params;
+      const row = await Penatausahaan.findByPk(id, {
+        include: [{ model: Dpa, as: "dpa", attributes: ["id", "opd_id"] }],
+      });
+      if (!row) return res.status(404).json({ error: "Data tidak ditemukan" });
+      const boundary = await assertOpdBoundary(req, row.dpa, OpdPenanggungJawab);
+      if (!boundary.ok) return sendBoundaryFailure(res, boundary);
+
       const deleted = await Penatausahaan.destroy({ where: { id } });
       if (!deleted)
         return res.status(404).json({ error: "Data tidak ditemukan" });

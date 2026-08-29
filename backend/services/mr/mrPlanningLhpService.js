@@ -105,6 +105,49 @@ function throwMrPlanningLhpOpdBoundaryError(boundaryResult) {
   });
 }
 
+async function resolveMrPlanningLhpCallerScope({ user } = {}) {
+  if (user?.role === "SUPER_ADMIN") {
+    return { ok: true, superAdmin: true, callerOpdId: null };
+  }
+
+  const opdName = user?.opd;
+  if (!opdName) {
+    return {
+      ok: false,
+      status: 403,
+      error: {
+        message: "Anda tidak berwenang membaca data LHP/Temuan tanpa konteks OPD.",
+        code: "MR_LHP_TEMUAN_OPD_FORBIDDEN",
+      },
+    };
+  }
+
+  try {
+    const renstraOpdRow = await RenstraOPD.findOne({ where: { nama_opd: opdName } });
+    const callerOpdId = renstraOpdRow?.id ?? null;
+    if (callerOpdId === null) {
+      return {
+        ok: false,
+        status: 403,
+        error: {
+          message: "Konteks OPD tidak dapat diverifikasi untuk membaca data LHP/Temuan.",
+          code: "MR_LHP_TEMUAN_OPD_FORBIDDEN",
+        },
+      };
+    }
+    return { ok: true, superAdmin: false, callerOpdId };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 503,
+      error: {
+        message: "Batas kewenangan OPD untuk LHP/Temuan tidak dapat diverifikasi saat ini. Aksi ditolak sementara demi keamanan data -- silakan coba lagi.",
+        code: "MR_LHP_TEMUAN_OPD_BOUNDARY_UNAVAILABLE",
+      },
+    };
+  }
+}
+
 const toPositiveIntOrNull = (value) => {
   const n = Number(value);
   return Number.isInteger(n) && n > 0 ? n : null;
@@ -574,21 +617,36 @@ const completeLhpMetadata = async ({ lhpId, body = {}, user } = {}) => {
   return lhp;
 };
 
-const getLhpDetail = async (lhpId) => {
-  return findLhpOrFail(lhpId, {
+const getLhpDetail = async (lhpId, { user } = {}) => {
+  const lhp = await findLhpOrFail(lhpId, {
     include: [
       { model: MrReferenceItem, as: "entitas_pemeriksa_ref", required: false },
       { model: MrReferenceItem, as: "jenis_pemeriksaan_ref", required: false },
     ],
   });
+  const boundary = await resolveMrPlanningLhpOpdBoundary({
+    user,
+    targetOpdId: lhp.opd_id,
+  });
+  if (!boundary.ok) throwMrPlanningLhpOpdBoundaryError(boundary);
+  return lhp;
 };
 
-const listLhp = async ({ tahun, entitas_pemeriksa_ref_id, opd_id, status_dokumen } = {}) => {
+const listLhp = async (
+  { tahun, entitas_pemeriksa_ref_id, opd_id, status_dokumen } = {},
+  { user } = {},
+) => {
   const where = { is_active: true };
+  const scope = await resolveMrPlanningLhpCallerScope({ user });
+  if (!scope.ok) throwMrPlanningLhpOpdBoundaryError(scope);
 
   if (tahun) where.tahun = tahun;
   if (entitas_pemeriksa_ref_id) where.entitas_pemeriksa_ref_id = entitas_pemeriksa_ref_id;
-  if (opd_id) where.opd_id = opd_id;
+  if (scope.superAdmin) {
+    if (opd_id) where.opd_id = opd_id;
+  } else {
+    where.opd_id = scope.callerOpdId;
+  }
   if (status_dokumen) where.status_dokumen = status_dokumen;
 
   return MrPlanningLhp.findAll({
@@ -609,6 +667,7 @@ module.exports = {
   // dipakai ulang oleh mrPlanningTemuanService.js (SEMUA beroperasi pada
   // namespace opd_id RenstraOPD.id yang sama).
   resolveMrPlanningLhpOpdBoundary,
+  resolveMrPlanningLhpCallerScope,
   throwMrPlanningLhpOpdBoundaryError,
 
   createLhp,

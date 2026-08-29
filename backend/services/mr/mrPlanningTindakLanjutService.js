@@ -477,7 +477,12 @@ const getHistoryByTindakLanjut = ({ tindakLanjutId, status_revisi }) =>
 const getHistoryDetail = (historyId) =>
   mrHistoryService.getHistoryDetail({ HistoryModel: MrPlanningTindakLanjutHistory, historyId });
 
-const listTindakLanjutByRekomendasi = async (rekomendasiId) => {
+const listTindakLanjutByRekomendasi = async (rekomendasiId, { user } = {}) => {
+  const rekomendasi = await findRekomendasiOrFail(rekomendasiId);
+  const targetOpdId = await resolveTindakLanjutTargetOpdId(rekomendasi.mr_planning_temuan_id);
+  const boundary = await resolveMrPlanningLhpOpdBoundary({ user, targetOpdId });
+  if (!boundary.ok) throwMrPlanningLhpOpdBoundaryError(boundary);
+
   return MrPlanningTindakLanjut.findAll({
     where: { mr_planning_temuan_rekomendasi_id: rekomendasiId, is_active: true },
     include: [{ model: MrReferenceItem, as: "status_tindak_lanjut_ref", required: false }],
@@ -485,10 +490,15 @@ const listTindakLanjutByRekomendasi = async (rekomendasiId) => {
   });
 };
 
-const getTindakLanjutDetail = async (tindakLanjutId) => {
-  return findTindakLanjutOrFail(tindakLanjutId, {
+const getTindakLanjutDetail = async (tindakLanjutId, { user } = {}) => {
+  const tindakLanjut = await findTindakLanjutOrFail(tindakLanjutId, {
     include: [{ model: MrReferenceItem, as: "status_tindak_lanjut_ref", required: false }],
   });
+  const rekomendasi = await findRekomendasiOrFail(tindakLanjut.mr_planning_temuan_rekomendasi_id);
+  const targetOpdId = await resolveTindakLanjutTargetOpdId(rekomendasi.mr_planning_temuan_id);
+  const boundary = await resolveMrPlanningLhpOpdBoundary({ user, targetOpdId });
+  if (!boundary.ok) throwMrPlanningLhpOpdBoundaryError(boundary);
+  return tindakLanjut;
 };
 
 module.exports = {

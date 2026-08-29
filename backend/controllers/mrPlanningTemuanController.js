@@ -27,7 +27,9 @@ const getUser = (req) => ({
 
 const findByLhp = async (req, res) => {
   try {
-    const data = await temuanService.listTemuanByLhp(req.params.lhpId);
+    const data = await temuanService.listTemuanByLhp(req.params.lhpId, {
+      user: getUser(req),
+    });
     return successResponse({ res, message: "Daftar Temuan berhasil dimuat.", data });
   } catch (error) {
     return errorResponse({ res, error });
@@ -36,7 +38,9 @@ const findByLhp = async (req, res) => {
 
 const findById = async (req, res) => {
   try {
-    const data = await temuanService.getTemuanDetail(req.params.id);
+    const data = await temuanService.getTemuanDetail(req.params.id, {
+      user: getUser(req),
+    });
     return successResponse({ res, message: "Detail Temuan berhasil dimuat.", data });
   } catch (error) {
     return errorResponse({ res, error });

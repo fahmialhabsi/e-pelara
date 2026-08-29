@@ -27,7 +27,9 @@ const getUser = (req) => ({
 
 const findByRekomendasi = async (req, res) => {
   try {
-    const data = await tindakLanjutService.listTindakLanjutByRekomendasi(req.params.rekomendasiId);
+    const data = await tindakLanjutService.listTindakLanjutByRekomendasi(req.params.rekomendasiId, {
+      user: getUser(req),
+    });
     return successResponse({ res, message: "Daftar Tindak Lanjut berhasil dimuat.", data });
   } catch (error) {
     return errorResponse({ res, error });
@@ -36,7 +38,9 @@ const findByRekomendasi = async (req, res) => {
 
 const findById = async (req, res) => {
   try {
-    const data = await tindakLanjutService.getTindakLanjutDetail(req.params.id);
+    const data = await tindakLanjutService.getTindakLanjutDetail(req.params.id, {
+      user: getUser(req),
+    });
     return successResponse({ res, message: "Detail Tindak Lanjut berhasil dimuat.", data });
   } catch (error) {
     return errorResponse({ res, error });

@@ -1082,8 +1082,8 @@ const escalateToRisk = async ({ temuanId, body = {}, user } = {}) => {
   };
 };
 
-const getTemuanDetail = async (temuanId) => {
-  return MrPlanningTemuan.findByPk(temuanId, {
+const getTemuanDetail = async (temuanId, { user } = {}) => {
+  const temuan = await MrPlanningTemuan.findByPk(temuanId, {
     include: [
       { model: MrPlanningLhp, as: "lhp", required: false },
       { model: MrReferenceItem, as: "kategori_temuan_ref", required: false },
@@ -1097,9 +1097,24 @@ const getTemuanDetail = async (temuanId) => {
       },
     ],
   });
+  if (!temuan) return null;
+  const boundary = await resolveMrPlanningLhpOpdBoundary({
+    user,
+    targetOpdId: temuan.lhp?.opd_id ?? temuan.opd_id,
+  });
+  if (!boundary.ok) throwMrPlanningLhpOpdBoundaryError(boundary);
+  return temuan;
 };
 
-const listTemuanByLhp = async (lhpId) => {
+const listTemuanByLhp = async (lhpId, { user } = {}) => {
+  const lhp = await MrPlanningLhp.findByPk(lhpId, { attributes: ["id", "opd_id"] });
+  if (!lhp) return [];
+  const boundary = await resolveMrPlanningLhpOpdBoundary({
+    user,
+    targetOpdId: lhp.opd_id,
+  });
+  if (!boundary.ok) throwMrPlanningLhpOpdBoundaryError(boundary);
+
   return MrPlanningTemuan.findAll({
     where: { mr_planning_lhp_id: lhpId },
     order: [["id", "ASC"]],
