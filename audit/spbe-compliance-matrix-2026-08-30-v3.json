@@ -1,0 +1,110 @@
+{
+  "generated_at": "2026-08-30",
+  "method_note": "Status reflects evidence maturity, not legal certification. Documentation alone cannot establish compliance.",
+  "records": [
+    {
+      "domain": "Tata kelola dan arsitektur",
+      "regulation": "Perpres 95/2018; Perpres 132/2022",
+      "control_objective": "Architecture, governance, ownership, lifecycle, and decision records are authoritative.",
+      "owner": "Project owner / Architecture owner",
+      "design_evidence": "docs and dokumenEPelara architecture/technology candidates; audit/system-audit-report.md",
+      "implementation_evidence": "Repository structure, CI workflows, and active backend/frontend source",
+      "test_evidence": "No complete architecture conformance or lifecycle test evidence",
+      "operational_evidence": "Production topology, approvals, and governance operation not supplied",
+      "verifier": "Independent SPBE/architecture reviewer",
+      "status": "Not Verifiable",
+      "notes": "Documents and source are not sufficient to prove approved and operated architecture."
+    },
+    {
+      "domain": "Proses bisnis dan data/informasi",
+      "regulation": "Perpres 95/2018; relevant local policy to be confirmed",
+      "control_objective": "Business ownership, authoritative status, data quality, and cross-domain process consistency.",
+      "owner": "Domain owners / Data owner",
+      "design_evidence": "Baseline audit and domain source code",
+      "implementation_evidence": "Partial workflow and model controls; inconsistent legacy paths remain",
+      "test_evidence": "Frontend tests pass, critical business-flow tests are incomplete",
+      "operational_evidence": "Owner validation, data quality reports, and process sign-off not supplied",
+      "verifier": "Domain owner and independent QA",
+      "status": "Partially Compliant",
+      "notes": "Partial controls exist; authoritative status and operational evidence remain incomplete."
+    },
+    {
+      "domain": "Aplikasi dan API",
+      "regulation": "Perpres 132/2022 architecture domains; internal API standard pending",
+      "control_objective": "Versioned, validated, bounded, observable, and consistently authorized APIs.",
+      "owner": "API/platform owner",
+      "design_evidence": "Route/controller source and existing helper patterns",
+      "implementation_evidence": "Some validation and authorization patterns; uneven contract/error/pagination coverage",
+      "test_evidence": "No complete API contract/security test suite evidenced",
+      "operational_evidence": "API SLO, rate-limit dashboards, and incident samples not supplied",
+      "verifier": "Platform reviewer",
+      "status": "Partially Compliant",
+      "notes": "Implementation is mixed and cannot be declared compliant."
+    },
+    {
+      "domain": "Keamanan dan pelindungan data",
+      "regulation": "Perpres 95/2018; applicable electronic-system and data-protection rules to be confirmed",
+      "control_objective": "Least privilege, tenant isolation, secret safety, secure rendering, auditability, and privacy controls.",
+      "owner": "Security owner / IAM owner",
+      "design_evidence": "Security findings and boundary helpers",
+      "implementation_evidence": "Stage-3/4 targeted fixes; material legacy gaps remain",
+      "test_evidence": "Synthetic helper tests pass; live cross-tenant/security tests not available",
+      "operational_evidence": "SIEM, retention, incident response, key custody, and access review not supplied",
+      "verifier": "Independent security reviewer",
+      "status": "Non-Compliant",
+      "notes": "Critical and high risks remain open; release blocker."
+    },
+    {
+      "domain": "Infrastruktur dan resilience",
+      "regulation": "Perpres 132/2022; infrastructure policy to be confirmed",
+      "control_objective": "Resilient topology, backup, restore, capacity, recovery, and controlled deployment.",
+      "owner": "Operations / DBA",
+      "design_evidence": "Blueprint candidates and backup runbook",
+      "implementation_evidence": "Backup/restore scripts exist; production topology and scheduler unknown",
+      "test_evidence": "Self-tests exist; isolated restore drill not evidenced",
+      "operational_evidence": "RPO/RTO, immutable/offsite copy, restore drill, and monitoring not supplied",
+      "verifier": "Operations/DBA reviewer",
+      "status": "Not Verifiable",
+      "notes": "No production evidence; do not infer readiness from scripts."
+    },
+    {
+      "domain": "Layanan, dokumen, arsip, publikasi, dan aksesibilitas",
+      "regulation": "Applicable records, signature, publication, and accessibility rules to be confirmed",
+      "control_objective": "Official documents are authentic, classified, retained, accessible, and safely published.",
+      "owner": "Records / PPID / Accessibility / Domain owner",
+      "design_evidence": "Document-generation code and project documentation",
+      "implementation_evidence": "Partial document generation and signing paths; publication/retention controls incomplete",
+      "test_evidence": "No complete signature, accessibility, retention, and publication acceptance suite",
+      "operational_evidence": "Retention schedule, PPID review, signature verification, and accessibility sign-off not supplied",
+      "verifier": "Records/PPID and independent reviewer",
+      "status": "Not Verifiable",
+      "notes": "Applicability and operation require owner evidence."
+    },
+    {
+      "domain": "Audit, monitoring, dan evaluasi",
+      "regulation": "Permenkominfo 16/2022; Pedoman Menteri PANRB 3/2024",
+      "control_objective": "Audit trail, monitoring, alerting, evaluation, ownership, retention, and evidence integrity.",
+      "owner": "Security/Operations/SPBE coordinator",
+      "design_evidence": "Audit services, CI workflows, and source findings",
+      "implementation_evidence": "Partial audit services; coverage and retention uneven",
+      "test_evidence": "Selected tests only; no complete sampling/alert validation",
+      "operational_evidence": "Dashboards, alerts, on-call, incident and evaluation records not supplied",
+      "verifier": "Internal audit / SPBE evaluator",
+      "status": "Partially Compliant",
+      "notes": "Control intent exists but evidence chain is incomplete."
+    },
+    {
+      "domain": "Interoperabilitas dan integrasi",
+      "regulation": "Perpres 132/2022; integration policy and e-SIGAP authority to be confirmed",
+      "control_objective": "Versioned contracts, ownership, authorization, idempotency, failure handling, and traceability.",
+      "owner": "Integration owner / Domain owner",
+      "design_evidence": "e-pelara-integration/ and integration documentation candidates",
+      "implementation_evidence": "Integration scope and operational topology not fully verifiable",
+      "test_evidence": "No complete contract, retry, dead-letter, or cross-tenant suite",
+      "operational_evidence": "External endpoint ownership, credentials, monitoring, and failure evidence not supplied",
+      "verifier": "Integration and security reviewer",
+      "status": "Not Verifiable",
+      "notes": "Blueprint must be separated from deployed implementation."
+    }
+  ]
+}

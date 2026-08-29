@@ -1,0 +1,98 @@
+{
+  "generated_at": "2026-08-30",
+  "git": {
+    "branch": "remediation/epelara-esigap-audit-v3",
+    "head": "18d265d2a0aefe35990a51dc5d6061b7fbaeffc1",
+    "upstream": "origin/remediation/epelara-esigap-audit-v3"
+  },
+  "records": [
+    {
+      "evidence_id": "EV-001",
+      "type": "repository_state",
+      "location": "audit/remediation-baseline-v3.md",
+      "status": "Verified",
+      "scope": "Branch, HEAD, dirty working tree preservation, inventory summary",
+      "limitations": "Working-tree list is baseline evidence; unrelated user changes remain outside remediation commits."
+    },
+    {
+      "evidence_id": "EV-002",
+      "type": "baseline_findings",
+      "location": "audit/findings.json",
+      "status": "Verified",
+      "scope": "85 prior structured findings",
+      "limitations": "Baseline finding status is not closure status."
+    },
+    {
+      "evidence_id": "EV-003",
+      "type": "traceability",
+      "location": "audit/remediation-traceability-v3.csv; audit/remediation-traceability-v3.json",
+      "status": "Verified",
+      "scope": "108 records from 85 finding baseline rows plus 23 standards-gap rows",
+      "limitations": "Consolidation links are proposed mappings and require owner/reviewer confirmation."
+    },
+    {
+      "evidence_id": "EV-004",
+      "type": "document_inventory",
+      "location": "audit/document-inventory-2026-08-30-v3.csv; audit/document-inventory-2026-08-30-v3.json",
+      "status": "Verified",
+      "scope": "Recursive inventory of dokumenEPelara (214 files)",
+      "limitations": "Inventory does not prove document approval, authenticity, or operational use."
+    },
+    {
+      "evidence_id": "EV-005",
+      "type": "implementation",
+      "location": "backend/helpers/opdBoundary.js; backend/controllers/penatausahaanController.js; backend/services/mr/*",
+      "status": "Partially Verified",
+      "scope": "Targeted OPD boundary implementation",
+      "limitations": "Live API/database negative tests unavailable."
+    },
+    {
+      "evidence_id": "EV-006",
+      "type": "implementation",
+      "location": "backend/helpers/iamAuthorization.js; backend/controllers/userController.js",
+      "status": "Partially Verified",
+      "scope": "Role hierarchy and tenant scope in user management",
+      "limitations": "Live IAM matrix, audit event, reset/revocation, and branch protection evidence unavailable."
+    },
+    {
+      "evidence_id": "EV-007",
+      "type": "implementation",
+      "location": "backend/controllers/lkJurnalController.js; backend/services/lkSaldoService.js",
+      "status": "Partially Verified",
+      "scope": "Atomic journal POST/VOID transaction and saldo row lock",
+      "limitations": "Real database concurrency, failure injection, and reconciliation unavailable."
+    },
+    {
+      "evidence_id": "EV-008",
+      "type": "automated_test",
+      "location": "backend/scripts/opdBoundarySelfTest.js; backend/scripts/iamAuthorizationSelfTest.js",
+      "status": "Verified",
+      "scope": "Synthetic helper tests",
+      "limitations": "Not endpoint-level tests and not proof of production DB behavior."
+    },
+    {
+      "evidence_id": "EV-009",
+      "type": "quality_test",
+      "location": "temporary audit6 output on attached Windows machine; summarized in audit/cross-cutting-audit-v3.md",
+      "status": "Verified",
+      "scope": "Frontend tests, lint, npm audit",
+      "limitations": "Raw dependency audit artifacts remain in temporary OS directory; no production deployment test."
+    },
+    {
+      "evidence_id": "EV-010",
+      "type": "regulatory",
+      "location": "audit/spbe-regulatory-source-notes-v3.md",
+      "status": "Verified",
+      "scope": "Public official status pages for Perpres 95/2018, Perpres 132/2022, Pedoman PANRB 3/2024 and revoked 6/2023",
+      "limitations": "Article-level applicability and local policy still require official document review and owner confirmation."
+    },
+    {
+      "evidence_id": "EV-011",
+      "type": "operational",
+      "location": "Production topology, scheduler, storage, monitoring, backup/restore drill, RPO/RTO, SLA",
+      "status": "Not Verifiable",
+      "scope": "Operational readiness",
+      "limitations": "No owner-supplied evidence or production access."
+    }
+  ]
+}
