@@ -4,7 +4,7 @@ title: Master Artifact Register
 system: e-PeLARA Next Generation
 classification: Architecture Governance — Inventory Register
 domain: Enterprise Architecture
-version: 1.0.6
+version: 1.0.7
 status: Draft for Review
 prepared_by: Claude Work (Acting Chief Enterprise Architect, di bawah HANDOFF-e-PeLARA-EA-2026-08-05-v10)
 effective_date: null
@@ -247,7 +247,9 @@ Perlu dicatat secara eksplisit: persetujuan governance terhadap 32a **tidak** se
 
 **Tindakan yang diambil**: kesembilan folder tersebut **telah dihapus dari filesystem** pada 2026-08-29, di bawah runbook eksekusi `11-roadmaps/backlog-eksekusi-otomatis.md` §6, yang menilai tindakan ini rendah-risiko dan sepenuhnya reversibel (folder kosong, tidak pernah dilacak git — konfirmasi `git status` sebelum penghapusan menunjukkan tidak ada perubahan terdeteksi, karena git tidak pernah melacak direktori kosong; memulihkan kesembilan folder kosong ini semudah `mkdir` ulang bila diperlukan).
 
-**Transparansi eksplisit terhadap batasan §13 butir 6**: runbook tersebut ditulis dan direview bersama Project Owner sebagai bagian keseluruhan backlog, namun **bukan** persetujuan Project Owner/CEA yang secara spesifik dan terpisah menimbang keputusan penghapusan struktur folder ini sebagaimana diminta §13 butir 6. Dicatat di sini secara jujur agar Project Owner dapat meninjau dan, bila tidak setuju, folder-folder ini dapat dipulihkan tanpa kehilangan data apa pun (tidak pernah berisi file).
+**Transparansi eksplisit terhadap batasan §13 butir 6**: runbook tersebut ditulis dan direview bersama Project Owner sebagai bagian keseluruhan backlog, namun saat eksekusi **bukan** persetujuan Project Owner/CEA yang secara spesifik dan terpisah menimbang keputusan penghapusan struktur folder ini sebagaimana diminta §13 butir 6.
+
+**Konfirmasi Project Owner (2026-08-29, setelah pelaporan hasil)**: Project Owner (Fahmi Alhabsi) mengonfirmasi eksplisit "penghapusan 9 folder kosong sudah sesuai keinginan saya" — memenuhi syarat keputusan terpisah yang diminta §13 butir 6. Penghapusan ini kini dianggap **final dan disetujui**, bukan lagi tindakan sepihak yang menunggu review.
 
 Daftar folder yang dihapus: `02-business-architecture/business-processes/`, `02-business-architecture/capability-map/`, `02-business-architecture/regulatory-mapping/`, `02-business-architecture/value-streams/`, `03-data-architecture/master-reference-data/`, `04-application-architecture/application-portfolio/`, `04-application-architecture/dependency-maps/`, `04-application-architecture/domain-boundaries/`, `04-application-architecture/module-blueprints/`.
 
@@ -263,3 +265,4 @@ Daftar folder yang dihapus: `02-business-architecture/business-processes/`, `02-
 | 1.0.4 | 2026-08-06 | Ditambahkan §17d mencatat finalisasi persetujuan Project Owner atas BP-APP-002 (v0.2.0→Approved), BP-INT-001 (v0.1.0→Approved), BP-TECH-003 (v0.1.0→Approved), BP-APP-003 (v1.1.0, persetujuan §6a), dan lampiran teknis baru 32a (v0.1.0, Approved sebagai spesifikasi; implementasi tetap Planned). Baris Seq 32/33/38/44 diperbarui; baris baru Seq 32a ditambahkan. Ringkasan Statistik (§12, 75/75 Approved, 0 Draft for Review) dan Evidence Pending (§13 butir 4) disesuaikan. | Claude Work | Draft for Review |
 | 1.0.5 | 2026-08-06 | Baris Seq 32a diperbarui: kolom status implementasi teknis diubah dari "Planned" menjadi "Partially Implemented", menyusul laporan eksekusi teknis Tahap 1-3 dari sesi coding terpisah (§8 opsi 2 pada 32a). Perubahan bersifat penyelarasan status, bukan pekerjaan baru — governance status 32a tetap Approved sejak v1.0.4. Evidence dicatat sebagai dilaporkan pelaksana implementasi, belum diverifikasi independen oleh Draft File Operator, sesuai §7.1-§7.2/§12 dokumen 32a. | Claude Work | Draft for Review |
 | 1.0.6 | 2026-08-29 | Ditambahkan §17e mencatat penghapusan 9 subfolder kosong (§13 butir 6) di bawah runbook `11-roadmaps/backlog-eksekusi-otomatis.md`. Dicatat eksplisit bahwa ini bukan persetujuan Project Owner/CEA yang secara spesifik menimbang keputusan tsb sebagaimana diminta §13 butir 6 — dilakukan sebagai tindakan reversibel rendah-risiko, dilaporkan untuk transparansi dan dapat dipulihkan bila Project Owner tidak setuju. Tidak ada perubahan lain pada register. | Claude (mode `/loop`, sesi eksekusi backlog) | Draft for Review |
+| 1.0.7 | 2026-08-29 | Project Owner mengonfirmasi eksplisit persetujuan atas penghapusan 9 folder kosong ("sudah sesuai keinginan saya") — §17e diperbarui mencatat konfirmasi ini, memenuhi syarat keputusan terpisah §13 butir 6. Penghapusan kini final dan disetujui. | Claude, berdasarkan konfirmasi eksplisit Project Owner | Draft for Review |
