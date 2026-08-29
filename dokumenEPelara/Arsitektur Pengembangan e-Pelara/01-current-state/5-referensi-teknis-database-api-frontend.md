@@ -554,6 +554,7 @@
 
 - Model ada, **field belum didefinisikan** (lihat gap di dokumen-4)
 - FK ke `users.id` (target notifikasi)
+- **Catatan Verifikasi Lanjutan (2026-08-29, AIR-003).** Baris di atas dan rujukan-baliknya ke "dokumen-4" **saling bertentangan**: `4-penilaian-kesesuaian-standar.md` justru mencatat berulang kali (§4.2 poin 3, §4.6 poin 12, §4.7) bahwa model `Notification` **sudah lengkap fieldnya**. Verifikasi langsung `backend/models/Notification.js` mengonfirmasi klaim dokumen-4 yang benar: model punya 8 field terdefinisi lengkap (`user_id`, `title`, `message`, `type`, `is_read`, `entity_type`, `entity_id`, `link`) plus timestamps, dengan field-mapping eksplisit untuk kolom tabel legacy camelCase (`userId`→`user_id`, `read`→`is_read`) — kemungkinan sumber kebingungan asal klaim "belum didefinisikan" di baris ini adalah membaca skema tabel mentah tanpa memperhitungkan lapisan mapping model. Baris asli di atas **tidak dihapus** (dokumen ini historis), dicatat sebagai usang. Detail evidence lengkap di Architecture Issue Register AIR-003 (Resolved).
 
 #### `activity_logs`
 

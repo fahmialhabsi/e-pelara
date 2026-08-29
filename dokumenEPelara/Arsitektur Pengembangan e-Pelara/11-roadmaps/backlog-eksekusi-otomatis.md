@@ -109,7 +109,7 @@ Dokumen ini **bukan** artefak Master Document Sequence (Seq 00–74), **bukan** 
 | 6 | AIR-007 SIPD Target Pattern | Selesai (parsial, sengaja) | 2026-08-29 | ECHG-091 | Kontrak teknis Interim Pattern (dua parser PDF) terdokumentasi (BP-INT-001 v0.1.1 §6a). Bagian B (Target API pattern) SENGAJA TIDAK dibuat draft — beda dari rencana awal runbook — karena ADR-0004 §3 butir 4/BP-INT-001 §7 eksplisit melarang pengisian berdasarkan asumsi untuk sistem eksternal spesifik. Eskalasi Kemendagri tetap Decision Required, murni di luar kendali. |
 | 7 | AIR-010 Traceability Matrix | Selesai (parsial, sengaja) | 2026-08-29 | ECHG-092 | Seq 32/38/44 dikoreksi dari "belum disusun" jadi Approved (REF-EA-001 v1.1.0). Populasi detail requirement↔artefak↔kode 75 artefak SENGAJA TIDAK dikerjakan — bertentangan dengan larangan eksplisit dokumen itu sendiri (§2/§5.1/§12) terhadap penciptaan relationship yang tidak tercatat. |
 | 8 | AIR-002 Status Dashboard | Selesai | 2026-08-29 | ECHG-093 | Verifikasi kode: Math.random() tidak ditemukan di 8 controller dashboard; RealisasiIndikator/query SQL nyata dikonfirmasi dipakai. Klaim baseline §4.7 benar, §4.4 baris 7 usang. Baseline tidak ditulis ulang (fakta historis) — hanya diberi anotasi verifikasi. AIR-002 Open → Resolved. |
-| 9 | AIR-003 Status Notification | Belum | — | — | — |
+| 9 | AIR-003 Status Notification | Selesai | 2026-08-29 | ECHG-095 | Verifikasi kode: Notification.js punya 8 field lengkap + field-mapping legacy camelCase. Klaim baseline §4 benar, §5.1.5 usang/salah (rujukan-baliknya pun keliru). Baseline tidak ditulis ulang — hanya diberi anotasi verifikasi. AIR-003 Open → Resolved. |
 | 10 | AIR-005 Konsolidasi UI | Belum | — | — | — |
 | 11 | Housekeeping (§6) | Belum | — | — | — |
 
