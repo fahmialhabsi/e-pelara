@@ -4,7 +4,7 @@ title: SIPD Integration Blueprint
 system: e-PeLARA Next Generation
 classification: Integration Architecture Blueprint
 domain: Integration Architecture
-version: 0.1.1
+version: 0.1.2
 status: Approved
 owner: Chief Enterprise Architect
 approver: Project Owner
@@ -106,7 +106,7 @@ ARCH-INT-001 mengklasifikasikan SIPD sebagai kategori integrasi eksternal Govern
 
 | Item | Placeholder | Routing |
 | --- | --- | --- |
-| Ketersediaan dan konfirmasi API SIPD dari Kemendagri | To be designated or verified by competent institutional authority — Evidence Pending | Eskalasi Project Owner (di luar dokumen ini) |
+| Ketersediaan dan konfirmasi API SIPD dari Kemendagri | To be designated or verified by competent institutional authority — Evidence Pending. **Keputusan Project Owner (2026-08-29)**: eskalasi ke Kemendagri sengaja **ditunda** — Interim Pattern diterima sebagai cara kerja tetap untuk saat ini, bukan sementara. Eskalasi hanya akan dilakukan bila muncul kebutuhan mendesak yang jelas. | Eskalasi Project Owner (di luar dokumen ini) — ditunda per keputusan 2026-08-29, lihat AIR-EA-001 (AIR-007). |
 | Kontrak data/skema teknis Interim Pattern (format kolom PDF, aturan validasi, error handling) | **Terdokumentasi (Addendum 2026-08-29)** — lihat §6a untuk ringkasan kontrak teknis nyata kedua parser, berdasarkan peninjauan langsung kode. | Selesai untuk dokumentasi; perluasan/perbaikan teknis tetap implementasi terpisah. |
 | Protokol dan skema Target Integration Pattern (API-based) | **Tetap placeholder kosong, dengan sengaja (tidak berubah).** Addendum 2026-08-29 mengonfirmasi ulang keputusan ini — lihat §6a penutup. | ADR terpisah bila API dikonfirmasi tersedia. |
 | Otoritas institusional verifikasi keabsahan data hasil PDF-import | To be designated or verified by competent institutional authority — Evidence Pending | Keputusan Project Owner terpisah |
@@ -141,8 +141,9 @@ ARCH-INT-001 mengklasifikasikan SIPD sebagai kategori integrasi eksternal Govern
 | 0.1.0 | 2026-08-06 | Penyusunan awal SIPD Integration Blueprint sebagai BP-INT-001 Seq 38, berdasarkan ADR-0004 (Accepted) dan ARCH-INT-001 (Approved). Cakupan: dokumentasi Interim Integration Pattern (Bagian A) dan kerangka placeholder Target Integration Pattern (Bagian B, belum diisi). | Claude Work | Draft for Review |
 | 0.1.0 (final) | 2026-08-06 | **Finalisasi**: Project Owner menyetujui BP-INT-001 v0.1.0 secara eksplisit. Status dinaikkan menjadi Approved, effective_date 2026-08-06, review_outcome PASSED. Bagian B (Target Integration Pattern) tetap placeholder — tidak diisi oleh finalisasi ini. | Claude Work, berdasarkan persetujuan eksplisit Project Owner | Approved |
 | 0.1.1 | 2026-08-29 | **Addendum evidence**: ditambahkan §6a mendokumentasikan kontrak teknis nyata Interim Pattern (kedua parser PDF) berdasarkan peninjauan langsung kode. §10 baris kontrak teknis diperbarui dari Evidence Pending menjadi Terdokumentasi. Bagian B (§7) **sengaja tidak disentuh** — dikonfirmasi ulang tetap placeholder kosong sesuai ADR-0004 §3 butir 4, tidak ada draft/candidate API pattern dibuat. Ditambahkan addendum §12. Dijalankan di bawah runbook `11-roadmaps/backlog-eksekusi-otomatis.md`. | Claude (mode `/loop`, sesi eksekusi backlog) | Approved (evidence addendum; review substantif Project Owner belum dilakukan) |
+| 0.1.2 | 2026-08-29 | **Keputusan Project Owner dicatat** (§10): Interim Pattern diterima sebagai cara kerja tetap untuk saat ini (bukan sementara); eskalasi ke Kemendagri untuk API sengaja ditunda sampai ada kebutuhan mendesak. Bagian B (§7) tetap tidak diisi — keputusan ini tidak mengubah placeholder, hanya menegaskan tidak ada rencana aktif mengejar Target Integration Pattern dalam waktu dekat. | Claude, berdasarkan keputusan eksplisit Project Owner | Approved |
 
-## 15. Validation Checklist (Version 0.1.0 Approved)
+## 15. Validation Checklist (Version 0.1.2)
 
 1. ✓ Metadata sesuai mandat draft-only: version 0.1.0, status Draft for Review, effective_date null, review_outcome Pending.
 2. ✓ Dependency (ARCH-INT-001, ADR-0004) tidak diubah.

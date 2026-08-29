@@ -4,7 +4,7 @@ title: Production Readiness Checklist
 system: e-PeLARA Next Generation
 classification: Governance Standard
 domain: Transition and Implementation
-version: 1.1.0
+version: 1.2.0
 status: Approved
 owner: Chief Enterprise Architect
 approver: Project Owner
@@ -55,7 +55,7 @@ Documented Current Fact; Documented Assessment; Candidate Target Direction; Evid
 | --- | --- | --- | --- |
 | Functional/Integration/Regression Evidence | Hasil pengujian fungsional tersedia dan terdokumentasi. | Review evidence pengujian (bukan pelaksanaan pengujian oleh dokumen ini). | **Sebagian tersedia.** 15 self-test/verify/check script di `backend/package.json`; 4 di antaranya (Renja status sync, role-auth regression, backup engine, uploads backup engine) wired ke CI (`ci-generic.yml`). Frontend: 7 file test Vitest, mencakup rpjmd/audit/prosnp/foodOperations saja. **Modul lain (RKA, DPA, LK, BMD, TLHP, MR, LAKIP, Penatausahaan, dll.) tidak punya automated test/CI coverage** — mengandalkan self-test manual ad-hoc atau tidak ada sama sekali. |
 | Performance Evidence | Hasil pengujian performa tersedia sesuai target non-fungsional. | Review evidence performa. | **Evidence Pending.** Tidak ditemukan script/tooling load-testing atau hasil pengujian performa di repository. |
-| Security Evidence | Kontrol keamanan diverifikasi sesuai ARCH-SEC-001/STD-SEC-001 (Approved); AIR-008 dicatat sebagai prasyarat terbuka. | Review evidence keamanan. | **Sebagian tersedia.** AIR-008 (CSRF) kini Resolved dengan evidence (self-test 19/19 pass, lihat AIR-EA-001 v1.0.7). `express-rate-limit` terpasang tapi **hanya untuk rute MR tertentu** (`mrSensitiveLimiter`), bukan global. Tidak ditemukan `helmet` atau middleware security header setara. CORS allowlist ada di `server.js`. |
+| Security Evidence | Kontrol keamanan diverifikasi sesuai ARCH-SEC-001/STD-SEC-001 (Approved); AIR-008 dicatat sebagai prasyarat terbuka. | Review evidence keamanan. | **Tersedia (diperkuat 2026-08-29).** AIR-008 (CSRF) Resolved dengan evidence (self-test 19/19 pass). `helmet` kini terpasang (commit `42390af0`) — X-Frame-Options, X-Content-Type-Options, Strict-Transport-Security, dll, diverifikasi langsung di response `/health`. Rate-limit kini **global** (300/15menit di seluruh `/api`, commit sama) selain `mrSensitiveLimiter` yang tetap lebih ketat untuk rute MR. CORS allowlist ada di `server.js`. Diputuskan Project Owner cukup untuk operasional saat ini (lihat AIR-006). |
 | UAT Evidence | User Acceptance Test terdokumentasi. | Review evidence UAT. | **Sebagian tersedia.** Script UAT browser + screenshot evidence nyata ditemukan untuk modul Food Operations (`foodOpsPhase1BrowserUAT.js`, 9 screenshot) dan ProSN-P (`prosnpBrowserUAT.js`, `prosnpAutofillBrowserUAT.js`, `prosnpMbgBrowserUAT.js`, 4 screenshot). **Modul lain tidak punya UAT evidence terdokumentasi serupa.** |
 | Backup/Restore Evidence | Automasi backup/restore terbukti; AIR-009 dicatat sebagai prasyarat terbuka (Decision Required). | Review evidence uji restore. | **Tersedia.** AIR-009 kini Resolved — backup dan restore test nyata dijalankan 2026-08-29, outcome `RESTORE_VERIFIED` (detail: BP-TECH-003 v0.2.0 §9). Penjadwalan otomatis berkala masih tindakan Owner tersisa. |
 | Operations Evidence | Kesiapan observability/incident response sesuai BP-TECH-002 (Approved). | Review evidence operasional. | **Tersedia.** Endpoint `/health`, `/readiness`, `/metrics-lite` aktif di `server.js`; structured logging (Winston) dan request logging (morgan) terpasang. |
@@ -64,7 +64,17 @@ Documented Current Fact; Documented Assessment; Candidate Target Direction; Evid
 
 ### 6a. Metodologi dan Batasan Penilaian 2026-08-29
 
-Penilaian di atas dilakukan langsung terhadap kode/konfigurasi aktual repository (grep, pembacaan file, `git log`), bukan laporan pihak ketiga yang tidak diverifikasi. **Batasan eksplisit**: ini adalah **snapshot satu kali**, bukan hasil audit menyeluruh per modul — kategori bertanda "Sebagian tersedia" berarti evidence ditemukan untuk sebagian modul/aspek, bukan cakupan penuh seluruh ~15 modul domain ePeLARA. Kolom Evidence Status di atas menggantikan placeholder "Candidate Target Direction" generik dengan temuan konkret, tetapi **tidak mengubah kesimpulan §11 (Batas Kewenangan AI) maupun §5 prinsip 1** — struktur checklist tetap yang disetujui, bukan keputusan go-live.
+Penilaian di atas dilakukan langsung terhadap kode/konfigurasi aktual repository (grep, pembacaan file, `git log`), bukan laporan pihak ketiga yang tidak diverifikasi. **Batasan eksplisit**: ini adalah **snapshot satu kali**, bukan hasil audit menyeluruh per modul — kategori bertanda "Sebagian tersedia" berarti evidence ditemukan untuk sebagian modul/aspek, bukan cakupan penuh seluruh ~15 modul domain ePeLARA. Kolom Evidence Status di atas menggantikan placeholder "Candidate Target Direction" generik dengan temuan konkret, tetapi **tidak mengubah kesimpulan §11 (Batas Kewenangan AI) maupun §5 prinsip 1** — struktur checklist tetap yang disetujui, bukan keputusan go-live oleh sesi eksekusi ini.
+
+### 6b. Keputusan Go-Live Project Owner (2026-08-29)
+
+Berbeda dari §6a (yang eksplisit tidak membuat keputusan go-live), bagian ini mencatat keputusan yang **benar-benar diambil oleh Project Owner** (Fahmi Alhabsi), bukan oleh AI:
+
+> "Setujui AIR-006 dengan kondisi: terima kesiapan produksi untuk operasional saat ini. Pasang pengamanan dasar tambahan (security header + rate-limit lebih luas) sekarang. Catat pengujian performa sebagai pekerjaan lanjutan, bukan syarat wajib saat ini."
+
+Tindak lanjut yang dieksekusi sesuai kondisi tsb: `helmet` (security header) dan rate-limit global dipasang di `backend/server.js` (commit `42390af0`), diverifikasi langsung (server dijalankan, header dikonfirmasi muncul di response, rate-limit header aktif, CORS tetap normal). Kategori Security Evidence §6 diperbarui dari "Sebagian tersedia" menjadi "Tersedia".
+
+**Batas keputusan ini secara eksplisit**: ini adalah persetujuan **untuk kondisi operasional saat ini**, bukan sertifikasi permanen tanpa syarat. Performance Evidence dan UAT/Rollback yang masih parsial dicatat sebagai pekerjaan lanjutan yang perlu ditinjau ulang bila skala operasional bertambah signifikan (mis. penambahan OPD/user dalam jumlah besar, atau modul baru yang kritikal). AIR-006 diperbarui Decision Required → Resolved di Architecture Issue Register (v1.0.17).
 
 ## 7. Boundary dengan GOV-MIG-001 (Approved, Batch Ini)
 
@@ -112,8 +122,9 @@ Dokumen ini menyediakan struktur yang relevan dengan resolusi AIR-006 (kriteria 
 | — | 2026-08-05 | Substantive Self-Review PASSED. | Claude Work | Review Outcome: PASSED |
 | 1.0.0 | 2026-08-05 | Finalisasi struktur menjadi Version 1.0.0 Approved, efektif 2026-08-05. | Claude Work | Approved |
 | 1.1.0 | 2026-08-29 | **Addendum evidence**: kolom Evidence Status §6 diisi dengan temuan penilaian aktual per kategori (functional/security/UAT/backup/operations/rollback), berdasarkan verifikasi langsung kode/konfigurasi. Ditambahkan §6a (metodologi/batasan). §9 diperbarui mencatat AIR-008/009 kini Resolved. Tidak ada klaim go-live, tidak ada closure AIR-006/008/009, tidak ada disposition G6 — batasan §11 asli tetap berlaku penuh (lihat addendum §11). Dijalankan di bawah runbook `11-roadmaps/backlog-eksekusi-otomatis.md`. | Claude (mode `/loop`, sesi eksekusi backlog) | Approved (evidence addendum; review substantif Project Owner atas addendum ini belum dilakukan) |
+| 1.2.0 | 2026-08-29 | **Keputusan go-live Project Owner dicatat** (§6b): AIR-006 disetujui bersyarat untuk operasional saat ini — pengamanan dasar (helmet + rate-limit global) dipasang dan diverifikasi (commit `42390af0`), performance testing dicatat sebagai pekerjaan lanjutan. Kategori Security §6 diperbarui dari "Sebagian tersedia" menjadi "Tersedia". AIR-006 Decision Required → Resolved di AIR-EA-001 v1.0.17. Ini keputusan Project Owner sungguhan, bukan keputusan AI — berbeda dari §6a yang eksplisit menahan diri. | Claude, berdasarkan keputusan eksplisit Project Owner | Approved |
 
-## 14. Validation Checklist (Version 1.1.0)
+## 14. Validation Checklist (Version 1.2.0)
 
 1. ✓ Metadata final: version 1.0.0, status Approved, effective_date 2026-08-05.
 2. ✓ Dependency (GOV-MIG-001) Approved dan tidak diubah.
