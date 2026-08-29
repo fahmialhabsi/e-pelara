@@ -9,7 +9,7 @@ const {
   sequelize,
 } = db;
 const {
-  applyJournalPosting,
+  applyJournalPostingWithTransaction,
 } = require("../services/lkSaldoService");
 
 const TOL = 0.01;
@@ -269,55 +269,75 @@ exports.update = async (req, res) => {
 exports.post = async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const row = await JurnalUmum.findByPk(id, {
-      include: [{ model: JurnalDetail, as: "details" }],
-    });
-    if (!row) return res.status(404).json({ message: "Jurnal tidak ditemukan." });
-    if (row.status !== "DRAFT") {
-      return res.status(400).json({ message: "Hanya jurnal DRAFT yang bisa diposting." });
-    }
-    const { totalDebit, totalKredit } = sumDetails(row.details || []);
-    if (Math.abs(totalDebit - totalKredit) > TOL) {
-      return res.status(400).json({
-        error: "Jurnal tidak balance",
-        detail: `Total debit Rp ${totalDebit.toLocaleString("id-ID")} ≠ Total kredit Rp ${totalKredit.toLocaleString("id-ID")}`,
-      });
-    }
-
     const userId = req.user?.id || req.user?.userId || null;
-    await row.update({
-      status: "POSTED",
-      disetujui_oleh: userId,
-      tanggal_disetujui: new Date(),
-    });
+    const full = await sequelize.transaction(async (t) => {
+      const row = await JurnalUmum.findByPk(id, {
+        include: [{ model: JurnalDetail, as: "details" }],
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+      if (!row) {
+        const error = new Error("Jurnal tidak ditemukan.");
+        error.status = 404;
+        throw error;
+      }
+      if (row.status !== "DRAFT") {
+        const error = new Error("Hanya jurnal DRAFT yang bisa diposting.");
+        error.status = 409;
+        throw error;
+      }
+      const { totalDebit, totalKredit } = sumDetails(row.details || []);
+      if (Math.abs(totalDebit - totalKredit) > TOL) {
+        const error = new Error("Jurnal tidak balance.");
+        error.status = 400;
+        throw error;
+      }
 
-    const full = await JurnalUmum.findByPk(id, {
-      include: [{ model: JurnalDetail, as: "details" }],
+      await row.update(
+        {
+          status: "POSTED",
+          disetujui_oleh: userId,
+          tanggal_disetujui: new Date(),
+        },
+        { transaction: t },
+      );
+      await applyJournalPostingWithTransaction(db, row, +1, t);
+      return row;
     });
-    await applyJournalPosting(sequelize, db, full, +1);
     res.json({ data: full, message: "Jurnal berhasil diposting." });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ message: e.message || "Gagal posting jurnal." });
+    res.status(e.status || 500).json({ message: e.status ? e.message : "Gagal posting jurnal." });
   }
 };
 
 exports.void = async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const row = await JurnalUmum.findByPk(id, {
-      include: [{ model: JurnalDetail, as: "details" }],
-    });
-    if (!row) return res.status(404).json({ message: "Jurnal tidak ditemukan." });
-    if (row.status !== "POSTED") {
-      return res.status(400).json({ message: "Hanya jurnal POSTED yang bisa di-void." });
-    }
+    const full = await sequelize.transaction(async (t) => {
+      const row = await JurnalUmum.findByPk(id, {
+        include: [{ model: JurnalDetail, as: "details" }],
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
+      if (!row) {
+        const error = new Error("Jurnal tidak ditemukan.");
+        error.status = 404;
+        throw error;
+      }
+      if (row.status !== "POSTED") {
+        const error = new Error("Hanya jurnal POSTED yang bisa di-void.");
+        error.status = 409;
+        throw error;
+      }
 
-    await applyJournalPosting(sequelize, db, row, -1);
-    await row.update({ status: "VOID" });
-    res.json({ data: row, message: "Jurnal dibatalkan (VOID); saldo dibalik." });
+      await applyJournalPostingWithTransaction(db, row, -1, t);
+      await row.update({ status: "VOID" }, { transaction: t });
+      return row;
+    });
+    res.json({ data: full, message: "Jurnal dibatalkan (VOID); saldo dibalik." });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ message: e.message || "Gagal void jurnal." });
+    res.status(e.status || 500).json({ message: e.status ? e.message : "Gagal void jurnal." });
   }
 };

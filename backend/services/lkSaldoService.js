@@ -53,6 +53,7 @@ async function applyDetailToSaldo(
         bulan,
       },
       transaction: t,
+      lock: t.LOCK.UPDATE,
     });
     if (!row) {
       row = await SaldoAkun.create(
