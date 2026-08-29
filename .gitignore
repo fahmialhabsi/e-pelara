@@ -48,6 +48,7 @@ e-pelara/
 *.xlsx
 *.pdf
 *.docx
+!dokumenEPelara/Arsitektur Pengembangan e-Pelara/**/*.docx
 ~$*
 
 # Sprint 2 — Automated Database Backup artifacts (Owner, 2026-08-08).
