@@ -2,7 +2,8 @@
 
 **Tanggal audit:** 2026-08-30  
 **Branch:** `remediation/epelara-esigap-audit-v3`  
-**HEAD:** `18d265d2a0aefe35990a51dc5d6061b7fbaeffc1`  
+**HEAD at report generation:** `18d265d2a0aefe35990a51dc5d6061b7fbaeffc1`  
+**Latest evidence-bundle commit:** `18247f621dc9741e760f5e04f583e7f759b69826`  
 **Status keputusan:** **NOT READY**
 
 > Laporan ini adalah penilaian teknis dan evidence-gap berbasis repository, bukan sertifikasi SPBE dan bukan opini hukum. Status `Not Verifiable` berarti bukti yang diperlukan berada di luar akses audit, bukan berarti kontrol aman atau terpenuhi.
