@@ -110,7 +110,7 @@ Dokumen ini **bukan** artefak Master Document Sequence (Seq 00–74), **bukan** 
 | 7 | AIR-010 Traceability Matrix | Selesai (parsial, sengaja) | 2026-08-29 | ECHG-092 | Seq 32/38/44 dikoreksi dari "belum disusun" jadi Approved (REF-EA-001 v1.1.0). Populasi detail requirement↔artefak↔kode 75 artefak SENGAJA TIDAK dikerjakan — bertentangan dengan larangan eksplisit dokumen itu sendiri (§2/§5.1/§12) terhadap penciptaan relationship yang tidak tercatat. |
 | 8 | AIR-002 Status Dashboard | Selesai | 2026-08-29 | ECHG-093 | Verifikasi kode: Math.random() tidak ditemukan di 8 controller dashboard; RealisasiIndikator/query SQL nyata dikonfirmasi dipakai. Klaim baseline §4.7 benar, §4.4 baris 7 usang. Baseline tidak ditulis ulang (fakta historis) — hanya diberi anotasi verifikasi. AIR-002 Open → Resolved. |
 | 9 | AIR-003 Status Notification | Selesai | 2026-08-29 | ECHG-095 | Verifikasi kode: Notification.js punya 8 field lengkap + field-mapping legacy camelCase. Klaim baseline §4 benar, §5.1.5 usang/salah (rujukan-baliknya pun keliru). Baseline tidak ditulis ulang — hanya diberi anotasi verifikasi. AIR-003 Open → Resolved. |
-| 10 | AIR-005 Konsolidasi UI | Belum | — | — | — |
+| 10 | AIR-005 Konsolidasi UI | Selesai | 2026-08-29 | ECHG-096 | Strategi konsolidasi bertahap (non-big-bang, opportunistic saat rewrite terencana, tidak ada standar tunggal dipaksakan) ditetapkan di STD-PUB-001 v1.0.1 §6a, level prinsip — sesuai routing ARCH-APP-001 §11. Tidak ada ADR (sengaja, tidak ada keputusan standar tunggal). Eksekusi migrasi tetap item terpisah. AIR-005 Open → Resolved. |
 | 11 | Housekeeping (§6) | Belum | — | — | — |
 
 Nilai status yang valid: `Belum`, `Sedang Dikerjakan`, `Selesai`, `Decision Required — Skip (lihat §5)`, `N/A — Skip Sah`.
