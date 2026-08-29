@@ -1,14 +1,22 @@
 const { User, Role, Division } = require("../models");
 const bcrypt = require("bcryptjs");
+const {
+  assertActorCanManageTarget,
+  assertTenantMatch,
+  normalizeRole,
+  resolvePrincipalTenant,
+} = require("../helpers/iamAuthorization");
 
 // Create new user
 exports.createUser = async (req, res) => {
   try {
     const { username, email, password, role_id, divisions_id, opd } = req.body;
 
-    // Validasi role_id
+    // Validasi target role dan actor-target hierarchy di server.
     const role = await Role.findByPk(role_id);
     if (!role) return res.status(400).json({ message: "Invalid role_id" });
+    const roleGuard = assertActorCanManageTarget(req, role.name);
+    if (!roleGuard.ok) return res.status(roleGuard.status).json(roleGuard.body);
 
     // Validasi divisions_id
     const division = await Division.findByPk(divisions_id);
@@ -28,9 +36,19 @@ exports.createUser = async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const tidRaw =
-      req.body?.tenant_id != null ? parseInt(String(req.body.tenant_id), 10) : req.tenantId;
-    const tenant_id = Number.isFinite(tidRaw) && tidRaw > 0 ? tidRaw : 1;
+    // Actor biasa tidak boleh memilih tenant dari body/query/frontend.
+    // SUPER_ADMIN dapat memilih tenant secara eksplisit untuk provisioning.
+    const actorRole = normalizeRole(req.user?.role);
+    const requestedTenant = actorRole === "SUPER_ADMIN" ? req.body?.tenant_id : null;
+    const tenant_id = resolvePrincipalTenant({
+      tenantId: requestedTenant ?? req.tenantId ?? req.user?.tenant_id,
+    });
+    if (!tenant_id) {
+      return res.status(403).json({
+        message: "Konteks tenant wajib tersedia untuk membuat pengguna.",
+        code: "TENANT_CONTEXT_REQUIRED",
+      });
+    }
 
     const newUser = await User.create({
       username,
@@ -63,10 +81,15 @@ exports.checkSuperAdmin = async (req, res) => {
 // Get all users
 exports.getUsers = async (req, res) => {
   try {
-    const tenantFilter =
-      req.tenantId != null && Number.isFinite(Number(req.tenantId))
-        ? { tenant_id: Number(req.tenantId) }
-        : {};
+    const actorRole = normalizeRole(req.user?.role);
+    const tenantId = resolvePrincipalTenant(req);
+    if (actorRole !== "SUPER_ADMIN" && !tenantId) {
+      return res.status(403).json({
+        message: "Konteks tenant wajib tersedia.",
+        code: "TENANT_CONTEXT_REQUIRED",
+      });
+    }
+    const tenantFilter = actorRole === "SUPER_ADMIN" ? {} : { tenant_id: tenantId };
     const users = await User.findAll({ where: tenantFilter });
     res.status(200).json(users);
   } catch (error) {
@@ -102,13 +125,8 @@ exports.getUserById = async (req, res) => {
       return res.status(404).json({ message: "User tidak ditemukan." });
     }
 
-    if (
-      req.tenantId != null &&
-      Number(user.tenant_id) !== Number(req.tenantId) &&
-      normalizedRole !== "SUPER_ADMIN"
-    ) {
-      return res.status(403).json({ message: "Akses ditolak." });
-    }
+    const tenantGuard = assertTenantMatch(req, user.tenant_id);
+    if (!tenantGuard.ok) return res.status(tenantGuard.status).json(tenantGuard.body);
 
     res.json(user);
   } catch (error) {
@@ -150,9 +168,18 @@ exports.updateUser = async (req, res) => {
     const { username, email, password, role_id, divisions_id, opd } = req.body;
     const user = await User.findByPk(req.params.id);
     if (!user) return res.status(404).json({ message: "User not found" });
-    if (req.tenantId != null && Number(user.tenant_id) !== Number(req.tenantId)) {
-      return res.status(403).json({ message: "Akses ditolak." });
-    }
+    const tenantGuard = assertTenantMatch(req, user.tenant_id);
+    if (!tenantGuard.ok) return res.status(tenantGuard.status).json(tenantGuard.body);
+
+    const currentRole = await Role.findByPk(user.role_id);
+    if (!currentRole) return res.status(409).json({ message: "Role pengguna tidak valid." });
+    const currentRoleGuard = assertActorCanManageTarget(req, currentRole.name);
+    if (!currentRoleGuard.ok) return res.status(currentRoleGuard.status).json(currentRoleGuard.body);
+
+    const nextRole = role_id == null ? currentRole : await Role.findByPk(role_id);
+    if (!nextRole) return res.status(400).json({ message: "Invalid role_id" });
+    const nextRoleGuard = assertActorCanManageTarget(req, nextRole.name);
+    if (!nextRoleGuard.ok) return res.status(nextRoleGuard.status).json(nextRoleGuard.body);
 
     // Jika role diganti ke SUPER ADMIN, cek apakah sudah ada
     if (
@@ -191,9 +218,11 @@ exports.deleteUser = async (req, res) => {
   try {
     const user = await User.findByPk(req.params.id);
     if (!user) return res.status(404).json({ message: "User not found" });
-    if (req.tenantId != null && Number(user.tenant_id) !== Number(req.tenantId)) {
-      return res.status(403).json({ message: "Akses ditolak." });
+    if (Number(req.user?.id) === Number(user.id)) {
+      return res.status(403).json({ message: "Akun yang sedang digunakan tidak boleh dihapus." });
     }
+    const tenantGuard = assertTenantMatch(req, user.tenant_id);
+    if (!tenantGuard.ok) return res.status(tenantGuard.status).json(tenantGuard.body);
     await user.destroy();
     res.status(200).json({ message: "User deleted" });
   } catch (error) {
