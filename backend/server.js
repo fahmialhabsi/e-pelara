@@ -1,5 +1,6 @@
 const express = require('express');
 const app = express();
+const helmet = require('helmet');
 const cors = require('cors');
 const path = require('path');
 // Eksplisit path agar dotenv selalu baca dari direktori server.js, bukan process.cwd()
@@ -46,6 +47,18 @@ const allowedOrigins = Array.from(
 );
 const isAllowedOrigin = (origin) => !origin || allowedOrigins.includes(origin);
 
+// AIR-006: pengamanan dasar (security header). API JSON murni (bukan halaman
+// HTML) — contentSecurityPolicy dimatikan (tidak relevan untuk JSON, berisiko
+// mengganggu tanpa manfaat). crossOriginResourcePolicy dilonggarkan supaya
+// frontend beda origin tetap bisa memuat file di /uploads (foto/PDF dokumen).
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  }),
+);
+
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -72,6 +85,23 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+
+// AIR-006: rate-limit dasar untuk SELURUH /api, sebagai lapisan pengaman
+// tambahan di luar mrSensitiveLimiter (yang tetap ada, lebih ketat, khusus
+// rute MR sensitif). Ambang digenerosir (300/15 menit per IP) supaya tidak
+// mengganggu pemakaian normal (dashboard yang sering polling, dsb.).
+const globalApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Terlalu banyak request. Coba lagi beberapa saat.',
+    code: 'RATE_LIMITED',
+  },
+});
+app.use('/api', globalApiLimiter);
 
 // JSON API: jangan cache di browser/proxy — hindari 304 + body kosong untuk XHR (dropdown SPA).
 app.use('/api', (req, res, next) => {
@@ -369,10 +399,11 @@ const renjaRecallRoutes = require('./routes/renjaRecallRoutes');
 const renjaTabelCRoutes = require('./routes/renjaTabelCRoutes');
 const prosnpRoutes = require('./routes/prosnpRoutes');
 
-// USE EVIDENCE & OPERASI PANGAN (FOOD OPERATIONS) — Phase 0 Foundation
+// USE EVIDENCE & OPERASI PANGAN (FOOD OPERATIONS) — Phase 0 Foundation + Phase 1 Core Registry
 const foodOpsDocumentRoutes = require('./routes/foodOpsDocumentRoutes');
 const foodOpsRegulationRoutes = require('./routes/foodOpsRegulationRoutes');
 const foodOpsEventRoutes = require('./routes/foodOpsEventRoutes');
+const foodOpsEvidenceRoutes = require('./routes/foodOpsEvidenceRoutes');
 
 // USE RKA
 const rkaRoutes = require('./routes/rkaRoutes');
@@ -435,6 +466,7 @@ const lkAccountingRoutes = require('./routes/lkAccountingRoutes');
 // USE CLONE PERIODE
 const clonePeriodeRoutes = require('./routes/clonePeriodeRoutes');
 const tenantRoutes = require('./routes/tenantRoutes');
+const accountRegistryRoutes = require('./routes/accountRegistryRoutes');
 const planRoutes = require('./routes/planRoutes');
 
 app.use(cookieParser());
@@ -451,6 +483,7 @@ app.use('/api/periode-rpjmd', periodeRoutes);
 app.use('/api/rekomendasi-ai', rekomendasiAIRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/tenants', tenantRoutes);
+app.use('/api/account-registry', accountRegistryRoutes);
 app.use('/api/plans', planRoutes);
 app.use('/api', derivationRoutes);
 app.use('/api', userRoutes);
@@ -577,10 +610,11 @@ app.use('/api/renja-recall', renjaRecallRoutes);
 app.use('/api/permendagri14/tabel-c', renjaTabelCRoutes);
 app.use('/api/prosnp', prosnpRoutes);
 
-// USE EVIDENCE & OPERASI PANGAN (FOOD OPERATIONS) — Phase 0 Foundation
+// USE EVIDENCE & OPERASI PANGAN (FOOD OPERATIONS) — Phase 0 Foundation + Phase 1 Core Registry
 app.use('/api/food-operations', foodOpsDocumentRoutes);
 app.use('/api/food-operations', foodOpsRegulationRoutes);
 app.use('/api/food-operations', foodOpsEventRoutes);
+app.use('/api/food-operations', foodOpsEvidenceRoutes);
 
 // Audit konsistensi perencanaan (domain v2)
 app.use('/api/audit', auditPlanningRoutes);
