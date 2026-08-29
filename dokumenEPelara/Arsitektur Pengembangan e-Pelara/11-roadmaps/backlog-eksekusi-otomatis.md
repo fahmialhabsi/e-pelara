@@ -101,7 +101,7 @@ Dokumen ini **bukan** artefak Master Document Sequence (Seq 00–74), **bukan** 
 | No | Item | Status | Tanggal | ECHG Ref | Catatan Singkat |
 |----|------|--------|---------|----------|------------------|
 | 1 | AIR-009 Backup & Restore | Selesai | 2026-08-29 | ECHG-086 | Engine sudah Implemented sejak Sprint 2 (commit 949a3e4f, belum dilaporkan ke governance). Backup+restore test nyata dijalankan sesi ini: RESTORE_VERIFIED, checksum match, 283/283 tabel. Task Scheduler berkala BELUM terdaftar (dicek Get-ScheduledTask) — tindakan Owner tersisa, dicatat di BP-TECH-003 §9. AIR-009 tetap Resolved (bukan Closed) — closure tetap wewenang Owner. |
-| 2 | AIR-008 CSRF Protection | Belum | — | — | — |
+| 2 | AIR-008 CSRF Protection | Selesai | 2026-08-29 | ECHG-087 | Sudah diimplementasikan penuh (Sprint 3, S3-2, uncommitted) sebelum sesi ini — double-submit-cookie, wired di verifyToken.js, self-test 19/19 pass. Kode dikomit sesi ini. Cakupan sengaja terbatas ke cookie-auth state-changing request (Bearer tidak diperiksa, by design). AIR-008 tetap Resolved (bukan Closed). |
 | 3 | AIR-006 Production Readiness | Belum | — | — | — |
 | 4 | AIR-001 Transition Year Renstra | Belum | — | — | — |
 | 5 | AIR-004 Workflow / 32a | Belum | — | — | — |

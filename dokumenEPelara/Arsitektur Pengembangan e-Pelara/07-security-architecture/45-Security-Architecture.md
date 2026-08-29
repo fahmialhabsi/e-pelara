@@ -4,12 +4,12 @@ title: Security Architecture
 system: e-PeLARA Next Generation
 classification: Enterprise Architecture
 domain: Security and Privacy Architecture
-version: 1.0.0
+version: 1.0.1
 status: Approved
 owner: Chief Enterprise Architect
 approver: Project Owner
 effective_date: 2026-08-05
-last_reviewed: 2026-08-05
+last_reviewed: 2026-08-29
 parent_document: ../00-governance/00-Architecture-Charter.md
 conforms_to: ../00-governance/01-Repository-Structure.md
 roadmap_reference: ../11-roadmaps/02-Enterprise-Architecture-Roadmap.md
@@ -79,7 +79,7 @@ Identity and Access Management Control Domain menggunakan role archetype dan sep
 
 | Finding | Domain Terdampak | Routing |
 | --- | --- | --- |
-| AIR-008 — CSRF protection belum tersedia | Application Security | Tetap Open; didelegasikan ke BP-SEC-002 (Security/Privacy/Audit Control, batch ini) sebagai konteks konseptual, bukan resolusi status baseline. |
+| AIR-008 — CSRF protection belum tersedia | Application Security | **Addendum 2026-08-29**: AIR-008 diperbarui menjadi Resolved di Architecture Issue Register (v1.0.7) setelah verifikasi implementasi kode langsung (self-test 19/19 pass). Dicatat sesuai routing §10 dokumen ini ("AIR-EA-001, verifikasi implementasi") — resolusi tetap tercatat otoritatif di Issue Register itu sendiri, bukan ditulis ulang di sini. |
 | COMP-008 — REG-09/REG-10 (PSE, PDP) | Data Protection, Application Security | Status Under Applicability Assessment tidak diubah; dokumen ini tidak membuat applicability determination. |
 
 ## 10. Evidence Pending Register dan Routing
@@ -90,7 +90,7 @@ Identity and Access Management Control Domain menggunakan role archetype dan sep
 | Kontrol privacy/audit rinci | To be assigned by Project Owner — Evidence Pending | BP-SEC-002 (batch ini) |
 | Threat model dan security zone rinci | To be assigned by Project Owner — Evidence Pending | BP-SEC-003 (batch ini) |
 | Secure engineering/secrets management rinci | To be assigned by Project Owner — Evidence Pending | STD-SEC-001 (batch ini) |
-| Resolusi AIR-008 (CSRF) | To be designated or verified by competent institutional authority — Evidence Pending | AIR-EA-001 (verifikasi implementasi) |
+| Resolusi AIR-008 (CSRF) | **Addendum 2026-08-29**: verifikasi implementasi selesai, AIR-008 kini Resolved di AIR-EA-001 v1.0.7 — closure formal tetap Evidence Pending (wewenang Project Owner/otoritas keamanan). | AIR-EA-001 (verifikasi implementasi) |
 | Applicability COMP-008 | To be designated or verified by competent institutional authority — Evidence Pending | Compliance Register (legal verification) |
 
 ## 11. Assumptions dan Program State
@@ -120,6 +120,7 @@ Identity and Access Management Control Domain menggunakan role archetype dan sep
 | 0.1.0 | 2026-08-05 | Penyusunan awal Security Architecture sebagai ARCH-SEC-001 Seq 45, berdasarkan BP-BUS-004, STD-DATA-002, ARCH-APP-001, ARCH-INT-001, ARCH-TECH-001 (Approved). Cakupan: 8 candidate security control domain, boundary Data Classification/Roles Authority, routing AIR-008/COMP-008 tanpa resolusi. | Claude Work | Draft for Review |
 | — | 2026-08-05 | Substantive Self-Review PASSED. | Claude Work | Review Outcome: PASSED |
 | 1.0.0 | 2026-08-05 | Finalisasi menjadi Version 1.0.0 Approved, efektif 2026-08-05. | Claude Work | Approved |
+| 1.0.1 | 2026-08-29 | Addendum administratif: baris §9/§10 terkait AIR-008 diperbarui mencatat bahwa AIR-008 kini Resolved di Architecture Issue Register (v1.0.7), tidak menulis ulang resolusi di dokumen ini (tetap sesuai routing asli — resolusi otoritatif di AIR-EA-001). Tidak ada perubahan pada 8 candidate security control domain atau kesimpulan konseptual dokumen ini. | Claude (mode `/loop`, sesi eksekusi backlog) | Approved — Administrative Patch |
 
 ## 15. Validation Checklist (Version 1.0.0 Approved)
 

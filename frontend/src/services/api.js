@@ -12,6 +12,17 @@ const api = axios.create({
   withCredentials: true,
 });
 
+// Sprint 3 — S3-2: baca cookie csrfToken (non-httpOnly, diset backend saat
+// login/register/refresh) untuk dikirim ulang di header X-CSRF-Token.
+// Diperlukan HANYA sebagai defense-in-depth pada request yang (karena alasan
+// apa pun) jadi cookie-authenticated di backend — request Bearer normal
+// tidak pernah diperiksa CSRF-nya oleh backend, header ini aman dikirim
+// selalu (no-op jika tidak diperlukan).
+function readCsrfCookie() {
+  const match = document.cookie.match(/(?:^|; )csrfToken=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 // Attach token on every request
 api.interceptors.request.use(
   (config) => {
@@ -29,6 +40,10 @@ api.interceptors.request.use(
       } catch {
         /* ignore */
       }
+    }
+    const csrfToken = readCsrfCookie();
+    if (csrfToken) {
+      config.headers["X-CSRF-Token"] = csrfToken;
     }
     const method = String(config.method || "get").toLowerCase();
     if (method === "get" && config.params !== false) {

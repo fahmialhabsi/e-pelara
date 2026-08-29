@@ -8,6 +8,7 @@ const {
 } = require("../controllers/authController");
 const authController = require("../controllers/authController");
 const rateLimit = require("express-rate-limit");
+const { clearCsrfCookie } = require("../lib/csrfToken"); // Sprint 3 — S3-2
 
 const authLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 menit
@@ -27,6 +28,7 @@ router.post("/logout", (req, res) => {
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict",
   });
+  clearCsrfCookie(res); // Sprint 3 — S3-2
   return res.json({ message: "Logout berhasil!" });
 });
 

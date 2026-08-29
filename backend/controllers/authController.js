@@ -7,6 +7,7 @@ const {
   getPlanContextForTenant,
   planFieldsForJwt,
 } = require("../helpers/subscriptionPlanFeatures");
+const { generateCsrfToken, setCsrfCookie, clearCsrfCookie } = require("../lib/csrfToken"); // Sprint 3 — S3-2
 
 // Register
 const register = async (req, res) => {
@@ -134,6 +135,7 @@ const register = async (req, res) => {
       sameSite: "strict",
       maxAge: 7 * 24 * 3600 * 1000,
     });
+    setCsrfCookie(res, generateCsrfToken(), { maxAge: 60 * 60 * 1000 }); // Sprint 3 — S3-2
 
     res.status(201).json({
       message: "Registrasi berhasil!",
@@ -233,6 +235,7 @@ const login = async (req, res) => {
       sameSite: "strict",
       maxAge: 7 * 24 * 3600 * 1000,
     });
+    setCsrfCookie(res, generateCsrfToken(), { maxAge: 60 * 60 * 1000 }); // Sprint 3 — S3-2
 
     res.json({
       message: "Login berhasil!",
@@ -269,6 +272,7 @@ const refreshToken = async (req, res) => {
       sameSite: "strict",
       maxAge: 60 * 60 * 1000,
     });
+    setCsrfCookie(res, generateCsrfToken(), { maxAge: 60 * 60 * 1000 }); // Sprint 3 — S3-2
     res.json({
       accessToken: newAccessToken,
       user: {
@@ -420,6 +424,7 @@ const logout = (req, res) => {
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict",
   });
+  clearCsrfCookie(res); // Sprint 3 — S3-2
   res.json({ message: "Logout berhasil, token dihapus." });
 };
 

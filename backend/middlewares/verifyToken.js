@@ -6,6 +6,7 @@ const jwt = require("jsonwebtoken");
 const tenantContext = require("../lib/tenantContext");
 const { Tenant } = require("../models");
 const { writeTenantAudit } = require("../services/tenantAuditService");
+const csrfProtection = require("./csrfProtection"); // Sprint 3 — S3-2 (CSRF)
 
 function isSuperAdminRole(role) {
   return String(role || "")
@@ -133,6 +134,15 @@ const verifyToken = async (req, res, next) => {
   }
 
   const token = bearer?.token || req.cookies?.token || req.query?._token || null;
+
+  // Sprint 3 — S3-2 (CSRF): tandai apakah request ini terautentikasi lewat
+  // Authorization/Bearer header (dikirim eksplisit oleh caller, tidak bisa
+  // "dipaksa" oleh cross-site request pihak ketiga) ATAU lewat cookie/query
+  // param (ambient credential — browser mengirim otomatis, termasuk dari
+  // konteks cross-site, sehingga rentan CSRF pada state-changing request).
+  // Dipakai oleh middlewares/csrfProtection.js untuk menentukan apakah CSRF
+  // token wajib diperiksa. Tidak mengubah perilaku otentikasi itu sendiri.
+  req.authViaCookie = !bearer?.token && !!(req.cookies?.token || req.query?._token);
 
   if (!token) {
     return authErrorResponse({
@@ -278,6 +288,21 @@ const verifyToken = async (req, res, next) => {
           },
         });
       }
+    }
+
+    // Sprint 3 — S3-2: CSRF check, HANYA untuk request cookie-authenticated
+    // (req.authViaCookie) pada method state-changing. Bearer-authenticated
+    // request dan GET/HEAD/OPTIONS tidak pernah diperiksa (lihat
+    // middlewares/csrfProtection.js untuk alasan desain lengkap). Diletakkan
+    // setelah otentikasi berhasil (bukan sebelum) supaya kegagalan CSRF tidak
+    // tercampur dengan kegagalan autentikasi token itu sendiri.
+    const csrfCheck = csrfProtection._check(req);
+    if (!csrfCheck.ok) {
+      return res.status(403).json({
+        success: false,
+        code: csrfCheck.code,
+        message: csrfCheck.message,
+      });
     }
 
     return tenantContext.run({ tenantId: effectiveTenantId }, () => next());

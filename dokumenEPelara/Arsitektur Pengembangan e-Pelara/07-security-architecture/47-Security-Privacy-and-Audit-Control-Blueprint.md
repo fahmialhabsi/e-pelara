@@ -4,12 +4,12 @@ title: Security, Privacy and Audit Control Blueprint
 system: e-PeLARA Next Generation
 classification: Security Architecture Blueprint
 domain: Security and Privacy Architecture
-version: 1.0.0
+version: 1.0.1
 status: Approved
 owner: Chief Enterprise Architect
 approver: Project Owner
 effective_date: 2026-08-05
-last_reviewed: 2026-08-05
+last_reviewed: 2026-08-29
 parent_document: ../07-security-architecture/45-Security-Architecture.md
 conforms_to: ../00-governance/01-Repository-Structure.md
 roadmap_reference: ../11-roadmaps/02-Enterprise-Architecture-Roadmap.md
@@ -72,7 +72,7 @@ Dokumen ini mencatat COMP-008 sebagai konteks, bukan menyelesaikannya. Applicabi
 
 | Finding | Relevansi | Routing |
 | --- | --- | --- |
-| AIR-008 — CSRF protection belum tersedia | Application Security control (ARCH-SEC-001 §6) | Tetap Open; tidak diselesaikan; dicatat sebagai konteks Application Security. |
+| AIR-008 — CSRF protection belum tersedia | Application Security control (ARCH-SEC-001 §6) | **Addendum 2026-08-29**: AIR-008 kini Resolved (AIR-EA-001 v1.0.7, lihat juga ARCH-SEC-001 v1.0.1 §9-10) — tidak diselesaikan/ditulis ulang di dokumen ini, tetap dicatat sebagai konteks Application Security sesuai routing asli. |
 | COMP-008 — REG-09/REG-10 | Data Protection control | Status Under Applicability Assessment dikutip verbatim, tidak diubah. |
 
 ## 11. Evidence Pending Register dan Routing
@@ -111,6 +111,7 @@ Dokumen ini mencatat COMP-008 sebagai konteks, bukan menyelesaikannya. Applicabi
 | 0.1.0 | 2026-08-05 | Penyusunan awal Security, Privacy and Audit Control Blueprint sebagai BP-SEC-002 Seq 47, berdasarkan ARCH-SEC-001, STD-DATA-002, BP-BUS-004 (Approved). Cakupan: candidate control blueprint per classification level, candidate audit trail concern, boundary Compliance Register COMP-008 (verbatim, tidak diubah). | Claude Work | Draft for Review |
 | — | 2026-08-05 | Substantive Self-Review PASSED. | Claude Work | Review Outcome: PASSED |
 | 1.0.0 | 2026-08-05 | Finalisasi menjadi Version 1.0.0 Approved, efektif 2026-08-05. | Claude Work | Approved |
+| 1.0.1 | 2026-08-29 | Addendum administratif: baris §9 finding AIR-008 diperbarui mencatat status Resolved di Architecture Issue Register (v1.0.7), tidak menulis ulang resolusi di dokumen ini. Tidak ada perubahan pada candidate control blueprint atau kesimpulan konseptual dokumen ini. | Claude (mode `/loop`, sesi eksekusi backlog) | Approved — Administrative Patch |
 
 ## 16. Validation Checklist (Version 1.0.0 Approved)
 
