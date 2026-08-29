@@ -3,6 +3,8 @@
 > Dokumen ini merupakan hasil analisa kesesuaian sistem e-PeLARA terhadap regulasi dan standar pemerintahan daerah Indonesia yang berlaku.
 > Digunakan sebagai **pedoman perbaikan dan pengembangan** sistem aplikasi e-PeLARA.
 
+> **Catatan Verifikasi Lanjutan (2026-08-29, AIR-002).** Dokumen ini adalah Official Current State Baseline — fakta historis, tidak ditulis ulang untuk mencerminkan kondisi terbaru. Namun §4.4 baris 7 ("Dashboard RPJMD ada tapi data masih dummy") dan §4.7 ("Data dashboard menggunakan data nyata dari `RealisasiIndikator`") mencatat klaim yang **bertentangan** untuk isu yang sama (AIR-002, Charter §11). Verifikasi langsung kode pada 2026-08-29 mengonfirmasi: **tidak ditemukan `Math.random()`** di seluruh 8 controller dashboard (`dashboardController.js`, `dashboardLkdController.js`, `dashboardRpjmdController.js`, `dashboardAgregatPaguController.js`, `dashboardRenjaRkpdController.js`, `lkDashboardController.js`, `planningAuditDashboardController.js`, `planningDashboardController.js`); `RealisasiIndikator` dipakai nyata di `dashboardController.js`/`dashboardRpjmdController.js`; `dashboardLkdController.js` mengambil data lewat query SQL nyata (`sequelize.query`), bukan data statis. **Kesimpulan: klaim §4.7 yang benar untuk kondisi kode saat ini; baris §4.4 adalah klaim yang sudah usang (kemungkinan ditulis sebelum perbaikan `Math.random()` → `RealisasiIndikator` yang direkomendasikan §4.6 dilaksanakan).** Detail evidence lengkap di Architecture Issue Register AIR-002 (Resolved, v1.0.13+).
+
 ---
 
 ## 4.1 Regulasi Acuan
