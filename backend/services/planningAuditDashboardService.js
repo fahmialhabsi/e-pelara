@@ -440,11 +440,17 @@ async function getAuditDetail(req, compositeKey) {
   const parsed = parseCompositeKey(compositeKey);
   if (!parsed) return { ok: false, error: "ID tidak valid (gunakan t-… atau p-…)." };
 
+  const tenantId = req.tenantId != null ? Number(req.tenantId) : null;
+  const superAdm = isSuperAdmin(req.user?.role);
+
   if (parsed.source === "compliance") {
     const row = await TenantAuditLog.findByPk(parsed.id, {
       include: [{ model: User, as: "user", attributes: ["id", "username", "email"] }],
     });
     if (!row) return { ok: false, error: "Data tidak ditemukan." };
+    if (!superAdm && row.tenant_id_asal !== tenantId && row.tenant_id_tujuan !== tenantId) {
+      return { ok: false, error: "Data tidak ditemukan." };
+    }
     const plain = row.toJSON();
     const payload = plain.payload || {};
     const ui_status = deriveComplianceUiStatus(plain.aksi, payload);
@@ -488,6 +494,10 @@ async function getAuditDetail(req, compositeKey) {
         attributes: ["id", "username", "email", "tenant_id"],
       })
     : null;
+
+  if (!superAdm && actor && Number(actor.tenant_id) !== tenantId) {
+    return { ok: false, error: "Data tidak ditemukan." };
+  }
 
   return {
     ok: true,
