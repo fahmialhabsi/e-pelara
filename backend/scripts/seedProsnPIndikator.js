@@ -1,7 +1,7 @@
 'use strict';
 
 const db = require('../models');
-const { INITIAL_INDICATORS, initializeInitialIndicators } = require('../services/prosnp/prosnpInitialIndicators');
+const { initializeInitialIndicators } = require('../services/prosnp/prosnpInitialIndicators');
 
 const periodeId = Number(process.argv.find((arg) => arg.startsWith('--periode-id='))?.split('=')[1]);
 if (!Number.isInteger(periodeId) || periodeId < 1) {
@@ -14,10 +14,11 @@ if (!Number.isInteger(periodeId) || periodeId < 1) {
     const periode = await db.ProsnPeriode.findByPk(periodeId);
     if (!periode) throw new Error('Periode ProSN tidak ditemukan.');
     if (periode.status !== 'draft') throw new Error('Seed hanya boleh dijalankan pada periode draft.');
+    let jumlah = 0;
     await db.sequelize.transaction(async (transaction) => {
-      await initializeInitialIndicators({ periode, transaction });
+      jumlah = await initializeInitialIndicators({ periode, transaction });
     });
-    console.log(`Seed ProSN selesai: ${INITIAL_INDICATORS.length} indikator untuk periode ${periodeId}.`);
+    console.log(`Seed ProSN selesai: ${jumlah} indikator untuk periode ${periodeId}.`);
   } catch (error) {
     console.error('[seedProsnPIndikator]', error.message);
     process.exitCode = 1;

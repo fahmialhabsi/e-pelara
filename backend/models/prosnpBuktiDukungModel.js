@@ -9,6 +9,7 @@ module.exports = (sequelize, DataTypes) => {
       ProsnBuktiDukung.belongsTo(models.ProsnBuktiDukung, { foreignKey: 'menggantikan_bukti_id', as: 'versiSebelumnya' });
       ProsnBuktiDukung.hasMany(models.ProsnBuktiDukung, { foreignKey: 'menggantikan_bukti_id', as: 'versiBerikutnya' });
       ProsnBuktiDukung.belongsToMany(models.ProsnIndikator, { through: models.ProsnBuktiIndikator, foreignKey: 'bukti_dukung_id', otherKey: 'indikator_id', as: 'indikators' });
+      ProsnBuktiDukung.belongsTo(models.FoodOpsDocument, { foreignKey: 'food_ops_document_id', as: 'foodOpsDocument' });
     }
   }
 
@@ -42,6 +43,7 @@ module.exports = (sequelize, DataTypes) => {
     extracted_at: { type: DataTypes.DATE, allowNull: true },
     extraction_method: { type: DataTypes.STRING(32), allowNull: true },
     klasifikasi_meta: { type: DataTypes.JSON, allowNull: true },
+    food_ops_document_id: { type: DataTypes.INTEGER, allowNull: true },
   }, { sequelize, modelName: 'ProsnBuktiDukung', tableName: 'prosnp_bukti_dukung', underscored: true, timestamps: true, createdAt: 'created_at', updatedAt: 'updated_at' });
 
   return ProsnBuktiDukung;
