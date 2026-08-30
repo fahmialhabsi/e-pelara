@@ -46,6 +46,7 @@
     "db:migrate:controlled-gate": "node scripts/controlledMigrationChainGate.js",
     "db:migrate:invariant": "node scripts/migrationInvariantCheck.js",
     "test:upgrade-gate-disposable": "node scripts/upgradeGateDisposableSimulation.js",
+    "test:upgrade-gate-recovery-disposable": "node scripts/upgradeGateFailureRecoverySimulation.js",
     "job:compliance-record": "node scripts/recordComplianceSnapshotJob.js",
     "seed:sheet2": "node seeders/import-sheet2-normalized.js",
     "test": "echo \"Error: no test specified\" && exit 1"
