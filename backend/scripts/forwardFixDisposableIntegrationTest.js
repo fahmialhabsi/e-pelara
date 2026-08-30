@@ -84,6 +84,22 @@ async function main() {
     console.log("empty_database=PASS: draft failed closed before any schema mutation");
 
     await createRepresentativeSchema(sequelize);
+    await sequelize.query("INSERT INTO `indikatorstrategis` (kode_indikator, jenis_dokumen, tahun) VALUES ('DUP-SYN-001', 'RPJMD', '2025'), ('DUP-SYN-001', 'RPJMD', '2025')");
+    let duplicateFailure;
+    try {
+      await draft.up(queryInterfaceFor(sequelize));
+    } catch (error) {
+      duplicateFailure = error;
+    }
+    assert.ok(duplicateFailure, "duplicate business key must fail closed");
+    assert.match(duplicateFailure.message, /duplicate kode_indikator/i);
+    assert.deepStrictEqual(await indexNames(sequelize, "indikatorstrategis"), []);
+    const [[duplicateCount]] = await sequelize.query("SELECT COUNT(*) AS count FROM `indikatorstrategis` WHERE kode_indikator = 'DUP-SYN-001'");
+    assert.strictEqual(Number(duplicateCount.count), 2, "duplicate guard must not delete rows");
+    console.log("duplicate_key=PASS: draft stopped before index mutation and preserved both synthetic rows");
+
+    await cleanup(sequelize);
+    await createRepresentativeSchema(sequelize);
     assert.strictEqual(await tableCount(sequelize), 3, "representative schema must have three target tables");
     await draft.up(queryInterfaceFor(sequelize));
     for (const table of EXPECTED.tables) {
