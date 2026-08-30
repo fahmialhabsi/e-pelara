@@ -33,6 +33,7 @@
     "test:iam-authorization": "node scripts/iamAuthorizationSelfTest.js",
     "test:synthetic-fixtures": "node scripts/syntheticFixtureSafetySelfTest.js",
     "test:forward-fix-draft": "node scripts/forwardFixMigrationDraftSelfTest.js",
+    "test:forward-fix-disposable": "node scripts/forwardFixDisposableIntegrationTest.js",
     "db:backup": "node scripts/databaseBackup.js",
     "db:backup:test": "node scripts/backupEngineSelfTest.js",
     "db:restore:verify": "node scripts/databaseRestoreVerify.js",
