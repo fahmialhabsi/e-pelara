@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@900&family=Inter:wght@500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        .slide-container {
+            width: 1280px;
+            min-height: 720px;
+            display: flex;
+            background-color: #FAFAFA;
+            font-family: 'Inter', sans-serif;
+            color: #1C1C1C;
+            overflow: hidden;
+        }
+        .left-panel {
+            width: 33.33%;
+            background-color: #FFD600;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 40px 40px 0 40px;
+            position: relative;
+        }
+        .right-panel {
+            width: 66.67%;
+            display: flex;
+            flex-direction: column;
+            padding: 60px 60px 0 60px;
+        }
+        .oversized-number {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 180px;
+            color: #000000;
+            line-height: 1;
+            opacity: 0.1;
+        }
+        .diagonal-hashes {
+            width: 100px;
+            height: 20px;
+            background: repeating-linear-gradient(
+                45deg,
+                #000000,
+                #000000 4px,
+                transparent 4px,
+                transparent 8px
+            );
+            margin-bottom: 12px;
+        }
+        .section-title {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 40px;
+            color: #000000;
+            text-transform: uppercase;
+            margin-bottom: 30px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'Inter', sans-serif;
+            font-size: 16px;
+            margin-bottom: 30px;
+        }
+        th, td {
+            border-bottom: 1px solid #CCCCCC;
+            padding: 12px 8px;
+            text-align: left;
+        }
+        th {
+            font-weight: 700;
+            color: #000000;
+            text-transform: uppercase;
+            background-color: #EEEEEE;
+        }
+        td:first-child {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 700;
+            color: #000000;
+        }
+        .alert-box {
+            background-color: #1C1C1C;
+            color: #FFFFFF;
+            padding: 24px;
+            border-left: 8px solid #E53935;
+        }
+        .alert-box h3 {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 22px;
+            color: #E53935;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+        }
+        .alert-box h3 i {
+            margin-right: 12px;
+        }
+        .alert-box p {
+            font-size: 18px;
+            line-height: 1.5;
+            margin-bottom: 12px;
+        }
+        .alert-box .risk-highlight {
+            background-color: #E53935;
+            color: #FFFFFF;
+            padding: 4px 8px;
+            font-weight: 700;
+            display: inline-block;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container">
+        <div class="left-panel">
+            <div class="oversized-number">03</div>
+            <div style="margin-top: auto; margin-bottom: 40px;">
+                <div class="diagonal-hashes"></div>
+                <div style="font-family: 'Montserrat', sans-serif; font-weight: 900; font-size: 24px; text-transform: uppercase; color: #000000;">Chain<br>Blocked</div>
+            </div>
+        </div>
+        <div class="right-panel">
+            <h2 class="section-title">Why the Chain is Blocked</h2>
+            
+            <h3 style="font-family: 'Montserrat', sans-serif; font-size: 20px; text-transform: uppercase; margin-bottom: 12px;">Four Duplicate Prefixes</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Prefix</th>
+                        <th>Migration A</th>
+                        <th>Migration B</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>20260412120000</td>
+                        <td>Renstra Tahun 6 lokasi/pagu</td>
+                        <td>Planning line-item change log</td>
+                    </tr>
+                    <tr>
+                        <td>20260424120000</td>
+                        <td>Renja mapping apply batch</td>
+                        <td>Multi-tenant SaaS core</td>
+                    </tr>
+                    <tr>
+                        <td>20260428120000</td>
+                        <td>Tahun 2025 urusan kinerja</td>
+                        <td>Planning audit RKA/DPA</td>
+                    </tr>
+                    <tr>
+                        <td>20260720120000</td>
+                        <td>Pejabat penandatangan</td>
+                        <td>RKA unique sub-kegiatan widening</td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div class="alert-box">
+                <h3><i class="fas fa-ban"></i> AUD-003 Dependency Conflict</h3>
+                <p>Migration <code>20260218120000-rpjmd-indikator-kode-dedupe-unique.js</code> performs destructive dedupe/index work <strong>before</strong> three target table creators dated <code>20260415110001</code>–<code>20260415110003</code>.</p>
+                <div class="risk-highlight">RISK: Lexical ordering or a silent skip can desynchronize SequelizeMeta, alter data lineage, or make fresh install fail.</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

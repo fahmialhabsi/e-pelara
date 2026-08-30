@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@900&family=Inter:wght@500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        .slide-container {
+            width: 1280px;
+            min-height: 720px;
+            display: flex;
+            background-color: #FAFAFA;
+            font-family: 'Inter', sans-serif;
+            color: #1C1C1C;
+            overflow: hidden;
+        }
+        .left-panel {
+            width: 33.33%;
+            background-color: #FFD600;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            /* reduced internal padding to save vertical space */
+            padding: 40px 40px 20px 40px;
+            position: relative;
+        }
+        .right-panel {
+            width: 66.67%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            /* keep top padding for title consistency, reduce bottom padding */
+            padding: 60px 80px 20px 80px;
+        }
+        .oversized-number {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 180px;
+            color: #000000;
+            line-height: 1;
+            opacity: 0.1;
+        }
+        .diagonal-hashes {
+            width: 100px;
+            height: 20px;
+            background: repeating-linear-gradient(
+                45deg,
+                #000000,
+                #000000 4px,
+                transparent 4px,
+                transparent 8px
+            );
+            margin-bottom: 12px;
+        }
+        .main-title {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 54px;
+            color: #000000;
+            text-transform: uppercase;
+            line-height: 1.1;
+            margin-bottom: 20px;
+        }
+        .subtitle {
+            font-weight: 700;
+            font-size: 24px;
+            color: #1C1C1C;
+            margin-bottom: 12px; /* reduced to save height */
+            border-left: 6px solid #FFD600;
+            padding-left: 16px;
+        }
+        .content-block {
+            margin-bottom: 12px; /* reduced spacing */
+        }
+        .content-block h3 {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 20px;
+            color: #000000;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+        .content-block h3 i {
+            color: #FFD600;
+            margin-right: 12px;
+            font-size: 24px;
+        }
+        .content-block p {
+            font-weight: 500;
+            font-size: 20px;
+            line-height: 1.5;
+            color: #1C1C1C;
+        }
+        .status-badge {
+            display: inline-block;
+            background-color: #000000;
+            color: #FFD600;
+            padding: 4px 12px;
+            font-weight: 700;
+            font-size: 16px;
+            border-radius: 4px;
+            margin-top: 8px;
+        }
+        .status-badge.alert {
+            background-color: #E53935;
+            color: #FFFFFF;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container">
+        <div class="left-panel">
+            <div class="oversized-number">01</div>
+            <div>
+                <div class="diagonal-hashes"></div>
+                <div style="font-family: 'Montserrat', sans-serif; font-weight: 900; font-size: 24px; text-transform: uppercase;">Executive<br>Decision</div>
+            </div>
+        </div>
+        <div class="right-panel">
+            <h1 class="main-title">Audit Migrasi Database &<br>Kebijakan Reconciliation</h1>
+            <div class="subtitle">Option C v5 • e-PeLARA/e-SIGAP • Owner/DBA Review • 30 Aug 2026</div>
+            
+            <div class="content-block">
+                <h3><i class="fas fa-sitemap"></i> Option C Strategy</h3>
+                <p>Controlled chain gate + guarded disposable forward-fix.</p>
+                <div class="status-badge">Keputusan: Jangan aktifkan active migration chain</div>
+            </div>
+            
+            <div class="content-block">
+                <h3><i class="fas fa-exclamation-triangle"></i> AUD-003 Status</h3>
+                <div class="status-badge alert">Fixed Pending Retest / Open Release Blocker</div>
+            </div>
+            
+            <div style="display: flex; gap: 24px; margin-top: 12px;">
+                <div class="content-block" style="flex: 1;">
+                    <h3><i class="fas fa-check-circle"></i> Yang Sudah Terbukti</h3>
+                    <p style="font-size: 18px;">Controlled gate fail-closed; forward-fix lulus test.</p>
+                </div>
+                <div class="content-block" style="flex: 1;">
+                    <h3><i class="fas fa-times-circle"></i> Yang Belum Terbukti</h3>
+                    <p style="font-size: 18px;">Applied history di environment nyata; owner/DBA activation pending.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

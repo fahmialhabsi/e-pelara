@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@900&family=Inter:wght@500;700&family=Fira+Code:wght@500&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        .slide-container {
+            width: 1280px;
+            min-height: 720px;
+            display: flex;
+            background-color: #FAFAFA;
+            font-family: 'Inter', sans-serif;
+            color: #1C1C1C;
+            overflow: hidden;
+        }
+        .left-panel {
+            width: 33.33%;
+            background-color: #FFD600;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 40px 40px 0 40px;
+            position: relative;
+        }
+        .right-panel {
+            width: 66.67%;
+            display: flex;
+            flex-direction: column;
+            padding: 50px 60px 0 60px;
+        }
+        .oversized-number {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 180px;
+            color: #000000;
+            line-height: 1;
+            opacity: 0.1;
+        }
+        .diagonal-hashes {
+            width: 100px;
+            height: 20px;
+            background: repeating-linear-gradient(
+                45deg,
+                #000000,
+                #000000 4px,
+                transparent 4px,
+                transparent 8px
+            );
+            margin-bottom: 12px;
+        }
+        .section-title {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 36px;
+            color: #000000;
+            text-transform: uppercase;
+            margin-bottom: 24px;
+        }
+        .subsection-title {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 20px;
+            color: #000000;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+        }
+        .subsection-title i {
+            color: #FFD600;
+            margin-right: 10px;
+            background-color: #000000;
+            padding: 4px;
+            font-size: 16px;
+        }
+        .evidence-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 16px;
+            margin-bottom: 24px;
+        }
+        .evidence-item {
+            font-family: 'Fira Code', monospace;
+            font-size: 12px;
+            background-color: #EEEEEE;
+            padding: 6px 10px;
+            border-left: 4px solid #000000;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .reference-list {
+            list-style: none;
+            margin-bottom: 30px;
+        }
+        .reference-item {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 12px;
+            font-size: 16px;
+            line-height: 1.4;
+        }
+        .reference-number {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            color: #FFFFFF;
+            background-color: #000000;
+            padding: 2px 8px;
+            margin-right: 12px;
+            font-size: 14px;
+        }
+        .reference-title {
+            font-weight: 700;
+            color: #000000;
+        }
+        .footer {
+            margin-top: auto;
+            border-top: 2px solid #000000;
+            padding-top: 16px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #666666;
+            margin-bottom: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container">
+        <div class="left-panel">
+            <div class="oversized-number">10</div>
+            <div style="margin-top: auto; margin-bottom: 40px;">
+                <div class="diagonal-hashes"></div>
+                <div style="font-family: 'Montserrat', sans-serif; font-weight: 900; font-size: 24px; text-transform: uppercase; color: #000000;">Evidence &<br>References</div>
+            </div>
+        </div>
+        <div class="right-panel">
+            <h2 class="section-title">Evidence and References</h2>
+            
+            <div class="subsection-title"><i class="fas fa-folder-open"></i> Repository Evidence</div>
+            <div class="evidence-grid">
+                <div class="evidence-item">audit/authoritative-migration-inventory-v5.md</div>
+                <div class="evidence-item">audit/migration-decision-record-v5.md</div>
+                <div class="evidence-item">audit/active-migration-dba-review-v5.csv/json</div>
+                <div class="evidence-item">audit/authoritative-row-fk-reconciliation-policy-v5.md</div>
+                <div class="evidence-item">audit/migration-dependency-graph-v5.json</div>
+                <div class="evidence-item">audit/optionc-forward-fix-rollback-plan-v5.md</div>
+                <div class="evidence-item">audit/migration-conflict-register-v5.csv/json</div>
+                <div class="evidence-item">audit/optionc-disposable-test-matrix-v5.md</div>
+                <div class="evidence-item">audit/migration-applied-history-reconciliation-v5.md</div>
+                <div class="evidence-item">audit/upgrade-gate-disposable-simulation-v5.md</div>
+                <div class="evidence-item">audit/controlled-migration-chain-gate-v5.md</div>
+                <div class="evidence-item">audit/upgrade-gate-failure-recovery-v5.md</div>
+            </div>
+            
+            <div class="subsection-title"><i class="fas fa-book"></i> Technical References</div>
+            <ul class="reference-list">
+                <li class="reference-item">
+                    <span class="reference-number">1</span>
+                    <div><span class="reference-title">Sequelize CLI migrations</span> — migration state transitions are represented by migration files and CLI execution.</div>
+                </li>
+                <li class="reference-item">
+                    <span class="reference-number">2</span>
+                    <div><span class="reference-title">MySQL INFORMATION_SCHEMA</span> — read-only database metadata used for schema/status inspection.</div>
+                </li>
+                <li class="reference-item">
+                    <span class="reference-number">3</span>
+                    <div><span class="reference-title">MySQL atomic DDL</span> — DDL atomicity depends on operation/storage-engine behavior and must not replace disposable recovery testing.</div>
+                </li>
+            </ul>
+            
+            <div class="footer">
+                <div>Prepared for: Owner/DBA review</div>
+                <div>Author: Manus AI</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

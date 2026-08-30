@@ -1,0 +1,113 @@
+{
+  "project_info": {
+    "title": "Executive decision",
+    "created": 1788094711.275,
+    "last_updated": 1788094963.849,
+    "total_slides": 10
+  },
+  "slides": [
+    {
+      "id": "slide_1_executive_decision",
+      "state": "edited",
+      "pageNum": 1
+    },
+    {
+      "id": "slide_2_evidence_baseline",
+      "state": "edited",
+      "pageNum": 2
+    },
+    {
+      "id": "slide_3_chain_blocked",
+      "state": "edited",
+      "pageNum": 3
+    },
+    {
+      "id": "slide_4_controlled_gate",
+      "state": "edited",
+      "pageNum": 4
+    },
+    {
+      "id": "slide_5_reconciliation_policy",
+      "state": "edited",
+      "pageNum": 5
+    },
+    {
+      "id": "slide_6_fk_recovery_controls",
+      "state": "edited",
+      "pageNum": 6
+    },
+    {
+      "id": "slide_7_disposable_evidence",
+      "state": "edited",
+      "pageNum": 7
+    },
+    {
+      "id": "slide_8_decision_matrix",
+      "state": "edited",
+      "pageNum": 8
+    },
+    {
+      "id": "slide_9_approval_gate",
+      "state": "edited",
+      "pageNum": 9
+    },
+    {
+      "id": "slide_10_evidence_references",
+      "state": "edited",
+      "pageNum": 10
+    }
+  ],
+  "outline": [
+    {
+      "id": "slide_1_executive_decision",
+      "title": "Executive decision",
+      "summary": "Option C strategy: controlled chain gate, guarded forward-fix, and pending activation approval."
+    },
+    {
+      "id": "slide_2_evidence_baseline",
+      "title": "Evidence baseline",
+      "summary": "Repository migration count, duplicate prefixes, and disposable target isolation.",
+      "image_plan": "/home/ubuntu/upload/pasted_file_0q73cV_Screenshot2026-08-30200310.png - Docker Desktop showing disposable MySQL container instances (epelara-audit-v5-mysql / epelara-mysql) referenced in Slide 2 baseline"
+    },
+    {
+      "id": "slide_3_chain_blocked",
+      "title": "Why the chain is blocked",
+      "summary": "The four duplicate prefixes and AUD-003 premature dependency conflict."
+    },
+    {
+      "id": "slide_4_controlled_gate",
+      "title": "Controlled chain gate",
+      "summary": "Gate behavior for fresh and upgrade modes without silent skipping."
+    },
+    {
+      "id": "slide_5_reconciliation_policy",
+      "title": "Authoritative-row and FK reconciliation policy",
+      "summary": "Non-destructive policy, candidate grouping, and authoritative decision hierarchy."
+    },
+    {
+      "id": "slide_6_fk_recovery_controls",
+      "title": "FK reconciliation and recovery controls",
+      "summary": "Requirements for mapping completeness, child coverage, and reversibility."
+    },
+    {
+      "id": "slide_7_disposable_evidence",
+      "title": "Disposable test evidence",
+      "summary": "Summary of passing disposable tests for empty, upgrade-like, failure, and restore scenarios."
+    },
+    {
+      "id": "slide_8_decision_matrix",
+      "title": "Owner/DBA decision matrix",
+      "summary": "Required decisions for fresh install, upgrade history, duplicate policy, and activation."
+    },
+    {
+      "id": "slide_9_approval_gate",
+      "title": "Approval gate and next steps",
+      "summary": "The activation sequence and current release status."
+    },
+    {
+      "id": "slide_10_evidence_references",
+      "title": "Evidence and references",
+      "summary": "List of repository evidence artifacts and technical references."
+    }
+  ]
+}

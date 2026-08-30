@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@900&family=Inter:wght@500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        .slide-container {
+            width: 1280px;
+            min-height: 720px;
+            display: flex;
+            background-color: #FAFAFA;
+            font-family: 'Inter', sans-serif;
+            color: #1C1C1C;
+            overflow: hidden;
+        }
+        .left-panel {
+            width: 33.33%;
+            background-color: #FFD600;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 40px 40px 0 40px;
+            position: relative;
+        }
+        .right-panel {
+            width: 66.67%;
+            display: flex;
+            flex-direction: column;
+            padding: 60px 60px 0 60px;
+        }
+        .oversized-number {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 180px;
+            color: #000000;
+            line-height: 1;
+            opacity: 0.1;
+        }
+        .diagonal-hashes {
+            width: 100px;
+            height: 20px;
+            background: repeating-linear-gradient(
+                45deg,
+                #000000,
+                #000000 4px,
+                transparent 4px,
+                transparent 8px
+            );
+            margin-bottom: 12px;
+        }
+        .section-title {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 40px;
+            color: #000000;
+            text-transform: uppercase;
+            margin-bottom: 30px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'Inter', sans-serif;
+            font-size: 18px;
+            margin-bottom: 30px;
+        }
+        th, td {
+            border-bottom: 1px solid #CCCCCC;
+            padding: 14px 10px;
+            text-align: left;
+        }
+        th {
+            font-weight: 700;
+            color: #000000;
+            text-transform: uppercase;
+            background-color: #EEEEEE;
+        }
+        td:first-child {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 700;
+            color: #000000;
+            width: 35%;
+        }
+        .recommendation-box {
+            background-color: #1C1C1C;
+            color: #FFFFFF;
+            padding: 24px;
+            border-left: 8px solid #FFD600;
+        }
+        .recommendation-box h3 {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 22px;
+            color: #FFD600;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+        }
+        .recommendation-box h3 i {
+            margin-right: 12px;
+        }
+        .recommendation-box p {
+            font-size: 18px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container">
+        <div class="left-panel">
+            <div class="oversized-number">08</div>
+            <div style="margin-top: auto; margin-bottom: 40px;">
+                <div class="diagonal-hashes"></div>
+                <div style="font-family: 'Montserrat', sans-serif; font-weight: 900; font-size: 24px; text-transform: uppercase; color: #000000;">Decision<br>Matrix</div>
+            </div>
+        </div>
+        <div class="right-panel">
+            <h2 class="section-title">Owner/DBA Decision Matrix</h2>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>Decision</th>
+                        <th>Required Answer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Fresh install</td>
+                        <td>Clean baseline or compatibility runner?</td>
+                    </tr>
+                    <tr>
+                        <td>Upgrade history</td>
+                        <td>Which sanitized <code>SequelizeMeta</code> source is authoritative per environment?</td>
+                    </tr>
+                    <tr>
+                        <td>Four duplicate prefixes</td>
+                        <td>What dependency/order policy is approved without renaming?</td>
+                    </tr>
+                    <tr>
+                        <td>AUD-003 data</td>
+                        <td>What is the written duplicate/FK authoritative-row policy?</td>
+                    </tr>
+                    <tr>
+                        <td>Forward-fix activation</td>
+                        <td>Which owner/DBA approval and promotion path?</td>
+                    </tr>
+                    <tr>
+                        <td>Recovery</td>
+                        <td>Which disposable snapshot/restore and DDL compensation procedure?</td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div class="recommendation-box">
+                <h3><i class="fas fa-lightbulb"></i> Recommended Approach</h3>
+                <p>Preserve immutable history, keep gate fail-closed, use new forward-fix only after applied-history review and full disposable failure/recovery evidence.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@900&family=Inter:wght@500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        .slide-container {
+            width: 1280px;
+            min-height: 720px;
+            display: flex;
+            background-color: #FAFAFA;
+            font-family: 'Inter', sans-serif;
+            color: #1C1C1C;
+            overflow: hidden;
+        }
+        .left-panel {
+            width: 33.33%;
+            background-color: #FFD600;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 40px 40px 0 40px;
+            position: relative;
+        }
+        .right-panel {
+            width: 66.67%;
+            display: flex;
+            flex-direction: column;
+            padding: 50px 60px 0 60px;
+        }
+        .oversized-number {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 180px;
+            color: #000000;
+            line-height: 1;
+            opacity: 0.1;
+        }
+        .diagonal-hashes {
+            width: 100px;
+            height: 20px;
+            background: repeating-linear-gradient(
+                45deg,
+                #000000,
+                #000000 4px,
+                transparent 4px,
+                transparent 8px
+            );
+            margin-bottom: 12px;
+        }
+        .section-title {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 36px;
+            color: #000000;
+            text-transform: uppercase;
+            margin-bottom: 24px;
+            line-height: 1.1;
+        }
+        .subtitle {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 20px;
+            color: #000000;
+            text-transform: uppercase;
+            margin-bottom: 16px;
+            border-bottom: 2px solid #000000;
+            padding-bottom: 8px;
+            display: inline-block;
+        }
+        .sequence-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px 24px;
+            margin-bottom: 30px;
+        }
+        .sequence-item {
+            display: flex;
+            align-items: flex-start;
+        }
+        .sequence-number {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 16px;
+            color: #FFD600;
+            background-color: #000000;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+        .sequence-text {
+            font-size: 16px;
+            font-weight: 500;
+            line-height: 1.4;
+            color: #1C1C1C;
+            padding-top: 2px;
+        }
+        .status-box {
+            background-color: #1C1C1C;
+            color: #FFFFFF;
+            padding: 20px 24px;
+            border-left: 8px solid #E53935;
+        }
+        .status-box h3 {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 900;
+            font-size: 22px;
+            color: #E53935;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+        }
+        .status-box h3 i {
+            margin-right: 12px;
+        }
+        .status-box p {
+            font-size: 16px;
+            line-height: 1.5;
+            margin-bottom: 8px;
+        }
+        .status-box p:last-child {
+            margin-bottom: 0;
+        }
+        .highlight-text {
+            color: #FFD600;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container">
+        <div class="left-panel">
+            <div class="oversized-number">09</div>
+            <div style="margin-top: auto; margin-bottom: 40px;">
+                <div class="diagonal-hashes"></div>
+                <div style="font-family: 'Montserrat', sans-serif; font-weight: 900; font-size: 24px; text-transform: uppercase; color: #000000;">Approval<br>Gate</div>
+            </div>
+        </div>
+        <div class="right-panel">
+            <h2 class="section-title">Approval Gate &<br>Next Steps</h2>
+            
+            <div class="subtitle">Activation Sequence</div>
+            <div class="sequence-grid">
+                <div class="sequence-item">
+                    <div class="sequence-number">1</div>
+                    <div class="sequence-text">Owner/DBA decision record</div>
+                </div>
+                <div class="sequence-item">
+                    <div class="sequence-number">2</div>
+                    <div class="sequence-text">Sanitized applied-history export per upgrade environment</div>
+                </div>
+                <div class="sequence-item">
+                    <div class="sequence-number">3</div>
+                    <div class="sequence-text">Dependency and duplicate-prefix review</div>
+                </div>
+                <div class="sequence-item">
+                    <div class="sequence-number">4</div>
+                    <div class="sequence-text">Disposable snapshot and invariant baseline</div>
+                </div>
+                <div class="sequence-item">
+                    <div class="sequence-number">5</div>
+                    <div class="sequence-text">Fresh/upgrade strategy test</div>
+                </div>
+                <div class="sequence-item">
+                    <div class="sequence-number">6</div>
+                    <div class="sequence-text">Forward-fix test (duplicate, missing column, failure, restore)</div>
+                </div>
+                <div class="sequence-item">
+                    <div class="sequence-number">7</div>
+                    <div class="sequence-text">Independent reviewer sign-off</div>
+                </div>
+                <div class="sequence-item">
+                    <div class="sequence-number">8</div>
+                    <div class="sequence-text">Controlled gate pass</div>
+                </div>
+                <div class="sequence-item">
+                    <div class="sequence-number">9</div>
+                    <div class="sequence-text">Nonproduction activation only after explicit approval</div>
+                </div>
+            </div>
+            
+            <div class="status-box">
+                <h3><i class="fas fa-lock"></i> Release Status: NOT READY</h3>
+                <p>The system is <span class="highlight-text">NOT READY</span> for active chain or production execution.</p>
+                <p><code>AUD-003</code> remains <strong>Fixed Pending Retest / Open Release Blocker</strong>.</p>
+                <p>No production migration, remote setting change, or raw-data deletion is authorized by this package.</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
