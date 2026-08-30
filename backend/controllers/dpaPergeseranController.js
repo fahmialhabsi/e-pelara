@@ -13,6 +13,12 @@ const puppeteer = require('puppeteer');
 
 const ANGKA_ROMAWI = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 const formatRp = (val) => `Rp${Number(val || 0).toLocaleString('id-ID')},00`;
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
 
 // Sprint 4 — S4-02 (S4-DISC-005/006/007/008/009): DpaPergeseran dan
 // DpaPerubahan TIDAK punya kolom opd_id sendiri (dikonfirmasi lewat
@@ -118,7 +124,11 @@ module.exports = {
       });
       res.json({ success: true, data: list });
     } catch (e) {
-      res.status(500).json({ success: false, message: e.message });
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan internal. Silakan coba lagi atau hubungi administrator.',
+        code: 'DPA_INTERNAL_ERROR',
+      });
     }
   },
 
@@ -142,7 +152,11 @@ module.exports = {
       });
       res.json({ success: true, data });
     } catch (e) {
-      res.status(500).json({ success: false, message: e.message });
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan internal. Silakan coba lagi atau hubungi administrator.',
+        code: 'DPA_INTERNAL_ERROR',
+      });
     }
   },
 
@@ -177,7 +191,11 @@ module.exports = {
 
       res.json({ success: true, data });
     } catch (e) {
-      res.status(500).json({ success: false, message: e.message });
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan internal. Silakan coba lagi atau hubungi administrator.',
+        code: 'DPA_INTERNAL_ERROR',
+      });
     }
   },
 
@@ -194,7 +212,11 @@ module.exports = {
       });
       res.json({ success: true, data });
     } catch (e) {
-      res.status(500).json({ success: false, message: e.message });
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan internal. Silakan coba lagi atau hubungi administrator.',
+        code: 'DPA_INTERNAL_ERROR',
+      });
     }
   },
 
@@ -352,7 +374,11 @@ module.exports = {
         message: 'Pergeseran disetujui',
       });
     } catch (e) {
-      res.status(500).json({ success: false, message: e.message });
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan internal. Silakan coba lagi atau hubungi administrator.',
+        code: 'DPA_INTERNAL_ERROR',
+      });
     }
   },
 
@@ -379,7 +405,11 @@ module.exports = {
       await pergeseran.destroy();
       res.json({ success: true, message: 'Pergeseran berhasil dihapus' });
     } catch (e) {
-      res.status(500).json({ success: false, message: e.message });
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan internal. Silakan coba lagi atau hubungi administrator.',
+        code: 'DPA_INTERNAL_ERROR',
+      });
     }
   },
 
@@ -405,7 +435,7 @@ module.exports = {
 
       const nomorLabel =
         ANGKA_ROMAWI[pergeseran.nomor_pergeseran - 1] || pergeseran.nomor_pergeseran;
-      const opdName = dpa.opd_penanggung_jawab || 'DINAS PANGAN PROVINSI MALUKU UTARA';
+      const opdName = escapeHtml(dpa.opd_penanggung_jawab || 'DINAS PANGAN PROVINSI MALUKU UTARA');
       const tanggalCetak = new Date(pergeseran.tanggal).toLocaleDateString('id-ID', {
         day: '2-digit',
         month: 'long',
@@ -421,13 +451,13 @@ module.exports = {
           .map(
             (i) => `
         <tr>
-          <td style="border:1px solid #000;padding:4px">${i.kode_rekening}</td>
-          <td style="border:1px solid #000;padding:4px">${i.nama_rekening || ''}<br><small style="color:#555">${i.uraian || ''}</small></td>
+          <td style="border:1px solid #000;padding:4px">${escapeHtml(i.kode_rekening)}</td>
+          <td style="border:1px solid #000;padding:4px">${escapeHtml(i.nama_rekening)}<br><small style="color:#555">${escapeHtml(i.uraian)}</small></td>
           <td style="border:1px solid #000;padding:4px;text-align:right">${formatRp(i.jumlah_semula)}</td>
           <td style="border:1px solid #000;padding:4px;text-align:right">${formatRp(i.jumlah_pergeseran)}</td>
           <td style="border:1px solid #000;padding:4px;text-align:right">${formatRp(i.jumlah_menjadi)}</td>
-          <td style="border:1px solid #000;padding:4px;text-align:center">${i.kode_sub_kegiatan_asal || '-'}</td>
-          <td style="border:1px solid #000;padding:4px;text-align:center">${i.kode_sub_kegiatan_tujuan || '-'}</td>
+          <td style="border:1px solid #000;padding:4px;text-align:center">${escapeHtml(i.kode_sub_kegiatan_asal || '-')}</td>
+          <td style="border:1px solid #000;padding:4px;text-align:center">${escapeHtml(i.kode_sub_kegiatan_tujuan || '-')}</td>
         </tr>`,
           )
           .join('');
@@ -437,9 +467,9 @@ module.exports = {
           (t, i) => `
         <tr>
           <td style="border:1px solid #000;padding:3px;text-align:center">${i + 1}</td>
-          <td style="border:1px solid #000;padding:3px">${t.nama || ''}</td>
-          <td style="border:1px solid #000;padding:3px">${t.nip || ''}</td>
-          <td style="border:1px solid #000;padding:3px">${t.jabatan || ''}</td>
+          <td style="border:1px solid #000;padding:3px">${escapeHtml(t.nama)}</td>
+          <td style="border:1px solid #000;padding:3px">${escapeHtml(t.nip)}</td>
+          <td style="border:1px solid #000;padding:3px">${escapeHtml(t.jabatan)}</td>
           <td style="border:1px solid #000;padding:3px"></td>
         </tr>`,
         )
@@ -570,7 +600,11 @@ module.exports = {
       res.send(pdfBuffer);
     } catch (e) {
       if (browser) await browser.close();
-      res.status(500).json({ success: false, message: e.message });
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan internal. Silakan coba lagi atau hubungi administrator.',
+        code: 'DPA_INTERNAL_ERROR',
+      });
     }
   },
 
@@ -601,7 +635,7 @@ module.exports = {
         where: { tahun: Number(dpa.tahun) },
         order: [['urutan', 'ASC']],
       });
-      const opdName = dpa.opd_penanggung_jawab || 'DINAS PANGAN PROVINSI MALUKU UTARA';
+      const opdName = escapeHtml(dpa.opd_penanggung_jawab || 'DINAS PANGAN PROVINSI MALUKU UTARA');
       const tanggalCetak = new Date(perubahan.tanggal).toLocaleDateString('id-ID', {
         day: '2-digit',
         month: 'long',
@@ -724,7 +758,11 @@ module.exports = {
       res.send(pdfBuffer);
     } catch (e) {
       if (browser) await browser.close();
-      res.status(500).json({ success: false, message: e.message });
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan internal. Silakan coba lagi atau hubungi administrator.',
+        code: 'DPA_INTERNAL_ERROR',
+      });
     }
   },
 
@@ -740,7 +778,11 @@ module.exports = {
       });
       res.json({ success: true, data });
     } catch (e) {
-      res.status(500).json({ success: false, message: e.message });
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan internal. Silakan coba lagi atau hubungi administrator.',
+        code: 'DPA_INTERNAL_ERROR',
+      });
     }
   },
 
@@ -893,7 +935,11 @@ module.exports = {
         message: 'Perubahan anggaran disetujui, pagu DPA telah diperbarui',
       });
     } catch (e) {
-      res.status(500).json({ success: false, message: e.message });
+      res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan internal. Silakan coba lagi atau hubungi administrator.',
+        code: 'DPA_INTERNAL_ERROR',
+      });
     }
   },
 
