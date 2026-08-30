@@ -77,6 +77,19 @@ async function assertDpaPergeseranOpdBoundary(req, dpaRow) {
   return { ok: true };
 }
 
+async function loadDpaWithinBoundary(req, dpaId) {
+  const dpa = await Dpa.findByPk(dpaId);
+  if (!dpa) {
+    return {
+      ok: false,
+      status: 404,
+      body: { success: false, message: 'DPA tidak ditemukan' },
+    };
+  }
+  const boundary = await assertDpaPergeseranOpdBoundary(req, dpa);
+  return { ...boundary, dpa };
+}
+
 module.exports = {
   // =============================================
   // PERGESERAN ANGGARAN
@@ -85,9 +98,9 @@ module.exports = {
   // GET /api/dpa/:dpa_id/dpa-tujuan — daftar DPA lain dalam OPD yang sama (untuk pergeseran antar sub kegiatan)
   async getDpaTujuan(req, res) {
     try {
-      const dpaSumber = await Dpa.findByPk(req.params.dpa_id);
-      if (!dpaSumber)
-        return res.status(404).json({ success: false, message: 'DPA tidak ditemukan' });
+      const scoped = await loadDpaWithinBoundary(req, Number(req.params.dpa_id));
+      if (!scoped.ok) return res.status(scoped.status).json(scoped.body);
+      const dpaSumber = scoped.dpa;
 
       const list = await Dpa.findAll({
         where: { opd_id: dpaSumber.opd_id, tahun: dpaSumber.tahun, is_active_version: true },
@@ -135,8 +148,9 @@ module.exports = {
   // GET /api/dpa/:dpa_id/rincian-rekening — daftar kode rekening untuk dropdown pergeseran
   async getRincianRekening(req, res) {
     try {
-      const dpa = await Dpa.findByPk(req.params.dpa_id);
-      if (!dpa) return res.status(404).json({ success: false, message: 'DPA tidak ditemukan' });
+      const scoped = await loadDpaWithinBoundary(req, Number(req.params.dpa_id));
+      if (!scoped.ok) return res.status(scoped.status).json(scoped.body);
+      const dpa = scoped.dpa;
 
       const rincian = await RkaRincianBelanja.findAll({
         where: { rka_id: dpa.rka_id },
@@ -169,8 +183,11 @@ module.exports = {
   // GET /api/dpa/:dpa_id/pergeseran — daftar semua pergeseran
   async listPergeseran(req, res) {
     try {
+      const scoped = await loadDpaWithinBoundary(req, Number(req.params.dpa_id));
+      if (!scoped.ok) return res.status(scoped.status).json(scoped.body);
+
       const data = await DpaPergeseran.findAll({
-        where: { dpa_id: Number(req.params.dpa_id) },
+        where: { dpa_id: scoped.dpa.id },
         include: [{ model: DpaPergeseranItem, as: 'items' }],
         order: [['nomor_pergeseran', 'ASC']],
       });
@@ -373,6 +390,10 @@ module.exports = {
         return res.status(404).json({ success: false, message: 'Pergeseran tidak ditemukan' });
 
       const dpa = await Dpa.findByPk(pergeseran.dpa_id);
+      const boundaryExport = await assertDpaPergeseranOpdBoundary(req, dpa);
+      if (!boundaryExport.ok) {
+        return res.status(boundaryExport.status).json(boundaryExport.body);
+      }
       const tapdList = await Tapd.findAll({
         where: { tahun: Number(dpa.tahun) },
         order: [['urutan', 'ASC']],
@@ -567,6 +588,11 @@ module.exports = {
           .json({ success: false, message: 'Perubahan anggaran tidak ditemukan' });
 
       const dpa = await Dpa.findByPk(dpa_id);
+      if (!dpa) return res.status(404).json({ success: false, message: 'DPA tidak ditemukan' });
+      const boundaryExport = await assertDpaPergeseranOpdBoundary(req, dpa);
+      if (!boundaryExport.ok) {
+        return res.status(boundaryExport.status).json(boundaryExport.body);
+      }
       const tapdList = await Tapd.findAll({
         where: { tahun: Number(dpa.tahun) },
         order: [['urutan', 'ASC']],
@@ -701,8 +727,11 @@ module.exports = {
   // GET /api/dpa/:dpa_id/perubahan
   async getPerubahan(req, res) {
     try {
+      const scoped = await loadDpaWithinBoundary(req, Number(req.params.dpa_id));
+      if (!scoped.ok) return res.status(scoped.status).json(scoped.body);
+
       const data = await DpaPerubahan.findOne({
-        where: { dpa_id: Number(req.params.dpa_id) },
+        where: { dpa_id: scoped.dpa.id },
         include: [{ model: DpaPerubahanItem, as: 'items' }],
       });
       res.json({ success: true, data });
@@ -879,6 +908,11 @@ module.exports = {
         return res
           .status(404)
           .json({ success: false, message: 'Tidak ada DPA untuk OPD dan tahun ini' });
+      }
+
+      const boundaryExport = await assertDpaPergeseranOpdBoundary(req, dpaList[0]);
+      if (!boundaryExport.ok) {
+        return res.status(boundaryExport.status).json(boundaryExport.body);
       }
 
       const opdName = dpaList[0].opd_penanggung_jawab || 'DINAS PANGAN PROVINSI MALUKU UTARA';
