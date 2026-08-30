@@ -66,6 +66,14 @@ jobs:
         working-directory: backend
         run: npm run test:allow-roles-regression
 
+      - name: Backend test - OPD boundary regression (unit, DB-independent)
+        working-directory: backend
+        run: npm run test:opd-boundary
+
+      - name: Backend test - IAM authorization regression (unit, DB-independent)
+        working-directory: backend
+        run: npm run test:iam-authorization
+
       - name: Backend test - Sprint 2 backup/restore engine (unit, DB-independent)
         working-directory: backend
         run: npm run db:backup:test
@@ -108,3 +116,7 @@ jobs:
       - name: Frontend build
         working-directory: frontend
         run: npm run build
+
+      - name: Frontend dependency audit report
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high

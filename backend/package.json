@@ -29,6 +29,8 @@
     "test:planning-audit-dashboard": "node scripts/planningAuditDashboard.selfTest.js",
     "test:renja-status-sync": "node scripts/renjaStatusSyncSelfTest.js",
     "test:allow-roles-regression": "node scripts/allowRolesRegressionSelfTest.js",
+    "test:opd-boundary": "node scripts/opdBoundarySelfTest.js",
+    "test:iam-authorization": "node scripts/iamAuthorizationSelfTest.js",
     "db:backup": "node scripts/databaseBackup.js",
     "db:backup:test": "node scripts/backupEngineSelfTest.js",
     "db:restore:verify": "node scripts/databaseRestoreVerify.js",
