@@ -60,9 +60,9 @@
       "reviewer": "Not assigned",
       "status_before": "Open",
       "status_after": "Fixed Pending Retest",
-      "residual_risk": "Active migration chain remains invalid; applied-history, full-chain fresh/upgrade/failure/recovery tests, owner/DBA approval, and independent review remain required.",
-      "commit_refs": "aa79f5ab",
-      "evidence_refs": "audit/findings.json:AUD-003; audit/forward-fix-disposable-guard-v5.md; audit/forward-fix-empty-database-test-v5.md; audit/forward-fix-representative-database-test-v5.md; audit/forward-fix-disposable-test-report-v5.md",
+      "residual_risk": "Active migration chain remains blocked by duplicate prefixes and premature AUD-003 dependency; applied history outside audit disposable is Not Verifiable; fresh/upgrade policy, owner/DBA approval, and full-chain recovery evidence remain required.",
+      "commit_refs": "aa79f5ab; ce638287",
+      "evidence_refs": "audit/findings.json:AUD-003; audit/forward-fix-disposable-guard-v5.md; audit/forward-fix-empty-database-test-v5.md; audit/forward-fix-representative-database-test-v5.md; audit/forward-fix-disposable-test-report-v5.md; audit/migration-applied-history-reconciliation-v5.md; audit/migration-applied-history-reconciliation-v5.json; audit/controlled-migration-chain-gate-v5.md; audit/migration-decision-record-v5.md; audit/optionc-forward-fix-rollback-plan-v5.md; audit/migration-invariant-report-v5.md; audit/optionc-disposable-test-matrix-v5.md; audit/forward-fix-review-v5.md; audit/migration-dependency-graph-v5.json; audit/migration-conflict-register-v5.json",
       "closure_date": ""
     },
     {

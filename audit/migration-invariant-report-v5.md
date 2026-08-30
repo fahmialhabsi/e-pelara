@@ -25,7 +25,9 @@ The following invariants must hold before a forward-fix is considered successful
 
 The disposable harness used `epelara-audit-v5-mysql` / `epelara_audit_v5` with loopback-only port `13317`. It passed target guard, empty-schema fail-closed, representative synthetic schema, duplicate-key fail-closed, idempotent `up`, and index-only `down`. The harness cleaned its synthetic objects afterward.
 
-The current empty disposable database has no `SequelizeMeta` table because no active migration chain was executed. This is not evidence about any other environment. The invariant check command is available as:
+The current empty disposable database has no `SequelizeMeta` table because no active migration chain was executed. This is not evidence about any other environment. A post-test read-only invariant check against the exact disposable target returned `target_tables=[]`, `duplicate_groups=[]`, `forward_fix_indexes=[]`, `sequelize_meta_table_present=false`, `migration_execution=NOT_RUN_BY_THIS_CHECK`, and `production_access=NOT_USED`. This is the expected cleaned state after the synthetic harness and is not evidence about any real upgrade environment.
+
+The invariant check command is available as:
 
 ```powershell
 $env:EPELARA_INVARIANT_MODE='DISPOSABLE_ONLY'
