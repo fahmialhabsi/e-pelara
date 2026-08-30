@@ -1,0 +1,419 @@
+{
+  "generated_on": "2026-08-30",
+  "scope": "Focused dependency graph for duplicate-prefix conflicts and AUD-003; full per-file map is in authoritative-migration-inventory-v5.json/csv.",
+  "node_count_active": 264,
+  "edge_count_static": 118,
+  "out_of_order_edge_count": 14,
+  "focused_nodes": [
+    "20250420102223-create-users.js",
+    "202504201300-create-users.js",
+    "20260218120000-rpjmd-indikator-kode-dedupe-unique.js",
+    "20260412120000-add-indikator-renstra-tahun6-lokasi-pagu.js",
+    "20260412120000-planning-line-item-change-log.js",
+    "20260415110000-production-change-tracking-v2.js",
+    "20260415110001-create-indikatorstrategis.js",
+    "20260415110002-create-indikatorarahkebijakans.js",
+    "20260415110003-create-indikatorsubkegiatans.js",
+    "20260415120001-alter-indikator-strategi-arah-subkegiatan-jenis-to-text.js",
+    "20260415120002-alter-all-indikator-jenis-to-text.js",
+    "20260415153000-renja-governance-workflow-v3.js",
+    "20260420120000-planning-domain-v2-documents.js",
+    "20260424120000-create-renja-mapping-apply-batch.js",
+    "20260424120000-multi-tenant-saas-core.js",
+    "20260425090000-harden-data-fix-batch-audit-lock.js",
+    "20260425130000-saas-tenant-hardening-v2.js",
+    "20260425140000-ensure-tenants-is-active-column.js",
+    "20260428120000-add-tahun-2025-urusan-kinerja.js",
+    "20260428120000-planning-audit-rka-dpa.js",
+    "20260430140000-planning-audit-snapshot-global-versions.js",
+    "20260430150000-add-plans-features-json.js",
+    "20260430160000-create-rpjmd-malut-pdf-import-tables.js",
+    "20260430161000-ensure-enterprise-plan.js",
+    "20260531120005-add-opd-renja-dokumen.js",
+    "20260606215243-add-text-bab3-to-renja-dokumen.js",
+    "20260710100000-add-actor-tracking-to-renja-dokumen.js",
+    "20260720120000-create-pejabat-penandatangan.js",
+    "20260720120000-widen-rka-kode-unik-sub-kegiatan.js",
+    "20260728140001-add-regulasi-acuan-to-renja-dokumen.js",
+    "20260730150003-add-kolom-tabel41-to-renja-item.js",
+    "20260730150004-add-text-bab6-to-renja-dokumen.js",
+    "20260730150005-add-recall-fields-to-renja-dokumen.js",
+    "20260801190000-add-tanda-tangan-cap-to-pejabat-penandatangan.js",
+    "20260807120002-reconcile-renja-dokumen-workflow-status-authoritative.js",
+    "20260826130000-add-renja-perubahan-item-fields.js"
+  ],
+  "focused_edges": [
+    {
+      "predecessor": "202504201300-create-users.js",
+      "dependent": "20250420102223-create-users.js",
+      "table": "users",
+      "predecessor_prefix": "202504201300",
+      "dependent_prefix": "20250420102223",
+      "order_assessment": "out_of_order_or_ambiguous",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20250420102223-create-users.js",
+      "dependent": "202504201300-create-users.js",
+      "table": "users",
+      "predecessor_prefix": "20250420102223",
+      "dependent_prefix": "202504201300",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260412120000-planning-line-item-change-log.js",
+      "dependent": "20260415110000-production-change-tracking-v2.js",
+      "table": "planning_line_item_change_log",
+      "predecessor_prefix": "20260412120000",
+      "dependent_prefix": "20260415110000",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260420120000-planning-domain-v2-documents.js",
+      "dependent": "20260415110000-production-change-tracking-v2.js",
+      "table": "renja_item",
+      "predecessor_prefix": "20260420120000",
+      "dependent_prefix": "20260415110000",
+      "order_assessment": "out_of_order_or_ambiguous",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260420120000-planning-domain-v2-documents.js",
+      "dependent": "20260415110000-production-change-tracking-v2.js",
+      "table": "rkpd_item",
+      "predecessor_prefix": "20260420120000",
+      "dependent_prefix": "20260415110000",
+      "order_assessment": "out_of_order_or_ambiguous",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260415110002-create-indikatorarahkebijakans.js",
+      "dependent": "20260415120001-alter-indikator-strategi-arah-subkegiatan-jenis-to-text.js",
+      "table": "indikatorarahkebijakans",
+      "predecessor_prefix": "20260415110002",
+      "dependent_prefix": "20260415120001",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260415110001-create-indikatorstrategis.js",
+      "dependent": "20260415120001-alter-indikator-strategi-arah-subkegiatan-jenis-to-text.js",
+      "table": "indikatorstrategis",
+      "predecessor_prefix": "20260415110001",
+      "dependent_prefix": "20260415120001",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260415110003-create-indikatorsubkegiatans.js",
+      "dependent": "20260415120001-alter-indikator-strategi-arah-subkegiatan-jenis-to-text.js",
+      "table": "indikatorsubkegiatans",
+      "predecessor_prefix": "20260415110003",
+      "dependent_prefix": "20260415120001",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260415110002-create-indikatorarahkebijakans.js",
+      "dependent": "20260415120002-alter-all-indikator-jenis-to-text.js",
+      "table": "indikatorarahkebijakans",
+      "predecessor_prefix": "20260415110002",
+      "dependent_prefix": "20260415120002",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260415110003-create-indikatorsubkegiatans.js",
+      "dependent": "20260415120002-alter-all-indikator-jenis-to-text.js",
+      "table": "indikatorsubkegiatans",
+      "predecessor_prefix": "20260415110003",
+      "dependent_prefix": "20260415120002",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260420120000-planning-domain-v2-documents.js",
+      "dependent": "20260415153000-renja-governance-workflow-v3.js",
+      "table": "renja_dokumen",
+      "predecessor_prefix": "20260420120000",
+      "dependent_prefix": "20260415153000",
+      "order_assessment": "out_of_order_or_ambiguous",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260420120000-planning-domain-v2-documents.js",
+      "dependent": "20260415153000-renja-governance-workflow-v3.js",
+      "table": "renja_item",
+      "predecessor_prefix": "20260420120000",
+      "dependent_prefix": "20260415153000",
+      "order_assessment": "out_of_order_or_ambiguous",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260420120000-planning-domain-v2-documents.js",
+      "dependent": "20260415153000-renja-governance-workflow-v3.js",
+      "table": "renja_rkpd_item_map",
+      "predecessor_prefix": "20260420120000",
+      "dependent_prefix": "20260415153000",
+      "order_assessment": "out_of_order_or_ambiguous",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20250420102223-create-users.js",
+      "dependent": "20260424120000-multi-tenant-saas-core.js",
+      "table": "users",
+      "predecessor_prefix": "20250420102223",
+      "dependent_prefix": "20260424120000",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "202504201300-create-users.js",
+      "dependent": "20260424120000-multi-tenant-saas-core.js",
+      "table": "users",
+      "predecessor_prefix": "202504201300",
+      "dependent_prefix": "20260424120000",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260424120000-create-renja-mapping-apply-batch.js",
+      "dependent": "20260425090000-harden-data-fix-batch-audit-lock.js",
+      "table": "renja_mapping_apply_batch",
+      "predecessor_prefix": "20260424120000",
+      "dependent_prefix": "20260425090000",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260424120000-multi-tenant-saas-core.js",
+      "dependent": "20260425130000-saas-tenant-hardening-v2.js",
+      "table": "tenants",
+      "predecessor_prefix": "20260424120000",
+      "dependent_prefix": "20260425130000",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260424120000-multi-tenant-saas-core.js",
+      "dependent": "20260425140000-ensure-tenants-is-active-column.js",
+      "table": "tenants",
+      "predecessor_prefix": "20260424120000",
+      "dependent_prefix": "20260425140000",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260430160000-create-rpjmd-malut-pdf-import-tables.js",
+      "dependent": "20260428120000-add-tahun-2025-urusan-kinerja.js",
+      "table": "urusan_kinerja_2021_2024",
+      "predecessor_prefix": "20260430160000",
+      "dependent_prefix": "20260428120000",
+      "order_assessment": "out_of_order_or_ambiguous",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260428120000-planning-audit-rka-dpa.js",
+      "dependent": "20260430140000-planning-audit-snapshot-global-versions.js",
+      "table": "planning_audit_events",
+      "predecessor_prefix": "20260428120000",
+      "dependent_prefix": "20260430140000",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260425130000-saas-tenant-hardening-v2.js",
+      "dependent": "20260430150000-add-plans-features-json.js",
+      "table": "plans",
+      "predecessor_prefix": "20260425130000",
+      "dependent_prefix": "20260430150000",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260425130000-saas-tenant-hardening-v2.js",
+      "dependent": "20260430161000-ensure-enterprise-plan.js",
+      "table": "plans",
+      "predecessor_prefix": "20260425130000",
+      "dependent_prefix": "20260430161000",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260420120000-planning-domain-v2-documents.js",
+      "dependent": "20260531120005-add-opd-renja-dokumen.js",
+      "table": "renja_dokumen",
+      "predecessor_prefix": "20260420120000",
+      "dependent_prefix": "20260531120005",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260420120000-planning-domain-v2-documents.js",
+      "dependent": "20260606215243-add-text-bab3-to-renja-dokumen.js",
+      "table": "renja_dokumen",
+      "predecessor_prefix": "20260420120000",
+      "dependent_prefix": "20260606215243",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260420120000-planning-domain-v2-documents.js",
+      "dependent": "20260710100000-add-actor-tracking-to-renja-dokumen.js",
+      "table": "renja_dokumen",
+      "predecessor_prefix": "20260420120000",
+      "dependent_prefix": "20260710100000",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260420120000-planning-domain-v2-documents.js",
+      "dependent": "20260728140001-add-regulasi-acuan-to-renja-dokumen.js",
+      "table": "renja_dokumen",
+      "predecessor_prefix": "20260420120000",
+      "dependent_prefix": "20260728140001",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260420120000-planning-domain-v2-documents.js",
+      "dependent": "20260730150003-add-kolom-tabel41-to-renja-item.js",
+      "table": "renja_item",
+      "predecessor_prefix": "20260420120000",
+      "dependent_prefix": "20260730150003",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260420120000-planning-domain-v2-documents.js",
+      "dependent": "20260730150004-add-text-bab6-to-renja-dokumen.js",
+      "table": "renja_dokumen",
+      "predecessor_prefix": "20260420120000",
+      "dependent_prefix": "20260730150004",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260420120000-planning-domain-v2-documents.js",
+      "dependent": "20260730150005-add-recall-fields-to-renja-dokumen.js",
+      "table": "renja_dokumen",
+      "predecessor_prefix": "20260420120000",
+      "dependent_prefix": "20260730150005",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260720120000-create-pejabat-penandatangan.js",
+      "dependent": "20260801190000-add-tanda-tangan-cap-to-pejabat-penandatangan.js",
+      "table": "pejabat_penandatangan",
+      "predecessor_prefix": "20260720120000",
+      "dependent_prefix": "20260801190000",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260420120000-planning-domain-v2-documents.js",
+      "dependent": "20260807120002-reconcile-renja-dokumen-workflow-status-authoritative.js",
+      "table": "renja_dokumen",
+      "predecessor_prefix": "20260420120000",
+      "dependent_prefix": "20260807120002",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260420120000-planning-domain-v2-documents.js",
+      "dependent": "20260826130000-add-renja-perubahan-item-fields.js",
+      "table": "renja_item",
+      "predecessor_prefix": "20260420120000",
+      "dependent_prefix": "20260826130000",
+      "order_assessment": "ordered",
+      "evidence": "static table create/reference extraction"
+    },
+    {
+      "predecessor": "20260415110001-create-indikatorstrategis.js",
+      "dependent": "20260218120000-rpjmd-indikator-kode-dedupe-unique.js",
+      "table": "indikatorstrategis",
+      "predecessor_prefix": "20260415110001",
+      "dependent_prefix": "20260218120000",
+      "order_assessment": "out_of_order_or_ambiguous",
+      "evidence": "AUD-003 baseline plus migration source review"
+    },
+    {
+      "predecessor": "20260415110002-create-indikatorarahkebijakans.js",
+      "dependent": "20260218120000-rpjmd-indikator-kode-dedupe-unique.js",
+      "table": "indikatorarahkebijakans",
+      "predecessor_prefix": "20260415110002",
+      "dependent_prefix": "20260218120000",
+      "order_assessment": "out_of_order_or_ambiguous",
+      "evidence": "AUD-003 baseline plus migration source review"
+    },
+    {
+      "predecessor": "20260415110003-create-indikatorsubkegiatans.js",
+      "dependent": "20260218120000-rpjmd-indikator-kode-dedupe-unique.js",
+      "table": "indikatorsubkegiatans",
+      "predecessor_prefix": "20260415110003",
+      "dependent_prefix": "20260218120000",
+      "order_assessment": "out_of_order_or_ambiguous",
+      "evidence": "AUD-003 baseline plus migration source review"
+    }
+  ],
+  "conflicts": [
+    {
+      "conflict_id": "MIG-DUP-001",
+      "conflict_type": "duplicate_active_prefix",
+      "scope": "20260412120000",
+      "items": "20260412120000-add-indikator-renstra-tahun6-lokasi-pagu.js | 20260412120000-planning-line-item-change-log.js",
+      "evidence": "authoritative-migration-inventory-v5.json duplicate_prefixes",
+      "risk": "Execution order is ambiguous and may differ from intended schema dependency order.",
+      "ordering_options": "A: preserve applied history and document lexical order; B: append forward-fix/compatibility migration; C: rename/reorder only if proven never applied (not recommended by default).",
+      "recommendation": "Do not rename/reorder. Reconcile applied history and use a forward-fix or compatibility migration with explicit guards.",
+      "status": "Open / Owner-DBA decision required"
+    },
+    {
+      "conflict_id": "MIG-DUP-002",
+      "conflict_type": "duplicate_active_prefix",
+      "scope": "20260424120000",
+      "items": "20260424120000-create-renja-mapping-apply-batch.js | 20260424120000-multi-tenant-saas-core.js",
+      "evidence": "authoritative-migration-inventory-v5.json duplicate_prefixes",
+      "risk": "Execution order is ambiguous and may differ from intended schema dependency order.",
+      "ordering_options": "A: preserve applied history and document lexical order; B: append forward-fix/compatibility migration; C: rename/reorder only if proven never applied (not recommended by default).",
+      "recommendation": "Do not rename/reorder. Reconcile applied history and use a forward-fix or compatibility migration with explicit guards.",
+      "status": "Open / Owner-DBA decision required"
+    },
+    {
+      "conflict_id": "MIG-DUP-003",
+      "conflict_type": "duplicate_active_prefix",
+      "scope": "20260428120000",
+      "items": "20260428120000-add-tahun-2025-urusan-kinerja.js | 20260428120000-planning-audit-rka-dpa.js",
+      "evidence": "authoritative-migration-inventory-v5.json duplicate_prefixes",
+      "risk": "Execution order is ambiguous and may differ from intended schema dependency order.",
+      "ordering_options": "A: preserve applied history and document lexical order; B: append forward-fix/compatibility migration; C: rename/reorder only if proven never applied (not recommended by default).",
+      "recommendation": "Do not rename/reorder. Reconcile applied history and use a forward-fix or compatibility migration with explicit guards.",
+      "status": "Open / Owner-DBA decision required"
+    },
+    {
+      "conflict_id": "MIG-DUP-004",
+      "conflict_type": "duplicate_active_prefix",
+      "scope": "20260720120000",
+      "items": "20260720120000-create-pejabat-penandatangan.js | 20260720120000-widen-rka-kode-unik-sub-kegiatan.js",
+      "evidence": "authoritative-migration-inventory-v5.json duplicate_prefixes",
+      "risk": "Execution order is ambiguous and may differ from intended schema dependency order.",
+      "ordering_options": "A: preserve applied history and document lexical order; B: append forward-fix/compatibility migration; C: rename/reorder only if proven never applied (not recommended by default).",
+      "recommendation": "Do not rename/reorder. Reconcile applied history and use a forward-fix or compatibility migration with explicit guards.",
+      "status": "Open / Owner-DBA decision required"
+    },
+    {
+      "conflict_id": "AUD-003",
+      "conflict_type": "dependency_before_table_creation",
+      "scope": "20260218120000 -> 20260415110001/2/3",
+      "items": "20260218120000-rpjmd-indikator-kode-dedupe-unique.js | 20260415110001-create-indikatorstrategis.js | 20260415110002-create-indikatorarahkebijakans.js | 20260415110003-create-indikatorsubkegiatans.js",
+      "evidence": "audit/findings.json:AUD-003; source lines in the listed migrations; disposable forward-fix test report",
+      "risk": "Fresh install can fail when dedupe/index operation runs before target table creation; unsafe automatic deduplication can also delete the wrong authoritative row.",
+      "ordering_options": "A: repair old filename order (rejected unless never applied); B: add forward-fix after authoritative applied chain; C: create compatibility guard migration that fails closed until tables/duplicate policy are ready.",
+      "recommendation": "Use guarded forward-fix after applied-history reconciliation. Keep old migration immutable and require duplicate policy before any data deletion.",
+      "status": "Fixed Pending Retest / Open Release Blocker"
+    }
+  ]
+}

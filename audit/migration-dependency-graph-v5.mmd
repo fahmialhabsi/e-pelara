@@ -1,0 +1,74 @@
+flowchart LR
+  classDef conflict fill:#ffe3e3,stroke:#b30000,stroke-width:2px;
+  classDef target fill:#fff4cc,stroke:#9a6700,stroke-width:2px;
+  20250420102223_create_users_js["20250420102223-create-users"]:::target
+  202504201300_create_users_js["202504201300-create-users"]:::target
+  20260218120000_rpjmd_indikator_kode_dedupe_unique_js["20260218120000-rpjmd-indikator-kode-dedupe-unique"]:::conflict
+  20260412120000_add_indikator_renstra_tahun6_lokasi_pagu_js["20260412120000-add-indikator-renstra-tahun6-lokasi-pagu"]:::conflict
+  20260412120000_planning_line_item_change_log_js["20260412120000-planning-line-item-change-log"]:::conflict
+  20260415110000_production_change_tracking_v2_js["20260415110000-production-change-tracking-v2"]:::target
+  20260415110001_create_indikatorstrategis_js["20260415110001-create-indikatorstrategis"]:::conflict
+  20260415110002_create_indikatorarahkebijakans_js["20260415110002-create-indikatorarahkebijakans"]:::conflict
+  20260415110003_create_indikatorsubkegiatans_js["20260415110003-create-indikatorsubkegiatans"]:::conflict
+  20260415120001_alter_indikator_strategi_arah_subkegiatan_jenis_to_text_js["20260415120001-alter-indikator-strategi-arah-subkegiatan-jenis-to-text"]:::target
+  20260415120002_alter_all_indikator_jenis_to_text_js["20260415120002-alter-all-indikator-jenis-to-text"]:::target
+  20260415153000_renja_governance_workflow_v3_js["20260415153000-renja-governance-workflow-v3"]:::target
+  20260420120000_planning_domain_v2_documents_js["20260420120000-planning-domain-v2-documents"]:::target
+  20260424120000_create_renja_mapping_apply_batch_js["20260424120000-create-renja-mapping-apply-batch"]:::conflict
+  20260424120000_multi_tenant_saas_core_js["20260424120000-multi-tenant-saas-core"]:::conflict
+  20260425090000_harden_data_fix_batch_audit_lock_js["20260425090000-harden-data-fix-batch-audit-lock"]:::target
+  20260425130000_saas_tenant_hardening_v2_js["20260425130000-saas-tenant-hardening-v2"]:::target
+  20260425140000_ensure_tenants_is_active_column_js["20260425140000-ensure-tenants-is-active-column"]:::target
+  20260428120000_add_tahun_2025_urusan_kinerja_js["20260428120000-add-tahun-2025-urusan-kinerja"]:::conflict
+  20260428120000_planning_audit_rka_dpa_js["20260428120000-planning-audit-rka-dpa"]:::conflict
+  20260430140000_planning_audit_snapshot_global_versions_js["20260430140000-planning-audit-snapshot-global-versions"]:::target
+  20260430150000_add_plans_features_json_js["20260430150000-add-plans-features-json"]:::target
+  20260430160000_create_rpjmd_malut_pdf_import_tables_js["20260430160000-create-rpjmd-malut-pdf-import-tables"]:::target
+  20260430161000_ensure_enterprise_plan_js["20260430161000-ensure-enterprise-plan"]:::target
+  20260531120005_add_opd_renja_dokumen_js["20260531120005-add-opd-renja-dokumen"]:::target
+  20260606215243_add_text_bab3_to_renja_dokumen_js["20260606215243-add-text-bab3-to-renja-dokumen"]:::target
+  20260710100000_add_actor_tracking_to_renja_dokumen_js["20260710100000-add-actor-tracking-to-renja-dokumen"]:::target
+  20260720120000_create_pejabat_penandatangan_js["20260720120000-create-pejabat-penandatangan"]:::conflict
+  20260720120000_widen_rka_kode_unik_sub_kegiatan_js["20260720120000-widen-rka-kode-unik-sub-kegiatan"]:::conflict
+  20260728140001_add_regulasi_acuan_to_renja_dokumen_js["20260728140001-add-regulasi-acuan-to-renja-dokumen"]:::target
+  20260730150003_add_kolom_tabel41_to_renja_item_js["20260730150003-add-kolom-tabel41-to-renja-item"]:::target
+  20260730150004_add_text_bab6_to_renja_dokumen_js["20260730150004-add-text-bab6-to-renja-dokumen"]:::target
+  20260730150005_add_recall_fields_to_renja_dokumen_js["20260730150005-add-recall-fields-to-renja-dokumen"]:::target
+  20260801190000_add_tanda_tangan_cap_to_pejabat_penandatangan_js["20260801190000-add-tanda-tangan-cap-to-pejabat-penandatangan"]:::target
+  20260807120002_reconcile_renja_dokumen_workflow_status_authoritative_js["20260807120002-reconcile-renja-dokumen-workflow-status-authoritative"]:::target
+  20260826130000_add_renja_perubahan_item_fields_js["20260826130000-add-renja-perubahan-item-fields"]:::target
+  202504201300_create_users_js -->|"users / OUT-OF-ORDER"| 20250420102223_create_users_js
+  20250420102223_create_users_js -->|"users"| 202504201300_create_users_js
+  20260412120000_planning_line_item_change_log_js -->|"planning_line_item_change_log"| 20260415110000_production_change_tracking_v2_js
+  20260420120000_planning_domain_v2_documents_js -->|"renja_item / OUT-OF-ORDER"| 20260415110000_production_change_tracking_v2_js
+  20260420120000_planning_domain_v2_documents_js -->|"rkpd_item / OUT-OF-ORDER"| 20260415110000_production_change_tracking_v2_js
+  20260415110002_create_indikatorarahkebijakans_js -->|"indikatorarahkebijakans"| 20260415120001_alter_indikator_strategi_arah_subkegiatan_jenis_to_text_js
+  20260415110001_create_indikatorstrategis_js -->|"indikatorstrategis"| 20260415120001_alter_indikator_strategi_arah_subkegiatan_jenis_to_text_js
+  20260415110003_create_indikatorsubkegiatans_js -->|"indikatorsubkegiatans"| 20260415120001_alter_indikator_strategi_arah_subkegiatan_jenis_to_text_js
+  20260415110002_create_indikatorarahkebijakans_js -->|"indikatorarahkebijakans"| 20260415120002_alter_all_indikator_jenis_to_text_js
+  20260415110003_create_indikatorsubkegiatans_js -->|"indikatorsubkegiatans"| 20260415120002_alter_all_indikator_jenis_to_text_js
+  20260420120000_planning_domain_v2_documents_js -->|"renja_dokumen / OUT-OF-ORDER"| 20260415153000_renja_governance_workflow_v3_js
+  20260420120000_planning_domain_v2_documents_js -->|"renja_item / OUT-OF-ORDER"| 20260415153000_renja_governance_workflow_v3_js
+  20260420120000_planning_domain_v2_documents_js -->|"renja_rkpd_item_map / OUT-OF-ORDER"| 20260415153000_renja_governance_workflow_v3_js
+  20250420102223_create_users_js -->|"users"| 20260424120000_multi_tenant_saas_core_js
+  202504201300_create_users_js -->|"users"| 20260424120000_multi_tenant_saas_core_js
+  20260424120000_create_renja_mapping_apply_batch_js -->|"renja_mapping_apply_batch"| 20260425090000_harden_data_fix_batch_audit_lock_js
+  20260424120000_multi_tenant_saas_core_js -->|"tenants"| 20260425130000_saas_tenant_hardening_v2_js
+  20260424120000_multi_tenant_saas_core_js -->|"tenants"| 20260425140000_ensure_tenants_is_active_column_js
+  20260430160000_create_rpjmd_malut_pdf_import_tables_js -->|"urusan_kinerja_2021_2024 / OUT-OF-ORDER"| 20260428120000_add_tahun_2025_urusan_kinerja_js
+  20260428120000_planning_audit_rka_dpa_js -->|"planning_audit_events"| 20260430140000_planning_audit_snapshot_global_versions_js
+  20260425130000_saas_tenant_hardening_v2_js -->|"plans"| 20260430150000_add_plans_features_json_js
+  20260425130000_saas_tenant_hardening_v2_js -->|"plans"| 20260430161000_ensure_enterprise_plan_js
+  20260420120000_planning_domain_v2_documents_js -->|"renja_dokumen"| 20260531120005_add_opd_renja_dokumen_js
+  20260420120000_planning_domain_v2_documents_js -->|"renja_dokumen"| 20260606215243_add_text_bab3_to_renja_dokumen_js
+  20260420120000_planning_domain_v2_documents_js -->|"renja_dokumen"| 20260710100000_add_actor_tracking_to_renja_dokumen_js
+  20260420120000_planning_domain_v2_documents_js -->|"renja_dokumen"| 20260728140001_add_regulasi_acuan_to_renja_dokumen_js
+  20260420120000_planning_domain_v2_documents_js -->|"renja_item"| 20260730150003_add_kolom_tabel41_to_renja_item_js
+  20260420120000_planning_domain_v2_documents_js -->|"renja_dokumen"| 20260730150004_add_text_bab6_to_renja_dokumen_js
+  20260420120000_planning_domain_v2_documents_js -->|"renja_dokumen"| 20260730150005_add_recall_fields_to_renja_dokumen_js
+  20260720120000_create_pejabat_penandatangan_js -->|"pejabat_penandatangan"| 20260801190000_add_tanda_tangan_cap_to_pejabat_penandatangan_js
+  20260420120000_planning_domain_v2_documents_js -->|"renja_dokumen"| 20260807120002_reconcile_renja_dokumen_workflow_status_authoritative_js
+  20260420120000_planning_domain_v2_documents_js -->|"renja_item"| 20260826130000_add_renja_perubahan_item_fields_js
+  20260415110001_create_indikatorstrategis_js -->|"indikatorstrategis / OUT-OF-ORDER"| 20260218120000_rpjmd_indikator_kode_dedupe_unique_js
+  20260415110002_create_indikatorarahkebijakans_js -->|"indikatorarahkebijakans / OUT-OF-ORDER"| 20260218120000_rpjmd_indikator_kode_dedupe_unique_js
+  20260415110003_create_indikatorsubkegiatans_js -->|"indikatorsubkegiatans / OUT-OF-ORDER"| 20260218120000_rpjmd_indikator_kode_dedupe_unique_js
