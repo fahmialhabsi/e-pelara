@@ -31,6 +31,7 @@
     "test:allow-roles-regression": "node scripts/allowRolesRegressionSelfTest.js",
     "test:opd-boundary": "node scripts/opdBoundarySelfTest.js",
     "test:iam-authorization": "node scripts/iamAuthorizationSelfTest.js",
+    "test:synthetic-fixtures": "node scripts/syntheticFixtureSafetySelfTest.js",
     "db:backup": "node scripts/databaseBackup.js",
     "db:backup:test": "node scripts/backupEngineSelfTest.js",
     "db:restore:verify": "node scripts/databaseRestoreVerify.js",
