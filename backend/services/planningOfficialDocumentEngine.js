@@ -693,7 +693,7 @@ async function buildRkpdOfficialDocx(db, dokumenId, options = {}) {
 }
 
 function pdfBufferFromBuilder(buildFn) {
-  return new Promise(async (resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const chunks = [];
     const doc = new PDFDocument({ margin: 40, size: 'A4' });
     doc.on('data', (c) => chunks.push(c));
@@ -701,10 +701,10 @@ function pdfBufferFromBuilder(buildFn) {
     doc.on('error', reject);
     try {
       buildFn(doc);
+      doc.end();
     } catch (e) {
       reject(e);
     }
-    doc.end();
   });
 }
 
@@ -793,7 +793,7 @@ async function buildRenjaOpdOfficialPdf(db, dokumenId, options = {}) {
   const changeLogs =
     options.includeChangeLog === false ? [] : await loadFieldChangeLogs(db, 'renja_item', itemIds);
 
-  return new Promise(async (resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const chunks = [];
     const pdf = new PDFDocument({
       margin: 40,
@@ -803,41 +803,43 @@ async function buildRenjaOpdOfficialPdf(db, dokumenId, options = {}) {
     pdf.on('data', (c) => chunks.push(c));
     pdf.on('end', () => resolve(Buffer.concat(chunks)));
     pdf.on('error', reject);
-    try {
-      renderDocumentHeader(pdf, meta, dok, docVersion);
-      console.log('===== BAB III PDF =====');
-      console.log(meta.bab3 || `${meta.bab3Title}\n\n${meta.bab3Tujuan}`);
-      console.log('=======================');
 
-      renderSection(pdf, 'BAB I — PENDAHULUAN', meta.bab1);
-      pdf.fontSize(12).fillColor('#000000').text('BAB II — EVALUASI PELAKSANAAN RENJA TAHUN LALU', {
-        underline: true,
-      });
-      pdf.moveDown(0.4);
-      renderBab2Section(pdf, meta.bab2, Number(dok.tahun));
-      pdf.moveDown(0.8);
-      renderSection(
-        pdf,
-        'BAB III — TUJUAN DAN SASARAN PERANGKAT DAERAH',
-        meta.bab3 ? meta.bab3 : `${meta.bab3Title}\n\n${meta.bab3Tujuan}`,
-      );
-      await renderBab4(pdf, {
-        meta,
-        items,
-        db,
-      });
+    Promise.resolve()
+      .then(() => {
+        renderDocumentHeader(pdf, meta, dok, docVersion);
+        console.log('===== BAB III PDF =====');
+        console.log(meta.bab3 || `${meta.bab3Title}\n\n${meta.bab3Tujuan}`);
+        console.log('=======================');
 
-      nextPortrait(pdf);
-      renderSection(pdf, 'BAB V — PENUTUP', meta.bab5);
-      pdfAppendChangeLog(pdf, changeLogs, 'Renja');
-      pdf
-        .fontSize(8)
-        .fillColor('#666666')
-        .text('Dokumen resmi (PDF) — ePelara. Bukan preview tabel internal.', { align: 'left' });
-      pdf.end();
-    } catch (e) {
-      reject(e);
-    }
+        renderSection(pdf, 'BAB I — PENDAHULUAN', meta.bab1);
+        pdf.fontSize(12).fillColor('#000000').text('BAB II — EVALUASI PELAKSANAAN RENJA TAHUN LALU', {
+          underline: true,
+        });
+        pdf.moveDown(0.4);
+        renderBab2Section(pdf, meta.bab2, Number(dok.tahun));
+        pdf.moveDown(0.8);
+        renderSection(
+          pdf,
+          'BAB III — TUJUAN DAN SASARAN PERANGKAT DAERAH',
+          meta.bab3 ? meta.bab3 : `${meta.bab3Title}\n\n${meta.bab3Tujuan}`,
+        );
+        return renderBab4(pdf, {
+          meta,
+          items,
+          db,
+        });
+      })
+      .then(() => {
+        nextPortrait(pdf);
+        renderSection(pdf, 'BAB V — PENUTUP', meta.bab5);
+        pdfAppendChangeLog(pdf, changeLogs, 'Renja');
+        pdf
+          .fontSize(8)
+          .fillColor('#666666')
+          .text('Dokumen resmi (PDF) — ePelara. Bukan preview tabel internal.', { align: 'left' });
+        pdf.end();
+      })
+      .catch(reject);
   });
 }
 

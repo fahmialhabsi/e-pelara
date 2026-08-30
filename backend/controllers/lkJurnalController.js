@@ -161,28 +161,20 @@ exports.create = async (req, res) => {
       );
     }
 
+    if (post_now) {
+      const fullInTransaction = await JurnalUmum.findByPk(header.id, {
+        include: [{ model: JurnalDetail, as: "details" }],
+        transaction: t,
+      });
+      await applyJournalPostingWithTransaction(db, fullInTransaction, +1, t);
+    }
+
     await t.commit();
     committed = true;
 
-    let full = await JurnalUmum.findByPk(header.id, {
+    const full = await JurnalUmum.findByPk(header.id, {
       include: [{ model: JurnalDetail, as: "details" }],
     });
-
-    if (post_now) {
-      try {
-        await applyJournalPosting(sequelize, db, full, +1);
-      } catch (err) {
-        await header.update({
-          status: "DRAFT",
-          disetujui_oleh: null,
-          tanggal_disetujui: null,
-        });
-        throw err;
-      }
-      full = await JurnalUmum.findByPk(header.id, {
-        include: [{ model: JurnalDetail, as: "details" }],
-      });
-    }
 
     res.status(201).json({ data: full });
   } catch (e) {

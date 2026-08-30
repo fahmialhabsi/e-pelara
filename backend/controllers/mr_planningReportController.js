@@ -641,9 +641,7 @@ const quickRepair = async (req, res) => {
           versi: 1,
         });
       }
-      try {
-        await recalculateRiskMatrixForPayload({ riskId: risk_id, userId: req.user?.id || null });
-      } catch (e) {}
+      await recalculateRiskMatrixForPayload({ riskId: risk_id, userId: req.user?.id || null });
       results.push({ risk_id, status: 'repaired' });
     }
     return res.json({ success: true, context_id: contextId, repaired: results.filter((r) => r.status === 'repaired').length, results });

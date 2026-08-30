@@ -1098,7 +1098,7 @@ function resolveRelationsForRow(table, payload, maps, opts = {}) {
           errs.push("Tidak ada data sasaran di database untuk periode ini (isi RPJMD / sasaran dulu).");
         } else if (Array.isArray(ord) && i >= ord.length) {
           errs.push(
-            `${rowRef || `Baris ke-${i + 1}`} melebihi jumlah sasaran di periode (${ord.length} sasaran). ` +
+            `Baris ke-${i + 1} melebihi jumlah sasaran di periode (${ord.length} sasaran). ` +
               `Tambah data sasaran atau kurangi baris / isi sasaran_id atau tujuan_id.`,
           );
         }

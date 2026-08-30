@@ -18,10 +18,9 @@ const genCtrl      = require("./lakipGeneratorController");
 async function getHtml(req) {
   return new Promise((resolve, reject) => {
     // Buat fake res untuk menangkap HTML output dari generator
-    let body = "";
     const fakeRes = {
-      setHeader: () => {},
-      setHeader: () => {},
+            setHeader: () => {},
+
       send: (html) => resolve(html),
       status: (code) => ({ send: (msg) => reject(new Error(`${code}: ${msg}`)) }),
     };

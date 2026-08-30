@@ -1,4 +1,4 @@
-const { Sasaran, Tujuan, Misi, Indikator, Strategi } = require("../models");
+const { Sasaran, Tujuan, Misi, Indikator, Strategi, Rpjmd } = require("../models");
 const { getPeriodeFromTahun } = require("../utils/periodeHelper");
 const { ensureClonedOnce } = require("../utils/autoCloneHelper");
 const { Op } = require("sequelize");
