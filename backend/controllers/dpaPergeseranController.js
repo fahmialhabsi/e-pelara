@@ -7,6 +7,7 @@ const {
   RkaRincianBelanja,
   Tapd,
   OpdPenanggungJawab,
+  sequelize,
 } = require('../models');
 const puppeteer = require('puppeteer');
 
@@ -199,6 +200,7 @@ module.exports = {
 
   // POST /api/dpa/:dpa_id/pergeseran — buat pergeseran baru
   async createPergeseran(req, res) {
+    let transaction;
     try {
       const dpa_id = Number(req.params.dpa_id);
       const { tanggal, alasan, items } = req.body;
@@ -214,16 +216,6 @@ module.exports = {
       const boundaryCreate = await assertDpaPergeseranOpdBoundary(req, dpaSumberForBoundary);
       if (!boundaryCreate.ok) {
         return res.status(boundaryCreate.status).json(boundaryCreate.body);
-      }
-
-      // Hitung nomor pergeseran otomatis
-      const count = await DpaPergeseran.count({ where: { dpa_id } });
-      const nomor_pergeseran = count + 1;
-
-      if (nomor_pergeseran > 10) {
-        return res
-          .status(400)
-          .json({ success: false, message: 'Maksimal 10 kali pergeseran per DPA' });
       }
 
       // Validasi: total KURANG harus = total TAMBAH
@@ -258,6 +250,15 @@ module.exports = {
         });
       }
 
+      transaction = await sequelize.transaction();
+      const count = await DpaPergeseran.count({ where: { dpa_id }, transaction });
+      const nomor_pergeseran = count + 1;
+      if (nomor_pergeseran > 10) {
+        const limitError = new Error('Maksimal 10 kali pergeseran per DPA');
+        limitError.status = 400;
+        throw limitError;
+      }
+
       const pergeseran = await DpaPergeseran.create({
         dpa_id,
         nomor_pergeseran,
@@ -265,7 +266,7 @@ module.exports = {
         alasan,
         status: 'DRAFT',
         created_by: req.user?.id || null,
-      });
+      }, { transaction });
 
       const rows = items.map((i) => ({
         pergeseran_id: pergeseran.id,
@@ -286,7 +287,9 @@ module.exports = {
         kode_sub_kegiatan_tujuan: i.kode_sub_kegiatan_tujuan || null,
         dpa_tujuan_id: i.dpa_tujuan_id || null,
       }));
-      await DpaPergeseranItem.bulkCreate(rows);
+      await DpaPergeseranItem.bulkCreate(rows, { transaction });
+      await transaction.commit();
+      transaction = null;
 
       res.json({
         success: true,
@@ -298,7 +301,8 @@ module.exports = {
         },
       });
     } catch (e) {
-      res.status(500).json({ success: false, message: e.message });
+      if (transaction && !transaction.finished) await transaction.rollback();
+      res.status(e.status || 500).json({ success: false, message: e.message });
     }
   },
 
@@ -742,6 +746,7 @@ module.exports = {
 
   // POST /api/dpa/:dpa_id/perubahan — buat atau update perubahan (+ rincian item per kode rekening)
   async savePerubahan(req, res) {
+    let transaction;
     try {
       const dpa_id = Number(req.params.dpa_id);
       const { tanggal, nomor_perda, alasan, pagu_menjadi, items } = req.body;
@@ -797,6 +802,7 @@ module.exports = {
         });
       }
 
+      transaction = await sequelize.transaction();
       let perubahan;
       if (existing) {
         await existing.update({
@@ -806,9 +812,9 @@ module.exports = {
           pagu_menjadi: paguMenjadiNum,
           pagu_semula: paguSemula,
           status: 'DRAFT',
-        });
+        }, { transaction });
         perubahan = existing;
-        await DpaPerubahanItem.destroy({ where: { perubahan_id: perubahan.id } });
+        await DpaPerubahanItem.destroy({ where: { perubahan_id: perubahan.id }, transaction });
       } else {
         perubahan = await DpaPerubahan.create({
           dpa_id,
@@ -818,7 +824,7 @@ module.exports = {
           pagu_semula: paguSemula,
           pagu_menjadi: paguMenjadiNum,
           status: 'DRAFT',
-        });
+        }, { transaction });
       }
 
       if (Array.isArray(items) && items.length > 0) {
@@ -836,9 +842,11 @@ module.exports = {
           harga_satuan_sesudah: Number(i.harga_satuan_sesudah || 0),
           jumlah_sesudah: Number(i.jumlah_sesudah || 0),
         }));
-        await DpaPerubahanItem.bulkCreate(rows);
+        await DpaPerubahanItem.bulkCreate(rows, { transaction });
       }
 
+      await transaction.commit();
+      transaction = null;
       res.json({
         success: true,
         message: existing
@@ -847,7 +855,8 @@ module.exports = {
         data: perubahan,
       });
     } catch (e) {
-      res.status(500).json({ success: false, message: e.message });
+      if (transaction && !transaction.finished) await transaction.rollback();
+      res.status(e.status || 500).json({ success: false, message: e.message });
     }
   },
 
