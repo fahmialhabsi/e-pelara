@@ -1,0 +1,12 @@
+{
+  "classification": "sanitized-disposable-upgrade-fixture",
+  "environment": "epelara_audit_v5",
+  "migration_names": [
+    "20260415110001-create-indikatorstrategis.js",
+    "20260415110002-create-indikatorarahkebijakans.js",
+    "20260415110003-create-indikatorsubkegiatans.js"
+  ],
+  "contains_credentials": false,
+  "contains_application_data": false,
+  "production_source": false
+}
