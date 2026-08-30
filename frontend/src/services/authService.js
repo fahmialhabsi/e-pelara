@@ -20,6 +20,8 @@ export const login = async (formData) => {
   };
 };
 
+export const getCurrentUser = async () => API.get("/auth/me");
+
 export const requestPasswordReset = async (email) => {
   const res = await API.post("/auth/forgot-password", { email });
   return res.data;
@@ -39,16 +41,7 @@ export const checkSuperAdmin = async () => {
   return res.data;
 };
 
-export const refreshToken = async () => {
-  const res = await API.post("/auth/refresh-token", {});
-  const newToken = res.data?.accessToken;
-  if (newToken) {
-    localStorage.setItem("token", newToken);
-    axios.defaults.headers.common.Authorization = `Bearer ${newToken}`;
-    API.defaults.headers.common.Authorization = `Bearer ${newToken}`;
-  }
-  return res;
-};
+export const refreshToken = async () => API.post("/auth/refresh-token", {});
 
 export const logoutServer = async () => {
   try {

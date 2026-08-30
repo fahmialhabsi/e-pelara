@@ -1,10 +1,8 @@
 // src/services/api.js
 import axios from "axios";
-import { jwtDecode } from "jwt-decode";
 import { refreshToken } from "./authService";
 import { toast } from "react-toastify";
 import { API_BASE_URL } from "../config/runtimeConfig";
-import { normalizeRole } from "../utils/roleUtils";
 import { ACTIVE_TENANT_LS_KEY } from "../constants/tenantStorage";
 
 const api = axios.create({
@@ -23,23 +21,13 @@ function readCsrfCookie() {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-// Attach token on every request
+// Authentication uses the httpOnly session cookie. The active tenant selector is
+// only a routing hint; verifyToken authorizes tenant switching server-side.
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-      try {
-        const decoded = jwtDecode(token);
-        if (normalizeRole(decoded.role) === "SUPER_ADMIN") {
-          const pick = localStorage.getItem(ACTIVE_TENANT_LS_KEY);
-          if (pick != null && String(pick).trim() !== "") {
-            config.headers["X-Tenant-Id"] = String(pick).trim();
-          }
-        }
-      } catch {
-        /* ignore */
-      }
+    const pick = localStorage.getItem(ACTIVE_TENANT_LS_KEY);
+    if (pick != null && String(pick).trim() !== "") {
+      config.headers["X-Tenant-Id"] = String(pick).trim();
     }
     const csrfToken = readCsrfCookie();
     if (csrfToken) {
@@ -49,7 +37,7 @@ api.interceptors.request.use(
     if (method === "get" && config.params !== false) {
       const cur = config.params;
       const base =
-        cur != null && typeof cur === "object" && !Array.isArray(cur) ? cur : {};
+        cur !== null && cur !== undefined && typeof cur === "object" && !Array.isArray(cur) ? cur : {};
       config.params = { ...base, _nf: Date.now() };
     }
     return config;
@@ -61,12 +49,12 @@ api.interceptors.request.use(
 let isRefreshing = false;
 let failedQueue = [];
 
-const processQueue = (error, token = null) => {
+const processQueue = (error) => {
   failedQueue.forEach((prom) => {
     if (error) {
       prom.reject(error);
     } else {
-      prom.resolve(token);
+      prom.resolve();
     }
   });
   failedQueue = [];
@@ -86,10 +74,7 @@ api.interceptors.response.use(
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         })
-          .then((token) => {
-            originalRequest.headers["Authorization"] = `Bearer ${token}`;
-            return api(originalRequest);
-          })
+          .then(() => api(originalRequest))
           .catch((err) => Promise.reject(err));
       }
 
@@ -97,21 +82,17 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const res = await refreshToken(); // should return { accessToken }
-        const newToken = res.data?.accessToken;
-
-        if (newToken) {
-          localStorage.setItem("token", newToken);
-          api.defaults.headers.common["Authorization"] = `Bearer ${newToken}`;
-          processQueue(null, newToken);
-          originalRequest.headers["Authorization"] = `Bearer ${newToken}`;
+        const res = await refreshToken();
+        if (res.status >= 200 && res.status < 300 && res.data?.authenticated) {
+          processQueue(null);
+          delete originalRequest.headers?.Authorization;
           return api(originalRequest);
         }
 
-        throw new Error("Token baru tidak tersedia");
+        throw new Error("Sesi cookie tidak dapat diperbarui");
       } catch (refreshErr) {
         processQueue(refreshErr, null);
-        localStorage.removeItem("token");
+        delete api.defaults.headers.common["Authorization"];
         toast.error("Sesi berakhir. Silakan login kembali.");
         window.location.href = "/login";
         return Promise.reject(refreshErr);

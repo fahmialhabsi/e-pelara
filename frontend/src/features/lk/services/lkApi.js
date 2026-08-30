@@ -390,23 +390,27 @@ export async function postLkFinalisasi(tahun) {
   return data;
 }
 
-/** URL absolut untuk tab baru (pakai query _token). */
-export function getLkPreviewHtmlUrl(tahun) {
-  const base = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "/api")
-    .replace(/\/+$/, "");
-  const token = localStorage.getItem("token") || "";
-  const q = token ? `?_token=${encodeURIComponent(token)}` : "";
-  return `${base}/lk/${tahun}/preview-html${q}`;
+async function openBlobInNewTab(responsePromise) {
+  const response = await responsePromise;
+  const blobUrl = URL.createObjectURL(response.data);
+  const tab = window.open(blobUrl, "_blank", "noopener,noreferrer");
+  if (!tab) {
+    URL.revokeObjectURL(blobUrl);
+    throw new Error("Popup browser diblokir. Izinkan popup untuk membuka dokumen.");
+  }
+  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
 }
 
-export function getLkDownloadPdfUrl(tahun, params = {}) {
-  const base = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "/api")
-    .replace(/\/+$/, "");
-  const token = localStorage.getItem("token") || "";
-  const sp = new URLSearchParams();
-  if (params.id) sp.set("id", String(params.id));
-  if (params.latest) sp.set("latest", "1");
-  if (token) sp.set("_token", token);
-  const qs = sp.toString();
-  return `${base}/lk/${tahun}/download-pdf${qs ? `?${qs}` : ""}`;
+/** Buka preview melalui cookie-authenticated request; token tidak pernah masuk URL. */
+export async function openLkPreviewHtml(tahun) {
+  return openBlobInNewTab(
+    api.get(`/lk/${tahun}/preview-html`, { responseType: "blob" }),
+  );
+}
+
+/** Buka PDF melalui cookie-authenticated request; token tidak pernah masuk URL. */
+export async function openLkDownloadPdf(tahun, params = {}) {
+  return openBlobInNewTab(
+    api.get(`/lk/${tahun}/download-pdf`, { params, responseType: "blob" }),
+  );
 }

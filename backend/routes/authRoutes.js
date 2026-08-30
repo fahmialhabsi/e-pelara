@@ -5,10 +5,12 @@ const {
   login,
   forgotPassword,
   resetPasswordWithToken,
+  getCurrentUser,
 } = require("../controllers/authController");
 const authController = require("../controllers/authController");
 const rateLimit = require("express-rate-limit");
 const { clearCsrfCookie } = require("../lib/csrfToken"); // Sprint 3 — S3-2
+const verifyToken = require("../middlewares/verifyToken");
 
 const authLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 menit
@@ -50,5 +52,6 @@ router.post("/forgot-password", authLimiter, forgotPassword);
 router.post("/reset-password", authLimiter, resetPasswordWithToken);
 
 router.post("/refresh-token", authController.refreshToken);
+router.get("/me", verifyToken, getCurrentUser);
 
 module.exports = router;

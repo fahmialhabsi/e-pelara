@@ -133,16 +133,18 @@ const verifyToken = async (req, res, next) => {
     });
   }
 
-  const token = bearer?.token || req.cookies?.token || req.query?._token || null;
+  // Credentials in query strings leak through browser history, referrers, proxies, and logs.
+  // Authentication is intentionally limited to an explicit Bearer header or httpOnly cookie.
+  const token = bearer?.token || req.cookies?.token || null;
 
   // Sprint 3 — S3-2 (CSRF): tandai apakah request ini terautentikasi lewat
   // Authorization/Bearer header (dikirim eksplisit oleh caller, tidak bisa
-  // "dipaksa" oleh cross-site request pihak ketiga) ATAU lewat cookie/query
-  // param (ambient credential — browser mengirim otomatis, termasuk dari
-  // konteks cross-site, sehingga rentan CSRF pada state-changing request).
+  // "dipaksa" oleh cross-site request pihak ketiga) ATAU lewat httpOnly cookie
+  // (ambient credential — browser mengirim otomatis, sehingga rentan CSRF pada
+  // state-changing request).
   // Dipakai oleh middlewares/csrfProtection.js untuk menentukan apakah CSRF
   // token wajib diperiksa. Tidak mengubah perilaku otentikasi itu sendiri.
-  req.authViaCookie = !bearer?.token && !!(req.cookies?.token || req.query?._token);
+  req.authViaCookie = !bearer?.token && !!req.cookies?.token;
 
   if (!token) {
     return authErrorResponse({
@@ -177,7 +179,7 @@ const verifyToken = async (req, res, next) => {
         });
       }
 
-      decoded = jwt.verify(token, ssoSecret);
+      decoded = jwt.verify(token, ssoSecret, { algorithms: ["HS256"] });
       console.log(`[verifyToken] SSO verified OK. role=${decoded.role}`);
     } else {
       if (!process.env.JWT_SECRET) {
@@ -189,11 +191,11 @@ const verifyToken = async (req, res, next) => {
         });
       }
 
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
+      decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
     }
 
-    const rawTid = decoded.tenant_id != null ? Number(decoded.tenant_id) : 1;
-    const jwtBaseTenantId = Number.isFinite(rawTid) && rawTid > 0 ? rawTid : 1;
+    const rawTid = decoded.tenant_id != null ? Number(decoded.tenant_id) : null;
+    const jwtBaseTenantId = Number.isFinite(rawTid) && rawTid > 0 ? rawTid : null;
     let effectiveTenantId = jwtBaseTenantId;
 
     const switchHeaderRaw = req.get("x-tenant-id");

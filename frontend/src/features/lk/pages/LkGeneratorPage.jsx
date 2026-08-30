@@ -17,8 +17,8 @@ import {
   postLkGeneratePdf,
   getLkPdfRiwayat,
   postLkFinalisasi,
-  getLkPreviewHtmlUrl,
-  getLkDownloadPdfUrl,
+  openLkPreviewHtml,
+  openLkDownloadPdf,
 } from "../services/lkApi";
 import { useAuth } from "../../../hooks/useAuth";
 
@@ -107,8 +107,20 @@ export default function LkGeneratorPage() {
     });
   };
 
-  const previewTab = () => {
-    window.open(getLkPreviewHtmlUrl(tahun), "_blank", "noopener,noreferrer");
+  const previewTab = async () => {
+    try {
+      await openLkPreviewHtml(tahun);
+    } catch (e) {
+      message.error(e.response?.data?.message || e.message || "Preview gagal dibuka");
+    }
+  };
+
+  const downloadPdf = async (params) => {
+    try {
+      await openLkDownloadPdf(tahun, params);
+    } catch (e) {
+      message.error(e.response?.data?.message || e.message || "Download PDF gagal");
+    }
   };
 
   const cols = [
@@ -128,9 +140,8 @@ export default function LkGeneratorPage() {
         <Button
           type="link"
           size="small"
-          href={getLkDownloadPdfUrl(tahun, { id: r.id })}
-          target="_blank"
-          rel="noopener noreferrer"
+                    onClick={() => downloadPdf({ id: r.id })}
+
         >
           Download
         </Button>
@@ -206,9 +217,7 @@ export default function LkGeneratorPage() {
           </Button>
           <Button onClick={previewTab}>Pratinjau HTML (tab baru)</Button>
           <Button
-            href={getLkDownloadPdfUrl(tahun, { latest: true })}
-            target="_blank"
-            rel="noopener noreferrer"
+            onClick={() => downloadPdf({ latest: true })}
             disabled={riwayat.length === 0}
           >
             Unduh PDF terbaru

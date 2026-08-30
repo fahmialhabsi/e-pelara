@@ -139,8 +139,6 @@ const register = async (req, res) => {
 
     res.status(201).json({
       message: "Registrasi berhasil!",
-      token: accessToken,
-      refreshToken,
       user: payload,
     });
   } catch (error) {
@@ -239,8 +237,6 @@ const login = async (req, res) => {
 
     res.json({
       message: "Login berhasil!",
-      token: accessToken,
-      refreshToken,
       user: payload,
     });
   } catch (error) {
@@ -274,7 +270,7 @@ const refreshToken = async (req, res) => {
     });
     setCsrfCookie(res, generateCsrfToken(), { maxAge: 60 * 60 * 1000 }); // Sprint 3 — S3-2
     res.json({
-      accessToken: newAccessToken,
+      authenticated: true,
       user: {
         plan_code: planCtx.plan_code,
         plan_nama: planCtx.plan_nama,
@@ -413,6 +409,13 @@ const resetPasswordWithToken = async (req, res) => {
 };
 
 // Logout endpoint - menghapus cookie
+const getCurrentUser = (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ message: "Sesi tidak tersedia." });
+  }
+  return res.json({ user: req.user });
+};
+
 const logout = (req, res) => {
   res.clearCookie("token", {
     httpOnly: true,
@@ -432,6 +435,7 @@ module.exports = {
   register,
   login,
   logout,
+  getCurrentUser,
   refreshToken,
   forgotPassword,
   resetPasswordWithToken,
