@@ -39,6 +39,7 @@
     "uploads:restore:verify": "node scripts/uploadsRestoreVerify.js",
     "db:migrate": "sequelize-cli db:migrate",
     "db:migrate:status": "sequelize-cli db:migrate:status",
+    "db:migrate:validate-chain": "node scripts/validateMigrationChain.js",
     "job:compliance-record": "node scripts/recordComplianceSnapshotJob.js",
     "seed:sheet2": "node seeders/import-sheet2-normalized.js",
     "test": "echo \"Error: no test specified\" && exit 1"
