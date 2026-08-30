@@ -60,9 +60,9 @@
       "reviewer": "Not assigned",
       "status_before": "Open",
       "status_after": "Fixed Pending Retest",
-      "residual_risk": "Active migration chain remains blocked by duplicate prefixes and premature AUD-003 dependency; applied history outside audit disposable is Not Verifiable; fresh/upgrade policy, owner/DBA approval, and full-chain recovery evidence remain required.",
-      "commit_refs": "aa79f5ab; ce638287",
-      "evidence_refs": "audit/findings.json:AUD-003; audit/forward-fix-disposable-guard-v5.md; audit/forward-fix-empty-database-test-v5.md; audit/forward-fix-representative-database-test-v5.md; audit/forward-fix-disposable-test-report-v5.md; audit/migration-applied-history-reconciliation-v5.md; audit/migration-applied-history-reconciliation-v5.json; audit/controlled-migration-chain-gate-v5.md; audit/migration-decision-record-v5.md; audit/optionc-forward-fix-rollback-plan-v5.md; audit/migration-invariant-report-v5.md; audit/optionc-disposable-test-matrix-v5.md; audit/forward-fix-review-v5.md; audit/migration-dependency-graph-v5.json; audit/migration-conflict-register-v5.json",
+      "residual_risk": "Controlled gate and disposable failure/recovery evidence are verified; active migration chain remains blocked by four duplicate prefixes and premature AUD-003 dependency. Real applied history, full-chain recovery, owner/DBA activation, and production evidence remain Not Verifiable or pending.",
+      "commit_refs": "aa79f5ab; ce638287; cbdf08a0",
+      "evidence_refs": "audit/findings.json:AUD-003; audit/forward-fix-disposable-guard-v5.md; audit/forward-fix-empty-database-test-v5.md; audit/forward-fix-representative-database-test-v5.md; audit/forward-fix-disposable-test-report-v5.md; audit/migration-applied-history-reconciliation-v5.md; audit/migration-applied-history-reconciliation-v5.json; audit/controlled-migration-chain-gate-v5.md; audit/migration-decision-record-v5.md; audit/optionc-forward-fix-rollback-plan-v5.md; audit/migration-invariant-report-v5.md; audit/optionc-disposable-test-matrix-v5.md; audit/forward-fix-review-v5.md; audit/migration-dependency-graph-v5.json; audit/migration-conflict-register-v5.json; audit/upgrade-gate-disposable-simulation-v5.md; audit/upgrade-gate-failure-recovery-v5.md; audit/authoritative-row-fk-reconciliation-policy-v5.md; audit/optionc-final-owner-review-v5.md",
       "closure_date": ""
     },
     {
